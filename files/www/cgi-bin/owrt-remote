@@ -2,7 +2,7 @@
 
 KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
 AGENT="${AGENT:-/usr/sbin/owrt-remote}"
-OWRT_REMOTE_UI_VERSION="2026-06-29-animated-bg-v2"
+OWRT_REMOTE_UI_VERSION="2026-06-29-field-help-v3"
 PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
 RESULT_TITLE=""
 RESULT_BODY=""
@@ -181,10 +181,10 @@ field() {
 	help="${4:-}"
 	value="$(uci_get "$name" '')"
 	printf '<label class="field"><span>%s</span>' "$(h "$label")"
-	printf '<input name="%s" type="%s" value="%s" autocomplete="off">' "$(h "$name")" "$(h "$type")" "$(h "$value")"
 	if [ -n "$help" ]; then
 		printf '<small>%s</small>' "$(h "$help")"
 	fi
+	printf '<input name="%s" type="%s" value="%s" autocomplete="off">' "$(h "$name")" "$(h "$type")" "$(h "$value")"
 	printf '</label>'
 }
 
@@ -253,7 +253,7 @@ h1{margin:0;font-size:28px;letter-spacing:0}.sub{margin:4px 0 0;color:var(--mute
 .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 12px;color:var(--muted);white-space:nowrap}.dot{width:9px;height:9px;border-radius:50%;background:var(--amber)}.dot.good{background:var(--green)}.dot.bad{background:var(--red)}
 .grid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;margin-top:18px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}
 .panel h2{font-size:18px;margin:0 0 12px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{border:1px solid var(--line);border-radius:8px;padding:12px;background:rgba(255,255,255,.06)}.metric span{display:block;color:var(--muted);font-size:12px}.metric strong{display:block;margin-top:4px;font-size:18px;word-break:break-word}.metric.good strong{color:var(--green)}.metric.bad strong{color:var(--red)}.metric.warn strong{color:var(--amber)}
-form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.field{display:block}.field span{display:block;font-weight:650;margin-bottom:6px}.field input{width:100%;border:1px solid var(--line);border-radius:8px;background:rgba(8,5,18,.72);padding:10px 11px;color:var(--text)}.field small{display:block;margin-top:5px;color:var(--muted)}
+form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.field{display:block}.field span{display:block;font-weight:650;margin-bottom:5px}.field input{width:100%;border:1px solid var(--line);border-radius:8px;background:rgba(8,5,18,.72);padding:10px 11px;color:var(--text)}.field small{display:block;margin:0 0 7px;color:var(--muted);min-height:34px}
 .check{display:flex;gap:10px;align-items:center;margin-bottom:12px;font-weight:700}.check input{width:18px;height:18px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.btn{border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 13px;font-weight:750;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.10);color:#f7f2ff}.btn.primary{background:var(--blue);color:#fff}.btn.good{background:var(--green);color:#07120a}.btn.bad{background:rgba(251,113,133,.18);color:#fecdd3}.btn.warn{background:rgba(245,158,11,.16);color:#fde68a;border:1px solid rgba(245,158,11,.34)}
 .notice{margin-top:16px;border-radius:8px;padding:12px;border:1px solid var(--line);background:rgba(255,255,255,.08);white-space:pre-wrap}.notice.ok{border-color:rgba(34,197,94,.46);background:rgba(34,197,94,.12)}.notice.bad{border-color:rgba(251,113,133,.46);background:rgba(251,113,133,.12)}.notice.warn{border-color:rgba(245,158,11,.46);background:rgba(245,158,11,.12)}
 .code{background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:12px;overflow:auto;min-height:120px;white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
@@ -328,23 +328,23 @@ owrt-remote status</div>
       <label class="check"><input type="checkbox" name="enabled" value="1" $enabled_checked> Включить агент и автозапуск</label>
       <div class="formgrid">
 EOF
-	field router_id "Router ID" text "Например main или office-1"
-	field router_name "Название" text "Будет видно на VPS-карточке"
-	field role "Роль" text "main для главного, node для остальных"
-	field public_url "Public URL" text "Можно оставить пустым, если используешь proxy через hub"
-	field hub_url "Hub URL" text "Например https://vps.example.com:8088"
-	field hub_token "Hub token" password "AGENT_TOKEN с VPS"
-	field heartbeat_interval "Heartbeat, секунд" number "Минимум 10"
-	field xray_bin "Xray binary" text "/usr/bin/xray"
-	field xray_config "Xray config" text "/etc/xray/owrt-remote-client.json"
-	field vps_host "VPS host" text "IP или домен VPS для Xray"
-	field vps_port "VPS Xray port" number "Обычно 8443"
-	field vless_uuid "VLESS UUID" text "Из карточки роутера на VPS"
-	field vless_encryption "VLESS encryption" text "По умолчанию none"
-	field vless_flow "VLESS flow" text "Обычно пусто"
-	field reverse_tag "Reverse tag" text "Обычно reverse-in"
-	field admin_host "Admin host" text "Обычно 127.0.0.1"
-	field admin_port "Admin port" number "LuCI/uhttpd обычно 80"
+	field router_id "Router ID" text "Уникальное имя этого роутера в VPS-панели. Бери из карточки роутера на VPS: main, office-1, shop-2."
+	field router_name "Название" text "Красивое имя для карточки на VPS. Можно писать по-русски: Главный роутер, Дом, Офис."
+	field role "Роль" text "main ставь для главного роутера. node ставь для дополнительных роутеров, которые просто цепляешь и мониторишь."
+	field public_url "Public URL" text "Обычно оставь пустым. Нужно только если у роутера уже есть своя готовая публичная ссылка."
+	field hub_url "Hub URL" text "Адрес веб-панели на VPS, куда роутер отправляет online/offline. Бери из VPS, например http://VPS_IP:8088."
+	field hub_token "Hub token" password "Секрет AGENT_TOKEN из VPS-хаба. Его показывает команда init/serve на VPS; нужен для heartbeat."
+	field heartbeat_interval "Heartbeat, секунд" number "Как часто роутер сообщает VPS, что он online. Обычно 30 секунд, меньше 10 не ставь."
+	field xray_bin "Xray binary" text "Путь к Xray на роутере. Если ставил пакет xray-core, обычно оставь /usr/bin/xray."
+	field xray_config "Xray config" text "Куда агент сохранит клиентский Xray-конфиг. Обычно оставь /etc/xray/owrt-remote-client.json."
+	field vps_host "VPS host" text "IP или домен VPS, куда Xray роутера подключается reverse-туннелем. Бери IP/домен своего VPS."
+	field vps_port "VPS Xray port" number "Порт Xray на VPS для reverse-туннеля. Должен совпадать с render-xray на VPS, обычно 8443."
+	field vless_uuid "VLESS UUID" text "Уникальный UUID роутера. Бери из карточки роутера на VPS или из команды print-openwrt-config."
+	field vless_encryption "VLESS encryption" text "Для этой схемы оставь none. Меняй только если сам меняешь Xray-конфиг на VPS."
+	field vless_flow "VLESS flow" text "Обычно оставь пустым. Нужно только для специальных режимов Xray."
+	field reverse_tag "Reverse tag" text "Метка reverse-туннеля внутри Xray. Обычно оставь reverse-in, если на VPS не задавал другое."
+	field admin_host "Admin host" text "Куда внутри роутера вести админку LuCI. Обычно 127.0.0.1, потому что uhttpd слушает локально."
+	field admin_port "Admin port" number "Порт LuCI/uhttpd внутри роутера. Обычно 80; если LuCI на другом порту, укажи его."
 	cat <<EOF
       </div>
       <div class="actions">
