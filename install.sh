@@ -101,6 +101,12 @@ router_ip() {
 	printf '192.168.1.1'
 }
 
+installed_ui_version() {
+	local file
+	file="$(target_path www/cgi-bin/owrt-remote)"
+	awk -F '"' '/^OWRT_REMOTE_UI_VERSION=/ { print $2; exit }' "$file" 2>/dev/null || true
+}
+
 install_file "usr/sbin/owrt-remote" 0755
 install_file "etc/init.d/owrt-remote" 0755
 install_config
@@ -122,9 +128,12 @@ fi
 
 key="$(make_key)"
 ip="$(router_ip)"
+ui_version="$(installed_ui_version)"
 
 info "OpenWrt Remote установлен."
+if [ -n "$ui_version" ]; then
+	info "UI:     $ui_version"
+fi
 info "LuCI:   Службы -> OpenWrt Remote"
 info "Панель: http://$ip/cgi-bin/owrt-remote?key=$key"
 info "CLI:    owrt-remote doctor"
-
