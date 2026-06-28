@@ -242,14 +242,14 @@ render_page() {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenWrt Remote</title>
 <style>
-:root{color-scheme:light;--bg:#eef4f8;--panel:rgba(255,255,255,.94);--text:#172033;--muted:#667085;--line:#d9e1ec;--blue:#2563eb;--green:#16a34a;--red:#dc2626;--amber:#d97706;--teal:#0f766e;--grid:rgba(20,65,95,.075)}
-*{box-sizing:border-box}body{min-height:100vh;margin:0;background-color:var(--bg);background-image:linear-gradient(120deg,rgba(15,118,110,.13),transparent 34%),linear-gradient(240deg,rgba(37,99,235,.10),transparent 38%),repeating-linear-gradient(0deg,transparent 0 31px,var(--grid) 32px),repeating-linear-gradient(90deg,transparent 0 31px,var(--grid) 32px);background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+:root{color-scheme:light;--bg:#dfeef1;--panel:rgba(255,255,255,.84);--text:#172033;--muted:#667085;--line:#cbd8e6;--blue:#2563eb;--green:#16a34a;--red:#dc2626;--amber:#d97706;--teal:#0f766e;--grid:rgba(20,65,95,.12)}
+*{box-sizing:border-box}body{min-height:100vh;margin:0;background-color:var(--bg);background-image:radial-gradient(circle at 12% 8%,rgba(15,118,110,.22),transparent 28%),radial-gradient(circle at 85% 0,rgba(37,99,235,.18),transparent 30%),linear-gradient(135deg,rgba(255,255,255,.30),rgba(255,255,255,0)),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .wrap{max-width:1180px;margin:0 auto;padding:22px}.hero{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:20px 0 18px;border-bottom:1px solid var(--line)}
-.brand{display:flex;gap:14px;align-items:center}.mark{min-width:96px;height:54px;padding:0 12px;border-radius:8px;background:var(--teal);color:#fff;display:grid;place-items:center;font-weight:900;font-size:18px;box-shadow:0 12px 30px rgba(15,118,110,.22)}
-h1{margin:0;font-size:28px;letter-spacing:0}.sub{margin:4px 0 0;color:var(--muted)}.links{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.links a{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.78);color:#1f2a44;padding:5px 10px;text-decoration:none;font-weight:750}.topActions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.backBtn{border:0;border-radius:8px;background:var(--teal);color:#fff;padding:10px 13px;font-weight:800;text-decoration:none;box-shadow:0 10px 22px rgba(15,118,110,.18)}
+.brand{display:flex;gap:14px;align-items:center}.titleRow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:28px;letter-spacing:0}.sub{margin:4px 0 0;color:var(--muted)}.links{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.links a{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.70);color:#1f2a44;padding:5px 10px;text-decoration:none;font-weight:750}.topActions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.backBtn{border:0;border-radius:8px;background:var(--teal);color:#fff;padding:9px 12px;font-weight:800;text-decoration:none;box-shadow:0 10px 22px rgba(15,118,110,.18)}
 .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 12px;color:var(--muted);white-space:nowrap}.dot{width:9px;height:9px;border-radius:50%;background:var(--amber)}.dot.good{background:var(--green)}.dot.bad{background:var(--red)}
-.grid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;margin-top:18px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;box-shadow:0 10px 28px rgba(20,35,60,.05)}
-.panel h2{font-size:18px;margin:0 0 12px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fafcff}.metric span{display:block;color:var(--muted);font-size:12px}.metric strong{display:block;margin-top:4px;font-size:18px;word-break:break-word}.metric.good strong{color:var(--green)}.metric.bad strong{color:var(--red)}.metric.warn strong{color:var(--amber)}
+.grid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;margin-top:18px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;box-shadow:0 12px 34px rgba(20,35,60,.08);backdrop-filter:blur(8px)}
+.panel h2{font-size:18px;margin:0 0 12px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{border:1px solid var(--line);border-radius:8px;padding:12px;background:rgba(255,255,255,.58)}.metric span{display:block;color:var(--muted);font-size:12px}.metric strong{display:block;margin-top:4px;font-size:18px;word-break:break-word}.metric.good strong{color:var(--green)}.metric.bad strong{color:var(--red)}.metric.warn strong{color:var(--amber)}
 form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.field{display:block}.field span{display:block;font-weight:650;margin-bottom:6px}.field input{width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:10px 11px;color:var(--text)}.field small{display:block;margin-top:5px;color:var(--muted)}
 .check{display:flex;gap:10px;align-items:center;margin-bottom:12px;font-weight:700}.check input{width:18px;height:18px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.btn{border:0;border-radius:8px;padding:10px 13px;font-weight:750;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;background:#e8eef8;color:#1f2a44}.btn.primary{background:var(--blue);color:#fff}.btn.good{background:var(--green);color:#fff}.btn.bad{background:#fee2e2;color:#991b1b}.btn.warn{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
 .notice{margin-top:16px;border-radius:8px;padding:12px;border:1px solid var(--line);background:#f8fbff;white-space:pre-wrap}.notice.ok{border-color:#bbf7d0;background:#f0fdf4}.notice.bad{border-color:#fecaca;background:#fef2f2}.notice.warn{border-color:#fed7aa;background:#fff7ed}
@@ -261,9 +261,11 @@ form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr
 <main class="wrap">
   <section class="hero">
     <div class="brand">
-      <div class="mark">byzks95</div>
       <div>
-        <h1>OpenWrt Remote</h1>
+        <div class="titleRow">
+          <h1>OpenWrt Remote</h1>
+          <a class="backBtn" href="/cgi-bin/luci/admin/services">Вернуться в службы OpenWrt</a>
+        </div>
         <p class="sub">$(h "$router_name") · $(h "$router_id") · $(h "$status_text")</p>
         <div class="links">
           <a href="https://t.me/kzolotarev95" target="_blank" rel="noopener noreferrer">Telegram</a>
@@ -272,7 +274,6 @@ form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr
       </div>
     </div>
     <div class="topActions">
-      <a class="backBtn" href="http://192.168.2.1/cgi-bin/luci/admin/status/overview">Вернуться в OpenWrt</a>
       <div class="pill"><span class="dot $(h "$xray_tone")"></span>Xray: $(h "$xray_state")</div>
     </div>
   </section>

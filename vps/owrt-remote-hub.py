@@ -426,17 +426,17 @@ def dashboard_html(routers, token):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{APP_NAME}</title>
 <style>
-:root{{color-scheme:light;--bg:#eef4f8;--panel:rgba(255,255,255,.94);--text:#152033;--muted:#687385;--line:#d9e1ec;--blue:#2563eb;--green:#16a34a;--red:#dc2626;--amber:#d97706;--teal:#0f766e;--grid:rgba(20,65,95,.075)}}
-*{{box-sizing:border-box}}body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:linear-gradient(120deg,rgba(15,118,110,.13),transparent 34%),linear-gradient(240deg,rgba(37,99,235,.10),transparent 38%),repeating-linear-gradient(0deg,transparent 0 31px,var(--grid) 32px),repeating-linear-gradient(90deg,transparent 0 31px,var(--grid) 32px);background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
+:root{{color-scheme:light;--bg:#dfeef1;--panel:rgba(255,255,255,.84);--text:#152033;--muted:#687385;--line:#cbd8e6;--blue:#2563eb;--green:#16a34a;--red:#dc2626;--amber:#d97706;--teal:#0f766e;--grid:rgba(20,65,95,.12)}}
+*{{box-sizing:border-box}}body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radial-gradient(circle at 12% 8%,rgba(15,118,110,.22),transparent 28%),radial-gradient(circle at 85% 0,rgba(37,99,235,.18),transparent 30%),linear-gradient(135deg,rgba(255,255,255,.30),rgba(255,255,255,0)),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
 .wrap{{max-width:1220px;margin:0 auto;padding:22px}}.top{{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding:4px 0 18px}}
-.brand{{display:flex;align-items:center;gap:14px}}.logo{{min-width:96px;height:54px;padding:0 12px;border-radius:8px;background:var(--teal);color:#fff;display:grid;place-items:center;font-weight:900;font-size:18px;box-shadow:0 14px 34px rgba(15,118,110,.22)}}
-h1{{margin:0;font-size:29px;letter-spacing:0}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}}.links a{{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.78);color:#1f2a44;padding:5px 10px;text-decoration:none;font-weight:750}}.headerActions{{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}}.headerActions .openwrt{{background:var(--teal);color:#fff}}.badge{{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 12px;color:var(--muted);white-space:nowrap}}
+.brand{{display:flex;align-items:center;gap:14px}}
+h1{{margin:0;font-size:29px;letter-spacing:0}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}}.links a{{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.70);color:#1f2a44;padding:5px 10px;text-decoration:none;font-weight:750}}.headerActions{{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}}.badge{{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 12px;color:var(--muted);white-space:nowrap}}
 .dot{{width:9px;height:9px;border-radius:999px;background:var(--red)}}.dot.on{{background:var(--green)}}.toolbar{{display:grid;grid-template-columns:1fr 1fr 110px 110px 150px auto;gap:10px;margin:18px 0;padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:8px}}
 input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:#fff;color:var(--text)}}button,.btn{{border:0;border-radius:8px;padding:10px 13px;background:#e8eef8;color:#1f2a44;font-weight:800;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}button.primary,.btn.primary{{background:var(--blue);color:#fff}}button.bad{{background:#fee2e2;color:#991b1b}}
-.cards{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:15px;box-shadow:0 12px 30px rgba(20,35,60,.05)}}
-.cardHead{{display:flex;gap:12px;align-items:flex-start;justify-content:space-between}}.routerIcon{{min-width:68px;height:46px;padding:0 8px;border-radius:8px;background:#eef6ff;color:#1d4ed8;display:grid;place-items:center;font-weight:900;font-size:12px;border:1px solid #dbeafe}}
+.cards{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:15px;box-shadow:0 12px 30px rgba(20,35,60,.08);backdrop-filter:blur(8px)}}
+.cardHead{{display:flex;gap:12px;align-items:flex-start;justify-content:space-between}}.routerIcon{{min-width:46px;height:46px;padding:0 8px;border-radius:8px;background:#eef6ff;color:#1d4ed8;display:grid;place-items:center;font-weight:900;font-size:12px;border:1px solid #dbeafe}}
 .title{{display:flex;gap:10px;align-items:center;min-width:0}}.title h2{{font-size:18px;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.role{{border:1px solid var(--line);border-radius:999px;padding:3px 8px;color:var(--muted);font-size:12px;background:#fbfdff}}
-.state{{display:flex;align-items:center;gap:7px;font-weight:800}}.state.off{{color:var(--red)}}.state.on{{color:var(--green)}}.meta{{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:14px 0}}.metric{{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fafcff}}.metric span{{display:block;color:var(--muted);font-size:12px}}.metric strong{{display:block;margin-top:3px;word-break:break-word}}
+.state{{display:flex;align-items:center;gap:7px;font-weight:800}}.state.off{{color:var(--red)}}.state.on{{color:var(--green)}}.meta{{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:14px 0}}.metric{{border:1px solid var(--line);border-radius:8px;padding:10px;background:rgba(255,255,255,.58)}}.metric span{{display:block;color:var(--muted);font-size:12px}}.metric strong{{display:block;margin-top:3px;word-break:break-word}}
 .actions{{display:flex;gap:8px;flex-wrap:wrap}}.empty{{border:1px dashed var(--line);border-radius:8px;padding:30px;background:#fff;text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:#fff}}code{{background:#eef2f7;border-radius:6px;padding:2px 5px}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}}}
 @media(max-width:680px){{.wrap{{padding:14px}}.cards,.toolbar{{grid-template-columns:1fr}}.top{{align-items:flex-start;flex-direction:column}}.headerActions{{justify-content:flex-start}}h1{{font-size:24px}}}}
@@ -446,7 +446,6 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 <main class="wrap">
   <section class="top">
     <div class="brand">
-      <div class="logo">byzks95</div>
       <div>
         <h1>OpenWrt Remote Hub</h1>
         <p class="muted">Карточки роутеров, heartbeat и вход в LuCI через VPS.</p>
@@ -457,7 +456,6 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
       </div>
     </div>
     <div class="headerActions">
-      <a class="btn openwrt" href="http://192.168.2.1/cgi-bin/luci/admin/status/overview">Вернуться в OpenWrt</a>
       <div class="badge"><span class="dot on"></span>Hub online</div>
     </div>
   </section>
@@ -503,7 +501,7 @@ function render(list) {{
     return `<article class="card">
       <div class="cardHead">
         <div class="title">
-          <div class="routerIcon">byzks95</div>
+          <div class="routerIcon">OWRT</div>
           <div>
             <h2>${{escapeHtml(r.name)}}</h2>
             <div class="muted">${{escapeHtml(r.id)}} · <span class="role">${{escapeHtml(r.role)}}</span></div>
