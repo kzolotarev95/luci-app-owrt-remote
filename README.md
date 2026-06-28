@@ -1,238 +1,160 @@
 <div align="center">
 
-# OpenWrt Full Backup
+# OpenWrt Remote Hub
 
-**LuCI web-панель и SSH-утилита для полного бэкапа OpenWrt без сборки `.ipk`.**
+**Легкий удаленный доступ к OpenWrt через свой VPS: карточки роутеров, online/offline, Xray reverse и локальная LuCI-интеграция без тяжелого VPN.**
 
 [![OpenWrt](https://img.shields.io/badge/OpenWrt-22.x%20%7C%2023.x%20%7C%2024.x%20%7C%2025.x-00A3E0?style=for-the-badge)](https://openwrt.org/)
-[![LuCI](https://img.shields.io/badge/LuCI-web%20panel-16A34A?style=for-the-badge)](https://openwrt.org/docs/guide-user/luci/start)
-[![No Lua runtime](https://img.shields.io/badge/LuCI-no%20Lua%20runtime-111827?style=for-the-badge)](#если-в-luci-ошибка-no-lua-runtime-installed)
-[![Install](https://img.shields.io/badge/install-one%20command-2563EB?style=for-the-badge)](#быстрая-установка)
+[![Xray](https://img.shields.io/badge/Xray-VLESS%20reverse-111827?style=for-the-badge)](https://xtls.github.io/en/document/level-2/vless_reverse.html)
+[![No IPK](https://img.shields.io/badge/install-one%20command-2563EB?style=for-the-badge)](#быстрый-старт)
 
 </div>
 
-<img width="1920" height="1146" alt="1111111111111111111111" src="https://github.com/user-attachments/assets/e30f7974-e552-4d3b-9f13-5ad8ad4e917f" />
+## Что это
 
+`luci-app-owrt-remote` собирает схему "роутер за NAT -> VPS -> красивая панель -> админка роутера".
 
-## Зачем нужен модуль
+На роутере ставится маленький агент:
 
-`luci-app-owrt-full-backup` делает удобную панель в OpenWrt для создания, скачивания, загрузки и восстановления архивов бэкапа. Подходит для обычного сохранения настроек, переноса конфигурации после перепрошивки и подготовки полного архива роутера перед экспериментами.
+- пункт в LuCI: `Службы -> OpenWrt Remote`;
+- `/usr/sbin/owrt-remote` для старта Xray reverse, heartbeat и генерации client config;
+- `/etc/init.d/owrt-remote` для автозапуска через `procd`;
+- локальная CGI-панель настройки, без Lua runtime.
 
-> [!IMPORTANT]
-> После установки скрипт покажет приватную ссылку с `key=...`. Не отдавай ее посторонним: по этой ссылке можно создавать и восстанавливать бэкапы.
+На VPS запускается `vps/owrt-remote-hub.py`:
 
-## Быстрая установка
+- веб-панель с карточками роутеров;
+- online/offline по heartbeat;
+- кнопка "Открыть админку";
+- прокси к локальному Xray entry port, чтобы наружу не торчали админки всех роутеров;
+- генерация server-side Xray config для нескольких роутеров.
 
-Зайди на роутер по SSH и выполни:
+ZeroTier, Tailscale и WireGuard тут не используются. Xray-бинарь в репозиторий не кладется, чтобы не занимать флешку OpenWrt.
 
-```sh
-wget -O - https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-full-backup/main/install.sh | sh
+## Как работает
+
+```mermaid
+flowchart LR
+    User["Браузер админа"] --> Hub["VPS: OpenWrt Remote Hub"]
+    Hub --> LocalEntry["127.0.0.1:18080<br/>Xray tunnel inbound"]
+    LocalEntry --> Reverse["VLESS reverse tunnel"]
+    Router["OpenWrt router<br/>owrt-remote + Xray"] --> Reverse
+    Router --> LuCI["127.0.0.1:80<br/>LuCI/uhttpd"]
 ```
 
-После установки открой:
+1. Роутер сам подключается к VPS и держит reverse tunnel.
+2. VPS-панель показывает карточку роутера и статус.
+3. Когда нажимаешь "Открыть админку", хаб проксирует запрос в локальный entry port Xray.
+4. Xray возвращает этот поток через reverse tunnel на LuCI роутера.
+
+## Быстрый старт
+
+### 1. VPS
+
+На VPS нужен Python 3 и Xray. Скопируй папку `vps` на сервер и запусти:
+
+```sh
+sudo mkdir -p /opt/owrt-remote /var/lib/owrt-remote
+sudo cp vps/owrt-remote-hub.py /opt/owrt-remote/
+sudo chmod +x /opt/owrt-remote/owrt-remote-hub.py
+sudo /opt/owrt-remote/owrt-remote-hub.py init
+sudo /opt/owrt-remote/owrt-remote-hub.py add-router --id main --name "Главный роутер" --role main --entry-port 18080 --vps-host YOUR_VPS_DOMAIN_OR_IP
+sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
+```
+
+Запусти хаб:
+
+```sh
+sudo OWRT_REMOTE_BIND=0.0.0.0 OWRT_REMOTE_PORT=8088 /opt/owrt-remote/owrt-remote-hub.py serve
+```
+
+Панель:
 
 ```text
-LuCI -> Службы -> OpenWrt Full Backup
+http://YOUR_VPS_IP:8088/?token=ADMIN_TOKEN
 ```
 
-Также установщик покажет прямую ссылку:
+`ADMIN_TOKEN` хаб покажет при первом `init`/`serve`, также он лежит в `/var/lib/owrt-remote/admin.token`.
+
+### 2. OpenWrt
+
+На роутере:
+
+```sh
+wget -O - https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh | sh
+```
+
+После установки:
 
 ```text
-http://192.168.1.1/cgi-bin/owrt-full-backup?key=SECRET
+LuCI -> Службы -> OpenWrt Remote
 ```
 
-## Что умеет
-
-| Возможность | Что делает |
-| --- | --- |
-| Веб-панель LuCI | Пункт `Службы -> OpenWrt Full Backup` и отдельная защищенная CGI-панель |
-| Бэкап настроек | Создает стандартный `sysupgrade` backup конфигурации OpenWrt |
-| Список пакетов | Сохраняет список установленных пакетов `opkg` |
-| Overlay snapshot | Может добавить `/overlay/upper` |
-| ROM snapshot | Может добавить снимок `/rom` |
-| Firmware image | Может положить в архив готовый `sysupgrade.bin` |
-| Raw MTD dump | Может сохранить `/dev/mtd*`, если архив пишется на USB/диск |
-| Архивы в веб-панели | Скачать, загрузить, посмотреть и удалить архив |
-| Восстановление | Отдельные галочки для настроек, пакетов, overlay и firmware |
-| Виджеты роутера | Показывает разделы памяти, свободное место и температуру |
-
-## Как выглядит сценарий работы
-
-1. Открываешь `Службы -> OpenWrt Full Backup`.
-2. Выбираешь папку для архива, лучше USB или диск: `/mnt/usb`.
-3. Нажимаешь `Создать бэкап`.
-4. На странице виден журнал выполнения и таймер.
-5. После завершения архив появляется в списке.
-6. Архив можно скачать, удалить, загрузить обратно или восстановить.
-
-## Безопасное место для архива
-
-`/tmp` в OpenWrt обычно находится в RAM. Для маленького бэкапа настроек этого может хватить, но для больших архивов лучше сразу использовать USB/диск.
-
-Рекомендуемый путь:
-
-```text
-/mnt/usb
-```
-
-> [!WARNING]
-> Raw MTD dump может быть очень большим и привязан к конкретной модели роутера. Модуль не дает сохранять raw MTD в `/tmp`, чтобы не забить RAM и не получить `No space left on device`.
-
-## CLI-команды
-
-Создать бэкап на USB:
+В VPS-панели открой карточку роутера и скопируй готовые UCI-команды из "OpenWrt config". Вставь их на роутер, затем:
 
 ```sh
-owrt-full-backup create -o /mnt/usb
-```
-
-Добавить firmware image:
-
-```sh
-owrt-full-backup create -o /mnt/usb --firmware-image /tmp/openwrt-sysupgrade.bin
-```
-
-Посмотреть архив:
-
-```sh
-owrt-full-backup inspect /mnt/usb/router-owrt-full-backup.tar.gz
-```
-
-Восстановить только настройки:
-
-```sh
-owrt-full-backup restore /mnt/usb/router-owrt-full-backup.tar.gz --yes --no-packages
+/etc/init.d/owrt-remote enable
+/etc/init.d/owrt-remote restart
+owrt-remote heartbeat
 ```
 
 ## Что ставится на роутер
 
 | Путь | Назначение |
 | --- | --- |
-| `/usr/sbin/owrt-full-backup` | Основная CLI-команда |
-| `/usr/sbin/owrt-full-backup-upload` | Потоковая загрузка `.tar.gz` из браузера без Lua |
-| `/www/cgi-bin/owrt-full-backup` | Основная веб-панель |
-| `/www/luci-static/resources/view/owrt_full_backup.js` | LuCI-страница-редирект без Lua runtime |
-| `/usr/share/luci/menu.d/luci-app-owrt-full-backup.json` | Пункт меню LuCI |
-| `/usr/share/rpcd/acl.d/luci-app-owrt-full-backup.json` | ACL-доступ LuCI к приватному ключу |
-| `/etc/config/fullbackup` | Настройки по умолчанию |
-| `/etc/owrt-full-backup/web.key` | Приватный ключ веб-панели |
+| `/usr/sbin/owrt-remote` | CLI-агент: render config, heartbeat, status |
+| `/etc/init.d/owrt-remote` | сервис автозапуска Xray reverse + heartbeat loop |
+| `/www/cgi-bin/owrt-remote` | локальная красивая панель настройки |
+| `/www/luci-static/resources/view/owrt_remote.js` | LuCI-страница-редирект |
+| `/usr/share/luci/menu.d/luci-app-owrt-remote.json` | пункт меню LuCI |
+| `/usr/share/rpcd/acl.d/luci-app-owrt-remote.json` | ACL для чтения web key |
+| `/etc/config/owrtremote` | UCI-настройки агента |
+| `/etc/owrt-remote/web.key` | приватный ключ локальной панели |
 
-## Структура проекта
+## Память OpenWrt
 
-```text
-.
-├── install.sh
-├── uninstall.sh
-├── README.md
-├── LICENSE
-└── files
-    ├── etc
-    │   └── config
-    │       └── fullbackup
-    ├── usr
-    │   ├── sbin
-    │   │   ├── owrt-full-backup
-    │   │   └── owrt-full-backup-upload
-    │   └── share
-    │       ├── luci
-    │       │   └── menu.d
-    │       │       └── luci-app-owrt-full-backup.json
-    │       └── rpcd
-    │           └── acl.d
-    │               └── luci-app-owrt-full-backup.json
-    └── www
-        ├── cgi-bin
-        │   └── owrt-full-backup
-        └── luci-static
-            └── resources
-                └── view
-                    └── owrt_full_backup.js
-```
+Сам модуль маленький: shell-скрипты, LuCI redirect и CGI. Самый тяжелый компонент - `xray-core`, но он не включен в этот репозиторий. Если на роутере мало флешки, лучше поставить Xray на extroot/USB или использовать сборку прошивки, где Xray уже включен.
 
-## Обновление
-
-Принудительно поставить свежую версию с GitHub:
+## Команды агента
 
 ```sh
-wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-full-backup/main/install.sh?v=$(date +%s)" | sh
+owrt-remote status
+owrt-remote render-client
+owrt-remote render-client --stdout
+owrt-remote heartbeat
+owrt-remote doctor
 ```
 
-Скрипт обновляет файлы, удаляет старый Lua-controller, чистит кэш LuCI и перезапускает `rpcd/uhttpd`.
+## Команды VPS-хаба
+
+```sh
+vps/owrt-remote-hub.py init
+vps/owrt-remote-hub.py add-router --id main --name "Главный" --role main --entry-port 18080 --vps-host example.com
+vps/owrt-remote-hub.py list-routers
+vps/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
+vps/owrt-remote-hub.py print-openwrt-config --id main
+vps/owrt-remote-hub.py serve --host 0.0.0.0 --port 8088
+```
 
 ## Удаление
 
-Удалить модуль, но оставить конфиг и веб-ключ:
+С роутера:
 
 ```sh
-wget -O - https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-full-backup/main/uninstall.sh | sh
+wget -O - https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh | sh
 ```
 
-Удалить модуль, конфиг и веб-ключ:
+Полностью, вместе с конфигом:
 
 ```sh
-wget -O - https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-full-backup/main/uninstall.sh | PURGE=1 sh
+wget -O - https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh | PURGE=1 sh
 ```
 
-Архивы бэкапов при удалении не стираются.
+## Важное по безопасности
 
-## Диагностика
+- Не открывай LuCI роутеров напрямую наружу.
+- Entry ports Xray на VPS по умолчанию слушают `127.0.0.1`, а наружу отдается только dashboard.
+- Панель хаба защищена `ADMIN_TOKEN`, а heartbeat от роутеров - отдельным `AGENT_TOKEN`.
+- Для боевого режима лучше посадить dashboard за HTTPS reverse proxy: Caddy, Nginx или Traefik.
+- Xray VLESS reverse можно усилить своим `xray vlessenc`; по умолчанию конфиг использует совместимый режим `none`.
 
-<details>
-<summary>Пункт не появился в LuCI</summary>
-
-Обнови модуль и перезапусти кэш LuCI:
-
-```sh
-wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-full-backup/main/install.sh?v=$(date +%s)" | sh
-rm -rf /tmp/luci-indexcache /tmp/luci-modulecache /tmp/luci-indexcache.* /tmp/luci-modulecache.*
-/etc/init.d/rpcd restart
-/etc/init.d/uhttpd restart
-```
-
-Потом обнови страницу LuCI или выйди и зайди снова.
-
-</details>
-
-<details>
-<summary>В LuCI ошибка `No Lua runtime installed`</summary>
-
-Поставь свежую версию. Модуль больше не использует Lua-controller для пункта меню LuCI.
-
-```sh
-wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-full-backup/main/install.sh?v=$(date +%s)" | sh
-```
-
-Проверка:
-
-```sh
-test ! -e /usr/lib/lua/luci/controller/owrt_full_backup.lua && echo "Lua controller удален"
-```
-
-</details>
-
-<details>
-<summary>Ошибка `No space left on device`</summary>
-
-Архив создается в `/tmp`, а там закончилась RAM. Используй USB/диск:
-
-```sh
-mkdir -p /mnt/usb
-owrt-full-backup create -o /mnt/usb
-```
-
-В веб-панели тоже укажи `/mnt/usb`.
-
-</details>
-
-<details>
-<summary>Браузер пишет `ERR_CONNECTION_RESET` при загрузке архива</summary>
-
-Обнови модуль. Загрузка архива идет потоково и не держит весь `.tar.gz` в памяти.
-
-Если ошибка осталась, проверь свободное место в папке архива и используй USB/диск:
-
-```text
-/mnt/usb
-```
-
-**Full Changelog**: https://github.com/kzolotarev95/luci-app-owrt-full-backup/commits/v1

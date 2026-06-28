@@ -7,3 +7,5 @@ bin/
 dl/
 staging_dir/
 tmp/
+__pycache__/
+*.pyc

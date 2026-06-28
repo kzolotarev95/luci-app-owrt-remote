@@ -1,0 +1,18 @@
+{
+	"luci-app-owrt-remote": {
+		"description": "Grant access to OpenWrt Remote LuCI helper",
+		"read": {
+			"ubus": {
+				"file": [
+					"read"
+				]
+			},
+			"file": {
+				"/etc/owrt-remote/web.key": [
+					"read"
+				]
+			}
+		}
+	}
+}
+

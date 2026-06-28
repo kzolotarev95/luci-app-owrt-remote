@@ -1,0 +1,19 @@
+{
+	"admin/services/owrt-remote": {
+		"title": "OpenWrt Remote",
+		"order": 91,
+		"action": {
+			"type": "view",
+			"path": "owrt_remote"
+		},
+		"depends": {
+			"acl": [
+				"luci-app-owrt-remote"
+			],
+			"fs": {
+				"/www/cgi-bin/owrt-remote": "executable"
+			}
+		}
+	}
+}
+

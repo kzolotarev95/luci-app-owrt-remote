@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenWrt Remote Hub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=OWRT_REMOTE_BIND=127.0.0.1
+Environment=OWRT_REMOTE_PORT=8088
+Environment=OWRT_REMOTE_STATE_DIR=/var/lib/owrt-remote
+ExecStart=/opt/owrt-remote/owrt-remote-hub.py serve
+Restart=on-failure
+RestartSec=3
+DynamicUser=no
+
+[Install]
+WantedBy=multi-user.target
+

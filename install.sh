@@ -2,7 +2,7 @@
 
 set -eu
 
-RAW_URL="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-full-backup/main}"
+RAW_URL="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 ROOT="${ROOT:-/}"
 SCRIPT_DIR="$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd)"
 
@@ -50,12 +50,12 @@ install_file() {
 
 install_config() {
 	local rel src dst bust
-	rel="etc/config/fullbackup"
+	rel="etc/config/owrtremote"
 	src="$SCRIPT_DIR/files/$rel"
 	dst="$(target_path "$rel")"
 	mkdir -p "$(dirname "$dst")"
 	if [ -f "$dst" ]; then
-		info "Оставляю существующий файл: $dst"
+		info "Оставляю существующий конфиг: $dst"
 		return
 	fi
 	if [ -f "$src" ]; then
@@ -69,7 +69,7 @@ install_config() {
 
 make_key() {
 	local key_dir key_file key
-	key_dir="$(target_path etc/owrt-full-backup)"
+	key_dir="$(target_path etc/owrt-remote)"
 	key_file="$key_dir/web.key"
 	mkdir -p "$key_dir"
 	if [ ! -s "$key_file" ]; then
@@ -101,16 +101,15 @@ router_ip() {
 	printf '192.168.1.1'
 }
 
-install_file "usr/sbin/owrt-full-backup" 0755
-install_file "usr/sbin/owrt-full-backup-upload" 0755
-ln -sf owrt-full-backup "$(target_path usr/sbin/owrt-backup)"
+install_file "usr/sbin/owrt-remote" 0755
+install_file "etc/init.d/owrt-remote" 0755
 install_config
-install_file "www/cgi-bin/owrt-full-backup" 0755
-install_file "usr/share/luci/menu.d/luci-app-owrt-full-backup.json" 0644
-install_file "usr/share/rpcd/acl.d/luci-app-owrt-full-backup.json" 0644
-install_file "www/luci-static/resources/view/owrt_full_backup.js" 0644
-rm -f "$(target_path usr/lib/lua/luci/controller/owrt_full_backup.lua)" 2>/dev/null || true
+install_file "www/cgi-bin/owrt-remote" 0755
+install_file "usr/share/luci/menu.d/luci-app-owrt-remote.json" 0644
+install_file "usr/share/rpcd/acl.d/luci-app-owrt-remote.json" 0644
+install_file "www/luci-static/resources/view/owrt_remote.js" 0644
 
+rm -f "$(target_path usr/lib/lua/luci/controller/owrt_remote.lua)" 2>/dev/null || true
 rm -rf "$(target_path tmp/luci-indexcache)" "$(target_path tmp/luci-modulecache)" "$(target_path tmp/luci-indexcache.)"* "$(target_path tmp/luci-modulecache.)"* 2>/dev/null || true
 
 if [ -x "$(target_path etc/init.d/rpcd)" ]; then
@@ -124,7 +123,8 @@ fi
 key="$(make_key)"
 ip="$(router_ip)"
 
-info "Веб-панель OpenWrt Full Backup установлена."
-info "LuCI:   Службы -> OpenWrt Full Backup"
-info "Открыть: http://$ip/cgi-bin/owrt-full-backup?key=$key"
-info "CLI:    owrt-full-backup create -o /mnt/usb"
+info "OpenWrt Remote установлен."
+info "LuCI:   Службы -> OpenWrt Remote"
+info "Панель: http://$ip/cgi-bin/owrt-remote?key=$key"
+info "CLI:    owrt-remote doctor"
+

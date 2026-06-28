@@ -1,0 +1,378 @@
+#!/bin/sh
+
+KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
+AGENT="${AGENT:-/usr/sbin/owrt-remote}"
+PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
+RESULT_TITLE=""
+RESULT_BODY=""
+RESULT_KIND="info"
+
+cleanup() {
+	rm -f "$PARAMS_FILE"
+}
+
+trap cleanup EXIT INT TERM
+
+html_escape() {
+	sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'
+}
+
+h() {
+	printf '%s' "$1" | html_escape
+}
+
+url_decode() {
+	local data
+	data="$(printf '%s' "$1" | sed 's/+/ /g; s/%/\\x/g')"
+	printf '%b' "$data"
+}
+
+parse_params() {
+	local data old_ifs pair key value
+	data="$1"
+	old_ifs="$IFS"
+	IFS='&'
+	for pair in $data; do
+		key="${pair%%=*}"
+		value="${pair#*=}"
+		[ "$pair" = "$key" ] && value=""
+		key="$(url_decode "$key" | tr -d '\r\n\t')"
+		value="$(url_decode "$value" | tr '\r\n\t' '   ')"
+		[ -n "$key" ] && printf '%s\t%s\n' "$key" "$value" >>"$PARAMS_FILE"
+	done
+	IFS="$old_ifs"
+}
+
+param() {
+	awk -F '	' -v k="$1" '$1 == k { print $2; exit }' "$PARAMS_FILE"
+}
+
+has_param() {
+	awk -F '	' -v k="$1" '$1 == k { found = 1 } END { exit(found ? 0 : 1) }' "$PARAMS_FILE"
+}
+
+read_request() {
+	local post_data
+	: >"$PARAMS_FILE"
+	parse_params "${QUERY_STRING:-}"
+	case "${CONTENT_TYPE:-}" in
+		multipart/form-data*) return ;;
+	esac
+	if [ "${REQUEST_METHOD:-GET}" = "POST" ] && [ -n "${CONTENT_LENGTH:-}" ]; then
+		post_data="$(dd bs=1 count="$CONTENT_LENGTH" 2>/dev/null)"
+		parse_params "$post_data"
+	fi
+}
+
+http_html() {
+	printf 'Content-Type: text/html; charset=utf-8\r\n'
+	printf 'Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n'
+	printf 'Pragma: no-cache\r\n'
+	printf 'Expires: 0\r\n\r\n'
+}
+
+http_json() {
+	printf 'Content-Type: application/json; charset=utf-8\r\n'
+	printf 'Cache-Control: no-store\r\n\r\n'
+}
+
+web_key() {
+	cat "$KEY_FILE" 2>/dev/null
+}
+
+authorized() {
+	local expected supplied
+	expected="$(web_key)"
+	supplied="$(param key)"
+	[ -n "$expected" ] && [ "$supplied" = "$expected" ]
+}
+
+uci_get() {
+	local key default value
+	key="$1"
+	default="$2"
+	value="$(uci -q get "owrtremote.main.$key" 2>/dev/null || true)"
+	[ -n "$value" ] && {
+		printf '%s' "$value"
+		return
+	}
+	printf '%s' "$default"
+}
+
+uci_set() {
+	local key value
+	key="$1"
+	value="$2"
+	uci -q get owrtremote.main >/dev/null 2>&1 || uci set owrtremote.main=remote
+	uci set "owrtremote.main.$key=$value"
+}
+
+service_enabled() {
+	/etc/init.d/owrt-remote enabled >/dev/null 2>&1
+}
+
+xray_running() {
+	"$AGENT" status 2>/dev/null | grep -q '^xray_state: running'
+}
+
+set_result() {
+	RESULT_TITLE="$1"
+	RESULT_BODY="$2"
+	RESULT_KIND="${3:-info}"
+}
+
+save_config() {
+	local enabled field
+	if has_param enabled; then
+		enabled="1"
+	else
+		enabled="0"
+	fi
+	uci_set enabled "$enabled"
+
+	for field in router_id router_name role hub_url hub_token heartbeat_interval xray_bin xray_config vps_host vps_port vless_uuid vless_encryption vless_flow reverse_tag admin_host admin_port public_url; do
+		uci_set "$field" "$(param "$field")"
+	done
+	uci commit owrtremote
+	set_result "Настройки сохранены" "Если менял Xray или VPS-поля, перезапусти сервис." "ok"
+}
+
+run_action() {
+	local action output rc
+	action="$1"
+	output="${TMPDIR:-/tmp}/owrt-remote-action.$$"
+	rc=0
+	case "$action" in
+		start)
+			/etc/init.d/owrt-remote enable >"$output" 2>&1 || rc=$?
+			/etc/init.d/owrt-remote restart >>"$output" 2>&1 || rc=$?
+			set_result "Сервис запущен" "$(cat "$output")" "ok"
+			;;
+		stop)
+			/etc/init.d/owrt-remote stop >"$output" 2>&1 || rc=$?
+			/etc/init.d/owrt-remote disable >>"$output" 2>&1 || rc=$?
+			set_result "Сервис остановлен" "$(cat "$output")" "warn"
+			;;
+		restart)
+			/etc/init.d/owrt-remote restart >"$output" 2>&1 || rc=$?
+			set_result "Сервис перезапущен" "$(cat "$output")" "ok"
+			;;
+		heartbeat)
+			"$AGENT" heartbeat >"$output" 2>&1 || rc=$?
+			set_result "Heartbeat" "$(cat "$output")" "ok"
+			;;
+		doctor)
+			"$AGENT" doctor >"$output" 2>&1 || rc=$?
+			set_result "Проверка" "$(cat "$output")" "ok"
+			;;
+	esac
+	if [ "$rc" != "0" ]; then
+		set_result "$RESULT_TITLE" "$(cat "$output")" "bad"
+	fi
+	rm -f "$output"
+}
+
+field() {
+	local name label value type help
+	name="$1"
+	label="$2"
+	type="${3:-text}"
+	help="${4:-}"
+	value="$(uci_get "$name" '')"
+	printf '<label class="field"><span>%s</span>' "$(h "$label")"
+	printf '<input name="%s" type="%s" value="%s" autocomplete="off">' "$(h "$name")" "$(h "$type")" "$(h "$value")"
+	if [ -n "$help" ]; then
+		printf '<small>%s</small>' "$(h "$help")"
+	fi
+	printf '</label>'
+}
+
+metric() {
+	local label value tone
+	label="$1"
+	value="$2"
+	tone="${3:-}"
+	printf '<div class="metric %s"><span>%s</span><strong>%s</strong></div>' "$(h "$tone")" "$(h "$label")" "$(h "$value")"
+}
+
+render_unauthorized() {
+	http_html
+	cat <<'EOF'
+<!doctype html><html><head><meta charset="utf-8"><title>OpenWrt Remote</title></head>
+<body><h1>Доступ запрещен</h1><p>Открой панель из LuCI или по ссылке, которую показал install.sh.</p></body></html>
+EOF
+}
+
+render_page() {
+	local key router_id router_name hub_url vps_host service_state service_tone xray_state xray_tone enabled_checked status_text
+	key="$(param key)"
+	router_id="$(uci_get router_id main)"
+	router_name="$(uci_get router_name "$router_id")"
+	hub_url="$(uci_get hub_url '')"
+	vps_host="$(uci_get vps_host '')"
+
+	if service_enabled; then
+		service_state="enabled"
+		service_tone="good"
+	else
+		service_state="disabled"
+		service_tone="warn"
+	fi
+	if xray_running; then
+		xray_state="running"
+		xray_tone="good"
+	else
+		xray_state="stopped"
+		xray_tone="bad"
+	fi
+	if [ "$(uci_get enabled 0)" = "1" ]; then
+		enabled_checked="checked"
+		status_text="Агент включен"
+	else
+		enabled_checked=""
+		status_text="Агент выключен"
+	fi
+
+	http_html
+	cat <<EOF
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenWrt Remote</title>
+<style>
+:root{color-scheme:light;--bg:#f5f7fb;--panel:#fff;--text:#172033;--muted:#667085;--line:#d9e1ec;--blue:#2563eb;--green:#16a34a;--red:#dc2626;--amber:#d97706;--soft:#eef4ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:22px}.hero{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:20px 0 18px;border-bottom:1px solid var(--line)}
+.brand{display:flex;gap:14px;align-items:center}.mark{width:54px;height:54px;border-radius:8px;background:#0f766e;color:#fff;display:grid;place-items:center;font-weight:800;font-size:24px;box-shadow:0 12px 30px rgba(15,118,110,.22)}
+h1{margin:0;font-size:28px;letter-spacing:0}.sub{margin:4px 0 0;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 12px;color:var(--muted);white-space:nowrap}.dot{width:9px;height:9px;border-radius:50%;background:var(--amber)}.dot.good{background:var(--green)}.dot.bad{background:var(--red)}
+.grid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;margin-top:18px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;box-shadow:0 10px 28px rgba(20,35,60,.05)}
+.panel h2{font-size:18px;margin:0 0 12px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fafcff}.metric span{display:block;color:var(--muted);font-size:12px}.metric strong{display:block;margin-top:4px;font-size:18px;word-break:break-word}.metric.good strong{color:var(--green)}.metric.bad strong{color:var(--red)}.metric.warn strong{color:var(--amber)}
+form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.field{display:block}.field span{display:block;font-weight:650;margin-bottom:6px}.field input{width:100%;border:1px solid var(--line);border-radius:8px;background:#fff;padding:10px 11px;color:var(--text)}.field small{display:block;margin-top:5px;color:var(--muted)}
+.check{display:flex;gap:10px;align-items:center;margin-bottom:12px;font-weight:700}.check input{width:18px;height:18px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.btn{border:0;border-radius:8px;padding:10px 13px;font-weight:750;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;background:#e8eef8;color:#1f2a44}.btn.primary{background:var(--blue);color:#fff}.btn.good{background:var(--green);color:#fff}.btn.bad{background:#fee2e2;color:#991b1b}.btn.warn{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
+.notice{margin-top:16px;border-radius:8px;padding:12px;border:1px solid var(--line);background:#f8fbff;white-space:pre-wrap}.notice.ok{border-color:#bbf7d0;background:#f0fdf4}.notice.bad{border-color:#fecaca;background:#fef2f2}.notice.warn{border-color:#fed7aa;background:#fff7ed}
+.code{background:#101827;color:#d7e2f2;border-radius:8px;padding:12px;overflow:auto;min-height:120px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+@media(max-width:820px){.grid,.formgrid,.metrics{grid-template-columns:1fr}.hero{align-items:flex-start;flex-direction:column}.wrap{padding:14px}h1{font-size:24px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <section class="hero">
+    <div class="brand">
+      <div class="mark">R</div>
+      <div>
+        <h1>OpenWrt Remote</h1>
+        <p class="sub">$(h "$router_name") · $(h "$router_id") · $(h "$status_text")</p>
+      </div>
+    </div>
+    <div class="pill"><span class="dot $(h "$xray_tone")"></span>Xray: $(h "$xray_state")</div>
+  </section>
+
+  <section class="grid">
+    <div class="panel">
+      <h2>Состояние</h2>
+      <div class="metrics">
+EOF
+	metric "procd service" "$service_state" "$service_tone"
+	metric "xray tunnel" "$xray_state" "$xray_tone"
+	metric "VPS host" "${vps_host:-не задан}" ""
+	metric "Hub URL" "${hub_url:-не задан}" ""
+	cat <<EOF
+      </div>
+      <form method="post" class="actions">
+        <input type="hidden" name="key" value="$(h "$key")">
+        <button class="btn good" name="action" value="start">Запустить</button>
+        <button class="btn warn" name="action" value="restart">Перезапустить</button>
+        <button class="btn bad" name="action" value="stop">Остановить</button>
+        <button class="btn" name="action" value="heartbeat">Heartbeat</button>
+        <button class="btn" name="action" value="doctor">Проверка</button>
+        <a class="btn" href="?key=$(h "$key")&action=download_config">Скачать Xray config</a>
+      </form>
+EOF
+	if [ -n "$RESULT_TITLE" ]; then
+		printf '<div class="notice %s"><strong>%s</strong>\n%s</div>' "$(h "$RESULT_KIND")" "$(h "$RESULT_TITLE")" "$(h "$RESULT_BODY")"
+	fi
+	cat <<EOF
+    </div>
+
+    <div class="panel">
+      <h2>Шпаргалка</h2>
+      <div class="code">/etc/init.d/owrt-remote enable
+/etc/init.d/owrt-remote restart
+owrt-remote heartbeat
+owrt-remote status</div>
+    </div>
+  </section>
+
+  <section class="panel" style="margin-top:16px">
+    <h2>Настройки роутера</h2>
+    <form method="post">
+      <input type="hidden" name="key" value="$(h "$key")">
+      <label class="check"><input type="checkbox" name="enabled" value="1" $enabled_checked> Включить агент и автозапуск</label>
+      <div class="formgrid">
+EOF
+	field router_id "Router ID" text "Например main или office-1"
+	field router_name "Название" text "Будет видно на VPS-карточке"
+	field role "Роль" text "main для главного, node для остальных"
+	field public_url "Public URL" text "Можно оставить пустым, если используешь proxy через hub"
+	field hub_url "Hub URL" text "Например https://vps.example.com:8088"
+	field hub_token "Hub token" password "AGENT_TOKEN с VPS"
+	field heartbeat_interval "Heartbeat, секунд" number "Минимум 10"
+	field xray_bin "Xray binary" text "/usr/bin/xray"
+	field xray_config "Xray config" text "/etc/xray/owrt-remote-client.json"
+	field vps_host "VPS host" text "IP или домен VPS для Xray"
+	field vps_port "VPS Xray port" number "Обычно 8443"
+	field vless_uuid "VLESS UUID" text "Из карточки роутера на VPS"
+	field vless_encryption "VLESS encryption" text "По умолчанию none"
+	field vless_flow "VLESS flow" text "Обычно пусто"
+	field reverse_tag "Reverse tag" text "Обычно reverse-in"
+	field admin_host "Admin host" text "Обычно 127.0.0.1"
+	field admin_port "Admin port" number "LuCI/uhttpd обычно 80"
+	cat <<EOF
+      </div>
+      <div class="actions">
+        <button class="btn primary" name="action" value="save">Сохранить</button>
+        <button class="btn good" name="action" value="save_start">Сохранить и запустить</button>
+      </div>
+    </form>
+  </section>
+</main>
+</body>
+</html>
+EOF
+}
+
+read_request
+
+if ! authorized; then
+	render_unauthorized
+	exit 0
+fi
+
+action="$(param action)"
+
+if [ "$action" = "download_config" ]; then
+	http_json
+	"$AGENT" render-client --stdout 2>&1
+	exit 0
+fi
+
+if [ "${REQUEST_METHOD:-GET}" = "POST" ]; then
+	case "$action" in
+		save)
+			save_config
+			;;
+		save_start)
+			save_config
+			run_action start
+			;;
+		start|stop|restart|heartbeat|doctor)
+			run_action "$action"
+			;;
+	esac
+fi
+
+render_page
+

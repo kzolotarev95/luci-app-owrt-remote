@@ -13,19 +13,24 @@ rmf() {
 	rm -f "$(target_path "$1")"
 }
 
-rmf usr/sbin/owrt-full-backup
-rmf usr/sbin/owrt-full-backup-upload
-rmf usr/sbin/owrt-backup
-rmf www/cgi-bin/owrt-full-backup
-rmf usr/lib/lua/luci/controller/owrt_full_backup.lua
-rmf usr/share/luci/menu.d/luci-app-owrt-full-backup.json
-rmf usr/share/rpcd/acl.d/luci-app-owrt-full-backup.json
-rmf www/luci-static/resources/view/owrt_full_backup.js
+if [ -x "$(target_path etc/init.d/owrt-remote)" ]; then
+	"$(target_path etc/init.d/owrt-remote)" stop >/dev/null 2>&1 || true
+	"$(target_path etc/init.d/owrt-remote)" disable >/dev/null 2>&1 || true
+fi
+
+rmf usr/sbin/owrt-remote
+rmf etc/init.d/owrt-remote
+rmf www/cgi-bin/owrt-remote
+rmf usr/lib/lua/luci/controller/owrt_remote.lua
+rmf usr/share/luci/menu.d/luci-app-owrt-remote.json
+rmf usr/share/rpcd/acl.d/luci-app-owrt-remote.json
+rmf www/luci-static/resources/view/owrt_remote.js
 
 if [ "$PURGE" = "1" ]; then
-	rmf etc/config/fullbackup
-	rmf etc/owrt-full-backup/web.key
-	rmdir "$(target_path etc/owrt-full-backup)" 2>/dev/null || true
+	rmf etc/config/owrtremote
+	rmf etc/owrt-remote/web.key
+	rm -f "$(target_path etc/xray/owrt-remote-client.json)" 2>/dev/null || true
+	rmdir "$(target_path etc/owrt-remote)" 2>/dev/null || true
 fi
 
 rm -rf "$(target_path tmp/luci-indexcache)" "$(target_path tmp/luci-modulecache)" "$(target_path tmp/luci-indexcache.)"* "$(target_path tmp/luci-modulecache.)"* 2>/dev/null || true
@@ -38,7 +43,8 @@ if [ -x "$(target_path etc/init.d/uhttpd)" ]; then
 	"$(target_path etc/init.d/uhttpd)" reload >/dev/null 2>&1 || "$(target_path etc/init.d/uhttpd)" restart >/dev/null 2>&1 || true
 fi
 
-printf '%s\n' "Веб-панель OpenWrt Full Backup удалена."
+printf '%s\n' "OpenWrt Remote удален."
 if [ "$PURGE" != "1" ]; then
-	printf '%s\n' "Конфиг и веб-ключ оставлены. Для полного удаления запусти с PURGE=1."
+	printf '%s\n' "Конфиг и web key оставлены. Для полного удаления запусти с PURGE=1."
 fi
+

@@ -1,0 +1,428 @@
+#!/bin/sh
+
+CONFIG="owrtremote"
+SECTION="main"
+
+log() {
+	printf '%s\n' "$*" >&2
+}
+
+die() {
+	printf 'ОШИБКА: %s\n' "$*" >&2
+	exit 1
+}
+
+usage() {
+	cat <<'EOF'
+Использование:
+  owrt-remote status
+  owrt-remote doctor
+  owrt-remote render-client [--stdout]
+  owrt-remote run
+  owrt-remote heartbeat
+  owrt-remote heartbeat-loop
+
+Настройки лежат в /etc/config/owrtremote.
+EOF
+}
+
+uci_get() {
+	local key default value
+	key="$1"
+	default="$2"
+	value="$(uci -q get "$CONFIG.$SECTION.$key" 2>/dev/null || true)"
+	[ -n "$value" ] && {
+		printf '%s' "$value"
+		return
+	}
+	printf '%s' "$default"
+}
+
+truthy() {
+	case "$1" in
+		1|yes|true|on|enabled) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+json_escape() {
+	printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/	/\\t/g'
+}
+
+json_string() {
+	printf '"%s"' "$(json_escape "$1")"
+}
+
+safe_num() {
+	case "$1" in
+		''|*[!0-9]*) printf '%s' "$2" ;;
+		*) printf '%s' "$1" ;;
+	esac
+}
+
+safe_id() {
+	printf '%s' "$1" | tr -cs 'A-Za-z0-9._-' '-'
+}
+
+host_model() {
+	if [ -r /tmp/sysinfo/model ]; then
+		cat /tmp/sysinfo/model
+		return
+	fi
+	if [ -r /proc/device-tree/model ]; then
+		tr -d '\000' </proc/device-tree/model
+		return
+	fi
+	printf 'OpenWrt router'
+}
+
+board_name() {
+	if [ -r /tmp/sysinfo/board_name ]; then
+		cat /tmp/sysinfo/board_name
+		return
+	fi
+	printf 'unknown'
+}
+
+release_text() {
+	if [ -r /etc/openwrt_release ]; then
+		(
+			. /etc/openwrt_release 2>/dev/null
+			printf '%s %s' "${DISTRIB_ID:-OpenWrt}" "${DISTRIB_RELEASE:-unknown}"
+		)
+		return
+	fi
+	printf 'OpenWrt unknown'
+}
+
+uptime_seconds() {
+	if [ -r /proc/uptime ]; then
+		cut -d. -f1 /proc/uptime
+		return
+	fi
+	printf '0'
+}
+
+load_text() {
+	if [ -r /proc/loadavg ]; then
+		awk '{print $1" "$2" "$3}' /proc/loadavg
+		return
+	fi
+	printf '0 0 0'
+}
+
+memory_text() {
+	if [ -r /proc/meminfo ]; then
+		awk '
+			/^MemTotal:/ { total=$2 }
+			/^MemAvailable:/ { avail=$2 }
+			/^MemFree:/ && avail=="" { avail=$2 }
+			END {
+				if (total == "") total = 0
+				if (avail == "") avail = 0
+				printf "%s/%s kB", avail, total
+			}
+		' /proc/meminfo
+		return
+	fi
+	printf '0/0 kB'
+}
+
+ps_all() {
+	ps w 2>/dev/null || ps 2>/dev/null || true
+}
+
+xray_running() {
+	local config
+	config="$(uci_get xray_config /etc/xray/owrt-remote-client.json)"
+	ps_all | grep '[x]ray' | grep -F "$config" >/dev/null 2>&1
+}
+
+service_enabled() {
+	/etc/init.d/owrt-remote enabled >/dev/null 2>&1
+}
+
+render_client_config() {
+	local out stdout router_id vps_host vps_port uuid encryption flow reverse_tag admin_host admin_port xray_config
+	stdout="0"
+	if [ "${1:-}" = "--stdout" ]; then
+		stdout="1"
+	fi
+
+	router_id="$(safe_id "$(uci_get router_id main)")"
+	vps_host="$(uci_get vps_host '')"
+	vps_port="$(safe_num "$(uci_get vps_port 8443)" 8443)"
+	uuid="$(uci_get vless_uuid '')"
+	encryption="$(uci_get vless_encryption none)"
+	flow="$(uci_get vless_flow '')"
+	reverse_tag="$(safe_id "$(uci_get reverse_tag reverse-in)")"
+	admin_host="$(uci_get admin_host 127.0.0.1)"
+	admin_port="$(safe_num "$(uci_get admin_port 80)" 80)"
+	xray_config="$(uci_get xray_config /etc/xray/owrt-remote-client.json)"
+
+	[ -n "$vps_host" ] || die "vps_host пустой"
+	[ -n "$uuid" ] || die "vless_uuid пустой"
+
+	out="${TMPDIR:-/tmp}/owrt-remote-client.$$"
+	cat >"$out" <<EOF
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [],
+  "outbounds": [
+    {
+      "tag": "router-admin",
+      "protocol": "freedom",
+      "settings": {
+        "redirect": "$(json_escape "$admin_host"):$admin_port",
+        "finalRules": [
+          {
+            "action": "allow",
+            "network": "tcp",
+            "ip": "$(json_escape "$admin_host")",
+            "port": "$admin_port"
+          }
+        ]
+      }
+    },
+    {
+      "tag": "$(json_escape "$reverse_tag")",
+      "protocol": "vless",
+      "settings": {
+        "address": "$(json_escape "$vps_host")",
+        "port": $vps_port,
+        "id": "$(json_escape "$uuid")",
+        "encryption": "$(json_escape "$encryption")",
+        "flow": "$(json_escape "$flow")",
+        "reverse": {
+          "tag": "$(json_escape "$reverse_tag")"
+        }
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "none"
+      }
+    }
+  ],
+  "routing": {
+    "rules": [
+      {
+        "inboundTag": [
+          "$(json_escape "$reverse_tag")"
+        ],
+        "outboundTag": "router-admin"
+      }
+    ]
+  },
+  "remarks": "OpenWrt Remote client for $(json_escape "$router_id")"
+}
+EOF
+
+	if [ "$stdout" = "1" ]; then
+		cat "$out"
+		rm -f "$out"
+		return
+	fi
+
+	mkdir -p "$(dirname "$xray_config")"
+	cp "$out" "$xray_config"
+	chmod 0600 "$xray_config"
+	rm -f "$out"
+	printf '%s\n' "$xray_config"
+}
+
+run_xray() {
+	local enabled xray_bin xray_config
+	enabled="$(uci_get enabled 0)"
+	truthy "$enabled" || die "сервис выключен: включи option enabled '1'"
+
+	xray_bin="$(uci_get xray_bin /usr/bin/xray)"
+	xray_config="$(render_client_config)"
+	[ -x "$xray_bin" ] || die "xray не найден или не исполняемый: $xray_bin"
+
+	if "$xray_bin" help 2>/dev/null | grep -q 'run'; then
+		exec "$xray_bin" run -config "$xray_config"
+	fi
+	exec "$xray_bin" -config "$xray_config"
+}
+
+heartbeat_json() {
+	local router_id router_name role public_url hub_url xray_state service_state
+	router_id="$(safe_id "$(uci_get router_id main)")"
+	router_name="$(uci_get router_name "$router_id")"
+	role="$(uci_get role node)"
+	public_url="$(uci_get public_url '')"
+	hub_url="$(uci_get hub_url '')"
+
+	if xray_running; then
+		xray_state="running"
+	else
+		xray_state="stopped"
+	fi
+	if service_enabled; then
+		service_state="enabled"
+	else
+		service_state="disabled"
+	fi
+
+	cat <<EOF
+{
+  "id": $(json_string "$router_id"),
+  "name": $(json_string "$router_name"),
+  "role": $(json_string "$role"),
+  "model": $(json_string "$(host_model)"),
+  "board": $(json_string "$(board_name)"),
+  "release": $(json_string "$(release_text)"),
+  "hostname": $(json_string "$(hostname 2>/dev/null || printf openwrt)"),
+  "public_url": $(json_string "$public_url"),
+  "admin_host": $(json_string "$(uci_get admin_host 127.0.0.1)"),
+  "admin_port": $(safe_num "$(uci_get admin_port 80)" 80),
+  "hub_url": $(json_string "$hub_url"),
+  "uptime": $(safe_num "$(uptime_seconds)" 0),
+  "load": $(json_string "$(load_text)"),
+  "memory": $(json_string "$(memory_text)"),
+  "xray": $(json_string "$xray_state"),
+  "service": $(json_string "$service_state")
+}
+EOF
+}
+
+post_json() {
+	local url token file
+	url="$1"
+	token="$2"
+	file="$3"
+
+	if command -v uclient-fetch >/dev/null 2>&1; then
+		uclient-fetch -q -O - \
+			--header="Authorization: Bearer $token" \
+			--header="Content-Type: application/json" \
+			--post-file="$file" "$url"
+		return
+	fi
+	if command -v wget >/dev/null 2>&1; then
+		wget -q -O - \
+			--header="Authorization: Bearer $token" \
+			--header="Content-Type: application/json" \
+			--post-file="$file" "$url"
+		return
+	fi
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsS \
+			-H "Authorization: Bearer $token" \
+			-H "Content-Type: application/json" \
+			--data-binary "@$file" "$url"
+		return
+	fi
+	die "для heartbeat нужен uclient-fetch, wget или curl"
+}
+
+send_heartbeat() {
+	local hub_url token endpoint tmp
+	hub_url="$(uci_get hub_url '')"
+	token="$(uci_get hub_token '')"
+	[ -n "$hub_url" ] || die "hub_url пустой"
+	[ -n "$token" ] || die "hub_token пустой"
+
+	endpoint="${hub_url%/}/api/heartbeat"
+	tmp="${TMPDIR:-/tmp}/owrt-remote-heartbeat.$$"
+	heartbeat_json >"$tmp"
+	post_json "$endpoint" "$token" "$tmp"
+	rm -f "$tmp"
+}
+
+heartbeat_loop() {
+	local interval
+	interval="$(safe_num "$(uci_get heartbeat_interval 30)" 30)"
+	[ "$interval" -lt 10 ] && interval=10
+	while :; do
+		send_heartbeat >/dev/null 2>&1 || true
+		sleep "$interval"
+	done
+}
+
+status() {
+	printf 'router_id: %s\n' "$(uci_get router_id main)"
+	printf 'router_name: %s\n' "$(uci_get router_name '')"
+	printf 'enabled: %s\n' "$(uci_get enabled 0)"
+	printf 'hub_url: %s\n' "$(uci_get hub_url '')"
+	printf 'vps_host: %s\n' "$(uci_get vps_host '')"
+	printf 'vps_port: %s\n' "$(uci_get vps_port 8443)"
+	printf 'xray_bin: %s\n' "$(uci_get xray_bin /usr/bin/xray)"
+	printf 'xray_config: %s\n' "$(uci_get xray_config /etc/xray/owrt-remote-client.json)"
+	if xray_running; then
+		printf 'xray_state: running\n'
+	else
+		printf 'xray_state: stopped\n'
+	fi
+	if service_enabled; then
+		printf 'service: enabled\n'
+	else
+		printf 'service: disabled\n'
+	fi
+}
+
+doctor() {
+	local ok xray_bin
+	ok=1
+	xray_bin="$(uci_get xray_bin /usr/bin/xray)"
+
+	[ -x "$xray_bin" ] || {
+		log "нет Xray: $xray_bin"
+		ok=0
+	}
+	[ -n "$(uci_get hub_url '')" ] || {
+		log "hub_url пустой"
+		ok=0
+	}
+	[ -n "$(uci_get hub_token '')" ] || {
+		log "hub_token пустой"
+		ok=0
+	}
+	[ -n "$(uci_get vps_host '')" ] || {
+		log "vps_host пустой"
+		ok=0
+	}
+	[ -n "$(uci_get vless_uuid '')" ] || {
+		log "vless_uuid пустой"
+		ok=0
+	}
+
+	if [ "$ok" = "1" ]; then
+		printf '%s\n' "OK: конфиг выглядит готовым"
+	else
+		exit 1
+	fi
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+	help|-h|--help)
+		usage
+		;;
+	status)
+		status
+		;;
+	doctor)
+		doctor
+		;;
+	render-client)
+		render_client_config "$@"
+		;;
+	run)
+		run_xray
+		;;
+	heartbeat)
+		send_heartbeat
+		;;
+	heartbeat-loop)
+		heartbeat_loop
+		;;
+	*)
+		usage >&2
+		exit 2
+		;;
+esac
