@@ -426,21 +426,23 @@ def dashboard_html(routers, token):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{APP_NAME}</title>
 <style>
-:root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.88);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.24);--blue:#7c3aed;--green:#22c55e;--red:#fb7185;--amber:#f59e0b;--teal:#a855f7;--grid:rgba(168,85,247,.16)}}
-*{{box-sizing:border-box}}body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radial-gradient(circle at 12% 8%,rgba(168,85,247,.38),transparent 31%),radial-gradient(circle at 82% 12%,rgba(79,70,229,.30),transparent 30%),radial-gradient(circle at 50% 105%,rgba(236,72,153,.20),transparent 35%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-size:120% 120%,130% 130%,125% 125%,100% 100%,31px 31px,31px 31px;background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;animation:bgFlow 18s ease-in-out infinite alternate}}
-@keyframes bgFlow{{0%{{background-position:0% 0%,100% 0%,50% 100%,0 0,0 0,0 0}}50%{{background-position:18% 12%,72% 18%,42% 88%,0 0,10px 18px,18px 10px}}100%{{background-position:34% 20%,58% 30%,66% 74%,0 0,22px 4px,4px 22px}}}}
-.wrap{{max-width:1220px;margin:0 auto;padding:22px}}.top{{display:flex;align-items:center;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding:4px 0 18px}}
+:root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.88);--panel2:rgba(255,255,255,.07);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.25);--blue:#7c3aed;--green:#22c55e;--red:#fb7185;--amber:#f59e0b;--cyan:#22d3ee;--teal:#a855f7;--grid:rgba(168,85,247,.14)}}
+*{{box-sizing:border-box}}body{{position:relative;min-height:100vh;margin:0;overflow-x:hidden;background-color:var(--bg);background-image:radial-gradient(circle at 12% 8%,rgba(168,85,247,.46),transparent 31%),radial-gradient(circle at 82% 12%,rgba(79,70,229,.38),transparent 30%),radial-gradient(circle at 50% 105%,rgba(236,72,153,.26),transparent 35%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-size:130% 130%,140% 140%,135% 135%,100% 100%,31px 31px,31px 31px;background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;animation:bgFlow 28s ease-in-out infinite alternate}}
+body::before{{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none;background:conic-gradient(from 0deg at 50% 50%,rgba(168,85,247,.05),rgba(236,72,153,.34),rgba(59,130,246,.22),rgba(245,158,11,.13),rgba(168,85,247,.05));filter:blur(54px);opacity:.7;animation:auraSpin 38s linear infinite}}
+@keyframes bgFlow{{0%{{background-position:0% 0%,100% 0%,50% 100%,0 0,0 0,0 0}}50%{{background-position:28% 18%,62% 26%,38% 82%,0 0,15px 24px,24px 15px}}100%{{background-position:48% 28%,42% 42%,74% 62%,0 0,30px 0,0 30px}}}}
+@keyframes auraSpin{{from{{transform:rotate(0deg) scale(1)}}to{{transform:rotate(360deg) scale(1.08)}}}}
+.wrap{{position:relative;z-index:1;max-width:1220px;margin:0 auto;padding:22px}}.top{{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding:20px 0 18px}}
 .brand{{display:flex;align-items:center;gap:14px}}
-h1{{margin:0;font-size:29px;letter-spacing:0}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}}.links a{{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;padding:5px 10px;text-decoration:none;font-weight:750}}.headerActions{{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}}.badge{{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 12px;color:var(--muted);white-space:nowrap}}
-.dot{{width:9px;height:9px;border-radius:999px;background:var(--red)}}.dot.on{{background:var(--green)}}.toolbar{{display:grid;grid-template-columns:1fr 1fr 110px 110px 150px auto;gap:10px;margin:18px 0;padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:8px}}
-input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:rgba(8,5,18,.72);color:var(--text)}}button,.btn{{border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 13px;background:rgba(255,255,255,.10);color:#f7f2ff;font-weight:800;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}button.primary,.btn.primary{{background:var(--blue);color:#fff}}button.bad{{background:rgba(251,113,133,.18);color:#fecdd3}}
-.cards{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:15px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}}
-.cardHead{{display:flex;gap:12px;align-items:flex-start;justify-content:space-between}}.routerIcon{{min-width:46px;height:46px;padding:0 8px;border-radius:8px;background:#eef6ff;color:#1d4ed8;display:grid;place-items:center;font-weight:900;font-size:12px;border:1px solid #dbeafe}}
-.title{{display:flex;gap:10px;align-items:center;min-width:0}}.title h2{{font-size:18px;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.role{{border:1px solid var(--line);border-radius:999px;padding:3px 8px;color:var(--muted);font-size:12px;background:#fbfdff}}
-.state{{display:flex;align-items:center;gap:7px;font-weight:800}}.state.off{{color:var(--red)}}.state.on{{color:var(--green)}}.meta{{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:14px 0}}.metric{{border:1px solid var(--line);border-radius:8px;padding:10px;background:rgba(255,255,255,.06)}}.metric span{{display:block;color:var(--muted);font-size:12px}}.metric strong{{display:block;margin-top:3px;word-break:break-word}}
-.actions{{display:flex;gap:8px;flex-wrap:wrap}}.empty{{border:1px dashed var(--line);border-radius:8px;padding:30px;background:var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
-@media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}}}
-@media(max-width:680px){{.wrap{{padding:14px}}.cards,.toolbar{{grid-template-columns:1fr}}.top{{align-items:flex-start;flex-direction:column}}.headerActions{{justify-content:flex-start}}h1{{font-size:24px}}}}
+h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}.links{{margin-top:8px}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{justify-content:flex-end;padding-top:42px}}.badge{{background:var(--panel);color:var(--muted)}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
+.toolbar{{display:grid;grid-template-columns:1fr 1fr 110px 110px 150px auto;gap:10px;margin:18px 0;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px)}}
+input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:rgba(8,5,18,.72);color:var(--text)}}button,.btn{{border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:10px 13px;background:rgba(255,255,255,.10);color:#f7f2ff;font-weight:850;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}button.primary,.btn.primary{{background:var(--blue);color:#fff;box-shadow:0 10px 22px rgba(124,58,237,.22)}}button.bad,.btn.bad{{background:rgba(251,113,133,.16);color:#fecdd3}}.btn.good{{background:rgba(34,197,94,.16);color:#bbf7d0}}.btn.disabled{{opacity:.45;cursor:not-allowed}}
+.sectionHead{{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:24px 0 14px}}.sectionHead h2{{margin:0;font-size:22px}}.sectionHead p{{margin:3px 0 0;color:var(--muted)}}.summary{{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}}.miniStat{{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.07);padding:8px 12px;color:#ddd6fe;font-weight:750;white-space:nowrap}}
+.cards{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{position:relative;min-height:246px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}}.card::before{{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--green)}}.card.off::before{{background:var(--red)}}.card.warn::before{{background:var(--amber)}}.card.main{{grid-column:span 2}}
+.cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}.routerMark{{display:grid;place-items:center;width:46px;height:46px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08)}}.routerIcon{{position:relative;width:28px;height:18px;border:2px solid #ddd6fe;border-radius:5px}}.routerIcon::before,.routerIcon::after{{content:"";position:absolute;top:-9px;width:9px;height:9px;border-top:2px solid #ddd6fe}}.routerIcon::before{{left:2px;transform:rotate(-34deg)}}.routerIcon::after{{right:2px;transform:rotate(34deg)}}.routerIcon span{{position:absolute;left:5px;right:5px;bottom:4px;display:flex;justify-content:space-between}}.routerIcon span::before,.routerIcon span::after{{content:"";width:4px;height:4px;border-radius:50%;background:#ddd6fe}}
+.status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);padding:7px 10px;font-weight:850;font-size:12px}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green)}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red)}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
+.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+@media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{padding-top:0;justify-content:flex-start}}}}
+@media(max-width:680px){{.wrap{{padding:14px}}.cards,.toolbar{{grid-template-columns:1fr}}.card.main{{grid-column:span 1}}.top,.sectionHead{{align-items:flex-start;flex-direction:column}}.headerActions,.summary{{justify-content:flex-start}}.links a,.badge{{width:100%;min-width:0}}h1{{font-size:24px}}}}
 </style>
 </head>
 <body>
@@ -470,6 +472,18 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <button class="primary">Добавить</button>
   </form>
 
+  <section class="sectionHead">
+    <div>
+      <h2>Карточки роутеров</h2>
+      <p>Главный роутер и подключенные точки с живым online/offline.</p>
+    </div>
+    <div class="summary">
+      <div class="miniStat" id="statTotal">0 роутеров</div>
+      <div class="miniStat" id="statOnline">0 онлайн</div>
+      <div class="miniStat" id="statOffline">0 оффлайн</div>
+    </div>
+  </section>
+
   <section id="cards" class="cards"></section>
   <div class="hint muted">После добавления роутера открой <code>OpenWrt config</code>, вставь команды на роутере и перегенерируй server Xray config командой <code>owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json</code>.</div>
 </main>
@@ -487,40 +501,67 @@ function ago(iso) {{
   return Math.floor(diff / 3600) + ' h ago';
 }}
 
+function setSummary(list) {{
+  const total = list.length;
+  const online = list.filter(r => r.online).length;
+  document.getElementById('statTotal').textContent = total + ' ' + plural(total, 'роутер', 'роутера', 'роутеров');
+  document.getElementById('statOnline').textContent = online + ' онлайн';
+  document.getElementById('statOffline').textContent = (total - online) + ' оффлайн';
+}}
+
+function plural(n, one, two, five) {{
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return two;
+  return five;
+}}
+
 function render(list) {{
+  setSummary(list);
   if (!list.length) {{
     cards.innerHTML = '<div class="empty">Пока нет роутеров. Добавь первый, например <b>main</b>.</div>';
     return;
   }}
   cards.innerHTML = list.map(r => {{
-    const state = r.online ? 'on' : 'off';
-    const stateText = r.online ? 'online' : 'offline';
-    const model = (r.status && r.status.model) || r.status?.board || 'OpenWrt';
+    const role = String(r.role || 'node');
+    const isMain = role === 'main';
+    const online = Boolean(r.online);
+    const stateClass = online ? 'on' : 'off';
+    const stateText = online ? 'Онлайн' : 'Оффлайн';
+    const model = (r.status && (r.status.model || r.status.board)) || 'OpenWrt';
     const release = (r.status && r.status.release) || 'waiting heartbeat';
     const xray = (r.status && r.status.xray) || 'unknown';
     const access = r.public_url || (r.access_url + '?' + tokenParam());
-    return `<article class="card">
-      <div class="cardHead">
-        <div class="title">
-          <div class="routerIcon">OWRT</div>
-          <div>
-            <h2>${{escapeHtml(r.name)}}</h2>
-            <div class="muted">${{escapeHtml(r.id)}} · <span class="role">${{escapeHtml(r.role)}}</span></div>
-          </div>
-        </div>
-        <div class="state ${{state}}"><span class="dot ${{state === 'on' ? 'on' : ''}}"></span>${{stateText}}</div>
+    const tags = [
+      isMain ? 'главный' : 'node',
+      r.entry_port ? 'entry ' + r.entry_port : '',
+      r.reverse_tag || '',
+      (r.admin_host || '127.0.0.1') + ':' + (r.admin_port || 80)
+    ].filter(Boolean).slice(0, 4);
+    const tagHtml = tags.map(t => `<span class="tag">${{escapeHtml(t)}}</span>`).join('');
+    const adminButton = online
+      ? `<a class="btn primary" href="${{escapeAttr(access)}}">Админка</a>`
+      : `<span class="btn primary disabled">Админка</span>`;
+    return `<article class="card ${{isMain ? 'main' : ''}} ${{online ? '' : 'off'}}">
+      <div class="cardTop">
+        <div class="routerMark"><div class="routerIcon"><span></span></div></div>
+        <div class="status ${{stateClass}}"><i></i>${{stateText}}</div>
       </div>
-      <div class="meta">
-        <div class="metric"><span>Model</span><strong>${{escapeHtml(model)}}</strong></div>
+      <div class="name">${{escapeHtml(r.name)}}</div>
+      <div class="metaLine">ID: ${{escapeHtml(r.id)}} · роль: ${{escapeHtml(role)}}</div>
+      <div class="tagRow">${{tagHtml}}</div>
+      <div class="metrics">
+        <div class="metric"><span>Модель</span><strong>${{escapeHtml(model)}}</strong></div>
         <div class="metric"><span>OpenWrt</span><strong>${{escapeHtml(release)}}</strong></div>
         <div class="metric"><span>Xray</span><strong>${{escapeHtml(xray)}}</strong></div>
-        <div class="metric"><span>Last seen</span><strong>${{escapeHtml(ago(r.last_seen_iso))}}</strong></div>
+        <div class="metric"><span>Был на связи</span><strong>${{escapeHtml(ago(r.last_seen_iso))}}</strong></div>
       </div>
       <div class="actions">
-        <a class="btn primary" href="${{access}}">Открыть админку</a>
-        <a class="btn" href="${{r.config_url}}?${{tokenParam()}}">OpenWrt config</a>
-        <a class="btn" href="${{r.xray_client_url}}?${{tokenParam()}}">Client JSON</a>
-        <button class="bad" data-delete="${{escapeHtml(r.id)}}">Удалить</button>
+        ${{adminButton}}
+        <a class="btn good" href="${{escapeAttr(r.config_url)}}?${{tokenParam()}}">OpenWrt config</a>
+        <a class="btn" href="${{escapeAttr(r.xray_client_url)}}?${{tokenParam()}}">Client JSON</a>
+        <button class="bad" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
     </article>`;
   }}).join('');
@@ -528,6 +569,10 @@ function render(list) {{
 
 function escapeHtml(s) {{
   return String(s ?? '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));
+}}
+
+function escapeAttr(s) {{
+  return escapeHtml(s);
 }}
 
 async function loadRouters() {{
