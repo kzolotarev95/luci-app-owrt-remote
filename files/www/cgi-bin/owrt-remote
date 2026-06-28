@@ -2,7 +2,7 @@
 
 KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
 AGENT="${AGENT:-/usr/sbin/owrt-remote}"
-OWRT_REMOTE_UI_VERSION="2026-06-29-vpn-single-v9"
+OWRT_REMOTE_UI_VERSION="2026-06-29-header-row-v10"
 PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
 RESULT_TITLE=""
 RESULT_BODY=""
@@ -251,7 +251,7 @@ body::before{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none;
 @keyframes auraSpin{from{transform:rotate(0deg) scale(1)}to{transform:rotate(360deg) scale(1.08)}}
 .wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:22px}.hero{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:20px 0 18px;border-bottom:1px solid var(--line)}
 .brand{display:flex;gap:14px;align-items:center}.titleRow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-h1{margin:0;font-size:28px;letter-spacing:0}.sub{margin:4px 0 0;color:var(--muted)}.topActions,.links{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.links{margin-top:8px}.vpnCard{display:inline-flex;align-items:center}.uiPill{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;width:132px;min-width:132px;min-height:36px;padding:8px 14px;box-sizing:border-box;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}.nethaven{border-color:rgba(34,211,238,.46);background:linear-gradient(110deg,rgba(14,165,233,.22),rgba(168,85,247,.24),rgba(34,197,94,.16));color:#ecfeff;box-shadow:0 14px 32px rgba(14,165,233,.18)}.nethaven::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transform:translateX(-120%);animation:bannerShine 5.8s ease-in-out infinite}.nethaven span{position:relative}.nethavenDot{position:relative;width:8px;height:8px;border-radius:50%;background:#22d3ee;box-shadow:0 0 14px #22d3ee;animation:pulseDot 2.8s ease-in-out infinite}.returnCard{display:inline-flex}.backBtn{width:auto;min-width:208px;background:#f59e0b;color:#160f06;box-shadow:0 10px 22px rgba(245,158,11,.22)}
+h1{margin:0;font-size:28px;letter-spacing:0}.sub{margin:4px 0 0;color:var(--muted)}.topActions,.links{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.topActions{justify-content:flex-end}.links{margin:0}.vpnCard{display:inline-flex;align-items:center}.uiPill{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;width:132px;min-width:132px;min-height:36px;padding:8px 14px;box-sizing:border-box;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}.nethaven{border-color:rgba(34,211,238,.46);background:linear-gradient(110deg,rgba(14,165,233,.22),rgba(168,85,247,.24),rgba(34,197,94,.16));color:#ecfeff;box-shadow:0 14px 32px rgba(14,165,233,.18)}.nethaven::before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transform:translateX(-120%);animation:bannerShine 5.8s ease-in-out infinite}.nethaven span{position:relative}.nethavenDot{position:relative;width:8px;height:8px;border-radius:50%;background:#22d3ee;box-shadow:0 0 14px #22d3ee;animation:pulseDot 2.8s ease-in-out infinite}.returnCard{display:inline-flex}.backBtn{width:auto;min-width:208px;background:#f59e0b;color:#160f06;box-shadow:0 10px 22px rgba(245,158,11,.22)}
 @keyframes bannerShine{0%,42%{transform:translateX(-120%)}70%,100%{transform:translateX(120%)}}@keyframes pulseDot{0%,100%{transform:scale(1);opacity:.72}50%{transform:scale(1.35);opacity:1}}
 .pill{min-width:118px;background:var(--panel);color:var(--muted)}.dot{width:9px;height:9px;border-radius:50%;background:var(--amber)}.dot.good{background:var(--green)}.dot.bad{background:var(--red)}
 .grid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;margin-top:18px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}
@@ -272,13 +272,11 @@ form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr
         <div class="titleRow">
           <h1>Wrt Удаленный доступ извне</h1>
         </div>
-        <div class="links">
-          <a class="uiPill" href="https://t.me/kzolotarev95" target="_blank" rel="noopener noreferrer">Telegram</a>
-          <a class="uiPill" href="https://github.com/kzolotarev95" target="_blank" rel="noopener noreferrer">GitHub</a>
-        </div>
       </div>
     </div>
     <div class="topActions">
+      <a class="uiPill" href="https://t.me/kzolotarev95" target="_blank" rel="noopener noreferrer">Telegram</a>
+      <a class="uiPill" href="https://github.com/kzolotarev95" target="_blank" rel="noopener noreferrer">GitHub</a>
       <div class="vpnCard">
           <a class="uiPill nethaven" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">
             <span class="nethavenDot"></span>
