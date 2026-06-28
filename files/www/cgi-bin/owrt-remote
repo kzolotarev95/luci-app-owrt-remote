@@ -2,7 +2,7 @@
 
 KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
 AGENT="${AGENT:-/usr/sbin/owrt-remote}"
-OWRT_REMOTE_UI_VERSION="2026-06-29-field-help-v3"
+OWRT_REMOTE_UI_VERSION="2026-06-29-tooltips-bg-v4"
 PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
 RESULT_TITLE=""
 RESULT_BODY=""
@@ -242,18 +242,20 @@ render_page() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="owrt-remote-ui-version" content="$OWRT_REMOTE_UI_VERSION">
-<title>OpenWrt Remote</title>
+<title>Wrt Удаленный доступ извне</title>
 <style>
 :root{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.88);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.24);--blue:#7c3aed;--green:#22c55e;--red:#fb7185;--amber:#f59e0b;--teal:#a855f7;--grid:rgba(168,85,247,.16)}
-*{box-sizing:border-box}body{min-height:100vh;margin:0;background-color:var(--bg);background-image:radial-gradient(circle at 12% 8%,rgba(168,85,247,.38),transparent 31%),radial-gradient(circle at 82% 12%,rgba(79,70,229,.30),transparent 30%),radial-gradient(circle at 50% 105%,rgba(236,72,153,.20),transparent 35%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-size:120% 120%,130% 130%,125% 125%,100% 100%,31px 31px,31px 31px;background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;animation:bgFlow 18s ease-in-out infinite alternate}
-@keyframes bgFlow{0%{background-position:0% 0%,100% 0%,50% 100%,0 0,0 0,0 0}50%{background-position:18% 12%,72% 18%,42% 88%,0 0,10px 18px,18px 10px}100%{background-position:34% 20%,58% 30%,66% 74%,0 0,22px 4px,4px 22px}}
-.wrap{max-width:1180px;margin:0 auto;padding:22px}.hero{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:20px 0 18px;border-bottom:1px solid var(--line)}
+*{box-sizing:border-box}body{position:relative;min-height:100vh;margin:0;overflow-x:hidden;background-color:var(--bg);background-image:radial-gradient(circle at 12% 8%,rgba(168,85,247,.46),transparent 31%),radial-gradient(circle at 82% 12%,rgba(79,70,229,.38),transparent 30%),radial-gradient(circle at 50% 105%,rgba(236,72,153,.26),transparent 35%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-size:130% 130%,140% 140%,135% 135%,100% 100%,31px 31px,31px 31px;background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;animation:bgFlow 7s ease-in-out infinite alternate}
+body::before{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none;background:conic-gradient(from 0deg at 50% 50%,rgba(168,85,247,.05),rgba(236,72,153,.38),rgba(59,130,246,.24),rgba(245,158,11,.16),rgba(168,85,247,.05));filter:blur(52px);opacity:.72;animation:auraSpin 10s linear infinite}
+@keyframes bgFlow{0%{background-position:0% 0%,100% 0%,50% 100%,0 0,0 0,0 0}50%{background-position:28% 18%,62% 26%,38% 82%,0 0,15px 24px,24px 15px}100%{background-position:48% 28%,42% 42%,74% 62%,0 0,30px 0,0 30px}}
+@keyframes auraSpin{from{transform:rotate(0deg) scale(1)}to{transform:rotate(360deg) scale(1.08)}}
+.wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:22px}.hero{display:flex;gap:18px;align-items:center;justify-content:space-between;padding:20px 0 18px;border-bottom:1px solid var(--line)}
 .brand{display:flex;gap:14px;align-items:center}.titleRow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 h1{margin:0;font-size:28px;letter-spacing:0}.sub{margin:4px 0 0;color:var(--muted)}.links{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.links a{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;padding:5px 10px;text-decoration:none;font-weight:750}.topActions{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}.returnCard{display:inline-flex;align-items:center;border:1px solid rgba(245,158,11,.46);border-radius:999px;background:linear-gradient(135deg,rgba(245,158,11,.24),rgba(168,85,247,.14));padding:3px;box-shadow:0 14px 30px rgba(0,0,0,.24)}.backBtn{border:0;border-radius:999px;background:#f59e0b;color:#160f06;padding:8px 14px;font-weight:900;text-decoration:none;box-shadow:0 10px 22px rgba(245,158,11,.22);white-space:nowrap}
 .pill{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:8px 12px;color:var(--muted);white-space:nowrap}.dot{width:9px;height:9px;border-radius:50%;background:var(--amber)}.dot.good{background:var(--green)}.dot.bad{background:var(--red)}
 .grid{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;margin-top:18px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}
 .panel h2{font-size:18px;margin:0 0 12px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{border:1px solid var(--line);border-radius:8px;padding:12px;background:rgba(255,255,255,.06)}.metric span{display:block;color:var(--muted);font-size:12px}.metric strong{display:block;margin-top:4px;font-size:18px;word-break:break-word}.metric.good strong{color:var(--green)}.metric.bad strong{color:var(--red)}.metric.warn strong{color:var(--amber)}
-form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.field{display:block}.field span{display:block;font-weight:650;margin-bottom:5px}.field input{width:100%;border:1px solid var(--line);border-radius:8px;background:rgba(8,5,18,.72);padding:10px 11px;color:var(--text)}.field small{display:block;margin:0 0 7px;color:var(--muted);min-height:34px}
+form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.field{position:relative;display:block}.field span{display:flex;align-items:center;gap:7px;font-weight:650;margin-bottom:7px}.field span::after{content:"?";width:18px;height:18px;border-radius:50%;display:inline-grid;place-items:center;background:rgba(245,158,11,.18);border:1px solid rgba(245,158,11,.42);color:#fde68a;font-size:12px;font-weight:900}.field input{width:100%;border:1px solid var(--line);border-radius:8px;background:rgba(8,5,18,.72);padding:10px 11px;color:var(--text)}.field small{position:absolute;left:0;right:0;bottom:calc(100% + 8px);z-index:20;display:block;visibility:hidden;opacity:0;transform:translateY(6px);padding:10px 12px;border:1px solid rgba(245,158,11,.42);border-radius:8px;background:rgba(16,10,28,.96);box-shadow:0 18px 42px rgba(0,0,0,.38);color:#f7f2ff;transition:opacity .16s ease,transform .16s ease,visibility .16s ease;pointer-events:none}.field:hover small,.field:focus-within small{visibility:visible;opacity:1;transform:translateY(0)}
 .check{display:flex;gap:10px;align-items:center;margin-bottom:12px;font-weight:700}.check input{width:18px;height:18px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.btn{border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 13px;font-weight:750;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.10);color:#f7f2ff}.btn.primary{background:var(--blue);color:#fff}.btn.good{background:var(--green);color:#07120a}.btn.bad{background:rgba(251,113,133,.18);color:#fecdd3}.btn.warn{background:rgba(245,158,11,.16);color:#fde68a;border:1px solid rgba(245,158,11,.34)}
 .notice{margin-top:16px;border-radius:8px;padding:12px;border:1px solid var(--line);background:rgba(255,255,255,.08);white-space:pre-wrap}.notice.ok{border-color:rgba(34,197,94,.46);background:rgba(34,197,94,.12)}.notice.bad{border-color:rgba(251,113,133,.46);background:rgba(251,113,133,.12)}.notice.warn{border-color:rgba(245,158,11,.46);background:rgba(245,158,11,.12)}
 .code{background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:12px;overflow:auto;min-height:120px;white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
@@ -267,9 +269,8 @@ form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr
     <div class="brand">
       <div>
         <div class="titleRow">
-          <h1>OpenWrt Remote</h1>
+          <h1>Wrt Удаленный доступ извне</h1>
         </div>
-        <p class="sub">$(h "$router_name") · $(h "$router_id") · $(h "$status_text")</p>
         <div class="links">
           <a href="https://t.me/kzolotarev95" target="_blank" rel="noopener noreferrer">Telegram</a>
           <a href="https://github.com/kzolotarev95" target="_blank" rel="noopener noreferrer">GitHub</a>
