@@ -699,6 +699,23 @@ def current_router_cookie(router_id):
     return f"{ROUTER_COOKIE}={urllib.parse.quote(router_id)}; HttpOnly; SameSite=Lax; Path=/"
 
 
+def strip_access_prefix(path, router_id):
+    prefix = f"/access/{urllib.parse.quote(router_id)}"
+    if path == prefix:
+        return "/"
+    if path.startswith(prefix + "/"):
+        return path[len(prefix):] or "/"
+    return path or "/"
+
+
+def rewrite_forward_url(value, router_id, port):
+    if not value:
+        return value
+    parsed = urllib.parse.urlsplit(value)
+    path = strip_access_prefix(parsed.path, router_id)
+    return urllib.parse.urlunsplit(("http", f"127.0.0.1:{port}", path, parsed.query, parsed.fragment))
+
+
 def ws_accept_value(key):
     raw = hashlib.sha1((key + WS_GUID).encode("ascii")).digest()
     return base64.b64encode(raw).decode("ascii")
@@ -1163,37 +1180,46 @@ def ssh_terminal_html(row):
 :root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.92);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.28);--green:#22c55e;--blue:#7c3aed;--red:#fb7185;--grid:rgba(168,85,247,.13)}}
 *{{box-sizing:border-box}}
 body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radial-gradient(circle at 16% 10%,rgba(168,85,247,.45),transparent 30%),radial-gradient(circle at 88% 16%,rgba(59,130,246,.28),transparent 32%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:18px}}
-.wrap{{max-width:1180px;margin:0 auto}}
-.top{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}}
-h1{{margin:0;font-size:24px;line-height:1.15}}.muted{{color:var(--muted)}}
-.badge,.btn{{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:8px 13px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:850}}
+.wrap{{height:calc(100vh - 20px);max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:8px}}
+.top{{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:42px}}
+h1{{margin:0;font-size:18px;line-height:1.15}}.muted{{color:var(--muted)}}.chips{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}.chip{{border:1px solid var(--line);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.07);color:var(--muted);font-size:12px;font-weight:800}}
+.badge,.btn{{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 12px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:850;font-size:13px}}
 .dot{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green)}}
-.termBox{{border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}}
-.bar{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05)}}
-#term{{height:calc(100vh - 145px);min-height:430px;margin:0;padding:14px;overflow:auto;white-space:pre-wrap;word-break:break-word;outline:none;background:rgba(0,0,0,.32);font:13px/1.38 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff}}
+.termBox{{flex:1;min-height:0;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}}
+.bar{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05)}}
+#term{{flex:1;min-height:0;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;outline:none;background:rgba(0,0,0,.42);font:13px/1.34 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff}}
 .bad{{color:#fecdd3}}
-@media(max-width:680px){{body{{padding:12px}}.top{{align-items:flex-start;flex-direction:column}}#term{{height:calc(100vh - 178px);min-height:360px}}}}
+@media(max-width:680px){{body{{padding:10px}}.wrap{{height:calc(100vh - 20px)}}.top{{align-items:flex-start;flex-direction:column}}.chips{{width:100%}}.btn{{width:100%}}}}
 </style>
 </head>
 <body>
 <main class="wrap">
   <div class="top">
     <div>
-      <h1>SSH: {safe_name}</h1>
-      <div class="muted">router id: {safe_id} · VPS localhost:{ssh_port} -> 127.0.0.1:22</div>
+      <h1>SSH · {safe_name}</h1>
+      <div class="chips">
+        <span class="chip">{safe_id}</span>
+        <span class="chip">VPS:{ssh_port}</span>
+        <span class="chip">OpenWrt:22</span>
+      </div>
     </div>
     <a class="btn" href="/">Назад в Hub</a>
   </div>
   <section class="termBox">
-    <div class="bar"><span class="badge"><i class="dot"></i>Web terminal</span><span class="muted">Вводи пароль root от OpenWrt, если попросит</span></div>
+    <div class="bar"><span class="badge"><i class="dot"></i>Terminal</span><span class="muted">root password</span></div>
     <pre id="term" tabindex="0"></pre>
   </section>
 </main>
 <script>
 const term = document.getElementById('term');
 let ws;
+function cleanTerminal(text) {{
+  return String(text || '')
+    .replace(/\\x1b\\][^\\x07]*(?:\\x07|\\x1b\\\\)/g, '')
+    .replace(/\\x1b\\[\\?2004[hl]/g, '');
+}}
 function write(text) {{
-  term.textContent += text;
+  term.textContent += cleanTerminal(text);
   term.scrollTop = term.scrollHeight;
 }}
 function send(text) {{
@@ -1202,7 +1228,7 @@ function send(text) {{
 function connect() {{
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
   ws = new WebSocket(proto + location.host + '{ws_path}');
-  ws.onopen = () => write('Подключение к SSH открыто.\\r\\n');
+  ws.onopen = () => {{}};
   ws.onmessage = (ev) => write(ev.data);
   ws.onerror = () => write('\\r\\n[ошибка web-terminal]\\r\\n');
   ws.onclose = () => write('\\r\\n[SSH соединение закрыто]\\r\\n');
@@ -1495,7 +1521,6 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         ensure_state()
-        known_hosts = STATE_DIR / "known_hosts"
         try:
             pid, fd = pty.fork()
         except Exception as exc:
@@ -1504,14 +1529,20 @@ class Handler(BaseHTTPRequestHandler):
 
         if pid == 0:
             env = os.environ.copy()
-            env["TERM"] = env.get("TERM", "xterm-256color")
+            env["TERM"] = "dumb"
             args = [
                 "ssh",
                 "-tt",
                 "-o",
-                "StrictHostKeyChecking=accept-new",
+                "StrictHostKeyChecking=no",
                 "-o",
-                f"UserKnownHostsFile={known_hosts}",
+                "UserKnownHostsFile=/dev/null",
+                "-o",
+                "GlobalKnownHostsFile=/dev/null",
+                "-o",
+                "LogLevel=ERROR",
+                "-o",
+                "SendEnv=",
                 "-o",
                 "ServerAliveInterval=15",
                 "-p",
@@ -1524,7 +1555,7 @@ class Handler(BaseHTTPRequestHandler):
                 print(f"ssh start failed: {exc}", flush=True)
                 os._exit(127)
 
-        ws_send_frame(self.connection, f"SSH {router_id}: root@127.0.0.1:{port}\r\n")
+        ws_send_frame(self.connection, "")
         try:
             while True:
                 ready, _, _ = select.select([self.connection, fd], [], [], 0.25)
@@ -1747,8 +1778,15 @@ class Handler(BaseHTTPRequestHandler):
                 value = clean_forward_cookie(value)
                 if not value:
                     continue
+            elif key.lower() == "referer":
+                value = rewrite_forward_url(value, router_id, port)
+            elif key.lower() == "origin":
+                value = f"http://127.0.0.1:{port}"
             headers[key] = value
         headers["Host"] = f"127.0.0.1:{port}"
+        headers["X-Forwarded-Host"] = self.headers.get("Host", "")
+        headers["X-Forwarded-Prefix"] = f"/access/{urllib.parse.quote(router_id)}"
+        headers["X-Forwarded-Proto"] = "https" if self.headers.get("X-Forwarded-Proto", "") == "https" else "http"
         if body is not None:
             headers["Content-Length"] = str(len(body))
 
@@ -1771,7 +1809,7 @@ class Handler(BaseHTTPRequestHandler):
                 resp_headers.append((key, value))
             resp_headers.append(("Set-Cookie", current_router_cookie(router_id)))
             if should_rewrite_body(content_type):
-                resp_body = rewrite_html(resp_body, prefix)
+                resp_body = rewrite_html(resp_body, prefix, content_type)
             self.send_bytes(
                 resp.status,
                 resp_body,
@@ -1806,7 +1844,52 @@ def rewrite_cookie_path(value, path):
     return ";".join(changed)
 
 
-def rewrite_html(body, prefix):
+def proxy_runtime_script(prefix):
+    prefix_json = json.dumps(prefix)
+    return """<script>
+(function() {
+  const prefix = %s;
+  const roots = ["/ubus", "/cgi-bin/luci", "/luci-static"];
+  function fixUrl(url) {
+    if (typeof url !== "string" || !url) return url;
+    if (url.startsWith(prefix + "/")) return url;
+    try {
+      const absolute = /^[a-z][a-z0-9+.-]*:/i.test(url);
+      const parsed = absolute ? new URL(url) : null;
+      if (parsed && parsed.origin !== location.origin) return url;
+      const value = parsed ? (parsed.pathname + parsed.search + parsed.hash) : url;
+      for (const root of roots) {
+        if (value === root || value.startsWith(root + "/") || value.startsWith(root + "?")) {
+          return prefix + value;
+        }
+      }
+    } catch (e) {}
+    return url;
+  }
+  if (window.fetch) {
+    const nativeFetch = window.fetch;
+    window.fetch = function(input, init) {
+      if (typeof input === "string") {
+        input = fixUrl(input);
+      } else if (input && input.url) {
+        const fixed = fixUrl(input.url);
+        if (fixed !== input.url) input = new Request(fixed, input);
+      }
+      return nativeFetch.call(this, input, init);
+    };
+  }
+  if (window.XMLHttpRequest) {
+    const nativeOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+      arguments[1] = fixUrl(url);
+      return nativeOpen.apply(this, arguments);
+    };
+  }
+})();
+</script>""" % prefix_json
+
+
+def rewrite_html(body, prefix, content_type=""):
     text = body.decode("utf-8", errors="ignore")
     escaped_prefix = prefix.replace("/", "\\/")
     replacements = {
@@ -1854,6 +1937,14 @@ def rewrite_html(body, prefix):
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
+    if "text/html" in (content_type or "").lower():
+        script = proxy_runtime_script(prefix)
+        if "</head>" in text:
+            text = text.replace("</head>", script + "\n</head>", 1)
+        elif "</body>" in text:
+            text = text.replace("</body>", script + "\n</body>", 1)
+        else:
+            text += script
     return text.encode("utf-8")
 
 
