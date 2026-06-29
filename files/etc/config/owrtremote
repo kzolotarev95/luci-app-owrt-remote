@@ -16,5 +16,6 @@ config remote 'main'
 	option reverse_tag 'reverse-in'
 	option admin_host '127.0.0.1'
 	option admin_port '80'
+	option ssh_host '127.0.0.1'
+	option ssh_port '22'
 	option public_url ''
-

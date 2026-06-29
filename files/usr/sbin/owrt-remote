@@ -268,7 +268,7 @@ service_enabled() {
 }
 
 render_client_config() {
-	local out stdout router_id vps_host vps_port uuid encryption flow reverse_tag admin_host admin_port xray_config
+	local out stdout router_id vps_host vps_port uuid encryption flow reverse_tag admin_host admin_port ssh_host ssh_port xray_config
 	stdout="0"
 	if [ "${1:-}" = "--stdout" ]; then
 		stdout="1"
@@ -283,6 +283,8 @@ render_client_config() {
 	reverse_tag="$(safe_id "$(uci_get reverse_tag reverse-in)")"
 	admin_host="$(uci_get admin_host 127.0.0.1)"
 	admin_port="$(safe_num "$(uci_get admin_port 80)" 80)"
+	ssh_host="$(uci_get ssh_host 127.0.0.1)"
+	ssh_port="$(safe_num "$(uci_get ssh_port 22)" 22)"
 	xray_config="$(uci_get xray_config /etc/xray/owrt-remote-client.json)"
 
 	[ -n "$vps_host" ] || die "vps_host пустой"
@@ -300,13 +302,18 @@ render_client_config() {
       "tag": "router-admin",
       "protocol": "freedom",
       "settings": {
-        "redirect": "$(json_escape "$admin_host"):$admin_port",
         "finalRules": [
           {
             "action": "allow",
             "network": "tcp",
             "ip": "$(json_escape "$admin_host")",
             "port": "$admin_port"
+          },
+          {
+            "action": "allow",
+            "network": "tcp",
+            "ip": "$(json_escape "$ssh_host")",
+            "port": "$ssh_port"
           }
         ]
       }
@@ -409,6 +416,8 @@ heartbeat_json() {
   "public_url": $(json_string "$public_url"),
   "admin_host": $(json_string "$(uci_get admin_host 127.0.0.1)"),
   "admin_port": $(safe_num "$(uci_get admin_port 80)" 80),
+  "ssh_host": $(json_string "$(uci_get ssh_host 127.0.0.1)"),
+  "ssh_port": $(safe_num "$(uci_get ssh_port 22)" 22),
   "hub_url": $(json_string "$hub_url"),
   "uptime": $(safe_num "$(uptime_seconds)" 0),
   "load": $(json_string "$(load_text)"),

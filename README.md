@@ -28,7 +28,9 @@ LuCI роутера напрямую в интернет открывать не
 - Несколько роутеров в одной панели.
 - Online/offline по heartbeat.
 - В карточке роутера: аптайм, RAM, flash, температура, load, Xray/service.
+- Температура подсвечивается цветом: зеленая, желтая, красная.
 - Кнопка `Админка` для входа в LuCI через VPS.
+- Кнопка `SSH` открывает web-terminal прямо из карточки роутера.
 - Кнопка `OpenWrt config` с готовыми UCI-командами для роутера.
 - Кнопка `Client JSON` с клиентским Xray-конфигом.
 - Легкий агент на OpenWrt: shell + CGI, без тяжелого Lua-приложения.
@@ -41,7 +43,7 @@ LuCI роутера напрямую в интернет открывать не
 
 ```sh
 sudo apt update
-sudo apt install -y curl unzip python3
+sudo apt install -y curl unzip python3 openssh-client
 sudo bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
 xray version || /usr/local/bin/xray version
 ```
@@ -104,8 +106,10 @@ sudo /opt/owrt-remote/owrt-remote-hub.py add-router \
 Порты не путать:
 
 - `entry_port` задается на VPS в карточке роутера. Он должен быть уникальным: `18080`, `18090`, `18100`.
+- `ssh_entry_port` создается автоматически как `entry_port + 1000`: для `18080` будет `19080`, для `18090` будет `19090`.
 - `vps_port` на OpenWrt обычно один для всех роутеров: `8443`.
 - `admin_port` на OpenWrt обычно `80`, это локальный порт LuCI внутри роутера.
+- `ssh_port` на OpenWrt обычно `22`, это локальный порт SSH/dropbear внутри роутера.
 
 Пример второго роутера:
 
@@ -131,10 +135,10 @@ sudo systemctl restart owrt-remote-xray
 ```sh
 sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
 sudo systemctl restart owrt-remote-xray
-sudo ss -lntp | grep -E ':(8443|18080|18090|18100|18095)\b'
+sudo ss -lntp | grep -E ':(8443|18080|18090|18100|18095|19080|19090|19095)\b'
 ```
 
-Для роутера с `entry 18095` в выводе должен появиться `127.0.0.1:18095`.
+Для роутера с `entry 18095` в выводе должны появиться `127.0.0.1:18095` для LuCI и `127.0.0.1:19095` для SSH.
 
 Сгенерировать Xray config для VPS:
 
@@ -181,6 +185,8 @@ sudo ufw allow 8443/tcp
 | `18080/tcp` | VPS localhost | вход к первому роутеру через Hub | нет |
 | `18090/tcp` | VPS localhost | вход ко второму роутеру через Hub | нет |
 | `18100/tcp` | VPS localhost | вход к третьему роутеру через Hub | нет |
+| `19080/tcp` | VPS localhost | SSH к первому роутеру через web-terminal | нет |
+| `19090/tcp` | VPS localhost | SSH ко второму роутеру через web-terminal | нет |
 
 Если у VPS-провайдера есть отдельный firewall в личном кабинете, там тоже открой `8088/tcp` и `8443/tcp`.
 
@@ -190,7 +196,38 @@ sudo ufw allow 8443/tcp
 sudo ss -lntp | grep -E ':(8088|8443|18080|18090|18100)\b'
 ```
 
-Порты `18080`, `18090`, `18100` должны слушать только `127.0.0.1`. Наружу нужны `8088` для Hub и `8443` для Xray.
+Порты `18080`, `18090`, `18100`, `19080`, `19090` должны слушать только `127.0.0.1`. Наружу нужны `8088` для Hub и `8443` для Xray.
+
+## SSH web-terminal
+
+В карточке online-роутера кнопка `SSH` открывает терминал в браузере.
+
+Как это устроено:
+
+- LuCI идет через `entry_port`, например `18080`.
+- SSH идет через `ssh_entry_port`, например `19080`.
+- Hub сам подключается к `root@127.0.0.1:19080` на VPS.
+- Через Xray reverse это попадает в SSH/dropbear роутера на `127.0.0.1:22`.
+
+После обновления обязательно обнови обе стороны:
+
+```sh
+# VPS
+sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
+sudo systemctl restart owrt-remote-xray
+
+# OpenWrt
+owrt-remote render-client
+/etc/init.d/owrt-remote restart
+owrt-remote heartbeat
+```
+
+Если кнопка `SSH` серая, проверь на роутере:
+
+```sh
+/etc/init.d/dropbear status
+owrt-remote heartbeat
+```
 
 ## Установка на OpenWrt
 

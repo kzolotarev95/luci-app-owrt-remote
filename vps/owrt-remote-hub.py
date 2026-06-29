@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import base64
 import datetime as dt
 import hashlib
 import html
@@ -7,7 +8,10 @@ import http.client
 import json
 import os
 import secrets
+import select
+import signal
 import sqlite3
+import struct
 import subprocess
 import sys
 import time
@@ -28,7 +32,9 @@ DEFAULT_VLESS_PORT = int(os.environ.get("OWRT_REMOTE_VLESS_PORT", "8443"))
 PBKDF2_ITERATIONS = 240000
 MIN_PASSWORD_LENGTH = 4
 SESSION_COOKIE = "owrt_remote_session"
+ROUTER_COOKIE = "owrt_remote_router"
 LUCI_ABSOLUTE_ROOTS = ("/ubus", "/cgi-bin/luci", "/luci-static")
+WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
 def now_ts():
@@ -194,6 +200,9 @@ def init_db(conn):
             public_url text not null default '',
             admin_host text not null default '127.0.0.1',
             admin_port integer not null default 80,
+            ssh_entry_port integer not null default 0,
+            ssh_host text not null default '127.0.0.1',
+            ssh_port integer not null default 22,
             created_at integer not null,
             updated_at integer not null,
             last_seen integer,
@@ -201,7 +210,23 @@ def init_db(conn):
         )
         """
     )
+    ensure_column(conn, "routers", "ssh_entry_port", "integer not null default 0")
+    ensure_column(conn, "routers", "ssh_host", "text not null default '127.0.0.1'")
+    ensure_column(conn, "routers", "ssh_port", "integer not null default 22")
+    conn.execute(
+        """
+        update routers
+        set ssh_entry_port = entry_port + 1000
+        where entry_port > 0 and (ssh_entry_port is null or ssh_entry_port = 0)
+        """
+    )
     conn.commit()
+
+
+def ensure_column(conn, table, column, definition):
+    cols = {row["name"] for row in conn.execute(f"pragma table_info({table})")}
+    if column not in cols:
+        conn.execute(f"alter table {table} add column {column} {definition}")
 
 
 def get_router(conn, router_id):
@@ -210,8 +235,15 @@ def get_router(conn, router_id):
 
 def get_router_by_entry_port(conn, entry_port, exclude_id=""):
     return conn.execute(
-        "select * from routers where entry_port = ? and id != ?",
-        (int(entry_port), exclude_id),
+        "select * from routers where (entry_port = ? or ssh_entry_port = ?) and id != ?",
+        (int(entry_port), int(entry_port), exclude_id),
+    ).fetchone()
+
+
+def get_router_by_any_port(conn, port, exclude_id=""):
+    return conn.execute(
+        "select * from routers where (entry_port = ? or ssh_entry_port = ?) and id != ?",
+        (int(port), int(port), exclude_id),
     ).fetchone()
 
 
@@ -236,6 +268,7 @@ def row_to_router(row):
     data["online"] = online
     data["last_seen_iso"] = iso_time(last_seen)
     data["access_url"] = f"/access/{urllib.parse.quote(data['id'])}/"
+    data["ssh_url"] = f"/ssh/{urllib.parse.quote(data['id'])}/"
     data["config_url"] = f"/router/{urllib.parse.quote(data['id'])}/config"
     data["xray_client_url"] = f"/router/{urllib.parse.quote(data['id'])}/xray-client.json"
     data.pop("status_json", None)
@@ -278,6 +311,9 @@ def upsert_router(conn, values):
         "public_url": keep_str("public_url", ""),
         "admin_host": keep_str("admin_host", "127.0.0.1"),
         "admin_port": keep_int("admin_port", 80),
+        "ssh_entry_port": keep_int("ssh_entry_port", int(values.get("entry_port") or 0) + 1000 if values.get("entry_port") else 0),
+        "ssh_host": keep_str("ssh_host", "127.0.0.1"),
+        "ssh_port": keep_int("ssh_port", 22),
         "updated_at": ts,
     }
     if current:
@@ -297,6 +333,9 @@ def upsert_router(conn, values):
                 public_url = :public_url,
                 admin_host = :admin_host,
                 admin_port = :admin_port,
+                ssh_entry_port = :ssh_entry_port,
+                ssh_host = :ssh_host,
+                ssh_port = :ssh_port,
                 updated_at = :updated_at
             where id = :id
             """,
@@ -309,11 +348,13 @@ def upsert_router(conn, values):
             insert into routers (
                 id, name, role, entry_port, vps_host, vless_port, vless_uuid,
                 vless_encryption, vless_decryption, vless_flow, reverse_tag,
-                public_url, admin_host, admin_port, created_at, updated_at
+                public_url, admin_host, admin_port, ssh_entry_port, ssh_host, ssh_port,
+                created_at, updated_at
             ) values (
                 :id, :name, :role, :entry_port, :vps_host, :vless_port, :vless_uuid,
                 :vless_encryption, :vless_decryption, :vless_flow, :reverse_tag,
-                :public_url, :admin_host, :admin_port, :created_at, :updated_at
+                :public_url, :admin_host, :admin_port, :ssh_entry_port, :ssh_host, :ssh_port,
+                :created_at, :updated_at
             )
             """,
             payload,
@@ -337,6 +378,8 @@ def heartbeat(conn, payload):
                 "vps_host": payload.get("vps_host") or "",
                 "admin_host": payload.get("admin_host") or "127.0.0.1",
                 "admin_port": payload.get("admin_port") or 80,
+                "ssh_host": payload.get("ssh_host") or "127.0.0.1",
+                "ssh_port": payload.get("ssh_port") or 22,
             },
         )
     conn.execute(
@@ -347,6 +390,8 @@ def heartbeat(conn, payload):
             public_url = coalesce(nullif(?, ''), public_url),
             admin_host = coalesce(nullif(?, ''), admin_host),
             admin_port = coalesce(?, admin_port),
+            ssh_host = coalesce(nullif(?, ''), ssh_host),
+            ssh_port = coalesce(?, ssh_port),
             last_seen = ?,
             status_json = ?,
             updated_at = ?
@@ -358,6 +403,8 @@ def heartbeat(conn, payload):
             payload.get("public_url") or "",
             payload.get("admin_host") or "",
             int(payload["admin_port"]) if str(payload.get("admin_port", "")).isdigit() else None,
+            payload.get("ssh_host") or "",
+            int(payload["ssh_port"]) if str(payload.get("ssh_port", "")).isdigit() else None,
             ts,
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
             ts,
@@ -393,6 +440,7 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
         entry_port = int(row["entry_port"] or 0)
         if entry_port <= 0:
             continue
+        ssh_entry_port = int(row["ssh_entry_port"] or 0)
         reverse_out = f"reverse-{router_id}"
         portal_in = f"entry-{router_id}"
         client = {
@@ -425,6 +473,28 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
                 "outboundTag": reverse_out,
             }
         )
+        if ssh_entry_port > 0:
+            ssh_in = f"ssh-{router_id}"
+            inbounds.append(
+                {
+                    "tag": ssh_in,
+                    "listen": "127.0.0.1",
+                    "port": ssh_entry_port,
+                    "protocol": "tunnel",
+                    "settings": {
+                        "allowedNetwork": "tcp",
+                        "rewriteAddress": row["ssh_host"] or "127.0.0.1",
+                        "rewritePort": int(row["ssh_port"] or 22),
+                    },
+                }
+            )
+            rules.append(
+                {
+                    "type": "field",
+                    "inboundTag": [ssh_in],
+                    "outboundTag": reverse_out,
+                }
+            )
 
     return {
         "log": {"loglevel": "warning"},
@@ -445,13 +515,18 @@ def make_router_xray_config(row):
                 "tag": "router-admin",
                 "protocol": "freedom",
                 "settings": {
-                    "redirect": f"{row['admin_host']}:{int(row['admin_port'])}",
                     "finalRules": [
                         {
                             "action": "allow",
                             "network": "tcp",
                             "ip": row["admin_host"],
                             "port": str(int(row["admin_port"])),
+                        },
+                        {
+                            "action": "allow",
+                            "network": "tcp",
+                            "ip": row["ssh_host"] or "127.0.0.1",
+                            "port": str(int(row["ssh_port"] or 22)),
                         }
                     ],
                 },
@@ -531,6 +606,8 @@ def make_openwrt_config(row, hub_url):
         f"uci set owrtremote.main.reverse_tag='{sh_quote(row['reverse_tag'])}'",
         f"uci set owrtremote.main.admin_host='{sh_quote(row['admin_host'])}'",
         f"uci set owrtremote.main.admin_port='{int(row['admin_port'])}'",
+        f"uci set owrtremote.main.ssh_host='{sh_quote(row['ssh_host'] or '127.0.0.1')}'",
+        f"uci set owrtremote.main.ssh_port='{int(row['ssh_port'] or 22)}'",
         f"uci set owrtremote.main.public_url='{sh_quote(row['public_url'])}'",
         "uci commit owrtremote",
         "owrt-remote render-client",
@@ -559,10 +636,65 @@ def clean_forward_cookie(cookie_header):
     for chunk in (cookie_header or "").split(";"):
         if not chunk.strip():
             continue
-        if chunk.strip().startswith("owrt_remote_admin=") or chunk.strip().startswith(f"{SESSION_COOKIE}="):
+        if (
+            chunk.strip().startswith("owrt_remote_admin=")
+            or chunk.strip().startswith(f"{SESSION_COOKIE}=")
+            or chunk.strip().startswith(f"{ROUTER_COOKIE}=")
+        ):
             continue
         parts.append(chunk.strip())
     return "; ".join(parts)
+
+
+def current_router_cookie(router_id):
+    return f"{ROUTER_COOKIE}={urllib.parse.quote(router_id)}; HttpOnly; SameSite=Lax; Path=/"
+
+
+def ws_accept_value(key):
+    raw = hashlib.sha1((key + WS_GUID).encode("ascii")).digest()
+    return base64.b64encode(raw).decode("ascii")
+
+
+def recv_exact(sock, size):
+    chunks = []
+    left = size
+    while left > 0:
+        chunk = sock.recv(left)
+        if not chunk:
+            raise ConnectionError("websocket closed")
+        chunks.append(chunk)
+        left -= len(chunk)
+    return b"".join(chunks)
+
+
+def ws_read_frame(sock):
+    head = recv_exact(sock, 2)
+    first, second = head[0], head[1]
+    opcode = first & 0x0F
+    masked = bool(second & 0x80)
+    length = second & 0x7F
+    if length == 126:
+        length = struct.unpack("!H", recv_exact(sock, 2))[0]
+    elif length == 127:
+        length = struct.unpack("!Q", recv_exact(sock, 8))[0]
+    mask = recv_exact(sock, 4) if masked else b""
+    payload = recv_exact(sock, length) if length else b""
+    if masked and payload:
+        payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    return opcode, payload
+
+
+def ws_send_frame(sock, payload, opcode=1):
+    if isinstance(payload, str):
+        payload = payload.encode("utf-8", errors="replace")
+    length = len(payload)
+    if length < 126:
+        head = struct.pack("!BB", 0x80 | opcode, length)
+    elif length < 65536:
+        head = struct.pack("!BBH", 0x80 | opcode, 126, length)
+    else:
+        head = struct.pack("!BBQ", 0x80 | opcode, 127, length)
+    sock.sendall(head + payload)
 
 
 def dashboard_html(routers, username):
@@ -591,7 +723,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 @keyframes onlineGlow{{0%,100%{{transform:scale(.9);opacity:.55}}50%{{transform:scale(1.08);opacity:1}}}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}.routerMark{{display:grid;place-items:center;width:46px;height:46px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08)}}.routerIcon{{position:relative;width:28px;height:18px;border:2px solid #ddd6fe;border-radius:5px}}.routerIcon::before,.routerIcon::after{{content:"";position:absolute;top:-9px;width:9px;height:9px;border-top:2px solid #ddd6fe}}.routerIcon::before{{left:2px;transform:rotate(-34deg)}}.routerIcon::after{{right:2px;transform:rotate(34deg)}}.routerIcon span{{position:absolute;left:5px;right:5px;bottom:4px;display:flex;justify-content:space-between}}.routerIcon span::before,.routerIcon span::after{{content:"";width:4px;height:4px;border-radius:50%;background:#ddd6fe}}
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:none}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
-.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok{{border-color:rgba(34,197,94,.48);background:rgba(34,197,94,.12)}}.metric.temp-ok strong{{color:#bbf7d0}}.metric.temp-warn{{border-color:rgba(245,158,11,.58);background:rgba(245,158,11,.13)}}.metric.temp-warn strong{{color:#fde68a}}.metric.temp-bad{{border-color:rgba(251,113,133,.58);background:rgba(251,113,133,.14)}}.metric.temp-bad strong{{color:#fecdd3}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar,.authGrid{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{padding-top:0;justify-content:flex-start}}}}
 @media(max-width:680px){{.wrap{{padding:14px}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.card.main{{grid-column:span 1}}.top,.sectionHead{{align-items:flex-start;flex-direction:column}}.headerActions,.summary{{justify-content:flex-start}}.links a,.badge{{width:100%;min-width:0}}h1{{font-size:24px}}}}
 </style>
@@ -683,6 +815,14 @@ function metric(label, value, cls = '') {{
   return `<div class="metric ${{cls}}"><span>${{escapeHtml(label)}}</span><strong>${{escapeHtml(value || 'unknown')}}</strong></div>`;
 }}
 
+function tempClass(value) {{
+  const n = Number(String(value || '').replace(',', '.').match(/-?\\d+(\\.\\d+)?/)?.[0]);
+  if (!Number.isFinite(n)) return '';
+  if (n >= 75) return 'temp-bad';
+  if (n >= 60) return 'temp-warn';
+  return 'temp-ok';
+}}
+
 function setSummary(list) {{
   const total = list.length;
   const online = list.filter(r => r.online).length;
@@ -724,15 +864,17 @@ function render(list) {{
     const tags = [
       isMain ? 'главный' : 'node',
       r.entry_port ? 'entry ' + r.entry_port : '',
+      r.ssh_entry_port ? 'ssh ' + r.ssh_entry_port : '',
       r.reverse_tag || '',
       (r.admin_host || '127.0.0.1') + ':' + (r.admin_port || 80)
-    ].filter(Boolean).slice(0, 4);
+    ].filter(Boolean).slice(0, 5);
     const tagHtml = tags.map(t => `<span class="tag">${{escapeHtml(t)}}</span>`).join('');
     const adminButton = online
       ? `<a class="btn primary" href="${{escapeAttr(access)}}">Админка</a>`
       : `<span class="btn primary disabled">Админка</span>`;
-    const sshButton = online
-      ? `<button class="btn" data-ssh="${{escapeAttr(r.id)}}">SSH</button>`
+    const sshReady = online && ssh === 'running' && Number(r.ssh_entry_port || 0) > 0;
+    const sshButton = sshReady
+      ? `<a class="btn" href="${{escapeAttr(r.ssh_url || ('/ssh/' + encodeURIComponent(r.id) + '/'))}}" target="_blank" rel="noopener noreferrer">SSH</a>`
       : `<span class="btn disabled">SSH</span>`;
     const metricHtml = [
       metric('Модель', model, 'span2'),
@@ -743,7 +885,7 @@ function render(list) {{
       metric('Был на связи', ago(r.last_seen_iso)),
       metric('RAM', memory),
       metric('Flash', flash),
-      metric('Температура', temperature),
+      metric('Температура', temperature, tempClass(temperature)),
       metric('Load', load)
     ].join('');
     return `<article class="card ${{isMain ? 'main' : ''}} ${{online ? 'online' : 'off'}}">
@@ -777,9 +919,15 @@ function escapeAttr(s) {{
 }}
 
 function nextEntryPort(list) {{
-  const used = new Set(list.map(r => Number(r.entry_port || 0)).filter(Boolean));
+  const used = new Set();
+  list.forEach(r => {{
+    const entry = Number(r.entry_port || 0);
+    const sshEntry = Number(r.ssh_entry_port || 0);
+    if (entry) used.add(entry);
+    if (sshEntry) used.add(sshEntry);
+  }});
   let port = 18080;
-  while (used.has(port)) port += 10;
+  while (used.has(port) || used.has(port + 1000)) port += 10;
   return port;
 }}
 
@@ -858,14 +1006,21 @@ routerForm.addEventListener('submit', async (ev) => {{
   const body = new URLSearchParams(new FormData(ev.currentTarget));
   const id = String(body.get('id') || '').trim();
   const entryPort = Number(body.get('entry_port') || 0);
+  const sshEntryPort = entryPort + 1000;
   const duplicateId = (window.ROUTERS || []).find(r => String(r.id) === id);
-  const duplicatePort = (window.ROUTERS || []).find(r => Number(r.entry_port || 0) === entryPort);
+  const duplicatePort = (window.ROUTERS || []).find(r => Number(r.entry_port || 0) === entryPort || Number(r.ssh_entry_port || 0) === entryPort);
+  const duplicateSshPort = (window.ROUTERS || []).find(r => Number(r.entry_port || 0) === sshEntryPort || Number(r.ssh_entry_port || 0) === sshEntryPort);
   if (duplicateId) {{
     showRouterMsg(`Router ID "${{id}}" уже есть. Для второго роутера оставь предложенный ID или напиши новый.`, true);
     return;
   }}
   if (duplicatePort) {{
     showRouterMsg(`Порт ${{entryPort}} уже занят роутером "${{duplicatePort.id}}". Поставь следующий свободный порт.`, true);
+    routerForm.entry_port.value = String(nextEntryPort(window.ROUTERS || []));
+    return;
+  }}
+  if (duplicateSshPort) {{
+    showRouterMsg(`SSH-порт ${{sshEntryPort}} уже занят роутером "${{duplicateSshPort.id}}". Поставь другой entry port.`, true);
     routerForm.entry_port.value = String(nextEntryPort(window.ROUTERS || []));
     return;
   }}
@@ -882,11 +1037,6 @@ routerForm.addEventListener('submit', async (ev) => {{
 }});
 
 cards.addEventListener('click', async (ev) => {{
-  const sshId = ev.target?.dataset?.ssh;
-  if (sshId) {{
-    showRouterMsg('SSH для ' + sshId + ': нужен отдельный reverse-порт на 22 и web-terminal. Я добавил кнопку рядом с карточкой; сам интерактивный терминал включается следующим шагом, чтобы не сломать LuCI-туннель.', true);
-    return;
-  }}
   const id = ev.target?.dataset?.delete;
   if (!id) return;
   if (!confirm('Удалить роутер ' + id + '?')) return;
@@ -943,6 +1093,90 @@ document.getElementById('authForm').addEventListener('submit', async (ev) => {{
 render(window.ROUTERS);
 fillRouterForm(true);
 setInterval(loadRouters, 5000);
+</script>
+</body>
+</html>"""
+
+
+def ssh_terminal_html(row):
+    router_id = row["id"]
+    safe_id = html.escape(router_id, quote=True)
+    safe_name = html.escape(row["name"] or router_id, quote=True)
+    ssh_port = int(row["ssh_entry_port"] or 0)
+    ws_path = f"/ssh-ws/{urllib.parse.quote(router_id)}"
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SSH {safe_name}</title>
+<style>
+:root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.92);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.28);--green:#22c55e;--blue:#7c3aed;--red:#fb7185;--grid:rgba(168,85,247,.13)}}
+*{{box-sizing:border-box}}
+body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radial-gradient(circle at 16% 10%,rgba(168,85,247,.45),transparent 30%),radial-gradient(circle at 88% 16%,rgba(59,130,246,.28),transparent 32%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:18px}}
+.wrap{{max-width:1180px;margin:0 auto}}
+.top{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}}
+h1{{margin:0;font-size:24px;line-height:1.15}}.muted{{color:var(--muted)}}
+.badge,.btn{{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:8px 13px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:850}}
+.dot{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green)}}
+.termBox{{border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}}
+.bar{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05)}}
+#term{{height:calc(100vh - 145px);min-height:430px;margin:0;padding:14px;overflow:auto;white-space:pre-wrap;word-break:break-word;outline:none;background:rgba(0,0,0,.32);font:13px/1.38 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff}}
+.bad{{color:#fecdd3}}
+@media(max-width:680px){{body{{padding:12px}}.top{{align-items:flex-start;flex-direction:column}}#term{{height:calc(100vh - 178px);min-height:360px}}}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <div>
+      <h1>SSH: {safe_name}</h1>
+      <div class="muted">router id: {safe_id} · VPS localhost:{ssh_port} -> 127.0.0.1:22</div>
+    </div>
+    <a class="btn" href="/">Назад в Hub</a>
+  </div>
+  <section class="termBox">
+    <div class="bar"><span class="badge"><i class="dot"></i>Web terminal</span><span class="muted">Вводи пароль root от OpenWrt, если попросит</span></div>
+    <pre id="term" tabindex="0"></pre>
+  </section>
+</main>
+<script>
+const term = document.getElementById('term');
+let ws;
+function write(text) {{
+  term.textContent += text;
+  term.scrollTop = term.scrollHeight;
+}}
+function send(text) {{
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(text);
+}}
+function connect() {{
+  const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
+  ws = new WebSocket(proto + location.host + '{ws_path}');
+  ws.onopen = () => write('Подключение к SSH открыто.\\r\\n');
+  ws.onmessage = (ev) => write(ev.data);
+  ws.onerror = () => write('\\r\\n[ошибка web-terminal]\\r\\n');
+  ws.onclose = () => write('\\r\\n[SSH соединение закрыто]\\r\\n');
+}}
+term.addEventListener('keydown', (ev) => {{
+  if (ev.ctrlKey && ev.key.toLowerCase() === 'c') {{ send('\\x03'); ev.preventDefault(); return; }}
+  if (ev.ctrlKey && ev.key.toLowerCase() === 'd') {{ send('\\x04'); ev.preventDefault(); return; }}
+  if (ev.key === 'Enter') {{ send('\\r'); ev.preventDefault(); return; }}
+  if (ev.key === 'Backspace') {{ send('\\x7f'); ev.preventDefault(); return; }}
+  if (ev.key === 'Tab') {{ send('\\t'); ev.preventDefault(); return; }}
+  if (ev.key === 'ArrowUp') {{ send('\\x1b[A'); ev.preventDefault(); return; }}
+  if (ev.key === 'ArrowDown') {{ send('\\x1b[B'); ev.preventDefault(); return; }}
+  if (ev.key === 'ArrowRight') {{ send('\\x1b[C'); ev.preventDefault(); return; }}
+  if (ev.key === 'ArrowLeft') {{ send('\\x1b[D'); ev.preventDefault(); return; }}
+  if (ev.key.length === 1 && !ev.metaKey && !ev.altKey) {{ send(ev.key); ev.preventDefault(); }}
+}});
+term.addEventListener('paste', (ev) => {{
+  const text = (ev.clipboardData || window.clipboardData).getData('text');
+  if (text) send(text);
+  ev.preventDefault();
+}});
+connect();
+term.focus();
 </script>
 </body>
 </html>"""
@@ -1029,10 +1263,15 @@ class Handler(BaseHTTPRequestHandler):
     def maybe_proxy_luci_absolute(self, path):
         if not any(path == root or path.startswith(root + "/") for root in LUCI_ABSOLUTE_ROOTS):
             return False
+        router_id = ""
         ref_path = urllib.parse.urlsplit(self.headers.get("Referer", "")).path
         parts = ref_path.split("/", 3)
         if len(parts) >= 3 and parts[1] == "access" and parts[2]:
-            self.proxy_access(f"/access/{parts[2]}{path}")
+            router_id = parts[2]
+        if not router_id:
+            router_id = urllib.parse.unquote(parse_cookies(self.headers.get("Cookie", "")).get(ROUTER_COOKIE, ""))
+        if router_id:
+            self.proxy_access(f"/access/{router_id}{path}")
             return True
         return False
 
@@ -1144,6 +1383,141 @@ class Handler(BaseHTTPRequestHandler):
             write_json_private(AUTH_FILE, auth)
         self.send_text(200, "Доступ к Hub обновлен")
 
+    def router_id_from_path(self, prefix):
+        suffix = self.parsed().path[len(prefix):].strip("/")
+        if not suffix:
+            return ""
+        return urllib.parse.unquote(suffix.split("/", 1)[0])
+
+    def ssh_page(self):
+        if not self.require_admin():
+            return
+        router_id = self.router_id_from_path("/ssh/")
+        with self.app.conn() as conn:
+            row = get_router(conn, router_id)
+        if not row:
+            self.send_text(404, "router not found")
+            return
+        if int(row["ssh_entry_port"] or 0) <= 0:
+            self.send_text(400, "router has no ssh_entry_port")
+            return
+        self.send_bytes(
+            200,
+            ssh_terminal_html(row).encode("utf-8"),
+            "text/html; charset=utf-8",
+            [("Set-Cookie", current_router_cookie(router_id))],
+        )
+
+    def ssh_ws(self):
+        if not self.admin_ok():
+            self.send_response(403)
+            self.end_headers()
+            return
+        router_id = self.router_id_from_path("/ssh-ws/")
+        with self.app.conn() as conn:
+            row = get_router(conn, router_id)
+        if not row:
+            self.send_response(404)
+            self.end_headers()
+            return
+        port = int(row["ssh_entry_port"] or 0)
+        if port <= 0:
+            self.send_response(400)
+            self.end_headers()
+            return
+        key = self.headers.get("Sec-WebSocket-Key", "")
+        if not key:
+            self.send_response(400)
+            self.end_headers()
+            return
+        self.send_response(101)
+        self.send_header("Upgrade", "websocket")
+        self.send_header("Connection", "Upgrade")
+        self.send_header("Sec-WebSocket-Accept", ws_accept_value(key))
+        self.end_headers()
+        self.close_connection = True
+        self.run_ssh_session(router_id, port)
+
+    def run_ssh_session(self, router_id, port):
+        try:
+            import pty
+        except Exception as exc:
+            ws_send_frame(self.connection, f"pty недоступен на VPS: {exc}\r\n")
+            return
+
+        ensure_state()
+        known_hosts = STATE_DIR / "known_hosts"
+        try:
+            pid, fd = pty.fork()
+        except Exception as exc:
+            ws_send_frame(self.connection, f"не удалось открыть SSH pty: {exc}\r\n")
+            return
+
+        if pid == 0:
+            env = os.environ.copy()
+            env["TERM"] = env.get("TERM", "xterm-256color")
+            args = [
+                "ssh",
+                "-tt",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
+                "-o",
+                f"UserKnownHostsFile={known_hosts}",
+                "-o",
+                "ServerAliveInterval=15",
+                "-p",
+                str(port),
+                "root@127.0.0.1",
+            ]
+            try:
+                os.execvpe("ssh", args, env)
+            except Exception as exc:
+                print(f"ssh start failed: {exc}", flush=True)
+                os._exit(127)
+
+        ws_send_frame(self.connection, f"SSH {router_id}: root@127.0.0.1:{port}\r\n")
+        try:
+            while True:
+                ready, _, _ = select.select([self.connection, fd], [], [], 0.25)
+                if fd in ready:
+                    try:
+                        data = os.read(fd, 4096)
+                    except OSError:
+                        break
+                    if not data:
+                        break
+                    ws_send_frame(self.connection, data.decode("utf-8", errors="replace"))
+                if self.connection in ready:
+                    try:
+                        opcode, payload = ws_read_frame(self.connection)
+                    except Exception:
+                        break
+                    if opcode == 8:
+                        break
+                    if opcode == 9:
+                        ws_send_frame(self.connection, payload, opcode=10)
+                        continue
+                    if opcode in (1, 2) and payload:
+                        os.write(fd, payload)
+        except Exception as exc:
+            try:
+                ws_send_frame(self.connection, f"\r\n[SSH error: {exc}]\r\n")
+            except Exception:
+                pass
+        finally:
+            try:
+                os.kill(pid, signal.SIGHUP)
+            except OSError:
+                pass
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            try:
+                os.waitpid(pid, os.WNOHANG)
+            except OSError:
+                pass
+
     def do_GET(self):
         path = self.parsed().path
         if path == "/health":
@@ -1154,6 +1528,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/logout":
             self.redirect("/login", [("Set-Cookie", self.clear_session_cookie())])
+            return
+        if path.startswith("/ssh-ws/"):
+            self.ssh_ws()
+            return
+        if path.startswith("/ssh/"):
+            self.ssh_page()
             return
         if path.startswith("/access/"):
             self.proxy_access(path)
@@ -1221,6 +1601,7 @@ class Handler(BaseHTTPRequestHandler):
                 payload = self.read_payload()
                 router_id = clean_router_id(payload.get("id"))
                 entry_port = int(payload.get("entry_port") or 0)
+                ssh_entry_port = int(payload.get("ssh_entry_port") or (entry_port + 1000))
                 if entry_port <= 0:
                     self.send_text(400, "entry_port должен быть больше 0")
                     return
@@ -1231,13 +1612,21 @@ class Handler(BaseHTTPRequestHandler):
                             f"Router ID '{router_id}' уже есть. Для второго роутера укажи новый ID, например node-2 или main123.",
                         )
                         return
-                    port_owner = get_router_by_entry_port(conn, entry_port, router_id)
+                    port_owner = get_router_by_any_port(conn, entry_port, router_id)
                     if port_owner:
                         self.send_text(
                             409,
                             f"entry_port {entry_port} уже занят роутером '{port_owner['id']}'. Для следующего роутера поставь другой порт, например {entry_port + 10}.",
                         )
                         return
+                    ssh_port_owner = get_router_by_any_port(conn, ssh_entry_port, router_id)
+                    if ssh_port_owner:
+                        self.send_text(
+                            409,
+                            f"ssh_entry_port {ssh_entry_port} уже занят роутером '{ssh_port_owner['id']}'. Поставь entry_port так, чтобы entry_port + 1000 был свободен.",
+                        )
+                        return
+                    payload["ssh_entry_port"] = ssh_entry_port
                     row = upsert_router(conn, payload)
                     router = row_to_router(row)
                 self.send_json(200, {"ok": True, "router": router})
@@ -1329,8 +1718,9 @@ class Handler(BaseHTTPRequestHandler):
                 if low == "location":
                     value = rewrite_location(value, prefix, port)
                 if low == "set-cookie":
-                    value = rewrite_cookie_path(value, prefix + "/")
+                    value = rewrite_cookie_path(value, "/")
                 resp_headers.append((key, value))
+            resp_headers.append(("Set-Cookie", current_router_cookie(router_id)))
             if should_rewrite_body(content_type):
                 resp_body = rewrite_html(resp_body, prefix)
             self.send_bytes(
@@ -1465,6 +1855,9 @@ def cmd_add_router(args):
                 "public_url": args.public_url,
                 "admin_host": args.admin_host,
                 "admin_port": args.admin_port,
+                "ssh_entry_port": args.ssh_entry_port or args.entry_port + 1000,
+                "ssh_host": args.ssh_host,
+                "ssh_port": args.ssh_port,
             },
         )
     router = row_to_router(row)
@@ -1478,9 +1871,19 @@ def cmd_set_entry_port(args):
         row = get_router(conn, router_id)
         if not row:
             raise SystemExit(f"router not found: {router_id}")
+        old_entry = int(row["entry_port"] or 0)
+        old_ssh_entry = int(row["ssh_entry_port"] or 0)
+        new_entry = int(args.entry_port)
+        new_ssh_entry = new_entry + 1000 if old_ssh_entry in (0, old_entry + 1000) else old_ssh_entry
+        owner = get_router_by_any_port(conn, new_entry, router_id)
+        if owner:
+            raise SystemExit(f"entry_port {new_entry} already used by {owner['id']}")
+        owner = get_router_by_any_port(conn, new_ssh_entry, router_id)
+        if owner:
+            raise SystemExit(f"ssh_entry_port {new_ssh_entry} already used by {owner['id']}")
         conn.execute(
-            "update routers set entry_port = ?, updated_at = ? where id = ?",
-            (int(args.entry_port), now_ts(), router_id),
+            "update routers set entry_port = ?, ssh_entry_port = ?, updated_at = ? where id = ?",
+            (new_entry, new_ssh_entry, now_ts(), router_id),
         )
         conn.commit()
         row = get_router(conn, router_id)
@@ -1568,6 +1971,9 @@ def parser():
     add.add_argument("--public-url", default="")
     add.add_argument("--admin-host", default="127.0.0.1")
     add.add_argument("--admin-port", type=int, default=80)
+    add.add_argument("--ssh-entry-port", type=int, default=0)
+    add.add_argument("--ssh-host", default="127.0.0.1")
+    add.add_argument("--ssh-port", type=int, default=22)
     add.set_defaults(func=cmd_add_router)
 
     sep = sub.add_parser("set-entry-port", help="set router VPS entry port without changing UUID")

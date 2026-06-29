@@ -2,7 +2,7 @@
 
 KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
 AGENT="${AGENT:-/usr/sbin/owrt-remote}"
-OWRT_REMOTE_UI_VERSION="2026-06-29-openwrt-remote-hub-v14"
+OWRT_REMOTE_UI_VERSION="2026-06-29-ssh-terminal-v15"
 PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
 RESULT_TITLE=""
 RESULT_BODY=""
