@@ -1220,7 +1220,7 @@ body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radi
 .dot{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green)}}
 .termBox{{height:min(620px,calc(100vh - 112px));min-height:360px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}}
 .bar{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05)}}.termActions{{display:flex;align-items:center;gap:7px;flex-wrap:wrap}}.miniBtn{{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;padding:6px 10px;font:800 12px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}}.miniBtn:hover{{background:rgba(255,255,255,.14)}}
-#term{{flex:1;min-height:0;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;outline:none;background:rgba(0,0,0,.42);font:13px/1.34 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff;scrollbar-width:thin;scrollbar-color:rgba(168,85,247,.72) rgba(255,255,255,.06)}}#term::-webkit-scrollbar{{width:12px;height:12px}}#term::-webkit-scrollbar-track{{background:rgba(255,255,255,.06)}}#term::-webkit-scrollbar-thumb{{background:linear-gradient(180deg,#7c3aed,#22d3ee);border-radius:999px;border:3px solid rgba(10,6,18,.96)}}#term::-webkit-scrollbar-thumb:hover{{background:linear-gradient(180deg,#a855f7,#67e8f9)}}
+#term{{flex:1;min-height:0;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;outline:none;background:rgba(0,0,0,.42);font:13px/1.34 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff;scrollbar-width:thin;scrollbar-color:rgba(168,85,247,.72) rgba(255,255,255,.06)}}#term::-webkit-scrollbar{{width:12px;height:12px}}#term::-webkit-scrollbar-track{{background:rgba(255,255,255,.06)}}#term::-webkit-scrollbar-thumb{{background:linear-gradient(180deg,#7c3aed,#22d3ee);border-radius:999px;border:3px solid rgba(10,6,18,.96)}}#term::-webkit-scrollbar-thumb:hover{{background:linear-gradient(180deg,#a855f7,#67e8f9)}}.term-error{{color:#fb7185;font-weight:900}}.term-warn{{color:#fde68a;font-weight:850}}.term-ok{{color:#bbf7d0;font-weight:850}}.term-info{{color:#67e8f9;font-weight:850}}.term-prompt{{color:#86efac;font-weight:900}}.term-metric{{color:#93c5fd;font-weight:850}}.term-muted{{color:#c4b5fd}}.term-inverse{{display:inline-block;background:#ddd6fe;color:#13091f;border-radius:3px;padding:0 3px;font-weight:900}}
 .bad{{color:#fecdd3}}
 @media(max-width:680px){{body{{padding:10px}}.top{{align-items:flex-start;flex-direction:column}}.sshTitle{{align-items:flex-start;flex-direction:column;gap:8px}}.chips{{width:100%}}.btn{{width:100%}}.termBox{{height:calc(100vh - 150px);min-height:320px}}.bar{{align-items:flex-start;flex-direction:column}}}}
 </style>
@@ -1256,13 +1256,39 @@ const copyTerm = document.getElementById('copyTerm');
 const scrollTopBtn = document.getElementById('scrollTop');
 const scrollBottomBtn = document.getElementById('scrollBottom');
 let ws;
+function escapeHtmlText(text) {{
+  return String(text ?? '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));
+}}
 function cleanTerminal(text) {{
-  return String(text || '')
+  let clearScreen = false;
+  let value = String(text || '')
     .replace(/\\x1b\\][^\\x07]*(?:\\x07|\\x1b\\\\)/g, '')
     .replace(/\\x1b\\[\\?2004[hl]/g, '');
+  value = value.replace(/\\x1bc/g, () => {{ clearScreen = true; return ''; }});
+  value = value.replace(/(?:\\x1b\\[H)?\\x1b\\[J|\\x1b\\[2J(?:\\x1b\\[H)?|\\x1b\\[H\\x1b\\[J/g, () => {{
+    clearScreen = true;
+    return '';
+  }});
+  value = value.replace(/\\x1b\\[7m([\\s\\S]*?)\\x1b\\[m/g, (_, inner) => `\\uE000${{inner}}\\uE001`);
+  value = value.replace(/\\x1b\\[[0-9;?]*[ -/]*[@-~]/g, '');
+  return {{text: value, clearScreen}};
+}}
+function highlightTerminal(text) {{
+  let html = escapeHtmlText(text);
+  html = html.replace(/\\uE000([\\s\\S]*?)\\uE001/g, '<span class="term-inverse">$1</span>');
+  html = html.replace(/(Permission denied[^\\n]*|command-line line \\d+:[^\\n]*|\\[[^\\n]*(?:error|ошибка|closed|закрыто)[^\\n]*\\])/gi, '<span class="term-error">$1</span>');
+  html = html.replace(/((?:root@)?127\\.0\\.0\\.1[^\\n]*password:|password:|пароль:)/gi, '<span class="term-warn">$1</span>');
+  html = html.replace(/(^|\\n)(root@[^\\n#]+[#>$])/g, '$1<span class="term-prompt">$2</span>');
+  html = html.replace(/(BusyBox v[^\\n]*|OpenWrt [^\\n]*|W I R E L E S S\\s+F R E E D O M)/g, '<span class="term-info">$1</span>');
+  html = html.replace(/\\b(Mem:|CPU:|Load average:)\\b/g, '<span class="term-metric">$1</span>');
+  html = html.replace(/\\b(OK|running|enabled|online)\\b/g, '<span class="term-ok">$1</span>');
+  html = html.replace(/\\b(failed|disabled|offline|refused|denied)\\b/gi, '<span class="term-error">$1</span>');
+  return html;
 }}
 function write(text) {{
-  term.textContent += cleanTerminal(text);
+  const cleaned = cleanTerminal(text);
+  if (cleaned.clearScreen) term.innerHTML = '';
+  term.insertAdjacentHTML('beforeend', highlightTerminal(cleaned.text));
   term.scrollTop = term.scrollHeight;
 }}
 function send(text) {{
