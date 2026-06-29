@@ -807,7 +807,8 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
 .metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong{{color:#bbf7d0}}.metric.temp-warn strong{{color:#fde68a}}.metric.temp-bad strong{{color:#fecdd3}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar,.authGrid{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{padding-top:0;justify-content:flex-start}}}}
-@media(max-width:680px){{.wrap{{padding:14px}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.card.main{{grid-column:span 1}}.top,.sectionHead{{align-items:flex-start;flex-direction:column}}.headerActions,.summary{{justify-content:flex-start}}.links a,.badge{{width:100%;min-width:0}}h1{{font-size:24px}}}}
+@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.name{{white-space:normal;font-size:18px}}.sectionHead{{align-items:flex-start;flex-direction:column;margin:18px 0 10px}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
+@media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
 </style>
 </head>
 <body>
@@ -1218,11 +1219,13 @@ body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radi
 .sshTitle{{display:flex;align-items:center;gap:10px;flex-wrap:wrap}}h1{{margin:0;font-size:18px;line-height:1.15}}.muted{{color:var(--muted)}}.chips{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}.chip{{border:1px solid var(--line);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.07);color:var(--muted);font-size:12px;font-weight:800}}
 .badge,.btn{{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 12px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:850;font-size:13px}}
 .dot{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green)}}
-.termBox{{height:min(620px,calc(100vh - 112px));min-height:360px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}}
+.termBox{{height:min(560px,calc(100vh - 112px));min-height:340px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}}
 .bar{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05)}}.termActions{{display:flex;align-items:center;gap:7px;flex-wrap:wrap}}.miniBtn{{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;padding:6px 10px;font:800 12px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}}.miniBtn:hover{{background:rgba(255,255,255,.14)}}
+.mobileInput{{display:none;gap:8px;padding:8px;border-top:1px solid var(--line);background:rgba(255,255,255,.045)}}.mobileInput input{{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.76);color:var(--text);font:14px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;outline:none}}.mobileInput input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12)}}.mobileInput button{{border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950}}
 #term{{flex:1;min-height:0;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;outline:none;background:rgba(0,0,0,.42);font:13px/1.34 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff;scrollbar-width:thin;scrollbar-color:rgba(168,85,247,.72) rgba(255,255,255,.06)}}#term::-webkit-scrollbar{{width:12px;height:12px}}#term::-webkit-scrollbar-track{{background:rgba(255,255,255,.06)}}#term::-webkit-scrollbar-thumb{{background:linear-gradient(180deg,#7c3aed,#22d3ee);border-radius:999px;border:3px solid rgba(10,6,18,.96)}}#term::-webkit-scrollbar-thumb:hover{{background:linear-gradient(180deg,#a855f7,#67e8f9)}}.term-error{{color:#fb7185;font-weight:900}}.term-warn{{color:#fde68a;font-weight:850}}.term-ok{{color:#bbf7d0;font-weight:850}}.term-info{{color:#67e8f9;font-weight:850}}.term-prompt{{color:#86efac;font-weight:900}}.term-metric{{color:#93c5fd;font-weight:850}}.term-muted{{color:#c4b5fd}}.term-inverse{{display:inline-block;background:#ddd6fe;color:#13091f;border-radius:3px;padding:0 3px;font-weight:900}}
 .bad{{color:#fecdd3}}
-@media(max-width:680px){{body{{padding:10px}}.top{{align-items:flex-start;flex-direction:column}}.sshTitle{{align-items:flex-start;flex-direction:column;gap:8px}}.chips{{width:100%}}.btn{{width:100%}}.termBox{{height:calc(100vh - 150px);min-height:320px}}.bar{{align-items:flex-start;flex-direction:column}}}}
+@media(max-width:680px){{body{{padding:10px;font-size:13px;background-attachment:scroll}}.wrap{{gap:8px}}.top{{align-items:stretch;flex-direction:column;gap:8px}}.sshTitle{{align-items:flex-start;flex-direction:column;gap:7px}}h1{{font-size:17px}}.chips{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:6px}}.chip{{text-align:center;padding:6px 7px;font-size:11px;overflow:hidden;text-overflow:ellipsis}}.btn{{width:100%;min-width:0}}.termBox{{height:min(500px,calc(100vh - 150px));max-height:500px;min-height:300px}}.bar{{align-items:stretch;flex-direction:column}}.badge{{width:100%;justify-content:center}}.termActions{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:6px}}.miniBtn{{padding:8px 7px;font-size:11px}}#term{{font-size:12px;line-height:1.32;padding:10px}}.mobileInput{{display:flex}}}}
+@media(max-width:420px){{.chips,.termActions{{grid-template-columns:1fr}}.termBox{{height:min(420px,calc(100vh - 165px));max-height:420px}}}}
 </style>
 </head>
 <body>
@@ -1248,6 +1251,10 @@ body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radi
       </div>
     </div>
     <pre id="term" tabindex="0"></pre>
+    <div class="mobileInput">
+      <input id="cmdInput" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" placeholder="Команда или пароль">
+      <button id="cmdSend" type="button">Отправить</button>
+    </div>
   </section>
 </main>
 <script>
@@ -1255,6 +1262,8 @@ const term = document.getElementById('term');
 const copyTerm = document.getElementById('copyTerm');
 const scrollTopBtn = document.getElementById('scrollTop');
 const scrollBottomBtn = document.getElementById('scrollBottom');
+const cmdInput = document.getElementById('cmdInput');
+const cmdSend = document.getElementById('cmdSend');
 let ws;
 function escapeHtmlText(text) {{
   return String(text ?? '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));
@@ -1293,6 +1302,13 @@ function write(text) {{
 }}
 function send(text) {{
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(text);
+}}
+function sendCommandInput() {{
+  const value = cmdInput.value;
+  if (!value) return;
+  send(value + '\\r');
+  cmdInput.value = '';
+  term.focus();
 }}
 function connect() {{
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
@@ -1344,6 +1360,13 @@ scrollBottomBtn.addEventListener('click', () => {{
   term.scrollTo({{top: term.scrollHeight, behavior: 'smooth'}});
   term.focus();
 }});
+cmdSend.addEventListener('click', sendCommandInput);
+cmdInput.addEventListener('keydown', (ev) => {{
+  if (ev.key === 'Enter') {{
+    sendCommandInput();
+    ev.preventDefault();
+  }}
+}});
 connect();
 term.focus();
 </script>
@@ -1390,10 +1413,10 @@ button:hover{{filter:brightness(1.06)}}
     </div>
   </div>
   {error_html}
-  <label>Логин</label>
-  <input name="username" autocomplete="username" autofocus required>
-  <label>Пароль</label>
-  <input name="password" type="password" autocomplete="current-password" required>
+  <label for="hubUsername">Логин</label>
+  <input id="hubUsername" name="username" autocomplete="username" autofocus required>
+  <label for="hubPassword">Пароль</label>
+  <input id="hubPassword" name="password" type="password" autocomplete="current-password" required>
   <button>Войти</button>
 </form>
 </body>
@@ -2242,7 +2265,7 @@ def parser():
     ow.set_defaults(func=cmd_print_openwrt)
 
     serve = sub.add_parser("serve", help="run web dashboard")
-    serve.add_argument("--host", default=os.environ.get("OWRT_REMOTE_BIND", "127.0.0.1"))
+    serve.add_argument("--host", default=os.environ.get("OWRT_REMOTE_BIND", "0.0.0.0"))
     serve.add_argument("--port", type=int, default=int(os.environ.get("OWRT_REMOTE_PORT", "8088")))
     serve.add_argument("--public-url", default=os.environ.get("OWRT_REMOTE_PUBLIC_URL", ""))
     serve.set_defaults(func=cmd_serve)
