@@ -632,6 +632,22 @@ def reload_vps_xray(db_path=DB_PATH):
     return {"config": str(out), "service": service, "routers": len(rows)}
 
 
+def restart_vps_xray():
+    service = os.environ.get("OWRT_REMOTE_XRAY_SERVICE", "owrt-remote-xray")
+    result = subprocess.run(
+        ["systemctl", "restart", service],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=20,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        raise RuntimeError(f"systemctl restart {service} failed: {detail}")
+    return {"service": service}
+
+
 def make_openwrt_config(row, hub_url):
     lines = [
         "uci -q delete owrtremote.main",
@@ -810,6 +826,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <div class="headerActions">
       <div class="badge"><span class="dot on"></span>Hub online</div>
       <button class="badge" id="xrayReload" type="button">Обновить Xray VPS</button>
+      <button class="badge" id="xrayRestart" type="button">Рестарт Xray VPS</button>
       <button class="badge authToggle" id="authToggle" type="button">login: {safe_username}</button>
       <a class="btn" href="/logout">Выйти</a>
       <div class="authMenu" id="authMenu" hidden>
@@ -1053,6 +1070,22 @@ document.getElementById('xrayReload').addEventListener('click', async () => {{
     showRouterMsg(message);
   }} else {{
     showRouterMsg(text || 'Не удалось обновить Xray VPS', true);
+  }}
+}});
+
+document.getElementById('xrayRestart').addEventListener('click', async () => {{
+  showRouterMsg('Перезапускаю Xray на VPS...');
+  const res = await fetch('/api/xray/restart', {{method: 'POST'}});
+  const text = await res.text();
+  if (res.ok) {{
+    let message = 'Xray VPS перезапущен.';
+    try {{
+      const data = JSON.parse(text);
+      message = `Xray VPS перезапущен: ${{data.service}}.`;
+    }} catch (e) {{}}
+    showRouterMsg(message);
+  }} else {{
+    showRouterMsg(text || 'Не удалось перезапустить Xray VPS', true);
   }}
 }});
 
@@ -1542,8 +1575,6 @@ class Handler(BaseHTTPRequestHandler):
                 "-o",
                 "LogLevel=ERROR",
                 "-o",
-                "SendEnv=",
-                "-o",
                 "ServerAliveInterval=15",
                 "-p",
                 str(port),
@@ -1672,6 +1703,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/xray/reload":
             try:
                 result = reload_vps_xray(self.app.db_path)
+                self.send_json(200, {"ok": True, **result})
+            except Exception as exc:
+                self.send_text(500, str(exc))
+            return
+        if path == "/api/xray/restart":
+            try:
+                result = restart_vps_xray()
                 self.send_json(200, {"ok": True, **result})
             except Exception as exc:
                 self.send_text(500, str(exc))
