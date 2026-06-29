@@ -17,6 +17,7 @@ usage() {
 Использование:
   owrt-remote status
   owrt-remote doctor
+  owrt-remote install-xray-tmp
   owrt-remote render-client [--stdout]
   owrt-remote run
   owrt-remote heartbeat
@@ -145,7 +146,7 @@ xray_bin_path() {
 		printf '%s' "$configured"
 		return
 	fi
-	for candidate in /usr/bin/xray /usr/bin/xray-core /usr/local/bin/xray /opt/bin/xray /tmp/xray; do
+	for candidate in /usr/bin/xray /usr/bin/xray-core /usr/local/bin/xray /opt/bin/xray /tmp/owrt-xray/xray /tmp/xray; do
 		if [ -x "$candidate" ]; then
 			printf '%s' "$candidate"
 			return
@@ -157,6 +158,57 @@ xray_bin_path() {
 		return
 	fi
 	printf '%s' "$configured"
+}
+
+fetch_file() {
+	local url dst
+	url="$1"
+	dst="$2"
+	if command -v wget >/dev/null 2>&1; then
+		wget -O "$dst" "$url"
+		return
+	fi
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsSL "$url" -o "$dst"
+		return
+	fi
+	die "для скачивания нужен wget или curl"
+}
+
+xray_release_asset() {
+	case "$(uname -m 2>/dev/null)" in
+		aarch64|arm64) printf '%s\n' "Xray-linux-arm64-v8a.zip" ;;
+		armv7l|armv7*) printf '%s\n' "Xray-linux-arm32-v7a.zip" ;;
+		armv6l|armv6*) printf '%s\n' "Xray-linux-arm32-v6.zip" ;;
+		armv5l|armv5*) printf '%s\n' "Xray-linux-arm32-v5.zip" ;;
+		x86_64|amd64) printf '%s\n' "Xray-linux-64.zip" ;;
+		i386|i686) printf '%s\n' "Xray-linux-32.zip" ;;
+		*) return 1 ;;
+	esac
+}
+
+install_xray_tmp() {
+	local dir zip asset url
+	dir="/tmp/owrt-xray"
+	zip="$dir/xray.zip"
+	asset="$(xray_release_asset)" || die "не знаю готовый Xray asset для $(uname -m 2>/dev/null)"
+	url="https://github.com/XTLS/Xray-core/releases/latest/download/$asset"
+
+	mkdir -p /var/lock /var/run "$dir"
+	if ! command -v unzip >/dev/null 2>&1; then
+		opkg update || die "не смог обновить opkg для установки unzip"
+		opkg install unzip || die "не смог поставить unzip"
+	fi
+
+	fetch_file "$url" "$zip"
+	( cd "$dir" && unzip -o "$zip" xray >/dev/null ) || die "не смог распаковать Xray"
+	chmod +x "$dir/xray"
+	"$dir/xray" version || die "скачанный Xray не запускается"
+
+	uci set "$CONFIG.$SECTION.xray_bin=$dir/xray"
+	uci commit "$CONFIG"
+	printf 'OK: Xray поставлен в %s\n' "$dir/xray"
+	printf 'OK: xray_bin сохранен в /etc/config/owrtremote\n'
 }
 
 service_enabled() {
@@ -430,6 +482,9 @@ case "$cmd" in
 		;;
 	doctor)
 		doctor
+		;;
+	install-xray-tmp)
+		install_xray_tmp
 		;;
 	render-client)
 		render_client_config "$@"

@@ -2,7 +2,7 @@
 
 KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
 AGENT="${AGENT:-/usr/sbin/owrt-remote}"
-OWRT_REMOTE_UI_VERSION="2026-06-29-balanced-header-v11"
+OWRT_REMOTE_UI_VERSION="2026-06-29-xray-tmp-v12"
 PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
 RESULT_TITLE=""
 RESULT_BODY=""
@@ -166,6 +166,15 @@ run_action() {
 			"$AGENT" doctor >"$output" 2>&1 || rc=$?
 			set_result "Проверка" "$(cat "$output")" "ok"
 			;;
+		install_xray_tmp)
+			if "$AGENT" install-xray-tmp >"$output" 2>&1; then
+				"$AGENT" render-client >>"$output" 2>&1 || rc=$?
+				/etc/init.d/owrt-remote restart >>"$output" 2>&1 || rc=$?
+			else
+				rc=$?
+			fi
+			set_result "Xray установлен в /tmp" "$(cat "$output")" "ok"
+			;;
 	esac
 	if [ "$rc" != "0" ]; then
 		set_result "$RESULT_TITLE" "$(cat "$output")" "bad"
@@ -310,6 +319,7 @@ EOF
         <button class="btn bad" name="action" value="stop">Остановить</button>
         <button class="btn" name="action" value="heartbeat">Heartbeat</button>
         <button class="btn" name="action" value="doctor">Проверка</button>
+        <button class="btn primary" name="action" value="install_xray_tmp">Поставить Xray в /tmp</button>
         <a class="btn" href="?key=$(h "$key")&action=download_config">Скачать Xray config</a>
       </form>
 EOF
@@ -391,7 +401,7 @@ if [ "${REQUEST_METHOD:-GET}" = "POST" ]; then
 			save_config
 			run_action start
 			;;
-		start|stop|restart|heartbeat|doctor)
+		start|stop|restart|heartbeat|doctor|install_xray_tmp)
 			run_action "$action"
 			;;
 	esac

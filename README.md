@@ -176,6 +176,8 @@ owrt-remote heartbeat
 
 ## Xray на OpenWrt
 
+OpenWrt Remote не кладет Xray автоматически в прошивку: бинарник большой, и на многих роутерах не хватает flash. Если в проверке видно `нет Xray: /usr/bin/xray`, поставь его одним из способов ниже.
+
 Если хватает flash-памяти:
 
 ```sh
@@ -183,26 +185,16 @@ opkg update
 opkg install xray-core
 ```
 
-Если flash мало, можно запустить Xray из RAM для теста:
+Если flash мало, можно запустить Xray из RAM:
 
 ```sh
-mkdir -p /var/lock /var/run /tmp/owrt-xray
-cd /tmp/owrt-xray
-wget -O xray.zip "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-arm64-v8a.zip"
-command -v unzip >/dev/null 2>&1 || { opkg update; opkg install unzip; }
-unzip -o xray.zip xray
-chmod +x /tmp/owrt-xray/xray
-/tmp/owrt-xray/xray version
-uci set owrtremote.main.xray_bin='/tmp/owrt-xray/xray'
-uci commit owrtremote
+owrt-remote install-xray-tmp
+owrt-remote render-client
 /etc/init.d/owrt-remote restart
+owrt-remote doctor
 ```
 
-Для другой архитектуры скачай подходящий архив Xray:
-
-```text
-https://github.com/XTLS/Xray-core/releases/latest
-```
+То же самое можно сделать кнопкой `Поставить Xray в /tmp` в локальной панели роутера.
 
 ## Обновление
 

@@ -137,3 +137,4 @@ fi
 info "LuCI:   Службы -> OpenWrt Remote"
 info "Панель: http://$ip/cgi-bin/owrt-remote?key=$key"
 info "CLI:    owrt-remote doctor"
+info "Xray:   если пишет 'нет Xray', нажми в панели 'Поставить Xray в /tmp' или выполни: owrt-remote install-xray-tmp"
