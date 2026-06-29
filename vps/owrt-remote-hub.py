@@ -599,7 +599,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
   <section class="top">
     <div class="brand">
       <div>
-        <h1>Wrt Удаленный доступ извне</h1>
+        <h1>OpenWrt Remote Hub</h1>
         <div class="links">
           <a href="https://t.me/kzolotarev95" target="_blank" rel="noopener noreferrer">Telegram</a>
           <a href="https://github.com/kzolotarev95" target="_blank" rel="noopener noreferrer">GitHub</a>
@@ -640,7 +640,6 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
   <section class="sectionHead">
     <div>
       <h2>Карточки роутеров</h2>
-      <p>Главный роутер и подключенные точки с живым online/offline.</p>
     </div>
     <div class="summary">
       <div class="miniStat" id="statTotal">0 роутеров</div>
@@ -908,9 +907,53 @@ setInterval(loadRouters, 5000);
 
 def login_html(error=""):
     error_html = f"<div class=\"err\">{html.escape(error)}</div>" if error else ""
-    return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OpenWrt Remote Hub</title>
-<style>:root{{color-scheme:dark}}body{{min-height:100vh;margin:0;background:radial-gradient(circle at 20% 8%,rgba(168,85,247,.38),transparent 32%),radial-gradient(circle at 80% 8%,rgba(59,130,246,.28),transparent 32%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a);color:#f7f2ff;font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:grid;place-items:center}}.box{{width:min(390px,calc(100vw - 28px));background:rgba(19,14,32,.9);border:1px solid rgba(169,126,255,.25);border-radius:8px;padding:22px;box-shadow:0 24px 70px rgba(0,0,0,.34);backdrop-filter:blur(10px)}}h1{{margin:0 0 6px;font-size:25px}}p{{margin:0 0 14px;color:#b9adc9}}label{{display:block;margin:10px 0 5px;font-weight:800}}input,button{{width:100%;box-sizing:border-box;border-radius:8px;padding:12px}}input{{border:1px solid rgba(169,126,255,.25);background:rgba(8,5,18,.72);color:#f7f2ff}}button{{margin-top:14px;border:0;background:#7c3aed;color:#fff;font-weight:900;cursor:pointer}}.err{{margin:10px 0 0;padding:10px;border-radius:8px;background:rgba(251,113,133,.16);color:#fecdd3;font-weight:750}}</style></head>
-<body><form class="box" method="post" action="/login"><h1>OpenWrt Remote Hub</h1><p>Вход в панель роутеров</p>{error_html}<label>Логин</label><input name="username" autocomplete="username" autofocus required><label>Пароль</label><input name="password" type="password" autocomplete="current-password" required><button>Войти</button></form></body></html>"""
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenWrt Remote Hub</title>
+<style>
+:root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.9);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.28);--blue:#7c3aed;--cyan:#22d3ee;--red:#fb7185;--green:#22c55e;--grid:rgba(168,85,247,.13)}}
+*{{box-sizing:border-box}}
+body{{position:relative;min-height:100vh;margin:0;overflow:hidden;background-color:var(--bg);background-image:radial-gradient(circle at 16% 12%,rgba(168,85,247,.48),transparent 30%),radial-gradient(circle at 84% 8%,rgba(59,130,246,.34),transparent 32%),radial-gradient(circle at 55% 105%,rgba(236,72,153,.24),transparent 36%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-size:130% 130%,140% 140%,135% 135%,100% 100%,31px 31px,31px 31px;background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:grid;place-items:center;padding:18px;animation:bgFlow 28s ease-in-out infinite alternate}}
+body::before{{content:"";position:fixed;inset:-28%;pointer-events:none;background:conic-gradient(from 0deg at 50% 50%,rgba(168,85,247,.06),rgba(236,72,153,.30),rgba(59,130,246,.22),rgba(34,211,238,.16),rgba(168,85,247,.06));filter:blur(58px);opacity:.74;animation:auraSpin 40s linear infinite}}
+@keyframes bgFlow{{0%{{background-position:0% 0%,100% 0%,50% 100%,0 0,0 0,0 0}}50%{{background-position:24% 18%,62% 28%,38% 82%,0 0,15px 24px,24px 15px}}100%{{background-position:46% 30%,42% 42%,74% 62%,0 0,30px 0,0 30px}}}}
+@keyframes auraSpin{{from{{transform:rotate(0deg) scale(1)}}to{{transform:rotate(360deg) scale(1.08)}}}}
+.login{{position:relative;z-index:1;width:min(440px,100%);padding:22px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.045)),var(--panel);box-shadow:0 24px 78px rgba(0,0,0,.42);backdrop-filter:blur(14px)}}
+.brand{{display:flex;gap:13px;align-items:center;margin-bottom:18px}}
+.logo{{width:52px;height:52px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,#22d3ee,#7c3aed 58%,#22c55e);box-shadow:0 16px 40px rgba(124,58,237,.32);font-weight:950;color:white;letter-spacing:.5px}}
+h1{{margin:0;font-size:27px;line-height:1.15;letter-spacing:0}}
+p{{margin:5px 0 0;color:var(--muted)}}
+label{{display:block;margin:13px 0 6px;font-weight:850;color:#ede9fe}}
+input{{width:100%;border:1px solid var(--line);border-radius:8px;padding:13px 14px;background:rgba(8,5,18,.74);color:var(--text);outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
+input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.04)}}
+button{{width:100%;margin-top:16px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:13px 14px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;cursor:pointer;box-shadow:0 16px 34px rgba(124,58,237,.30)}}
+button:hover{{filter:brightness(1.06)}}
+.err{{margin:0 0 12px;padding:11px 12px;border:1px solid rgba(251,113,133,.45);border-radius:8px;background:rgba(251,113,133,.14);color:#fecdd3;font-weight:800}}
+.foot{{margin-top:14px;color:var(--muted);font-size:12px;text-align:center}}
+@media(max-width:520px){{body{{padding:14px}}.login{{padding:18px}}h1{{font-size:24px}}.logo{{width:46px;height:46px}}}}
+</style>
+</head>
+<body>
+<form class="login" method="post" action="/login">
+  <div class="brand">
+    <div class="logo">OR</div>
+    <div>
+      <h1>OpenWrt Remote Hub</h1>
+      <p>Вход в панель роутеров</p>
+    </div>
+  </div>
+  {error_html}
+  <label>Логин</label>
+  <input name="username" autocomplete="username" autofocus required>
+  <label>Пароль</label>
+  <input name="password" type="password" autocomplete="current-password" required>
+  <button>Войти</button>
+  <div class="foot">Удаленный доступ к OpenWrt через свой VPS</div>
+</form>
+</body>
+</html>"""
 
 
 class App:

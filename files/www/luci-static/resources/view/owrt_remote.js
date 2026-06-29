@@ -14,7 +14,7 @@ return view.extend({
 
 		if (!key) {
 			return E('div', { 'class': 'cbi-map' }, [
-				E('h2', {}, _('OpenWrt Remote')),
+				E('h2', {}, _('OpenWrt Remote Hub')),
 				E('div', { 'class': 'alert-message warning' }, [
 					_('Web key not found. Reinstall the module or create /etc/owrt-remote/web.key.')
 				])
@@ -28,7 +28,7 @@ return view.extend({
 		}, 100);
 
 		return E('div', { 'class': 'cbi-map' }, [
-			E('h2', {}, _('OpenWrt Remote')),
+			E('h2', {}, _('OpenWrt Remote Hub')),
 			E('p', {}, _('Opening remote access panel...')),
 			E('p', {}, [
 				E('a', { 'class': 'btn cbi-button cbi-button-apply', 'href': url }, _('Open panel'))
@@ -40,4 +40,3 @@ return view.extend({
 	handleSave: null,
 	handleReset: null
 });
-
