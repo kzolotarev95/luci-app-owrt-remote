@@ -969,7 +969,7 @@ function render(list) {{
       metric('RAM', memory),
       metric('Flash', flash),
       metric('Температура', temperature, tempClass(temperature)),
-      metric('Load', load)
+      metric('Load', load, 'span2')
     ].join('');
     return `<article class="card ${{isMain ? 'main' : ''}} ${{online ? 'online' : 'off'}}">
       <div class="cardTop">
@@ -1213,22 +1213,22 @@ def ssh_terminal_html(row):
 :root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.92);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.28);--green:#22c55e;--blue:#7c3aed;--red:#fb7185;--grid:rgba(168,85,247,.13)}}
 *{{box-sizing:border-box}}
 body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radial-gradient(circle at 16% 10%,rgba(168,85,247,.45),transparent 30%),radial-gradient(circle at 88% 16%,rgba(59,130,246,.28),transparent 32%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:18px}}
-.wrap{{height:calc(100vh - 20px);max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:8px}}
-.top{{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:42px}}
-h1{{margin:0;font-size:18px;line-height:1.15}}.muted{{color:var(--muted)}}.chips{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}.chip{{border:1px solid var(--line);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.07);color:var(--muted);font-size:12px;font-weight:800}}
+.wrap{{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:10px}}
+.top{{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:42px}}
+.sshTitle{{display:flex;align-items:center;gap:10px;flex-wrap:wrap}}h1{{margin:0;font-size:18px;line-height:1.15}}.muted{{color:var(--muted)}}.chips{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}.chip{{border:1px solid var(--line);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.07);color:var(--muted);font-size:12px;font-weight:800}}
 .badge,.btn{{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 12px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:850;font-size:13px}}
 .dot{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green)}}
-.termBox{{flex:1;min-height:0;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}}
+.termBox{{height:min(620px,calc(100vh - 112px));min-height:360px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}}
 .bar{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05)}}
 #term{{flex:1;min-height:0;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;outline:none;background:rgba(0,0,0,.42);font:13px/1.34 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff}}
 .bad{{color:#fecdd3}}
-@media(max-width:680px){{body{{padding:10px}}.wrap{{height:calc(100vh - 20px)}}.top{{align-items:flex-start;flex-direction:column}}.chips{{width:100%}}.btn{{width:100%}}}}
+@media(max-width:680px){{body{{padding:10px}}.top{{align-items:flex-start;flex-direction:column}}.sshTitle{{align-items:flex-start;flex-direction:column;gap:8px}}.chips{{width:100%}}.btn{{width:100%}}.termBox{{height:calc(100vh - 150px);min-height:320px}}}}
 </style>
 </head>
 <body>
 <main class="wrap">
   <div class="top">
-    <div>
+    <div class="sshTitle">
       <h1>SSH · {safe_name}</h1>
       <div class="chips">
         <span class="chip">{safe_id}</span>
@@ -1239,7 +1239,7 @@ h1{{margin:0;font-size:18px;line-height:1.15}}.muted{{color:var(--muted)}}.chips
     <a class="btn" href="/">Назад в Hub</a>
   </div>
   <section class="termBox">
-    <div class="bar"><span class="badge"><i class="dot"></i>Terminal</span><span class="muted">root password</span></div>
+    <div class="bar"><span class="badge"><i class="dot"></i>Terminal</span></div>
     <pre id="term" tabindex="0"></pre>
   </section>
 </main>
