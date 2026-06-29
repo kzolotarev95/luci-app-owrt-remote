@@ -536,7 +536,7 @@ function render(list) {{
     const model = (r.status && (r.status.model || r.status.board)) || 'OpenWrt';
     const release = (r.status && r.status.release) || 'waiting heartbeat';
     const xray = (r.status && r.status.xray) || 'unknown';
-    const access = r.public_url || (r.access_url + '?' + tokenParam());
+    const access = r.public_url || r.access_url;
     const tags = [
       isMain ? 'главный' : 'node',
       r.entry_port ? 'entry ' + r.entry_port : '',
@@ -868,7 +868,13 @@ class Handler(BaseHTTPRequestHandler):
                 resp_headers.append((key, value))
             if should_rewrite_body(content_type):
                 resp_body = rewrite_html(resp_body, prefix)
-            self.send_bytes(resp.status, resp_body, content_type or "application/octet-stream", resp_headers)
+            self.send_bytes(
+                resp.status,
+                resp_body,
+                content_type or "application/octet-stream",
+                resp_headers,
+                set_cookie=self.admin_cookie_needed(),
+            )
         except Exception as exc:
             self.send_text(502, f"proxy error: {exc}")
 
