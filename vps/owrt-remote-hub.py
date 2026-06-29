@@ -237,21 +237,38 @@ def upsert_router(conn, values):
     router_id = clean_router_id(values.get("id"))
     current = get_router(conn, router_id)
     ts = now_ts()
+
+    def keep_str(key, default=""):
+        value = values.get(key)
+        if value not in (None, ""):
+            return value
+        if current:
+            return current[key]
+        return default
+
+    def keep_int(key, default=0):
+        value = values.get(key)
+        if value not in (None, ""):
+            return int(value)
+        if current:
+            return int(current[key] or default)
+        return default
+
     payload = {
         "id": router_id,
         "name": values.get("name") or router_id,
         "role": values.get("role") or "node",
-        "entry_port": int(values.get("entry_port") or 0),
-        "vps_host": values.get("vps_host") or "",
-        "vless_port": int(values.get("vless_port") or DEFAULT_VLESS_PORT),
-        "vless_uuid": values.get("vless_uuid") or str(uuid.uuid4()),
-        "vless_encryption": values.get("vless_encryption") or "none",
-        "vless_decryption": values.get("vless_decryption") or "none",
-        "vless_flow": values.get("vless_flow") or "",
-        "reverse_tag": values.get("reverse_tag") or "reverse-in",
-        "public_url": values.get("public_url") or "",
-        "admin_host": values.get("admin_host") or "127.0.0.1",
-        "admin_port": int(values.get("admin_port") or 80),
+        "entry_port": keep_int("entry_port", 0),
+        "vps_host": keep_str("vps_host", ""),
+        "vless_port": keep_int("vless_port", DEFAULT_VLESS_PORT),
+        "vless_uuid": keep_str("vless_uuid", str(uuid.uuid4())),
+        "vless_encryption": keep_str("vless_encryption", "none"),
+        "vless_decryption": keep_str("vless_decryption", "none"),
+        "vless_flow": keep_str("vless_flow", ""),
+        "reverse_tag": keep_str("reverse_tag", "reverse-in"),
+        "public_url": keep_str("public_url", ""),
+        "admin_host": keep_str("admin_host", "127.0.0.1"),
+        "admin_port": keep_int("admin_port", 80),
         "updated_at": ts,
     }
     if current:
@@ -1187,6 +1204,23 @@ def cmd_add_router(args):
     print(json.dumps(router, ensure_ascii=False, indent=2))
 
 
+def cmd_set_entry_port(args):
+    router_id = clean_router_id(args.id)
+    with connect(args.db) as conn:
+        init_db(conn)
+        row = get_router(conn, router_id)
+        if not row:
+            raise SystemExit(f"router not found: {router_id}")
+        conn.execute(
+            "update routers set entry_port = ?, updated_at = ? where id = ?",
+            (int(args.entry_port), now_ts(), router_id),
+        )
+        conn.commit()
+        row = get_router(conn, router_id)
+    router = row_to_router(row)
+    print(json.dumps(router, ensure_ascii=False, indent=2))
+
+
 def cmd_list(args):
     with connect(args.db) as conn:
         init_db(conn)
@@ -1268,6 +1302,11 @@ def parser():
     add.add_argument("--admin-host", default="127.0.0.1")
     add.add_argument("--admin-port", type=int, default=80)
     add.set_defaults(func=cmd_add_router)
+
+    sep = sub.add_parser("set-entry-port", help="set router VPS entry port without changing UUID")
+    sep.add_argument("--id", required=True)
+    sep.add_argument("--entry-port", type=int, required=True)
+    sep.set_defaults(func=cmd_set_entry_port)
 
     ls = sub.add_parser("list-routers", help="print routers")
     ls.set_defaults(func=cmd_list)

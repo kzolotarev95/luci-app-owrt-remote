@@ -100,6 +100,12 @@ sudo /opt/owrt-remote/owrt-remote-hub.py add-router \
   --vps-host YOUR_VPS_IP
 ```
 
+Порты не путать:
+
+- `entry_port` задается на VPS в карточке роутера. Он должен быть уникальным: `18080`, `18090`, `18100`.
+- `vps_port` на OpenWrt обычно один для всех роутеров: `8443`.
+- `admin_port` на OpenWrt обычно `80`, это локальный порт LuCI внутри роутера.
+
 Сгенерировать Xray config для VPS:
 
 ```sh
