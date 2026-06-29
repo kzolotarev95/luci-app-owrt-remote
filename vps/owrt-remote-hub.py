@@ -586,10 +586,11 @@ h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.muted{{color:var(
 .authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:5;width:min(520px,calc(100vw - 44px));padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px)}}.authMenu[hidden]{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr 1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
 input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:rgba(8,5,18,.72);color:var(--text)}}button,.btn{{border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:10px 13px;background:rgba(255,255,255,.10);color:#f7f2ff;font-weight:850;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}.authToggle{{border-radius:999px;padding:8px 14px;background:var(--panel);color:var(--muted)}}button.primary,.btn.primary{{background:var(--blue);color:#fff;box-shadow:0 10px 22px rgba(124,58,237,.22)}}button.bad,.btn.bad{{background:rgba(251,113,133,.16);color:#fecdd3}}.btn.good{{background:rgba(34,197,94,.16);color:#bbf7d0}}.btn.disabled{{opacity:.45;cursor:not-allowed}}
 .sectionHead{{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:24px 0 14px}}.sectionHead h2{{margin:0;font-size:22px}}.sectionHead p{{margin:3px 0 0;color:var(--muted)}}.summary{{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}}.miniStat{{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.07);padding:8px 12px;color:#ddd6fe;font-weight:750;white-space:nowrap}}
-.cards{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{position:relative;min-height:246px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}}.card::before{{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--green)}}.card.off::before{{background:var(--red)}}.card.warn::before{{background:var(--amber)}}.card.main{{grid-column:span 2}}
+.cards{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{position:relative;min-height:246px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}}.card::before{{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--green)}}.card.online{{border-color:rgba(34,197,94,.45);box-shadow:0 18px 46px rgba(0,0,0,.28),0 0 0 1px rgba(34,197,94,.10),0 0 34px rgba(34,197,94,.10)}}.card.online::after{{content:"";position:absolute;right:-42px;top:-42px;width:108px;height:108px;border-radius:50%;background:radial-gradient(circle,rgba(34,197,94,.26),transparent 68%);animation:onlineGlow 2.4s ease-in-out infinite}}.card.off::before{{background:var(--red)}}.card.warn::before{{background:var(--amber)}}.card.main{{grid-column:span 2}}
+@keyframes onlineGlow{{0%,100%{{transform:scale(.9);opacity:.55}}50%{{transform:scale(1.08);opacity:1}}}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}.routerMark{{display:grid;place-items:center;width:46px;height:46px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08)}}.routerIcon{{position:relative;width:28px;height:18px;border:2px solid #ddd6fe;border-radius:5px}}.routerIcon::before,.routerIcon::after{{content:"";position:absolute;top:-9px;width:9px;height:9px;border-top:2px solid #ddd6fe}}.routerIcon::before{{left:2px;transform:rotate(-34deg)}}.routerIcon::after{{right:2px;transform:rotate(34deg)}}.routerIcon span{{position:absolute;left:5px;right:5px;bottom:4px;display:flex;justify-content:space-between}}.routerIcon span::before,.routerIcon span::after{{content:"";width:4px;height:4px;border-radius:50%;background:#ddd6fe}}
-.status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);padding:7px 10px;font-weight:850;font-size:12px}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green)}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red)}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
-.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+.status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:none}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
+.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar,.authGrid{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{padding-top:0;justify-content:flex-start}}}}
 @media(max-width:680px){{.wrap{{padding:14px}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.card.main{{grid-column:span 1}}.top,.sectionHead{{align-items:flex-start;flex-direction:column}}.headerActions,.summary{{justify-content:flex-start}}.links a,.badge{{width:100%;min-width:0}}h1{{font-size:24px}}}}
 </style>
@@ -664,6 +665,23 @@ function ago(iso) {{
   return Math.floor(diff / 3600) + ' h ago';
 }}
 
+function duration(seconds) {{
+  let value = Number(seconds || 0);
+  if (!value) return 'unknown';
+  const days = Math.floor(value / 86400);
+  value %= 86400;
+  const hours = Math.floor(value / 3600);
+  value %= 3600;
+  const mins = Math.floor(value / 60);
+  if (days) return days + 'd ' + hours + 'h';
+  if (hours) return hours + 'h ' + mins + 'm';
+  return mins + 'm';
+}}
+
+function metric(label, value, cls = '') {{
+  return `<div class="metric ${{cls}}"><span>${{escapeHtml(label)}}</span><strong>${{escapeHtml(value || 'unknown')}}</strong></div>`;
+}}
+
 function setSummary(list) {{
   const total = list.length;
   const online = list.filter(r => r.online).length;
@@ -695,6 +713,11 @@ function render(list) {{
     const model = (r.status && (r.status.model || r.status.board)) || 'OpenWrt';
     const release = (r.status && r.status.release) || 'waiting heartbeat';
     const xray = (r.status && r.status.xray) || 'unknown';
+    const uptime = r.status && r.status.uptime ? duration(r.status.uptime) : 'unknown';
+    const load = (r.status && r.status.load) || 'unknown';
+    const memory = (r.status && r.status.memory) || 'unknown';
+    const flash = (r.status && r.status.flash) || 'unknown';
+    const temperature = (r.status && r.status.temperature) || 'unknown';
     const access = r.public_url || r.access_url;
     const tags = [
       isMain ? 'главный' : 'node',
@@ -706,7 +729,21 @@ function render(list) {{
     const adminButton = online
       ? `<a class="btn primary" href="${{escapeAttr(access)}}">Админка</a>`
       : `<span class="btn primary disabled">Админка</span>`;
-    return `<article class="card ${{isMain ? 'main' : ''}} ${{online ? '' : 'off'}}">
+    const sshButton = online
+      ? `<button class="btn" data-ssh="${{escapeAttr(r.id)}}">SSH</button>`
+      : `<span class="btn disabled">SSH</span>`;
+    const metricHtml = [
+      metric('Модель', model, 'span2'),
+      metric('OpenWrt', release),
+      metric('Xray', xray),
+      metric('В сети уже', uptime),
+      metric('Был на связи', ago(r.last_seen_iso)),
+      metric('RAM', memory),
+      metric('Flash', flash),
+      metric('Температура', temperature),
+      metric('Load', load)
+    ].join('');
+    return `<article class="card ${{isMain ? 'main' : ''}} ${{online ? 'online' : 'off'}}">
       <div class="cardTop">
         <div class="routerMark"><div class="routerIcon"><span></span></div></div>
         <div class="status ${{stateClass}}"><i></i>${{stateText}}</div>
@@ -715,13 +752,11 @@ function render(list) {{
       <div class="metaLine">ID: ${{escapeHtml(r.id)}} · роль: ${{escapeHtml(role)}}</div>
       <div class="tagRow">${{tagHtml}}</div>
       <div class="metrics">
-        <div class="metric"><span>Модель</span><strong>${{escapeHtml(model)}}</strong></div>
-        <div class="metric"><span>OpenWrt</span><strong>${{escapeHtml(release)}}</strong></div>
-        <div class="metric"><span>Xray</span><strong>${{escapeHtml(xray)}}</strong></div>
-        <div class="metric"><span>Был на связи</span><strong>${{escapeHtml(ago(r.last_seen_iso))}}</strong></div>
+        ${{metricHtml}}
       </div>
       <div class="actions">
         ${{adminButton}}
+        ${{sshButton}}
         <a class="btn good" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
         <a class="btn" href="${{escapeAttr(r.xray_client_url)}}">Client JSON</a>
         <button class="bad" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
@@ -844,6 +879,11 @@ routerForm.addEventListener('submit', async (ev) => {{
 }});
 
 cards.addEventListener('click', async (ev) => {{
+  const sshId = ev.target?.dataset?.ssh;
+  if (sshId) {{
+    showRouterMsg('SSH для ' + sshId + ': нужен отдельный reverse-порт на 22 и web-terminal. Я добавил кнопку рядом с карточкой; сам интерактивный терминал включается следующим шагом, чтобы не сломать LuCI-туннель.', true);
+    return;
+  }}
   const id = ev.target?.dataset?.delete;
   if (!id) return;
   if (!confirm('Удалить роутер ' + id + '?')) return;
@@ -920,27 +960,26 @@ body{{position:relative;min-height:100vh;margin:0;overflow:hidden;background-col
 body::before{{content:"";position:fixed;inset:-28%;pointer-events:none;background:conic-gradient(from 0deg at 50% 50%,rgba(168,85,247,.06),rgba(236,72,153,.30),rgba(59,130,246,.22),rgba(34,211,238,.16),rgba(168,85,247,.06));filter:blur(58px);opacity:.74;animation:auraSpin 40s linear infinite}}
 @keyframes bgFlow{{0%{{background-position:0% 0%,100% 0%,50% 100%,0 0,0 0,0 0}}50%{{background-position:24% 18%,62% 28%,38% 82%,0 0,15px 24px,24px 15px}}100%{{background-position:46% 30%,42% 42%,74% 62%,0 0,30px 0,0 30px}}}}
 @keyframes auraSpin{{from{{transform:rotate(0deg) scale(1)}}to{{transform:rotate(360deg) scale(1.08)}}}}
-.login{{position:relative;z-index:1;width:min(440px,100%);padding:22px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.045)),var(--panel);box-shadow:0 24px 78px rgba(0,0,0,.42);backdrop-filter:blur(14px)}}
-.brand{{display:flex;gap:13px;align-items:center;margin-bottom:18px}}
-.logo{{width:52px;height:52px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,#22d3ee,#7c3aed 58%,#22c55e);box-shadow:0 16px 40px rgba(124,58,237,.32);font-weight:950;color:white;letter-spacing:.5px}}
-h1{{margin:0;font-size:27px;line-height:1.15;letter-spacing:0}}
-p{{margin:5px 0 0;color:var(--muted)}}
-label{{display:block;margin:13px 0 6px;font-weight:850;color:#ede9fe}}
-input{{width:100%;border:1px solid var(--line);border-radius:8px;padding:13px 14px;background:rgba(8,5,18,.74);color:var(--text);outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
+.login{{position:relative;z-index:1;width:min(360px,100%);padding:16px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.40);backdrop-filter:blur(14px)}}
+.brand{{display:flex;gap:10px;align-items:center;margin-bottom:12px}}
+.logo{{width:72px;height:34px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,#22d3ee,#7c3aed 58%,#22c55e);box-shadow:0 12px 30px rgba(124,58,237,.28);font-size:12px;font-weight:950;color:white;letter-spacing:.1px}}
+h1{{margin:0;font-size:23px;line-height:1.1;letter-spacing:0}}
+p{{margin:3px 0 0;color:var(--muted)}}
+label{{display:block;margin:10px 0 5px;font-weight:850;color:#ede9fe}}
+input{{width:100%;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.74);color:var(--text);outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
 input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.04)}}
-button{{width:100%;margin-top:16px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:13px 14px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;cursor:pointer;box-shadow:0 16px 34px rgba(124,58,237,.30)}}
+button{{width:100%;margin-top:13px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;cursor:pointer;box-shadow:0 14px 30px rgba(124,58,237,.28)}}
 button:hover{{filter:brightness(1.06)}}
 .err{{margin:0 0 12px;padding:11px 12px;border:1px solid rgba(251,113,133,.45);border-radius:8px;background:rgba(251,113,133,.14);color:#fecdd3;font-weight:800}}
-.foot{{margin-top:14px;color:var(--muted);font-size:12px;text-align:center}}
-@media(max-width:520px){{body{{padding:14px}}.login{{padding:18px}}h1{{font-size:24px}}.logo{{width:46px;height:46px}}}}
+@media(max-width:520px){{body{{padding:14px}}.login{{padding:15px}}h1{{font-size:22px}}.logo{{width:68px;height:32px}}}}
 </style>
 </head>
 <body>
 <form class="login" method="post" action="/login">
   <div class="brand">
-    <div class="logo">OR</div>
+    <div class="logo">OpenWrt</div>
     <div>
-      <h1>OpenWrt Remote Hub</h1>
+      <h1>Remote Hub</h1>
       <p>Вход в панель роутеров</p>
     </div>
   </div>
@@ -950,7 +989,6 @@ button:hover{{filter:brightness(1.06)}}
   <label>Пароль</label>
   <input name="password" type="password" autocomplete="current-password" required>
   <button>Войти</button>
-  <div class="foot">Удаленный доступ к OpenWrt через свой VPS</div>
 </form>
 </body>
 </html>"""

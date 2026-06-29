@@ -129,6 +129,38 @@ memory_text() {
 	printf '0/0 kB'
 }
 
+flash_text() {
+	local text
+	text="$(df -h /overlay 2>/dev/null | awk 'NR == 2 { printf "%s free / %s (%s used)", $4, $2, $5; exit }')"
+	if [ -n "$text" ]; then
+		printf '%s' "$text"
+		return
+	fi
+	text="$(df -h / 2>/dev/null | awk 'NR == 2 { printf "%s free / %s (%s used)", $4, $2, $5; exit }')"
+	[ -n "$text" ] && {
+		printf '%s' "$text"
+		return
+	}
+	printf 'unknown'
+}
+
+temperature_text() {
+	local file raw max
+	max=""
+	for file in /sys/class/thermal/thermal_zone*/temp; do
+		[ -r "$file" ] || continue
+		raw="$(cat "$file" 2>/dev/null | tr -cd '0-9')"
+		[ -n "$raw" ] || continue
+		[ -z "$max" ] && max="$raw"
+		[ "$raw" -gt "$max" ] && max="$raw"
+	done
+	if [ -n "$max" ]; then
+		awk -v t="$max" 'BEGIN { if (t > 1000) printf "%.1f C", t / 1000; else printf "%s C", t }'
+		return
+	fi
+	printf 'unknown'
+}
+
 ps_all() {
 	ps w 2>/dev/null || ps 2>/dev/null || true
 }
@@ -359,6 +391,8 @@ heartbeat_json() {
   "uptime": $(safe_num "$(uptime_seconds)" 0),
   "load": $(json_string "$(load_text)"),
   "memory": $(json_string "$(memory_text)"),
+  "flash": $(json_string "$(flash_text)"),
+  "temperature": $(json_string "$(temperature_text)"),
   "xray": $(json_string "$xray_state"),
   "service": $(json_string "$service_state")
 }
