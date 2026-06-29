@@ -263,6 +263,18 @@ install_xray_tmp() {
 	printf 'OK: xray_bin сохранен в /etc/config/owrtremote\n'
 }
 
+ensure_tmp_xray() {
+	local configured
+	configured="$(uci_get xray_bin /usr/bin/xray)"
+	case "$configured" in
+		/tmp/owrt-xray/xray|/tmp/xray)
+			[ -x "$configured" ] && return 0
+			log "Xray был в /tmp и пропал после перезагрузки, ставлю заново..."
+			install_xray_tmp
+			;;
+	esac
+}
+
 service_enabled() {
 	/etc/init.d/owrt-remote enabled >/dev/null 2>&1
 }
@@ -392,6 +404,7 @@ run_xray() {
 	enabled="$(uci_get enabled 0)"
 	truthy "$enabled" || die "сервис выключен: включи option enabled '1'"
 
+	ensure_tmp_xray
 	xray_bin="$(xray_bin_path)"
 	xray_config="$(render_client_config)"
 	[ -x "$xray_bin" ] || die "xray не найден или не исполняемый: $xray_bin"
@@ -531,6 +544,7 @@ status() {
 doctor() {
 	local ok xray_bin
 	ok=1
+	ensure_tmp_xray
 	xray_bin="$(xray_bin_path)"
 
 	[ -x "$xray_bin" ] || {

@@ -16,6 +16,7 @@ import sqlite3
 import struct
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 import uuid
@@ -37,6 +38,8 @@ SESSION_COOKIE = "owrt_remote_session"
 ROUTER_COOKIE = "owrt_remote_router"
 LUCI_ABSOLUTE_ROOTS = ("/ubus", "/cgi-bin/luci", "/luci-static")
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+SSH_HTTP_SESSIONS = {}
+SSH_HTTP_LOCK = threading.Lock()
 
 
 def now_ts():
@@ -806,7 +809,7 @@ body::before{{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none
 @keyframes auraSpin{{from{{transform:rotate(0deg) scale(1)}}to{{transform:rotate(360deg) scale(1.08)}}}}
 .wrap{{position:relative;z-index:1;max-width:1220px;margin:0 auto;padding:22px}}.top{{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding:20px 0 18px}}
 .brand{{display:flex;align-items:center;gap:14px}}
-h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;min-height:44px;padding:8px 18px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.18),rgba(124,58,237,.34),rgba(236,72,153,.18));box-shadow:0 16px 42px rgba(124,58,237,.24),inset 0 1px 0 rgba(255,255,255,.12);overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}.links{{margin-top:8px}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{position:relative;justify-content:flex-end;padding-top:42px}}.badge{{background:var(--panel);color:var(--muted)}}.authToggle{{cursor:pointer}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
+h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10);overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}.links{{margin-top:8px}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{position:relative;justify-content:flex-end;padding-top:42px}}.badge{{background:var(--panel);color:var(--muted)}}.authToggle{{cursor:pointer}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
  .toolbar{{display:grid;grid-template-columns:1fr 1fr 110px 110px 150px auto;gap:10px;margin:18px 0;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px)}}
 .authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:5;width:min(520px,calc(100vw - 44px));padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px)}}.authMenu[hidden]{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr 1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
 input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:rgba(8,5,18,.72);color:var(--text)}}button,.btn{{border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:10px 13px;background:rgba(255,255,255,.10);color:#f7f2ff;font-weight:850;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}.authToggle{{border-radius:999px;padding:8px 14px;background:var(--panel);color:var(--muted)}}button.primary,.btn.primary{{background:var(--blue);color:#fff;box-shadow:0 10px 22px rgba(124,58,237,.22)}}button.bad,.btn.bad{{background:rgba(251,113,133,.16);color:#fecdd3}}.btn.good{{background:rgba(34,197,94,.16);color:#bbf7d0}}.btn.disabled{{opacity:.45;cursor:not-allowed}}
@@ -818,7 +821,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
 .metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong{{color:#bbf7d0}}.metric.temp-warn strong{{color:#fde68a}}.metric.temp-bad strong{{color:#fecdd3}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar,.authGrid{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{padding-top:0;justify-content:flex-start}}}}
-@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:100%;justify-content:center;min-height:42px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.name{{white-space:normal;font-size:18px}}.sectionHead{{align-items:flex-start;flex-direction:column;margin:18px 0 10px}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
+@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.name{{white-space:normal;font-size:18px}}.sectionHead{{align-items:flex-start;flex-direction:column;margin:18px 0 10px}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
 </style>
 </head>
@@ -1217,6 +1220,7 @@ def ssh_terminal_html(row, ws_token):
     quoted_id = urllib.parse.quote(router_id)
     ws_path = f"/ssh-ws/{quoted_id}?t={urllib.parse.quote(ws_token)}"
     check_path = f"/api/ssh/{quoted_id}/check?t={urllib.parse.quote(ws_token)}"
+    session_path = f"/api/ssh/{quoted_id}/session?t={urllib.parse.quote(ws_token)}"
     return f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -1278,6 +1282,9 @@ const scrollBottomBtn = document.getElementById('scrollBottom');
 const cmdInput = document.getElementById('cmdInput');
 const cmdSend = document.getElementById('cmdSend');
 let ws;
+let httpSid = '';
+let httpPollTimer = 0;
+let terminalMode = 'ws';
 function escapeHtmlText(text) {{
   return String(text ?? '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));
 }}
@@ -1314,7 +1321,17 @@ function write(text) {{
   term.scrollTop = term.scrollHeight;
 }}
 function send(text) {{
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(text);
+  if (ws && ws.readyState === WebSocket.OPEN) {{
+    ws.send(text);
+    return;
+  }}
+  if (terminalMode === 'http' && httpSid) {{
+    fetch('/api/ssh-session/' + encodeURIComponent(httpSid) + '/write', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
+      body: new URLSearchParams({{data: text}})
+    }}).catch(() => write('\\r\\n[не смог отправить ввод в HTTP-terminal]\\r\\n'));
+  }}
 }}
 function sendCommandInput() {{
   const value = cmdInput.value;
@@ -1325,6 +1342,40 @@ function sendCommandInput() {{
 }}
 let wsOpened = false;
 let diagnosticStarted = false;
+async function pollHttpTerminal() {{
+  if (!httpSid) return;
+  try {{
+    const res = await fetch('/api/ssh-session/' + encodeURIComponent(httpSid) + '/read', {{cache: 'no-store'}});
+    const data = await res.json();
+    if (data.data) write(data.data);
+    if (data.alive) {{
+      httpPollTimer = window.setTimeout(pollHttpTerminal, 650);
+    }} else {{
+      httpSid = '';
+    }}
+  }} catch (e) {{
+    write('\\r\\n[HTTP-terminal: потеряна связь с Hub]\\r\\n');
+    httpSid = '';
+  }}
+}}
+async function startHttpTerminal(reason) {{
+  if (terminalMode === 'http' || httpSid) return;
+  terminalMode = 'http';
+  write(`\\r\\n[${{reason}}]\\r\\nWebSocket не открылся, включаю запасной HTTP-terminal...\\r\\n`);
+  try {{
+    const res = await fetch('{session_path}', {{cache: 'no-store'}});
+    const data = await res.json();
+    if (!res.ok || !data.ok) {{
+      write(`HTTP-terminal не стартовал: ${{data.error || res.status}}\\r\\n`);
+      return;
+    }}
+    httpSid = data.sid;
+    write('HTTP-terminal подключен. Ввод работает через поле снизу или клавиатуру.\\r\\n');
+    pollHttpTerminal();
+  }} catch (e) {{
+    write('HTTP-terminal не стартовал: ' + e + '\\r\\n');
+  }}
+}}
 async function explainTerminalError(source) {{
   if (diagnosticStarted) return;
   diagnosticStarted = true;
@@ -1332,7 +1383,7 @@ async function explainTerminalError(source) {{
     const res = await fetch('{check_path}', {{cache: 'no-store'}});
     const data = await res.json();
     if (data.tcp_ok) {{
-      write(`\\r\\n[${{source}}]\\r\\nSSH-порт на VPS доступен, но WebSocket не открылся. Если это только на мобильном интернете, оператор или firewall режет порт 8088/WebSocket. Лучший фикс: открыть Hub через HTTPS на 443.\\r\\n`);
+      await startHttpTerminal(source);
     }} else {{
       write(`\\r\\n[${{source}}]\\r\\nSSH-туннель на VPS не отвечает: ${{data.error || 'порт закрыт'}}\\r\\nНажми в Hub: Обновить Xray VPS, потом Рестарт Xray VPS, и проверь heartbeat роутера.\\r\\n`);
     }}
@@ -1351,6 +1402,11 @@ function connect() {{
     else explainTerminalError('SSH соединение закрыто');
   }};
 }}
+window.addEventListener('beforeunload', () => {{
+  if (httpSid) {{
+    navigator.sendBeacon('/api/ssh-session/' + encodeURIComponent(httpSid) + '/close');
+  }}
+}});
 term.addEventListener('keydown', (ev) => {{
   if (ev.ctrlKey && ev.key.toLowerCase() === 'c') {{ send('\\x03'); ev.preventDefault(); return; }}
   if (ev.ctrlKey && ev.key.toLowerCase() === 'd') {{ send('\\x04'); ev.preventDefault(); return; }}
@@ -1425,7 +1481,7 @@ body::before{{content:"";position:fixed;inset:-28%;pointer-events:none;backgroun
 .login{{position:relative;z-index:1;width:min(360px,100%);padding:16px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.40);backdrop-filter:blur(14px)}}
 .brand{{display:flex;gap:10px;align-items:center;margin-bottom:12px}}
 .logo{{width:72px;height:34px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,#22d3ee,#7c3aed 58%,#22c55e);box-shadow:0 12px 30px rgba(124,58,237,.28);font-size:12px;font-weight:950;color:white;letter-spacing:.1px}}
-h1{{margin:0;font-size:21px;line-height:1.1;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;min-height:38px;padding:7px 14px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.18),rgba(124,58,237,.34),rgba(236,72,153,.18));box-shadow:0 14px 34px rgba(124,58,237,.24),inset 0 1px 0 rgba(255,255,255,.12);overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}@keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
+h1{{margin:0;font-size:18px;line-height:1.1;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 12px;border:1px solid rgba(34,211,238,.34);border-radius:8px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));box-shadow:0 10px 24px rgba(124,58,237,.18),inset 0 1px 0 rgba(255,255,255,.10);font-size:14px;overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}@keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 p{{margin:3px 0 0;color:var(--muted)}}
 label{{display:block;margin:10px 0 5px;font-weight:850;color:#ede9fe}}
 input{{width:100%;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.74);color:var(--text);outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
@@ -1693,6 +1749,168 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.send_json(200, {"ok": False, "router_id": router_id, "port": port, "tcp_ok": False, "error": str(exc)})
 
+    def ssh_args(self, port):
+        env = os.environ.copy()
+        env["TERM"] = "dumb"
+        args = [
+            "ssh",
+            "-tt",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "GlobalKnownHostsFile=/dev/null",
+            "-o",
+            "LogLevel=ERROR",
+            "-o",
+            "ServerAliveInterval=15",
+            "-p",
+            str(port),
+            "root@127.0.0.1",
+        ]
+        return env, args
+
+    def ssh_http_reader(self, sid):
+        session = SSH_HTTP_SESSIONS.get(sid)
+        if not session:
+            return
+        fd = session["fd"]
+        try:
+            while True:
+                ready, _, _ = select.select([fd], [], [], 0.5)
+                if fd not in ready:
+                    with session["lock"]:
+                        if not session["alive"]:
+                            break
+                    continue
+                try:
+                    data = os.read(fd, 4096)
+                except OSError as exc:
+                    with session["lock"]:
+                        session["buffer"].append(f"\r\n[SSH read error: {exc}]\r\n")
+                    break
+                if not data:
+                    break
+                with session["lock"]:
+                    session["buffer"].append(data.decode("utf-8", errors="replace"))
+                    session["last_seen"] = now_ts()
+        finally:
+            with session["lock"]:
+                session["alive"] = False
+                session["buffer"].append("\r\n[SSH соединение закрыто]\r\n")
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            try:
+                os.waitpid(session["pid"], os.WNOHANG)
+            except OSError:
+                pass
+
+    def start_ssh_http_session(self, router_id, port):
+        try:
+            import pty
+        except Exception as exc:
+            raise RuntimeError(f"pty недоступен на VPS: {exc}")
+        try:
+            pid, fd = pty.fork()
+        except Exception as exc:
+            raise RuntimeError(f"не удалось открыть SSH pty: {exc}")
+        if pid == 0:
+            env, args = self.ssh_args(port)
+            try:
+                os.execvpe("ssh", args, env)
+            except Exception as exc:
+                print(f"ssh start failed: {exc}", flush=True)
+                os._exit(127)
+        sid = secrets.token_urlsafe(24)
+        session = {
+            "id": sid,
+            "router_id": router_id,
+            "port": port,
+            "pid": pid,
+            "fd": fd,
+            "buffer": [],
+            "alive": True,
+            "created": now_ts(),
+            "last_seen": now_ts(),
+            "lock": threading.Lock(),
+        }
+        with SSH_HTTP_LOCK:
+            SSH_HTTP_SESSIONS[sid] = session
+        threading.Thread(target=self.ssh_http_reader, args=(sid,), daemon=True).start()
+        return session
+
+    def ssh_http_session(self):
+        router_id = self.router_id_from_path("/api/ssh/")
+        if not (self.admin_ok() or self.ssh_token_ok(router_id)):
+            self.send_json(403, {"ok": False, "error": "not authorized"})
+            return
+        with self.app.conn() as conn:
+            row = get_router(conn, router_id)
+        if not row:
+            self.send_json(404, {"ok": False, "error": "router not found"})
+            return
+        port = int(row["ssh_entry_port"] or 0)
+        if port <= 0:
+            self.send_json(400, {"ok": False, "error": "router has no ssh_entry_port"})
+            return
+        try:
+            session = self.start_ssh_http_session(router_id, port)
+            self.send_json(200, {"ok": True, "sid": session["id"], "router_id": router_id, "port": port})
+        except Exception as exc:
+            self.send_json(500, {"ok": False, "error": str(exc)})
+
+    def ssh_http_read(self, sid):
+        with SSH_HTTP_LOCK:
+            session = SSH_HTTP_SESSIONS.get(sid)
+        if not session:
+            self.send_json(404, {"ok": False, "error": "terminal session not found", "alive": False, "data": ""})
+            return
+        with session["lock"]:
+            data = "".join(session["buffer"])
+            session["buffer"].clear()
+            alive = bool(session["alive"])
+            session["last_seen"] = now_ts()
+        self.send_json(200, {"ok": True, "alive": alive, "data": data})
+
+    def ssh_http_write(self, sid):
+        with SSH_HTTP_LOCK:
+            session = SSH_HTTP_SESSIONS.get(sid)
+        if not session:
+            self.send_json(404, {"ok": False, "error": "terminal session not found"})
+            return
+        payload = self.read_payload()
+        data = payload.get("data", "")
+        if not isinstance(data, str):
+            data = str(data)
+        with session["lock"]:
+            alive = bool(session["alive"])
+            fd = session["fd"]
+        if not alive:
+            self.send_json(409, {"ok": False, "error": "terminal session closed"})
+            return
+        try:
+            os.write(fd, data.encode("utf-8", errors="replace"))
+            self.send_json(200, {"ok": True})
+        except Exception as exc:
+            self.send_json(500, {"ok": False, "error": str(exc)})
+
+    def ssh_http_close(self, sid):
+        with SSH_HTTP_LOCK:
+            session = SSH_HTTP_SESSIONS.pop(sid, None)
+        if not session:
+            self.send_json(200, {"ok": True})
+            return
+        with session["lock"]:
+            session["alive"] = False
+        try:
+            os.kill(session["pid"], signal.SIGHUP)
+        except OSError:
+            pass
+        self.send_json(200, {"ok": True})
+
     def run_ssh_session(self, router_id, port):
         try:
             import pty
@@ -1708,25 +1926,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if pid == 0:
-            env = os.environ.copy()
-            env["TERM"] = "dumb"
-            args = [
-                "ssh",
-                "-tt",
-                "-o",
-                "StrictHostKeyChecking=no",
-                "-o",
-                "UserKnownHostsFile=/dev/null",
-                "-o",
-                "GlobalKnownHostsFile=/dev/null",
-                "-o",
-                "LogLevel=ERROR",
-                "-o",
-                "ServerAliveInterval=15",
-                "-p",
-                str(port),
-                "root@127.0.0.1",
-            ]
+            env, args = self.ssh_args(port)
             try:
                 os.execvpe("ssh", args, env)
             except Exception as exc:
@@ -1790,6 +1990,13 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/ssh/") and path.endswith("/check"):
             self.ssh_check()
             return
+        if path.startswith("/api/ssh/") and path.endswith("/session"):
+            self.ssh_http_session()
+            return
+        if path.startswith("/api/ssh-session/") and path.endswith("/read"):
+            sid = urllib.parse.unquote(path.split("/")[3])
+            self.ssh_http_read(sid)
+            return
         if path.startswith("/ssh-ws/"):
             self.ssh_ws()
             return
@@ -1800,6 +2007,14 @@ class Handler(BaseHTTPRequestHandler):
             self.proxy_access(path)
             return
         if self.maybe_proxy_luci_absolute(path):
+            return
+        if path.startswith("/api/ssh-session/") and path.endswith("/write"):
+            sid = urllib.parse.unquote(path.split("/")[3])
+            self.ssh_http_write(sid)
+            return
+        if path.startswith("/api/ssh-session/") and path.endswith("/close"):
+            sid = urllib.parse.unquote(path.split("/")[3])
+            self.ssh_http_close(sid)
             return
         if not self.require_admin():
             return

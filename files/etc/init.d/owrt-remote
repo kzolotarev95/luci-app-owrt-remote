@@ -24,6 +24,8 @@ enabled() {
 }
 
 start_service() {
+	mkdir -p /var/lock /var/run /tmp/owrt-xray
+
 	if ! enabled; then
 		echo "owrt-remote disabled in /etc/config/owrtremote"
 		return 0
@@ -52,4 +54,3 @@ reload_service() {
 service_triggers() {
 	procd_add_reload_trigger owrtremote
 }
-
