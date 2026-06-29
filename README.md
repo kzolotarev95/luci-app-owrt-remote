@@ -206,17 +206,26 @@ sudo ss -lntp | grep -E ':(8088|8443|18080|18090|18100)\b'
 
 - LuCI идет через `entry_port`, например `18080`.
 - SSH идет через `ssh_entry_port`, например `19080`.
+- Для SSH создается отдельный VLESS reverse-туннель, поэтому LuCI и SSH не мешают друг другу.
 - Hub сам подключается к `root@127.0.0.1:19080` на VPS.
 - Через Xray reverse это попадает в SSH/dropbear роутера на `127.0.0.1:22`.
 
-После обновления обязательно обнови обе стороны:
+После обновления обязательно обнови обе стороны. На VPS:
 
 ```sh
-# VPS
 sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
 sudo systemctl restart owrt-remote-xray
+```
 
-# OpenWrt
+На каждом OpenWrt роутере заново вставь свежий `OpenWrt config` из карточки Hub или выведи его на VPS:
+
+```sh
+sudo /opt/owrt-remote/owrt-remote-hub.py print-openwrt-config --id ROUTER_ID --hub-url http://YOUR_VPS_IP:8088 --vps-host YOUR_VPS_IP
+```
+
+Потом на роутере:
+
+```sh
 owrt-remote render-client
 /etc/init.d/owrt-remote restart
 owrt-remote heartbeat

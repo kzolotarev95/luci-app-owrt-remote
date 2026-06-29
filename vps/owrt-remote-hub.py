@@ -201,6 +201,8 @@ def init_db(conn):
             admin_host text not null default '127.0.0.1',
             admin_port integer not null default 80,
             ssh_entry_port integer not null default 0,
+            ssh_vless_uuid text not null default '',
+            ssh_reverse_tag text not null default '',
             ssh_host text not null default '127.0.0.1',
             ssh_port integer not null default 22,
             created_at integer not null,
@@ -211,6 +213,8 @@ def init_db(conn):
         """
     )
     ensure_column(conn, "routers", "ssh_entry_port", "integer not null default 0")
+    ensure_column(conn, "routers", "ssh_vless_uuid", "text not null default ''")
+    ensure_column(conn, "routers", "ssh_reverse_tag", "text not null default ''")
     ensure_column(conn, "routers", "ssh_host", "text not null default '127.0.0.1'")
     ensure_column(conn, "routers", "ssh_port", "integer not null default 22")
     conn.execute(
@@ -220,6 +224,14 @@ def init_db(conn):
         where entry_port > 0 and (ssh_entry_port is null or ssh_entry_port = 0)
         """
     )
+    for row in conn.execute("select id, reverse_tag, ssh_vless_uuid, ssh_reverse_tag from routers").fetchall():
+        ssh_uuid = row["ssh_vless_uuid"] or str(uuid.uuid4())
+        ssh_tag = row["ssh_reverse_tag"] or f"{row['reverse_tag'] or 'reverse-in'}-ssh"
+        if ssh_uuid != row["ssh_vless_uuid"] or ssh_tag != row["ssh_reverse_tag"]:
+            conn.execute(
+                "update routers set ssh_vless_uuid = ?, ssh_reverse_tag = ? where id = ?",
+                (ssh_uuid, ssh_tag, row["id"]),
+            )
     conn.commit()
 
 
@@ -296,6 +308,10 @@ def upsert_router(conn, values):
             return int(current[key] or default)
         return default
 
+    reverse_tag = keep_str("reverse_tag", "reverse-in")
+    ssh_vless_uuid = values.get("ssh_vless_uuid") or (current["ssh_vless_uuid"] if current and current["ssh_vless_uuid"] else str(uuid.uuid4()))
+    ssh_reverse_tag = values.get("ssh_reverse_tag") or (current["ssh_reverse_tag"] if current and current["ssh_reverse_tag"] else f"{reverse_tag}-ssh")
+
     payload = {
         "id": router_id,
         "name": values.get("name") or router_id,
@@ -307,11 +323,13 @@ def upsert_router(conn, values):
         "vless_encryption": keep_str("vless_encryption", "none"),
         "vless_decryption": keep_str("vless_decryption", "none"),
         "vless_flow": keep_str("vless_flow", ""),
-        "reverse_tag": keep_str("reverse_tag", "reverse-in"),
+        "reverse_tag": reverse_tag,
         "public_url": keep_str("public_url", ""),
         "admin_host": keep_str("admin_host", "127.0.0.1"),
         "admin_port": keep_int("admin_port", 80),
         "ssh_entry_port": keep_int("ssh_entry_port", int(values.get("entry_port") or 0) + 1000 if values.get("entry_port") else 0),
+        "ssh_vless_uuid": ssh_vless_uuid,
+        "ssh_reverse_tag": ssh_reverse_tag,
         "ssh_host": keep_str("ssh_host", "127.0.0.1"),
         "ssh_port": keep_int("ssh_port", 22),
         "updated_at": ts,
@@ -334,6 +352,8 @@ def upsert_router(conn, values):
                 admin_host = :admin_host,
                 admin_port = :admin_port,
                 ssh_entry_port = :ssh_entry_port,
+                ssh_vless_uuid = :ssh_vless_uuid,
+                ssh_reverse_tag = :ssh_reverse_tag,
                 ssh_host = :ssh_host,
                 ssh_port = :ssh_port,
                 updated_at = :updated_at
@@ -348,12 +368,14 @@ def upsert_router(conn, values):
             insert into routers (
                 id, name, role, entry_port, vps_host, vless_port, vless_uuid,
                 vless_encryption, vless_decryption, vless_flow, reverse_tag,
-                public_url, admin_host, admin_port, ssh_entry_port, ssh_host, ssh_port,
+                public_url, admin_host, admin_port, ssh_entry_port, ssh_vless_uuid,
+                ssh_reverse_tag, ssh_host, ssh_port,
                 created_at, updated_at
             ) values (
                 :id, :name, :role, :entry_port, :vps_host, :vless_port, :vless_uuid,
                 :vless_encryption, :vless_decryption, :vless_flow, :reverse_tag,
-                :public_url, :admin_host, :admin_port, :ssh_entry_port, :ssh_host, :ssh_port,
+                :public_url, :admin_host, :admin_port, :ssh_entry_port, :ssh_vless_uuid,
+                :ssh_reverse_tag, :ssh_host, :ssh_port,
                 :created_at, :updated_at
             )
             """,
@@ -442,6 +464,7 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
             continue
         ssh_entry_port = int(row["ssh_entry_port"] or 0)
         reverse_out = f"reverse-{router_id}"
+        ssh_reverse_out = f"{reverse_out}-ssh"
         portal_in = f"entry-{router_id}"
         client = {
             "id": row["vless_uuid"],
@@ -453,6 +476,17 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
         if row["vless_flow"]:
             client["flow"] = row["vless_flow"]
         clients.append(client)
+        if ssh_entry_port > 0:
+            ssh_client = {
+                "id": row["ssh_vless_uuid"],
+                "email": f"{router_id}-ssh@owrt-remote",
+                "reverse": {
+                    "tag": ssh_reverse_out,
+                },
+            }
+            if row["vless_flow"]:
+                ssh_client["flow"] = row["vless_flow"]
+            clients.append(ssh_client)
         inbounds.append(
             {
                 "tag": portal_in,
@@ -492,7 +526,7 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
                 {
                     "type": "field",
                     "inboundTag": [ssh_in],
-                    "outboundTag": reverse_out,
+                    "outboundTag": ssh_reverse_out,
                 }
             )
 
@@ -507,6 +541,7 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
 
 def make_router_xray_config(row):
     bridge_tag = row["reverse_tag"]
+    ssh_bridge_tag = row["ssh_reverse_tag"] or f"{bridge_tag}-ssh"
     return {
         "log": {"loglevel": "warning"},
         "inbounds": [],
@@ -515,20 +550,14 @@ def make_router_xray_config(row):
                 "tag": "router-admin",
                 "protocol": "freedom",
                 "settings": {
-                    "finalRules": [
-                        {
-                            "action": "allow",
-                            "network": "tcp",
-                            "ip": row["admin_host"],
-                            "port": str(int(row["admin_port"])),
-                        },
-                        {
-                            "action": "allow",
-                            "network": "tcp",
-                            "ip": row["ssh_host"] or "127.0.0.1",
-                            "port": str(int(row["ssh_port"] or 22)),
-                        }
-                    ],
+                    "redirect": f"{row['admin_host']}:{int(row['admin_port'])}",
+                },
+            },
+            {
+                "tag": "router-ssh",
+                "protocol": "freedom",
+                "settings": {
+                    "redirect": f"{row['ssh_host'] or '127.0.0.1'}:{int(row['ssh_port'] or 22)}",
                 },
             },
             {
@@ -544,6 +573,19 @@ def make_router_xray_config(row):
                 },
                 "streamSettings": {"network": "tcp", "security": "none"},
             },
+            {
+                "tag": "vps-ssh-interconn",
+                "protocol": "vless",
+                "settings": {
+                    "address": row["vps_host"],
+                    "port": int(row["vless_port"]),
+                    "id": row["ssh_vless_uuid"],
+                    "encryption": row["vless_encryption"],
+                    "flow": row["vless_flow"],
+                    "reverse": {"tag": ssh_bridge_tag},
+                },
+                "streamSettings": {"network": "tcp", "security": "none"},
+            },
         ],
         "routing": {
             "rules": [
@@ -551,6 +593,11 @@ def make_router_xray_config(row):
                     "type": "field",
                     "inboundTag": [bridge_tag],
                     "outboundTag": "router-admin",
+                },
+                {
+                    "type": "field",
+                    "inboundTag": [ssh_bridge_tag],
+                    "outboundTag": "router-ssh",
                 }
             ]
         },
@@ -604,6 +651,8 @@ def make_openwrt_config(row, hub_url):
         f"uci set owrtremote.main.vless_encryption='{sh_quote(row['vless_encryption'])}'",
         f"uci set owrtremote.main.vless_flow='{sh_quote(row['vless_flow'])}'",
         f"uci set owrtremote.main.reverse_tag='{sh_quote(row['reverse_tag'])}'",
+        f"uci set owrtremote.main.ssh_vless_uuid='{sh_quote(row['ssh_vless_uuid'])}'",
+        f"uci set owrtremote.main.ssh_reverse_tag='{sh_quote(row['ssh_reverse_tag'] or (row['reverse_tag'] + '-ssh'))}'",
         f"uci set owrtremote.main.admin_host='{sh_quote(row['admin_host'])}'",
         f"uci set owrtremote.main.admin_port='{int(row['admin_port'])}'",
         f"uci set owrtremote.main.ssh_host='{sh_quote(row['ssh_host'] or '127.0.0.1')}'",
@@ -723,7 +772,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 @keyframes onlineGlow{{0%,100%{{transform:scale(.9);opacity:.55}}50%{{transform:scale(1.08);opacity:1}}}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}.routerMark{{display:grid;place-items:center;width:46px;height:46px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08)}}.routerIcon{{position:relative;width:28px;height:18px;border:2px solid #ddd6fe;border-radius:5px}}.routerIcon::before,.routerIcon::after{{content:"";position:absolute;top:-9px;width:9px;height:9px;border-top:2px solid #ddd6fe}}.routerIcon::before{{left:2px;transform:rotate(-34deg)}}.routerIcon::after{{right:2px;transform:rotate(34deg)}}.routerIcon span{{position:absolute;left:5px;right:5px;bottom:4px;display:flex;justify-content:space-between}}.routerIcon span::before,.routerIcon span::after{{content:"";width:4px;height:4px;border-radius:50%;background:#ddd6fe}}
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:none}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
-.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok{{border-color:rgba(34,197,94,.48);background:rgba(34,197,94,.12)}}.metric.temp-ok strong{{color:#bbf7d0}}.metric.temp-warn{{border-color:rgba(245,158,11,.58);background:rgba(245,158,11,.13)}}.metric.temp-warn strong{{color:#fde68a}}.metric.temp-bad{{border-color:rgba(251,113,133,.58);background:rgba(251,113,133,.14)}}.metric.temp-bad strong{{color:#fecdd3}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong{{color:#bbf7d0}}.metric.temp-warn strong{{color:#fde68a}}.metric.temp-bad strong{{color:#fecdd3}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar,.authGrid{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{padding-top:0;justify-content:flex-start}}}}
 @media(max-width:680px){{.wrap{{padding:14px}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.card.main{{grid-column:span 1}}.top,.sectionHead{{align-items:flex-start;flex-direction:column}}.headerActions,.summary{{justify-content:flex-start}}.links a,.badge{{width:100%;min-width:0}}h1{{font-size:24px}}}}
 </style>
@@ -1856,6 +1905,8 @@ def cmd_add_router(args):
                 "admin_host": args.admin_host,
                 "admin_port": args.admin_port,
                 "ssh_entry_port": args.ssh_entry_port or args.entry_port + 1000,
+                "ssh_vless_uuid": args.ssh_vless_uuid,
+                "ssh_reverse_tag": args.ssh_reverse_tag,
                 "ssh_host": args.ssh_host,
                 "ssh_port": args.ssh_port,
             },
@@ -1972,6 +2023,8 @@ def parser():
     add.add_argument("--admin-host", default="127.0.0.1")
     add.add_argument("--admin-port", type=int, default=80)
     add.add_argument("--ssh-entry-port", type=int, default=0)
+    add.add_argument("--ssh-vless-uuid", default="")
+    add.add_argument("--ssh-reverse-tag", default="")
     add.add_argument("--ssh-host", default="127.0.0.1")
     add.add_argument("--ssh-port", type=int, default=22)
     add.set_defaults(func=cmd_add_router)

@@ -268,7 +268,7 @@ service_enabled() {
 }
 
 render_client_config() {
-	local out stdout router_id vps_host vps_port uuid encryption flow reverse_tag admin_host admin_port ssh_host ssh_port xray_config
+	local out stdout router_id vps_host vps_port uuid ssh_uuid encryption flow reverse_tag ssh_reverse_tag admin_host admin_port ssh_host ssh_port xray_config
 	stdout="0"
 	if [ "${1:-}" = "--stdout" ]; then
 		stdout="1"
@@ -278,9 +278,11 @@ render_client_config() {
 	vps_host="$(uci_get vps_host '')"
 	vps_port="$(safe_num "$(uci_get vps_port 8443)" 8443)"
 	uuid="$(uci_get vless_uuid '')"
+	ssh_uuid="$(uci_get ssh_vless_uuid '')"
 	encryption="$(uci_get vless_encryption none)"
 	flow="$(uci_get vless_flow '')"
 	reverse_tag="$(safe_id "$(uci_get reverse_tag reverse-in)")"
+	ssh_reverse_tag="$(safe_id "$(uci_get ssh_reverse_tag "${reverse_tag}-ssh")")"
 	admin_host="$(uci_get admin_host 127.0.0.1)"
 	admin_port="$(safe_num "$(uci_get admin_port 80)" 80)"
 	ssh_host="$(uci_get ssh_host 127.0.0.1)"
@@ -289,6 +291,7 @@ render_client_config() {
 
 	[ -n "$vps_host" ] || die "vps_host пустой"
 	[ -n "$uuid" ] || die "vless_uuid пустой"
+	[ -n "$ssh_uuid" ] || ssh_uuid="$uuid"
 
 	out="${TMPDIR:-/tmp}/owrt-remote-client.$$"
 	cat >"$out" <<EOF
@@ -302,20 +305,14 @@ render_client_config() {
       "tag": "router-admin",
       "protocol": "freedom",
       "settings": {
-        "finalRules": [
-          {
-            "action": "allow",
-            "network": "tcp",
-            "ip": "$(json_escape "$admin_host")",
-            "port": "$admin_port"
-          },
-          {
-            "action": "allow",
-            "network": "tcp",
-            "ip": "$(json_escape "$ssh_host")",
-            "port": "$ssh_port"
-          }
-        ]
+        "redirect": "$(json_escape "$admin_host"):$admin_port"
+      }
+    },
+    {
+      "tag": "router-ssh",
+      "protocol": "freedom",
+      "settings": {
+        "redirect": "$(json_escape "$ssh_host"):$ssh_port"
       }
     },
     {
@@ -335,6 +332,24 @@ render_client_config() {
         "network": "tcp",
         "security": "none"
       }
+    },
+    {
+      "tag": "vps-ssh-interconn",
+      "protocol": "vless",
+      "settings": {
+        "address": "$(json_escape "$vps_host")",
+        "port": $vps_port,
+        "id": "$(json_escape "$ssh_uuid")",
+        "encryption": "$(json_escape "$encryption")",
+        "flow": "$(json_escape "$flow")",
+        "reverse": {
+          "tag": "$(json_escape "$ssh_reverse_tag")"
+        }
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "none"
+      }
     }
   ],
   "routing": {
@@ -345,6 +360,13 @@ render_client_config() {
           "$(json_escape "$reverse_tag")"
         ],
         "outboundTag": "router-admin"
+      },
+      {
+        "type": "field",
+        "inboundTag": [
+          "$(json_escape "$ssh_reverse_tag")"
+        ],
+        "outboundTag": "router-ssh"
       }
     ]
   },
