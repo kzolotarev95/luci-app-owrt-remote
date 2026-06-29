@@ -125,6 +125,16 @@ sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote
 sudo systemctl restart owrt-remote-xray
 ```
 
+Если кнопка `Админка` пишет `proxy error: [Errno 111] Connection refused`, значит VPS Xray еще не слушает `entry_port` этого роутера. В Hub нажми `Обновить Xray VPS` или выполни:
+
+```sh
+sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
+sudo systemctl restart owrt-remote-xray
+sudo ss -lntp | grep -E ':(8443|18080|18090|18100|18095)\b'
+```
+
+Для роутера с `entry 18095` в выводе должен появиться `127.0.0.1:18095`.
+
 Сгенерировать Xray config для VPS:
 
 ```sh
