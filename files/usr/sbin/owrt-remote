@@ -130,27 +130,40 @@ memory_text() {
 }
 
 flash_text() {
-	local text
-	text="$(df -h /overlay 2>/dev/null | awk 'NR == 2 { printf "%s free / %s (%s used)", $4, $2, $5; exit }')"
-	if [ -n "$text" ]; then
-		printf '%s' "$text"
-		return
-	fi
-	text="$(df -h / 2>/dev/null | awk 'NR == 2 { printf "%s free / %s (%s used)", $4, $2, $5; exit }')"
-	[ -n "$text" ] && {
-		printf '%s' "$text"
-		return
-	}
+	local mount text
+	for mount in /overlay /; do
+		text="$(
+			df -k "$mount" 2>/dev/null | awk '
+				function mb(k) {
+					if (k == "" || k == 0) return "0 MB"
+					return sprintf("%.1f MB", k / 1024)
+				}
+				END {
+					if (NF >= 5) {
+						total=$(NF-4); avail=$(NF-2); pct=$(NF-1)
+						printf "%s free / %s (%s used)", mb(avail), mb(total), pct
+					}
+				}
+			'
+		)"
+		if [ -n "$text" ]; then
+			printf '%s' "$text"
+			return
+		fi
+	done
 	printf 'unknown'
 }
 
 temperature_text() {
 	local file raw max
 	max=""
-	for file in /sys/class/thermal/thermal_zone*/temp; do
+	for file in /sys/class/thermal/thermal_zone*/temp /sys/devices/virtual/thermal/thermal_zone*/temp /sys/class/hwmon/hwmon*/temp*_input; do
 		[ -r "$file" ] || continue
-		raw="$(cat "$file" 2>/dev/null | tr -cd '0-9')"
+		raw="$(cat "$file" 2>/dev/null | tr -cd '0-9-')"
 		[ -n "$raw" ] || continue
+		case "$raw" in
+			-*|'') continue ;;
+		esac
 		[ -z "$max" ] && max="$raw"
 		[ "$raw" -gt "$max" ] && max="$raw"
 	done
@@ -169,6 +182,10 @@ xray_running() {
 	local config
 	config="$(uci_get xray_config /etc/xray/owrt-remote-client.json)"
 	ps_all | grep '[x]ray' | grep -F "$config" >/dev/null 2>&1
+}
+
+ssh_running() {
+	ps_all | grep '[d]ropbear' >/dev/null 2>&1
 }
 
 xray_bin_path() {
@@ -357,7 +374,7 @@ run_xray() {
 }
 
 heartbeat_json() {
-	local router_id router_name role public_url hub_url xray_state service_state
+	local router_id router_name role public_url hub_url xray_state service_state ssh_state
 	router_id="$(safe_id "$(uci_get router_id main)")"
 	router_name="$(uci_get router_name "$router_id")"
 	role="$(uci_get role node)"
@@ -373,6 +390,11 @@ heartbeat_json() {
 		service_state="enabled"
 	else
 		service_state="disabled"
+	fi
+	if ssh_running; then
+		ssh_state="running"
+	else
+		ssh_state="stopped"
 	fi
 
 	cat <<EOF
@@ -394,6 +416,7 @@ heartbeat_json() {
   "flash": $(json_string "$(flash_text)"),
   "temperature": $(json_string "$(temperature_text)"),
   "xray": $(json_string "$xray_state"),
+  "ssh": $(json_string "$ssh_state"),
   "service": $(json_string "$service_state")
 }
 EOF

@@ -28,6 +28,7 @@ DEFAULT_VLESS_PORT = int(os.environ.get("OWRT_REMOTE_VLESS_PORT", "8443"))
 PBKDF2_ITERATIONS = 240000
 MIN_PASSWORD_LENGTH = 4
 SESSION_COOKIE = "owrt_remote_session"
+LUCI_ABSOLUTE_ROOTS = ("/ubus", "/cgi-bin/luci", "/luci-static")
 
 
 def now_ts():
@@ -713,6 +714,7 @@ function render(list) {{
     const model = (r.status && (r.status.model || r.status.board)) || 'OpenWrt';
     const release = (r.status && r.status.release) || 'waiting heartbeat';
     const xray = (r.status && r.status.xray) || 'unknown';
+    const ssh = (r.status && r.status.ssh) || 'unknown';
     const uptime = r.status && r.status.uptime ? duration(r.status.uptime) : 'unknown';
     const load = (r.status && r.status.load) || 'unknown';
     const memory = (r.status && r.status.memory) || 'unknown';
@@ -736,6 +738,7 @@ function render(list) {{
       metric('Модель', model, 'span2'),
       metric('OpenWrt', release),
       metric('Xray', xray),
+      metric('SSH', ssh),
       metric('В сети уже', uptime),
       metric('Был на связи', ago(r.last_seen_iso)),
       metric('RAM', memory),
@@ -1023,6 +1026,16 @@ class Handler(BaseHTTPRequestHandler):
     def query(self):
         return urllib.parse.parse_qs(self.parsed().query)
 
+    def maybe_proxy_luci_absolute(self, path):
+        if not any(path == root or path.startswith(root + "/") for root in LUCI_ABSOLUTE_ROOTS):
+            return False
+        ref_path = urllib.parse.urlsplit(self.headers.get("Referer", "")).path
+        parts = ref_path.split("/", 3)
+        if len(parts) >= 3 and parts[1] == "access" and parts[2]:
+            self.proxy_access(f"/access/{parts[2]}{path}")
+            return True
+        return False
+
     def admin_ok(self):
         cookies = parse_cookies(self.headers.get("Cookie", ""))
         return secrets.compare_digest(cookies.get(SESSION_COOKIE, ""), self.app.session_token)
@@ -1145,6 +1158,8 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/access/"):
             self.proxy_access(path)
             return
+        if self.maybe_proxy_luci_absolute(path):
+            return
         if not self.require_admin():
             return
         if path == "/" or path == "":
@@ -1186,6 +1201,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/access/"):
             self.proxy_access(path)
+            return
+        if self.maybe_proxy_luci_absolute(path):
             return
         if not self.require_admin():
             return
@@ -1357,24 +1374,44 @@ def rewrite_html(body, prefix):
         'href="/': f'href="{prefix}/',
         'src="/': f'src="{prefix}/',
         'action="/': f'action="{prefix}/',
+        'data-url="/': f'data-url="{prefix}/',
         "href='/": f"href='{prefix}/",
         "src='/": f"src='{prefix}/",
         "action='/": f"action='{prefix}/",
+        "data-url='/": f"data-url='{prefix}/",
         'url("/': f'url("{prefix}/',
         "url('/": f"url('{prefix}/",
         "url(/": f"url({prefix}/",
+        '"/ubus"': f'"{prefix}/ubus"',
+        "'/ubus'": f"'{prefix}/ubus'",
+        "`/ubus`": f"`{prefix}/ubus`",
+        '"/cgi-bin/luci"': f'"{prefix}/cgi-bin/luci"',
+        "'/cgi-bin/luci'": f"'{prefix}/cgi-bin/luci'",
+        "`/cgi-bin/luci`": f"`{prefix}/cgi-bin/luci`",
         '"/cgi-bin/luci': f'"{prefix}/cgi-bin/luci',
         '"/ubus/': f'"{prefix}/ubus/',
         '"/luci-static/': f'"{prefix}/luci-static/',
         "'/cgi-bin/luci": f"'{prefix}/cgi-bin/luci",
         "'/ubus/": f"'{prefix}/ubus/",
         "'/luci-static/": f"'{prefix}/luci-static/",
+        "`/cgi-bin/luci": f"`{prefix}/cgi-bin/luci",
+        "`/ubus/": f"`{prefix}/ubus/",
+        "`/luci-static/": f"`{prefix}/luci-static/",
+        '"\\/ubus"': f'"{escaped_prefix}\\/ubus"',
+        "'\\/ubus'": f"'{escaped_prefix}\\/ubus'",
+        "`\\/ubus`": f"`{escaped_prefix}\\/ubus`",
+        '"\\/cgi-bin\\/luci"': f'"{escaped_prefix}\\/cgi-bin\\/luci"',
+        "'\\/cgi-bin\\/luci'": f"'{escaped_prefix}\\/cgi-bin\\/luci'",
+        "`\\/cgi-bin\\/luci`": f"`{escaped_prefix}\\/cgi-bin\\/luci`",
         '"\\/cgi-bin\\/luci': f'"{escaped_prefix}\\/cgi-bin\\/luci',
         '"\\/ubus\\/': f'"{escaped_prefix}\\/ubus\\/',
         '"\\/luci-static\\/': f'"{escaped_prefix}\\/luci-static\\/',
         "'\\/cgi-bin\\/luci": f"'{escaped_prefix}\\/cgi-bin\\/luci",
         "'\\/ubus\\/": f"'{escaped_prefix}\\/ubus\\/",
         "'\\/luci-static\\/": f"'{escaped_prefix}\\/luci-static\\/",
+        "`\\/cgi-bin\\/luci": f"`{escaped_prefix}\\/cgi-bin\\/luci",
+        "`\\/ubus\\/": f"`{escaped_prefix}\\/ubus\\/",
+        "`\\/luci-static\\/": f"`{escaped_prefix}\\/luci-static\\/",
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
