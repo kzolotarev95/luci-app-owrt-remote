@@ -251,7 +251,7 @@ def heartbeat(conn, payload):
 
 
 def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLESS_PORT, decryption="none"):
-    clients = []
+    users = []
     inbounds = [
         {
             "tag": "owrt-remote-vless",
@@ -259,7 +259,7 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
             "port": int(listen_port),
             "protocol": "vless",
             "settings": {
-                "clients": clients,
+                "users": users,
                 "decryption": decryption,
             },
             "streamSettings": {
@@ -269,29 +269,24 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
         }
     ]
     rules = []
-    portals = []
 
     for row in rows:
         router_id = clean_router_id(row["id"])
         entry_port = int(row["entry_port"] or 0)
         if entry_port <= 0:
             continue
-        portal_tag = f"portal-{router_id}"
-        reverse_domain = f"{router_id}.owrt-remote.internal"
+        reverse_out = f"reverse-{router_id}"
         portal_in = f"entry-{router_id}"
         client = {
             "id": row["vless_uuid"],
             "email": f"{router_id}@owrt-remote",
+            "reverse": {
+                "tag": reverse_out,
+            },
         }
         if row["vless_flow"]:
             client["flow"] = row["vless_flow"]
-        clients.append(client)
-        portals.append(
-            {
-                "tag": portal_tag,
-                "domain": reverse_domain,
-            }
-        )
+        users.append(client)
         inbounds.append(
             {
                 "tag": portal_in,
@@ -309,20 +304,12 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
             {
                 "type": "field",
                 "inboundTag": [portal_in],
-                "outboundTag": portal_tag,
-            }
-        )
-        rules.append(
-            {
-                "type": "field",
-                "inboundTag": ["owrt-remote-vless"],
-                "outboundTag": portal_tag,
+                "outboundTag": reverse_out,
             }
         )
 
     return {
         "log": {"loglevel": "warning"},
-        "reverse": {"portals": portals},
         "inbounds": inbounds,
         "outbounds": [{"tag": "direct", "protocol": "freedom"}],
         "routing": {"rules": rules},
@@ -332,17 +319,8 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
 
 def make_router_xray_config(row):
     bridge_tag = row["reverse_tag"]
-    reverse_domain = f"{clean_router_id(row['id'])}.owrt-remote.internal"
     return {
         "log": {"loglevel": "warning"},
-        "reverse": {
-            "bridges": [
-                {
-                    "tag": bridge_tag,
-                    "domain": reverse_domain,
-                }
-            ]
-        },
         "inbounds": [],
         "outbounds": [
             {
@@ -369,18 +347,13 @@ def make_router_xray_config(row):
                     "id": row["vless_uuid"],
                     "encryption": row["vless_encryption"],
                     "flow": row["vless_flow"],
+                    "reverse": {"tag": bridge_tag},
                 },
                 "streamSettings": {"network": "tcp", "security": "none"},
             },
         ],
         "routing": {
             "rules": [
-                {
-                    "type": "field",
-                    "inboundTag": [bridge_tag],
-                    "domain": [f"full:{reverse_domain}"],
-                    "outboundTag": "vps-interconn",
-                },
                 {
                     "type": "field",
                     "inboundTag": [bridge_tag],

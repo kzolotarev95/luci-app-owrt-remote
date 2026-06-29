@@ -138,12 +138,33 @@ xray_running() {
 	ps_all | grep '[x]ray' | grep -F "$config" >/dev/null 2>&1
 }
 
+xray_bin_path() {
+	local configured candidate
+	configured="$(uci_get xray_bin /usr/bin/xray)"
+	if [ -x "$configured" ]; then
+		printf '%s' "$configured"
+		return
+	fi
+	for candidate in /usr/bin/xray /usr/bin/xray-core /usr/local/bin/xray /opt/bin/xray /tmp/xray; do
+		if [ -x "$candidate" ]; then
+			printf '%s' "$candidate"
+			return
+		fi
+	done
+	candidate="$(command -v xray 2>/dev/null || command -v xray-core 2>/dev/null || true)"
+	if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+		printf '%s' "$candidate"
+		return
+	fi
+	printf '%s' "$configured"
+}
+
 service_enabled() {
 	/etc/init.d/owrt-remote enabled >/dev/null 2>&1
 }
 
 render_client_config() {
-	local out stdout router_id vps_host vps_port uuid encryption flow reverse_tag reverse_domain admin_host admin_port xray_config
+	local out stdout router_id vps_host vps_port uuid encryption flow reverse_tag admin_host admin_port xray_config
 	stdout="0"
 	if [ "${1:-}" = "--stdout" ]; then
 		stdout="1"
@@ -156,7 +177,6 @@ render_client_config() {
 	encryption="$(uci_get vless_encryption none)"
 	flow="$(uci_get vless_flow '')"
 	reverse_tag="$(safe_id "$(uci_get reverse_tag reverse-in)")"
-	reverse_domain="${router_id}.owrt-remote.internal"
 	admin_host="$(uci_get admin_host 127.0.0.1)"
 	admin_port="$(safe_num "$(uci_get admin_port 80)" 80)"
 	xray_config="$(uci_get xray_config /etc/xray/owrt-remote-client.json)"
@@ -169,14 +189,6 @@ render_client_config() {
 {
   "log": {
     "loglevel": "warning"
-  },
-  "reverse": {
-    "bridges": [
-      {
-        "tag": "$(json_escape "$reverse_tag")",
-        "domain": "$(json_escape "$reverse_domain")"
-      }
-    ]
   },
   "inbounds": [],
   "outbounds": [
@@ -203,7 +215,10 @@ render_client_config() {
         "port": $vps_port,
         "id": "$(json_escape "$uuid")",
         "encryption": "$(json_escape "$encryption")",
-        "flow": "$(json_escape "$flow")"
+        "flow": "$(json_escape "$flow")",
+        "reverse": {
+          "tag": "$(json_escape "$reverse_tag")"
+        }
       },
       "streamSettings": {
         "network": "tcp",
@@ -213,16 +228,6 @@ render_client_config() {
   ],
   "routing": {
     "rules": [
-      {
-        "type": "field",
-        "inboundTag": [
-          "$(json_escape "$reverse_tag")"
-        ],
-        "domain": [
-          "full:$(json_escape "$reverse_domain")"
-        ],
-        "outboundTag": "vps-interconn"
-      },
       {
         "type": "field",
         "inboundTag": [
@@ -254,7 +259,7 @@ run_xray() {
 	enabled="$(uci_get enabled 0)"
 	truthy "$enabled" || die "сервис выключен: включи option enabled '1'"
 
-	xray_bin="$(uci_get xray_bin /usr/bin/xray)"
+	xray_bin="$(xray_bin_path)"
 	xray_config="$(render_client_config)"
 	[ -x "$xray_bin" ] || die "xray не найден или не исполняемый: $xray_bin"
 
@@ -366,7 +371,7 @@ status() {
 	printf 'hub_url: %s\n' "$(uci_get hub_url '')"
 	printf 'vps_host: %s\n' "$(uci_get vps_host '')"
 	printf 'vps_port: %s\n' "$(uci_get vps_port 8443)"
-	printf 'xray_bin: %s\n' "$(uci_get xray_bin /usr/bin/xray)"
+	printf 'xray_bin: %s\n' "$(xray_bin_path)"
 	printf 'xray_config: %s\n' "$(uci_get xray_config /etc/xray/owrt-remote-client.json)"
 	if xray_running; then
 		printf 'xray_state: running\n'
@@ -383,7 +388,7 @@ status() {
 doctor() {
 	local ok xray_bin
 	ok=1
-	xray_bin="$(uci_get xray_bin /usr/bin/xray)"
+	xray_bin="$(xray_bin_path)"
 
 	[ -x "$xray_bin" ] || {
 		log "нет Xray: $xray_bin"
