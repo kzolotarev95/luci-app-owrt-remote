@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import datetime as dt
+import hashlib
 import html
 import http.client
 import json
@@ -18,10 +19,13 @@ from pathlib import Path
 APP_NAME = "OpenWrt Remote Hub"
 STATE_DIR = Path(os.environ.get("OWRT_REMOTE_STATE_DIR", "/var/lib/owrt-remote"))
 DB_PATH = Path(os.environ.get("OWRT_REMOTE_DB", str(STATE_DIR / "hub.db")))
-ADMIN_TOKEN_FILE = STATE_DIR / "admin.token"
+AUTH_FILE = STATE_DIR / "hub-auth.json"
+SESSION_TOKEN_FILE = STATE_DIR / "hub-session.token"
 AGENT_TOKEN_FILE = STATE_DIR / "agent.token"
 ONLINE_AFTER_SECONDS = int(os.environ.get("OWRT_REMOTE_ONLINE_AFTER", "75"))
 DEFAULT_VLESS_PORT = int(os.environ.get("OWRT_REMOTE_VLESS_PORT", "8443"))
+PBKDF2_ITERATIONS = 240000
+SESSION_COOKIE = "owrt_remote_session"
 
 
 def now_ts():
@@ -53,12 +57,99 @@ def read_or_make_token(path):
     return token
 
 
-def admin_token():
-    return os.environ.get("OWRT_REMOTE_ADMIN_TOKEN") or read_or_make_token(ADMIN_TOKEN_FILE)
-
-
 def agent_token():
     return os.environ.get("OWRT_REMOTE_AGENT_TOKEN") or read_or_make_token(AGENT_TOKEN_FILE)
+
+
+def session_token():
+    return read_or_make_token(SESSION_TOKEN_FILE)
+
+
+def password_digest(password, salt=None, iterations=PBKDF2_ITERATIONS):
+    salt = salt or secrets.token_hex(16)
+    raw = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        bytes.fromhex(salt),
+        int(iterations),
+    )
+    return {
+        "salt": salt,
+        "hash": raw.hex(),
+        "iterations": int(iterations),
+    }
+
+
+def write_json_private(path, data):
+    ensure_state()
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def save_auth(username, password):
+    username = clean_username(username)
+    if len(password) < 8:
+        raise ValueError("password must be at least 8 characters")
+    data = {
+        "username": username,
+        "password": password_digest(password),
+        "updated_at": now_ts(),
+    }
+    write_json_private(AUTH_FILE, data)
+    return data
+
+
+def load_auth():
+    ensure_state()
+    if AUTH_FILE.exists():
+        return json.loads(AUTH_FILE.read_text(encoding="utf-8"))
+    username = os.environ.get("OWRT_REMOTE_ADMIN_USER", "admin")
+    password = os.environ.get("OWRT_REMOTE_ADMIN_PASSWORD") or secrets.token_urlsafe(16)
+    data = save_auth(username, password)
+    login_hint = STATE_DIR / "hub-login.txt"
+    login_hint.write_text(
+        f"username: {data['username']}\npassword: {password}\n",
+        encoding="utf-8",
+    )
+    try:
+        os.chmod(login_hint, 0o600)
+    except OSError:
+        pass
+    return data
+
+
+def clean_username(value):
+    value = (value or "").strip()
+    if not (1 <= len(value) <= 64):
+        raise ValueError("username length must be 1..64")
+    for ch in value:
+        if not (ch.isalnum() or ch in "._-@"):
+            raise ValueError("username may contain only letters, digits, . _ - @")
+    return value
+
+
+def verify_login(username, password):
+    try:
+        auth = load_auth()
+        stored_user = auth.get("username", "")
+        stored = auth.get("password", {})
+        digest = password_digest(password or "", stored.get("salt"), stored.get("iterations", PBKDF2_ITERATIONS))
+    except Exception:
+        return False
+    return secrets.compare_digest(username or "", stored_user) and secrets.compare_digest(
+        digest["hash"],
+        stored.get("hash", ""),
+    )
+
+
+def current_username():
+    try:
+        return load_auth().get("username", "admin")
+    except Exception:
+        return "admin"
 
 
 def clean_router_id(value):
@@ -414,15 +505,15 @@ def clean_forward_cookie(cookie_header):
     for chunk in (cookie_header or "").split(";"):
         if not chunk.strip():
             continue
-        if chunk.strip().startswith("owrt_remote_admin="):
+        if chunk.strip().startswith("owrt_remote_admin=") or chunk.strip().startswith(f"{SESSION_COOKIE}="):
             continue
         parts.append(chunk.strip())
     return "; ".join(parts)
 
 
-def dashboard_html(routers, token):
+def dashboard_html(routers, username):
     routers_json = json.dumps(routers, ensure_ascii=False)
-    safe_token = html.escape(token, quote=True)
+    safe_username = html.escape(username, quote=True)
     return f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -438,15 +529,16 @@ body::before{{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none
 .wrap{{position:relative;z-index:1;max-width:1220px;margin:0 auto;padding:22px}}.top{{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding:20px 0 18px}}
 .brand{{display:flex;align-items:center;gap:14px}}
 h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}.links{{margin-top:8px}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{justify-content:flex-end;padding-top:42px}}.badge{{background:var(--panel);color:var(--muted)}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
-.toolbar{{display:grid;grid-template-columns:1fr 1fr 110px 110px 150px auto;gap:10px;margin:18px 0;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px)}}
+ .toolbar{{display:grid;grid-template-columns:1fr 1fr 110px 110px 150px auto;gap:10px;margin:18px 0;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px)}}
+ .settings{{margin:0 0 18px;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.18);backdrop-filter:blur(10px)}}.settings h2{{margin:0 0 4px;font-size:18px}}.settings p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:10px}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}
 input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:rgba(8,5,18,.72);color:var(--text)}}button,.btn{{border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:10px 13px;background:rgba(255,255,255,.10);color:#f7f2ff;font-weight:850;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}button.primary,.btn.primary{{background:var(--blue);color:#fff;box-shadow:0 10px 22px rgba(124,58,237,.22)}}button.bad,.btn.bad{{background:rgba(251,113,133,.16);color:#fecdd3}}.btn.good{{background:rgba(34,197,94,.16);color:#bbf7d0}}.btn.disabled{{opacity:.45;cursor:not-allowed}}
 .sectionHead{{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:24px 0 14px}}.sectionHead h2{{margin:0;font-size:22px}}.sectionHead p{{margin:3px 0 0;color:var(--muted)}}.summary{{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}}.miniStat{{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.07);padding:8px 12px;color:#ddd6fe;font-weight:750;white-space:nowrap}}
 .cards{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{position:relative;min-height:246px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}}.card::before{{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--green)}}.card.off::before{{background:var(--red)}}.card.warn::before{{background:var(--amber)}}.card.main{{grid-column:span 2}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}.routerMark{{display:grid;place-items:center;width:46px;height:46px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08)}}.routerIcon{{position:relative;width:28px;height:18px;border:2px solid #ddd6fe;border-radius:5px}}.routerIcon::before,.routerIcon::after{{content:"";position:absolute;top:-9px;width:9px;height:9px;border-top:2px solid #ddd6fe}}.routerIcon::before{{left:2px;transform:rotate(-34deg)}}.routerIcon::after{{right:2px;transform:rotate(34deg)}}.routerIcon span{{position:absolute;left:5px;right:5px;bottom:4px;display:flex;justify-content:space-between}}.routerIcon span::before,.routerIcon span::after{{content:"";width:4px;height:4px;border-radius:50%;background:#ddd6fe}}
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.07);padding:7px 10px;font-weight:850;font-size:12px}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green)}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red)}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
 .metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
-@media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{padding-top:0;justify-content:flex-start}}}}
-@media(max-width:680px){{.wrap{{padding:14px}}.cards,.toolbar{{grid-template-columns:1fr}}.card.main{{grid-column:span 1}}.top,.sectionHead{{align-items:flex-start;flex-direction:column}}.headerActions,.summary{{justify-content:flex-start}}.links a,.badge{{width:100%;min-width:0}}h1{{font-size:24px}}}}
+@media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar,.authGrid{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{padding-top:0;justify-content:flex-start}}}}
+@media(max-width:680px){{.wrap{{padding:14px}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.card.main{{grid-column:span 1}}.top,.sectionHead{{align-items:flex-start;flex-direction:column}}.headerActions,.summary{{justify-content:flex-start}}.links a,.badge{{width:100%;min-width:0}}h1{{font-size:24px}}}}
 </style>
 </head>
 <body>
@@ -464,6 +556,8 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     </div>
     <div class="headerActions">
       <div class="badge"><span class="dot on"></span>Hub online</div>
+      <div class="badge">login: {safe_username}</div>
+      <a class="btn" href="/logout">Выйти</a>
     </div>
   </section>
 
@@ -475,6 +569,19 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <input name="vps_host" placeholder="VPS IP/domain" required>
     <button class="primary">Добавить</button>
   </form>
+
+  <section class="settings">
+    <h2>Доступ к Hub</h2>
+    <p>Здесь можно поменять логин и пароль входа в веб-панель.</p>
+    <form id="authForm" class="authGrid">
+      <input name="username" value="{safe_username}" placeholder="Логин" autocomplete="username" required>
+      <input name="current_password" type="password" placeholder="Текущий пароль" autocomplete="current-password" required>
+      <input name="password" type="password" placeholder="Новый пароль" autocomplete="new-password">
+      <input name="password_confirm" type="password" placeholder="Повтор пароля" autocomplete="new-password">
+      <button class="primary">Сохранить</button>
+    </form>
+    <div id="authMsg" class="msg" hidden></div>
+  </section>
 
   <section class="sectionHead">
     <div>
@@ -492,10 +599,8 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
   <div class="hint muted">После добавления роутера открой <code>OpenWrt config</code>, вставь команды на роутере и перегенерируй server Xray config командой <code>owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json</code>.</div>
 </main>
 <script>
-window.ADMIN_TOKEN = "{safe_token}";
 window.ROUTERS = {routers_json};
 const cards = document.getElementById('cards');
-const tokenParam = () => 'token=' + encodeURIComponent(window.ADMIN_TOKEN);
 
 function ago(iso) {{
   if (!iso) return 'never';
@@ -563,8 +668,8 @@ function render(list) {{
       </div>
       <div class="actions">
         ${{adminButton}}
-        <a class="btn good" href="${{escapeAttr(r.config_url)}}?${{tokenParam()}}">OpenWrt config</a>
-        <a class="btn" href="${{escapeAttr(r.xray_client_url)}}?${{tokenParam()}}">Client JSON</a>
+        <a class="btn good" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
+        <a class="btn" href="${{escapeAttr(r.xray_client_url)}}">Client JSON</a>
         <button class="bad" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
     </article>`;
@@ -580,7 +685,7 @@ function escapeAttr(s) {{
 }}
 
 async function loadRouters() {{
-  const res = await fetch('/api/routers?' + tokenParam(), {{cache: 'no-store'}});
+  const res = await fetch('/api/routers', {{cache: 'no-store'}});
   if (res.ok) {{
     const data = await res.json();
     window.ROUTERS = data.routers;
@@ -591,7 +696,7 @@ async function loadRouters() {{
 document.getElementById('routerForm').addEventListener('submit', async (ev) => {{
   ev.preventDefault();
   const body = new URLSearchParams(new FormData(ev.currentTarget));
-  const res = await fetch('/api/router?' + tokenParam(), {{method: 'POST', body}});
+  const res = await fetch('/api/router', {{method: 'POST', body}});
   if (res.ok) {{
     ev.currentTarget.reset();
     await loadRouters();
@@ -604,8 +709,28 @@ cards.addEventListener('click', async (ev) => {{
   const id = ev.target?.dataset?.delete;
   if (!id) return;
   if (!confirm('Удалить роутер ' + id + '?')) return;
-  const res = await fetch('/api/router/' + encodeURIComponent(id) + '/delete?' + tokenParam(), {{method: 'POST'}});
+  const res = await fetch('/api/router/' + encodeURIComponent(id) + '/delete', {{method: 'POST'}});
   if (res.ok) await loadRouters();
+}});
+
+document.getElementById('authForm').addEventListener('submit', async (ev) => {{
+  ev.preventDefault();
+  const msg = document.getElementById('authMsg');
+  msg.hidden = true;
+  msg.className = 'msg';
+  const body = new URLSearchParams(new FormData(ev.currentTarget));
+  const res = await fetch('/api/auth', {{method: 'POST', body}});
+  const text = await res.text();
+  msg.hidden = false;
+  if (res.ok) {{
+    msg.textContent = text || 'Доступ обновлен';
+    ev.currentTarget.current_password.value = '';
+    ev.currentTarget.password.value = '';
+    ev.currentTarget.password_confirm.value = '';
+  }} else {{
+    msg.className = 'msg bad';
+    msg.textContent = text || 'Не удалось сохранить';
+  }}
 }});
 
 render(window.ROUTERS);
@@ -615,16 +740,17 @@ setInterval(loadRouters, 5000);
 </html>"""
 
 
-def login_html():
-    return """<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OpenWrt Remote Hub</title>
-<style>body{margin:0;background:#f5f7fb;color:#172033;font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.box{max-width:380px;margin:12vh auto;background:#fff;border:1px solid #d9e1ec;border-radius:8px;padding:20px;box-shadow:0 12px 30px rgba(20,35,60,.06)}h1{margin:0 0 8px;font-size:24px}p{color:#687385}input,button{width:100%;border-radius:8px;padding:11px;margin-top:10px}input{border:1px solid #d9e1ec}button{border:0;background:#2563eb;color:#fff;font-weight:800}</style></head>
-<body><form class="box" method="get"><h1>OpenWrt Remote Hub</h1><p>Вставь ADMIN_TOKEN с VPS.</p><input name="token" type="password" autofocus><button>Открыть</button></form></body></html>"""
+def login_html(error=""):
+    error_html = f"<div class=\"err\">{html.escape(error)}</div>" if error else ""
+    return f"""<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OpenWrt Remote Hub</title>
+<style>:root{{color-scheme:dark}}body{{min-height:100vh;margin:0;background:radial-gradient(circle at 20% 8%,rgba(168,85,247,.38),transparent 32%),radial-gradient(circle at 80% 8%,rgba(59,130,246,.28),transparent 32%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a);color:#f7f2ff;font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:grid;place-items:center}}.box{{width:min(390px,calc(100vw - 28px));background:rgba(19,14,32,.9);border:1px solid rgba(169,126,255,.25);border-radius:8px;padding:22px;box-shadow:0 24px 70px rgba(0,0,0,.34);backdrop-filter:blur(10px)}}h1{{margin:0 0 6px;font-size:25px}}p{{margin:0 0 14px;color:#b9adc9}}label{{display:block;margin:10px 0 5px;font-weight:800}}input,button{{width:100%;box-sizing:border-box;border-radius:8px;padding:12px}}input{{border:1px solid rgba(169,126,255,.25);background:rgba(8,5,18,.72);color:#f7f2ff}}button{{margin-top:14px;border:0;background:#7c3aed;color:#fff;font-weight:900;cursor:pointer}}.err{{margin:10px 0 0;padding:10px;border-radius:8px;background:rgba(251,113,133,.16);color:#fecdd3;font-weight:750}}</style></head>
+<body><form class="box" method="post" action="/login"><h1>OpenWrt Remote Hub</h1><p>Вход в панель роутеров</p>{error_html}<label>Логин</label><input name="username" autocomplete="username" autofocus required><label>Пароль</label><input name="password" type="password" autocomplete="current-password" required><button>Войти</button></form></body></html>"""
 
 
 class App:
-    def __init__(self, db_path, admin, agent, public_url):
+    def __init__(self, db_path, session, agent, public_url):
         self.db_path = Path(db_path)
-        self.admin_token = admin
+        self.session_token = session
         self.agent_token = agent
         self.public_url = public_url.rstrip("/")
 
@@ -651,15 +777,8 @@ class Handler(BaseHTTPRequestHandler):
         return urllib.parse.parse_qs(self.parsed().query)
 
     def admin_ok(self):
-        query_token = self.query().get("token", [""])[0]
-        if secrets.compare_digest(query_token, self.app.admin_token):
-            return True
         cookies = parse_cookies(self.headers.get("Cookie", ""))
-        return secrets.compare_digest(cookies.get("owrt_remote_admin", ""), self.app.admin_token)
-
-    def admin_cookie_needed(self):
-        query_token = self.query().get("token", [""])[0]
-        return secrets.compare_digest(query_token, self.app.admin_token)
+        return secrets.compare_digest(cookies.get(SESSION_COOKIE, ""), self.app.session_token)
 
     def agent_ok(self):
         auth = self.headers.get("Authorization", "")
@@ -667,12 +786,10 @@ class Handler(BaseHTTPRequestHandler):
             return secrets.compare_digest(auth[7:].strip(), self.app.agent_token)
         return False
 
-    def send_bytes(self, status, body, content_type="text/plain; charset=utf-8", extra_headers=None, set_cookie=False):
+    def send_bytes(self, status, body, content_type="text/plain; charset=utf-8", extra_headers=None):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
-        if set_cookie:
-            self.send_header("Set-Cookie", f"owrt_remote_admin={self.app.admin_token}; HttpOnly; SameSite=Lax; Path=/")
         if extra_headers:
             for key, value in extra_headers:
                 self.send_header(key, value)
@@ -681,11 +798,11 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def send_text(self, status, text, content_type="text/plain; charset=utf-8"):
-        self.send_bytes(status, text.encode("utf-8"), content_type, set_cookie=self.admin_cookie_needed())
+        self.send_bytes(status, text.encode("utf-8"), content_type)
 
     def send_json(self, status, payload):
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        self.send_bytes(status, body, "application/json; charset=utf-8", set_cookie=self.admin_cookie_needed())
+        self.send_bytes(status, body, "application/json; charset=utf-8")
 
     def require_admin(self):
         if self.admin_ok():
@@ -719,10 +836,64 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.parse_qs(body.decode("utf-8"))
         return {k: v[-1] for k, v in parsed.items()}
 
+    def session_cookie(self):
+        return f"{SESSION_COOKIE}={self.app.session_token}; HttpOnly; SameSite=Lax; Path=/"
+
+    def clear_session_cookie(self):
+        return f"{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"
+
+    def redirect(self, location, extra_headers=None):
+        self.send_response(302)
+        self.send_header("Location", location)
+        if extra_headers:
+            for key, value in extra_headers:
+                self.send_header(key, value)
+        self.end_headers()
+
+    def login(self):
+        payload = self.read_payload()
+        username = payload.get("username", "")
+        password = payload.get("password", "")
+        if verify_login(username, password):
+            self.redirect("/", [("Set-Cookie", self.session_cookie())])
+            return
+        self.send_bytes(401, login_html("Неверный логин или пароль").encode("utf-8"), "text/html; charset=utf-8")
+
+    def update_auth(self):
+        payload = self.read_payload()
+        auth = load_auth()
+        current_password = payload.get("current_password", "")
+        if not verify_login(auth.get("username", ""), current_password):
+            self.send_text(403, "Текущий пароль неверный")
+            return
+        username = payload.get("username", auth.get("username", "admin"))
+        new_password = payload.get("password", "")
+        confirm = payload.get("password_confirm", "")
+        if new_password:
+            if new_password != confirm:
+                self.send_text(400, "Новый пароль и повтор не совпадают")
+                return
+            if len(new_password) < 8:
+                self.send_text(400, "Новый пароль должен быть минимум 8 символов")
+                return
+            save_auth(username, new_password)
+        else:
+            clean = clean_username(username)
+            auth["username"] = clean
+            auth["updated_at"] = now_ts()
+            write_json_private(AUTH_FILE, auth)
+        self.send_text(200, "Доступ к Hub обновлен")
+
     def do_GET(self):
         path = self.parsed().path
         if path == "/health":
             self.send_json(200, {"ok": True})
+            return
+        if path == "/login":
+            self.send_bytes(200, login_html().encode("utf-8"), "text/html; charset=utf-8")
+            return
+        if path == "/logout":
+            self.redirect("/login", [("Set-Cookie", self.clear_session_cookie())])
             return
         if path.startswith("/access/"):
             self.proxy_access(path)
@@ -734,9 +905,8 @@ class Handler(BaseHTTPRequestHandler):
                 routers = [row_to_router(r) for r in list_router_rows(conn)]
             self.send_bytes(
                 200,
-                dashboard_html(routers, self.app.admin_token).encode("utf-8"),
+                dashboard_html(routers, current_username()).encode("utf-8"),
                 "text/html; charset=utf-8",
-                set_cookie=self.admin_cookie_needed(),
             )
             return
         if path == "/api/routers":
@@ -751,6 +921,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = self.parsed().path
+        if path == "/login":
+            self.login()
+            return
         if path == "/api/heartbeat":
             if not self.agent_ok():
                 self.send_json(401, {"ok": False, "error": "bad agent token"})
@@ -768,6 +941,9 @@ class Handler(BaseHTTPRequestHandler):
             self.proxy_access(path)
             return
         if not self.require_admin():
+            return
+        if path == "/api/auth":
+            self.update_auth()
             return
         if path == "/api/router":
             try:
@@ -873,15 +1049,9 @@ class Handler(BaseHTTPRequestHandler):
                 resp_body,
                 content_type or "application/octet-stream",
                 resp_headers,
-                set_cookie=self.admin_cookie_needed(),
             )
         except Exception as exc:
             self.send_text(502, f"proxy error: {exc}")
-
-    def redirect(self, location):
-        self.send_response(302)
-        self.send_header("Location", location)
-        self.end_headers()
 
 
 def rewrite_location(value, prefix, port):
@@ -951,9 +1121,19 @@ def should_rewrite_body(content_type):
 def cmd_init(args):
     with connect(args.db) as conn:
         init_db(conn)
+    auth = load_auth()
     print(f"DB: {args.db}")
-    print(f"ADMIN_TOKEN: {admin_token()}")
+    print(f"HUB_LOGIN: {auth.get('username', 'admin')}")
     print(f"AGENT_TOKEN: {agent_token()}")
+    hint = STATE_DIR / "hub-login.txt"
+    if hint.exists():
+        print(f"HUB_PASSWORD_FILE: {hint}")
+
+
+def cmd_set_login(args):
+    save_auth(args.username, args.password)
+    print(f"HUB_LOGIN: {args.username}")
+    print("HUB_PASSWORD: updated")
 
 
 def cmd_add_router(args):
@@ -1019,13 +1199,14 @@ def cmd_print_openwrt(args):
 
 
 def cmd_serve(args):
-    app = App(args.db, admin_token(), agent_token(), args.public_url)
+    app = App(args.db, session_token(), agent_token(), args.public_url)
     with app.conn():
         pass
+    auth = load_auth()
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.app = app
     print(f"{APP_NAME} listening on http://{args.host}:{args.port}")
-    print(f"ADMIN_TOKEN: {app.admin_token}")
+    print(f"HUB_LOGIN: {auth.get('username', 'admin')}")
     print(f"AGENT_TOKEN: {app.agent_token}")
     try:
         server.serve_forever()
@@ -1040,6 +1221,11 @@ def parser():
 
     init = sub.add_parser("init", help="initialize state and tokens")
     init.set_defaults(func=cmd_init)
+
+    auth = sub.add_parser("set-login", help="set dashboard username and password")
+    auth.add_argument("--username", required=True)
+    auth.add_argument("--password", required=True)
+    auth.set_defaults(func=cmd_set_login)
 
     add = sub.add_parser("add-router", help="add or update router")
     add.add_argument("--id", required=True)

@@ -2,159 +2,278 @@
 
 # OpenWrt Remote Hub
 
-**Легкий удаленный доступ к OpenWrt через свой VPS: карточки роутеров, online/offline, Xray reverse и локальная LuCI-интеграция без тяжелого VPN.**
+Remote access to OpenWrt through your own VPS: router cards, online/offline heartbeat, Xray VLESS reverse tunnel and LuCI proxy without ZeroTier, Tailscale or WireGuard.
 
-[![OpenWrt](https://img.shields.io/badge/OpenWrt-22.x%20%7C%2023.x%20%7C%2024.x%20%7C%2025.x-00A3E0?style=for-the-badge)](https://openwrt.org/)
-[![Xray](https://img.shields.io/badge/Xray-VLESS%20reverse-111827?style=for-the-badge)](https://xtls.github.io/en/document/level-2/vless_reverse.html)
-[![No IPK](https://img.shields.io/badge/install-one%20command-2563EB?style=for-the-badge)](#быстрый-старт)
+[Telegram](https://t.me/kzolotarev95) · [GitHub](https://github.com/kzolotarev95) · [NetHaven VPN](https://t.me/+LZDsQJhUfcNhYWEy)
 
 </div>
 
-## Что это
+## What It Does
 
-`luci-app-owrt-remote` собирает схему "роутер за NAT -> VPS -> красивая панель -> админка роутера".
-
-На роутере ставится маленький агент:
-
-- пункт в LuCI: `Службы -> OpenWrt Remote`;
-- `/usr/sbin/owrt-remote` для старта Xray reverse, heartbeat и генерации client config;
-- `/etc/init.d/owrt-remote` для автозапуска через `procd`;
-- локальная CGI-панель настройки, без Lua runtime.
-
-На VPS запускается `vps/owrt-remote-hub.py`:
-
-- веб-панель с карточками роутеров;
-- online/offline по heartbeat;
-- кнопка "Открыть админку";
-- прокси к локальному Xray entry port, чтобы наружу не торчали админки всех роутеров;
-- генерация server-side Xray config для нескольких роутеров.
-
-ZeroTier, Tailscale и WireGuard тут не используются. Xray-бинарь в репозиторий не кладется, чтобы не занимать флешку OpenWrt.
-
-## Как работает
-
-```mermaid
-flowchart LR
-    User["Браузер админа"] --> Hub["VPS: OpenWrt Remote Hub"]
-    Hub --> LocalEntry["127.0.0.1:18080<br/>Xray tunnel inbound"]
-    LocalEntry --> Reverse["VLESS reverse tunnel"]
-    Router["OpenWrt router<br/>owrt-remote + Xray"] --> Reverse
-    Router --> LuCI["127.0.0.1:80<br/>LuCI/uhttpd"]
-```
-
-1. Роутер сам подключается к VPS и держит reverse tunnel.
-2. VPS-панель показывает карточку роутера и статус.
-3. Когда нажимаешь "Открыть админку", хаб проксирует запрос в локальный entry port Xray.
-4. Xray возвращает этот поток через reverse tunnel на LuCI роутера.
-
-## Быстрый старт
-
-### 1. VPS
-
-На VPS нужен Python 3 и Xray. Скопируй папку `vps` на сервер и запусти:
-
-```sh
-sudo mkdir -p /opt/owrt-remote /var/lib/owrt-remote
-sudo cp vps/owrt-remote-hub.py /opt/owrt-remote/
-sudo chmod +x /opt/owrt-remote/owrt-remote-hub.py
-sudo /opt/owrt-remote/owrt-remote-hub.py init
-sudo /opt/owrt-remote/owrt-remote-hub.py add-router --id main --name "Главный роутер" --role main --entry-port 18080 --vps-host YOUR_VPS_DOMAIN_OR_IP
-sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
-```
-
-Запусти хаб:
-
-```sh
-sudo OWRT_REMOTE_BIND=0.0.0.0 OWRT_REMOTE_PORT=8088 /opt/owrt-remote/owrt-remote-hub.py serve
-```
-
-Панель:
+`luci-app-owrt-remote` builds this route:
 
 ```text
-http://YOUR_VPS_IP:8088/?token=ADMIN_TOKEN
+Browser -> VPS Hub -> local Xray entry port -> VLESS reverse tunnel -> OpenWrt LuCI
 ```
 
-`ADMIN_TOKEN` хаб покажет при первом `init`/`serve`, также он лежит в `/var/lib/owrt-remote/admin.token`.
+The VPS shows router cards with online/offline state. A router behind NAT connects outward to the VPS and keeps a reverse Xray tunnel alive. You click `Админка` in the Hub and open the router LuCI through the VPS.
 
-### 2. OpenWrt
+No public LuCI ports on the router are needed.
 
-На роутере:
+## Current Features
+
+- VPS dashboard at `http://YOUR_VPS_IP:8088/`.
+- Normal Hub login and password, no secret token in browser URLs.
+- Login/password can be changed inside the Hub panel.
+- Multiple router cards.
+- Online/offline heartbeat.
+- `OpenWrt config` button with ready UCI commands for a router.
+- `Client JSON` button for generated router Xray config.
+- LuCI proxy through `/access/<router-id>/`.
+- Lightweight OpenWrt agent: shell + CGI, no heavy LuCI Lua app.
+
+## VPS Install
+
+Use Ubuntu/Debian VPS with Python 3 and Xray.
+
+### 1. Install Xray On VPS
 
 ```sh
-wget -O - https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh | sh
+sudo apt update
+sudo apt install -y curl unzip python3
+sudo bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+xray version || /usr/local/bin/xray version
 ```
 
-После установки:
+### 2. Install Hub
+
+```sh
+sudo mkdir -p /opt/owrt-remote /var/lib/owrt-remote /etc/xray
+sudo wget -O /opt/owrt-remote/owrt-remote-hub.py "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/owrt-remote-hub.py"
+sudo wget -O /etc/systemd/system/owrt-remote.service "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/owrt-remote.service"
+sudo chmod +x /opt/owrt-remote/owrt-remote-hub.py
+sudo systemctl daemon-reload
+```
+
+Set your Hub login and password:
+
+```sh
+sudo /opt/owrt-remote/owrt-remote-hub.py init
+sudo /opt/owrt-remote/owrt-remote-hub.py set-login --username admin --password 'CHANGE_ME_STRONG_PASSWORD'
+```
+
+Start the Hub:
+
+```sh
+sudo systemctl enable --now owrt-remote
+sudo systemctl status owrt-remote --no-pager -l
+```
+
+Open:
+
+```text
+http://YOUR_VPS_IP:8088/
+```
+
+### 3. Add First Router On VPS
+
+Example:
+
+```sh
+sudo /opt/owrt-remote/owrt-remote-hub.py add-router \
+  --id main \
+  --name "Главный роутер" \
+  --role main \
+  --entry-port 18080 \
+  --vps-host YOUR_VPS_IP
+```
+
+Render and start VPS Xray reverse service:
+
+```sh
+sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
+XRAY_BIN="$(command -v xray || command -v /usr/local/bin/xray || command -v /usr/bin/xray)"
+sudo tee /etc/systemd/system/owrt-remote-xray.service >/dev/null <<EOF
+[Unit]
+Description=OpenWrt Remote Xray Reverse
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$XRAY_BIN run -config /etc/xray/owrt-remote.json
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now owrt-remote-xray
+```
+
+Firewall:
+
+```sh
+sudo ufw allow 8088/tcp
+sudo ufw allow 8443/tcp
+```
+
+Check:
+
+```sh
+sudo ss -lntp | grep -E ':(8088|8443|18080)\b'
+```
+
+`18080` should listen only on `127.0.0.1`. The public ports are `8088` for Hub and `8443` for Xray.
+
+## OpenWrt Install
+
+Install the OpenWrt agent:
+
+```sh
+wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" | sh
+```
+
+Open local panel:
 
 ```text
 LuCI -> Службы -> OpenWrt Remote
 ```
 
-В VPS-панели открой карточку роутера и скопируй готовые UCI-команды из "OpenWrt config". Вставь их на роутер, затем:
+Or direct:
+
+```text
+http://192.168.1.1/cgi-bin/owrt-remote
+```
+
+In the VPS Hub open router card -> `OpenWrt config`, paste the UCI commands into the router shell, then:
 
 ```sh
+owrt-remote render-client
 /etc/init.d/owrt-remote enable
+/etc/init.d/owrt-remote restart
+owrt-remote doctor
+owrt-remote heartbeat
+```
+
+## Xray On OpenWrt
+
+If your router has enough flash:
+
+```sh
+opkg update
+opkg install xray-core
+```
+
+If flash is small, run Xray from RAM for testing:
+
+```sh
+mkdir -p /var/lock /var/run /tmp/owrt-xray
+cd /tmp/owrt-xray
+wget -O xray.zip "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-arm64-v8a.zip"
+command -v unzip >/dev/null 2>&1 || { opkg update; opkg install unzip; }
+unzip -o xray.zip xray
+chmod +x /tmp/owrt-xray/xray
+/tmp/owrt-xray/xray version
+uci set owrtremote.main.xray_bin='/tmp/owrt-xray/xray'
+uci commit owrtremote
+/etc/init.d/owrt-remote restart
+```
+
+For another architecture, download the matching Xray release asset from:
+
+```text
+https://github.com/XTLS/Xray-core/releases/latest
+```
+
+## Update
+
+VPS:
+
+```sh
+sudo wget -O /opt/owrt-remote/owrt-remote-hub.py "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/owrt-remote-hub.py?v=$(date +%s)"
+sudo chmod +x /opt/owrt-remote/owrt-remote-hub.py
+sudo systemctl restart owrt-remote
+sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
+sudo systemctl restart owrt-remote-xray
+```
+
+OpenWrt:
+
+```sh
+wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" | sh
+owrt-remote render-client
 /etc/init.d/owrt-remote restart
 owrt-remote heartbeat
 ```
 
-## Что ставится на роутер
+For cache-proof updates, use a commit SHA instead of `main`:
 
-| Путь | Назначение |
-| --- | --- |
-| `/usr/sbin/owrt-remote` | CLI-агент: render config, heartbeat, status |
-| `/etc/init.d/owrt-remote` | сервис автозапуска Xray reverse + heartbeat loop |
-| `/www/cgi-bin/owrt-remote` | локальная красивая панель настройки |
-| `/www/luci-static/resources/view/owrt_remote.js` | LuCI-страница-редирект |
-| `/usr/share/luci/menu.d/luci-app-owrt-remote.json` | пункт меню LuCI |
-| `/usr/share/rpcd/acl.d/luci-app-owrt-remote.json` | ACL для чтения web key |
-| `/etc/config/owrtremote` | UCI-настройки агента |
-| `/etc/owrt-remote/web.key` | приватный ключ локальной панели |
+```sh
+SHA="PUT_COMMIT_SHA_HERE"
+export RAW_URL="https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/$SHA"
+wget -O - "$RAW_URL/install.sh" | sh
+```
 
-## Память OpenWrt
+## Hub Commands
 
-Сам модуль маленький: shell-скрипты, LuCI redirect и CGI. Самый тяжелый компонент - `xray-core`, но он не включен в этот репозиторий. Если на роутере мало флешки, лучше поставить Xray на extroot/USB или использовать сборку прошивки, где Xray уже включен.
+```sh
+sudo /opt/owrt-remote/owrt-remote-hub.py init
+sudo /opt/owrt-remote/owrt-remote-hub.py set-login --username admin --password 'NEW_PASSWORD'
+sudo /opt/owrt-remote/owrt-remote-hub.py add-router --id main --name "Главный роутер" --role main --entry-port 18080 --vps-host YOUR_VPS_IP
+sudo /opt/owrt-remote/owrt-remote-hub.py list-routers
+sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
+sudo /opt/owrt-remote/owrt-remote-hub.py print-openwrt-config --id main --hub-url http://YOUR_VPS_IP:8088 --vps-host YOUR_VPS_IP
+```
 
-## Команды агента
+## OpenWrt Agent Commands
 
 ```sh
 owrt-remote status
+owrt-remote doctor
 owrt-remote render-client
 owrt-remote render-client --stdout
 owrt-remote heartbeat
+```
+
+## Troubleshooting
+
+Router heartbeat:
+
+```sh
 owrt-remote doctor
+owrt-remote status
+owrt-remote heartbeat
 ```
 
-## Команды VPS-хаба
+VPS Xray:
 
 ```sh
-vps/owrt-remote-hub.py init
-vps/owrt-remote-hub.py add-router --id main --name "Главный" --role main --entry-port 18080 --vps-host example.com
-vps/owrt-remote-hub.py list-routers
-vps/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
-vps/owrt-remote-hub.py print-openwrt-config --id main
-vps/owrt-remote-hub.py serve --host 0.0.0.0 --port 8088
+sudo systemctl status owrt-remote-xray --no-pager -l
+sudo journalctl -u owrt-remote-xray -n 100 --no-pager
+curl -v --max-time 10 http://127.0.0.1:18080/cgi-bin/luci
 ```
 
-## Удаление
+If `curl` returns LuCI HTML or `403 Forbidden` with login page, the tunnel works. Open Hub and click `Админка`.
 
-С роутера:
+## Files On OpenWrt
 
-```sh
-wget -O - https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh | sh
-```
+| Path | Purpose |
+| --- | --- |
+| `/usr/sbin/owrt-remote` | CLI agent: render config, heartbeat, status |
+| `/etc/init.d/owrt-remote` | procd service: Xray reverse + heartbeat loop |
+| `/www/cgi-bin/owrt-remote` | local CGI configuration panel |
+| `/www/luci-static/resources/view/owrt_remote.js` | LuCI menu redirect |
+| `/usr/share/luci/menu.d/luci-app-owrt-remote.json` | LuCI menu item |
+| `/usr/share/rpcd/acl.d/luci-app-owrt-remote.json` | LuCI ACL |
+| `/etc/config/owrtremote` | UCI settings |
+| `/etc/owrt-remote/web.key` | local panel private key |
 
-Полностью, вместе с конфигом:
+## Security Notes
 
-```sh
-wget -O - https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh | PURGE=1 sh
-```
-
-## Важное по безопасности
-
-- Не открывай LuCI роутеров напрямую наружу.
-- Entry ports Xray на VPS по умолчанию слушают `127.0.0.1`, а наружу отдается только dashboard.
-- Панель хаба защищена `ADMIN_TOKEN`, а heartbeat от роутеров - отдельным `AGENT_TOKEN`.
-- Для боевого режима лучше посадить dashboard за HTTPS reverse proxy: Caddy, Nginx или Traefik.
-- Xray VLESS reverse можно усилить своим `xray vlessenc`; по умолчанию конфиг использует совместимый режим `none`.
-
+- Do not expose router LuCI directly to the internet.
+- Router entry ports on VPS listen on `127.0.0.1` only.
+- Hub uses login/password and cookie session.
+- Router heartbeat uses separate `AGENT_TOKEN`.
+- For production, put Hub behind HTTPS with Caddy, Nginx or another reverse proxy.
