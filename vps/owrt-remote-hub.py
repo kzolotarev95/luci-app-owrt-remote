@@ -25,6 +25,7 @@ AGENT_TOKEN_FILE = STATE_DIR / "agent.token"
 ONLINE_AFTER_SECONDS = int(os.environ.get("OWRT_REMOTE_ONLINE_AFTER", "75"))
 DEFAULT_VLESS_PORT = int(os.environ.get("OWRT_REMOTE_VLESS_PORT", "8443"))
 PBKDF2_ITERATIONS = 240000
+MIN_PASSWORD_LENGTH = 4
 SESSION_COOKIE = "owrt_remote_session"
 
 
@@ -91,8 +92,8 @@ def write_json_private(path, data):
 
 def save_auth(username, password):
     username = clean_username(username)
-    if len(password) < 8:
-        raise ValueError("password must be at least 8 characters")
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"password must be at least {MIN_PASSWORD_LENGTH} characters")
     data = {
         "username": username,
         "password": password_digest(password),
@@ -107,7 +108,7 @@ def load_auth():
     if AUTH_FILE.exists():
         return json.loads(AUTH_FILE.read_text(encoding="utf-8"))
     username = os.environ.get("OWRT_REMOTE_ADMIN_USER", "admin")
-    password = os.environ.get("OWRT_REMOTE_ADMIN_PASSWORD") or secrets.token_urlsafe(16)
+    password = os.environ.get("OWRT_REMOTE_ADMIN_PASSWORD") or "admin"
     data = save_auth(username, password)
     login_hint = STATE_DIR / "hub-login.txt"
     login_hint.write_text(
@@ -873,8 +874,8 @@ class Handler(BaseHTTPRequestHandler):
             if new_password != confirm:
                 self.send_text(400, "Новый пароль и повтор не совпадают")
                 return
-            if len(new_password) < 8:
-                self.send_text(400, "Новый пароль должен быть минимум 8 символов")
+            if len(new_password) < MIN_PASSWORD_LENGTH:
+                self.send_text(400, f"Новый пароль должен быть минимум {MIN_PASSWORD_LENGTH} символа")
                 return
             save_auth(username, new_password)
         else:
