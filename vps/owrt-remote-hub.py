@@ -690,6 +690,20 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def read_body(self):
+        if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            chunks = []
+            while True:
+                line = self.rfile.readline().strip()
+                if not line:
+                    continue
+                size = int(line.split(b";", 1)[0], 16)
+                if size == 0:
+                    while self.rfile.readline().strip():
+                        pass
+                    break
+                chunks.append(self.rfile.read(size))
+                self.rfile.read(2)
+            return b"".join(chunks)
         length = int(self.headers.get("Content-Length", "0") or "0")
         return self.rfile.read(length) if length else b""
 
@@ -743,6 +757,7 @@ class Handler(BaseHTTPRequestHandler):
                     router = heartbeat(conn, payload)
                 self.send_json(200, {"ok": True, "router": router})
             except Exception as exc:
+                self.log_message("heartbeat error: %s", exc)
                 self.send_json(400, {"ok": False, "error": str(exc)})
             return
         if path.startswith("/access/"):

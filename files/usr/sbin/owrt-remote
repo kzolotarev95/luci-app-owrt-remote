@@ -294,13 +294,6 @@ post_json() {
 	token="$2"
 	file="$3"
 
-	if command -v uclient-fetch >/dev/null 2>&1; then
-		uclient-fetch -q -O - \
-			--header="Authorization: Bearer $token" \
-			--header="Content-Type: application/json" \
-			--post-file="$file" "$url"
-		return
-	fi
 	if command -v wget >/dev/null 2>&1; then
 		wget -q -O - \
 			--header="Authorization: Bearer $token" \
@@ -313,6 +306,13 @@ post_json() {
 			-H "Authorization: Bearer $token" \
 			-H "Content-Type: application/json" \
 			--data-binary "@$file" "$url"
+		return
+	fi
+	if command -v uclient-fetch >/dev/null 2>&1; then
+		uclient-fetch -q -O - \
+			--header="Authorization: Bearer $token" \
+			--header="Content-Type: application/json" \
+			--post-file="$file" "$url"
 		return
 	fi
 	die "для heartbeat нужен uclient-fetch, wget или curl"
