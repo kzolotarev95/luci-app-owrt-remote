@@ -836,7 +836,7 @@ class Handler(BaseHTTPRequestHandler):
 
         body = self.read_body() if self.command in ("POST", "PUT", "PATCH") else None
         headers = {}
-        skip = {"host", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade", "content-length"}
+        skip = {"host", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade", "content-length", "accept-encoding"}
         for key, value in self.headers.items():
             if key.lower() in skip:
                 continue
@@ -866,7 +866,7 @@ class Handler(BaseHTTPRequestHandler):
                 if low == "set-cookie":
                     value = rewrite_cookie_path(value, prefix + "/")
                 resp_headers.append((key, value))
-            if "text/html" in content_type:
+            if should_rewrite_body(content_type):
                 resp_body = rewrite_html(resp_body, prefix)
             self.send_bytes(resp.status, resp_body, content_type or "application/octet-stream", resp_headers)
         except Exception as exc:
@@ -904,6 +904,7 @@ def rewrite_cookie_path(value, path):
 
 def rewrite_html(body, prefix):
     text = body.decode("utf-8", errors="ignore")
+    escaped_prefix = prefix.replace("/", "\\/")
     replacements = {
         'href="/': f'href="{prefix}/',
         'src="/': f'src="{prefix}/',
@@ -911,10 +912,34 @@ def rewrite_html(body, prefix):
         "href='/": f"href='{prefix}/",
         "src='/": f"src='{prefix}/",
         "action='/": f"action='{prefix}/",
+        'url("/': f'url("{prefix}/',
+        "url('/": f"url('{prefix}/",
+        "url(/": f"url({prefix}/",
+        '"/cgi-bin/luci': f'"{prefix}/cgi-bin/luci',
+        '"/ubus/': f'"{prefix}/ubus/',
+        '"/luci-static/': f'"{prefix}/luci-static/',
+        "'/cgi-bin/luci": f"'{prefix}/cgi-bin/luci",
+        "'/ubus/": f"'{prefix}/ubus/",
+        "'/luci-static/": f"'{prefix}/luci-static/",
+        '"\\/cgi-bin\\/luci': f'"{escaped_prefix}\\/cgi-bin\\/luci',
+        '"\\/ubus\\/': f'"{escaped_prefix}\\/ubus\\/',
+        '"\\/luci-static\\/': f'"{escaped_prefix}\\/luci-static\\/',
+        "'\\/cgi-bin\\/luci": f"'{escaped_prefix}\\/cgi-bin\\/luci",
+        "'\\/ubus\\/": f"'{escaped_prefix}\\/ubus\\/",
+        "'\\/luci-static\\/": f"'{escaped_prefix}\\/luci-static\\/",
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
     return text.encode("utf-8")
+
+
+def should_rewrite_body(content_type):
+    content_type = (content_type or "").lower()
+    return (
+        "text/html" in content_type
+        or "text/css" in content_type
+        or "javascript" in content_type
+    )
 
 
 def cmd_init(args):
