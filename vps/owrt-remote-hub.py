@@ -1363,7 +1363,11 @@ async function pollHttpTerminal() {{
 async function startHttpTerminal(reason) {{
   if (terminalMode === 'http' || httpSid) return;
   terminalMode = 'http';
-  write(`\\r\\n[${{reason}}]\\r\\nWebSocket не открылся, включаю запасной HTTP-terminal...\\r\\n`);
+  if (reason === 'mobile') {{
+    write('\\r\\nHTTP-terminal подключается...\\r\\n');
+  }} else {{
+    write(`\\r\\n[${{reason}}]\\r\\nWebSocket не открылся, включаю запасной HTTP-terminal...\\r\\n`);
+  }}
   try {{
     const res = await fetch('{session_path}', {{cache: 'no-store'}});
     const data = await res.json();
@@ -1394,6 +1398,11 @@ async function explainTerminalError(source) {{
   }}
 }}
 function connect() {{
+  const mobileTerminal = window.matchMedia('(max-width: 680px)').matches || /Android|iPhone|iPad|iPod|Mobile|Telegram/i.test(navigator.userAgent);
+  if (mobileTerminal) {{
+    startHttpTerminal('mobile');
+    return;
+  }}
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
   ws = new WebSocket(proto + location.host + '{ws_path}');
   ws.onopen = () => {{ wsOpened = true; }};
@@ -1491,17 +1500,14 @@ input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,
 button{{width:100%;margin-top:13px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;cursor:pointer;box-shadow:0 14px 30px rgba(124,58,237,.28)}}
 button:hover{{filter:brightness(1.06)}}
 .err{{margin:0 0 12px;padding:11px 12px;border:1px solid rgba(251,113,133,.45);border-radius:8px;background:rgba(251,113,133,.14);color:#fecdd3;font-weight:800}}
-@media(max-width:520px){{body{{padding:14px}}.login{{padding:15px}}.brand{{grid-template-columns:68px minmax(0,1fr)}}h1{{font-size:22px}}.logo{{width:68px;height:32px}}.brand .appBanner{{height:32px}}}}
+.login .brand{{display:block;text-align:center;margin-bottom:14px}}.login .brand .appBanner{{width:100%;height:40px;font-size:15px}}.logo{{display:none}}
+@media(max-width:520px){{body{{padding:14px}}.login{{padding:15px}}h1{{font-size:22px}}.login .brand .appBanner{{height:38px}}}}
 </style>
 </head>
 <body>
 <form class="login" method="post" action="/login">
   <div class="brand">
-    <div class="logo">OpenWrt</div>
-    <div>
-      <h1 class="appBanner"><span>OpenWrt Remote Hub</span></h1>
-      <p>Вход в панель роутеров</p>
-    </div>
+    <h1 class="appBanner"><span>OpenWrt Remote Hub</span></h1>
   </div>
   {error_html}
   <label for="hubUsername">Логин</label>
@@ -2474,13 +2480,46 @@ def cmd_print_openwrt(args):
     print(make_openwrt_config(row, hub_url), end="")
 
 
+def parse_extra_ports(value):
+    ports = []
+    for item in str(value or "").replace(";", ",").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            port = int(item)
+        except ValueError:
+            continue
+        if 0 < port < 65536 and port not in ports:
+            ports.append(port)
+    return ports
+
+
+def make_http_server(app, host, port):
+    server = ThreadingHTTPServer((host, port), Handler)
+    server.app = app
+    return server
+
+
 def cmd_serve(args):
     app = App(args.db, session_token(), agent_token(), args.public_url)
     with app.conn():
         pass
     auth = load_auth()
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
-    server.app = app
+    server = make_http_server(app, args.host, args.port)
+    extra_servers = []
+    for port in parse_extra_ports(args.extra_ports):
+        if port == args.port:
+            continue
+        try:
+            extra_server = make_http_server(app, args.host, port)
+        except OSError as exc:
+            print(f"WARNING: extra port {port} not started: {exc}", file=sys.stderr)
+            continue
+        extra_servers.append(extra_server)
+        thread = threading.Thread(target=extra_server.serve_forever, daemon=True)
+        thread.start()
+        print(f"{APP_NAME} also listening on http://{args.host}:{port}")
     print(f"{APP_NAME} listening on http://{args.host}:{args.port}")
     print(f"HUB_LOGIN: {auth.get('username', 'admin')}")
     print(f"AGENT_TOKEN: {app.agent_token}")
@@ -2488,6 +2527,9 @@ def cmd_serve(args):
         server.serve_forever()
     except KeyboardInterrupt:
         print("")
+    finally:
+        for extra_server in extra_servers:
+            extra_server.shutdown()
 
 
 def parser():
@@ -2550,6 +2592,7 @@ def parser():
     serve = sub.add_parser("serve", help="run web dashboard")
     serve.add_argument("--host", default=os.environ.get("OWRT_REMOTE_BIND", "0.0.0.0"))
     serve.add_argument("--port", type=int, default=int(os.environ.get("OWRT_REMOTE_PORT", "8088")))
+    serve.add_argument("--extra-ports", default=os.environ.get("OWRT_REMOTE_EXTRA_PORTS", ""))
     serve.add_argument("--public-url", default=os.environ.get("OWRT_REMOTE_PUBLIC_URL", ""))
     serve.set_defaults(func=cmd_serve)
 
