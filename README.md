@@ -106,6 +106,25 @@ sudo /opt/owrt-remote/owrt-remote-hub.py add-router \
 - `vps_port` на OpenWrt обычно один для всех роутеров: `8443`.
 - `admin_port` на OpenWrt обычно `80`, это локальный порт LuCI внутри роутера.
 
+Пример второго роутера:
+
+```sh
+sudo /opt/owrt-remote/owrt-remote-hub.py add-router \
+  --id node-2 \
+  --name "Второй роутер" \
+  --role node \
+  --entry-port 18090 \
+  --vps-host YOUR_VPS_IP
+```
+
+Если карточка пишет `router has no entry_port`, задай порт безопасно, без смены UUID:
+
+```sh
+sudo /opt/owrt-remote/owrt-remote-hub.py set-entry-port --id node-2 --entry-port 18090
+sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
+sudo systemctl restart owrt-remote-xray
+```
+
 Сгенерировать Xray config для VPS:
 
 ```sh
@@ -135,20 +154,32 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now owrt-remote-xray
 ```
 
-Открыть порты:
+Открыть наружу нужно только два порта:
 
 ```sh
 sudo ufw allow 8088/tcp
 sudo ufw allow 8443/tcp
 ```
 
+Что за порты:
+
+| Порт | Где | Для чего | Открывать наружу |
+| --- | --- | --- | --- |
+| `8088/tcp` | VPS | Веб-панель Hub | да |
+| `8443/tcp` | VPS | Xray VLESS reverse, сюда подключаются роутеры | да |
+| `18080/tcp` | VPS localhost | вход к первому роутеру через Hub | нет |
+| `18090/tcp` | VPS localhost | вход ко второму роутеру через Hub | нет |
+| `18100/tcp` | VPS localhost | вход к третьему роутеру через Hub | нет |
+
+Если у VPS-провайдера есть отдельный firewall в личном кабинете, там тоже открой `8088/tcp` и `8443/tcp`.
+
 Проверить:
 
 ```sh
-sudo ss -lntp | grep -E ':(8088|8443|18080)\b'
+sudo ss -lntp | grep -E ':(8088|8443|18080|18090|18100)\b'
 ```
 
-Порт `18080` должен слушать только `127.0.0.1`. Наружу нужны `8088` для Hub и `8443` для Xray.
+Порты `18080`, `18090`, `18100` должны слушать только `127.0.0.1`. Наружу нужны `8088` для Hub и `8443` для Xray.
 
 ## Установка на OpenWrt
 

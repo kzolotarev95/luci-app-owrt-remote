@@ -206,6 +206,13 @@ def get_router(conn, router_id):
     return conn.execute("select * from routers where id = ?", (router_id,)).fetchone()
 
 
+def get_router_by_entry_port(conn, entry_port, exclude_id=""):
+    return conn.execute(
+        "select * from routers where entry_port = ? and id != ?",
+        (int(entry_port), exclude_id),
+    ).fetchone()
+
+
 def list_router_rows(conn):
     return conn.execute(
         """
@@ -548,7 +555,7 @@ body::before{{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none
 .brand{{display:flex;align-items:center;gap:14px}}
 h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}.links{{margin-top:8px}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{position:relative;justify-content:flex-end;padding-top:42px}}.badge{{background:var(--panel);color:var(--muted)}}.authToggle{{cursor:pointer}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
  .toolbar{{display:grid;grid-template-columns:1fr 1fr 110px 110px 150px auto;gap:10px;margin:18px 0;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px)}}
-.authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:5;width:min(520px,calc(100vw - 44px));padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px)}}.authMenu[hidden]{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr 1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}
+.authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:5;width:min(520px,calc(100vw - 44px));padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px)}}.authMenu[hidden]{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr 1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
 input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:rgba(8,5,18,.72);color:var(--text)}}button,.btn{{border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:10px 13px;background:rgba(255,255,255,.10);color:#f7f2ff;font-weight:850;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}.authToggle{{border-radius:999px;padding:8px 14px;background:var(--panel);color:var(--muted)}}button.primary,.btn.primary{{background:var(--blue);color:#fff;box-shadow:0 10px 22px rgba(124,58,237,.22)}}button.bad,.btn.bad{{background:rgba(251,113,133,.16);color:#fecdd3}}.btn.good{{background:rgba(34,197,94,.16);color:#bbf7d0}}.btn.disabled{{opacity:.45;cursor:not-allowed}}
 .sectionHead{{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:24px 0 14px}}.sectionHead h2{{margin:0;font-size:22px}}.sectionHead p{{margin:3px 0 0;color:var(--muted)}}.summary{{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}}.miniStat{{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.07);padding:8px 12px;color:#ddd6fe;font-weight:750;white-space:nowrap}}
 .cards{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{position:relative;min-height:246px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}}.card::before{{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--green)}}.card.off::before{{background:var(--red)}}.card.warn::before{{background:var(--amber)}}.card.main{{grid-column:span 2}}
@@ -592,13 +599,14 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
   </section>
 
   <form class="toolbar" id="routerForm">
-    <input name="id" placeholder="router id: main" required>
+    <input name="id" placeholder="router id: node-2" autocomplete="off" required>
     <input name="name" placeholder="Название роутера" required>
     <select name="role"><option value="node">node</option><option value="main">main</option></select>
     <input name="entry_port" placeholder="18080" inputmode="numeric" required>
     <input name="vps_host" placeholder="VPS IP/domain" required>
     <button class="primary">Добавить</button>
   </form>
+  <div id="routerMsg" class="formMsg" hidden></div>
 
   <section class="sectionHead">
     <div>
@@ -617,6 +625,8 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 <script>
 window.ROUTERS = {routers_json};
 const cards = document.getElementById('cards');
+const routerForm = document.getElementById('routerForm');
+const routerMsg = document.getElementById('routerMsg');
 
 function ago(iso) {{
   if (!iso) return 'never';
@@ -700,24 +710,92 @@ function escapeAttr(s) {{
   return escapeHtml(s);
 }}
 
+function nextEntryPort(list) {{
+  const used = new Set(list.map(r => Number(r.entry_port || 0)).filter(Boolean));
+  let port = 18080;
+  while (used.has(port)) port += 10;
+  return port;
+}}
+
+function nextRouterId(list) {{
+  const used = new Set(list.map(r => String(r.id || '')));
+  if (!used.has('main')) return 'main';
+  let idx = 2;
+  while (used.has('node-' + idx)) idx += 1;
+  return 'node-' + idx;
+}}
+
+function defaultRouterName(id) {{
+  if (id === 'main') return 'Главный роутер';
+  return 'Роутер ' + id;
+}}
+
+function defaultVpsHost(list) {{
+  const withHost = list.find(r => r.vps_host);
+  return withHost ? withHost.vps_host : window.location.hostname;
+}}
+
+function fillRouterForm(force = false) {{
+  const list = window.ROUTERS || [];
+  const id = nextRouterId(list);
+  if (force || !routerForm.id.value) routerForm.id.value = id;
+  if (force || !routerForm.name.value) routerForm.name.value = defaultRouterName(routerForm.id.value || id);
+  if (force || !routerForm.entry_port.value) routerForm.entry_port.value = String(nextEntryPort(list));
+  if (force || !routerForm.vps_host.value) routerForm.vps_host.value = defaultVpsHost(list);
+  if (force || !routerForm.role.value) routerForm.role.value = id === 'main' ? 'main' : 'node';
+}}
+
+function showRouterMsg(text, bad = false) {{
+  routerMsg.hidden = false;
+  routerMsg.className = bad ? 'formMsg bad' : 'formMsg';
+  routerMsg.textContent = text;
+}}
+
+routerForm.id.addEventListener('input', () => {{
+  if (!routerForm.name.dataset.touched) {{
+    routerForm.name.value = defaultRouterName(routerForm.id.value.trim());
+  }}
+}});
+routerForm.name.addEventListener('input', () => {{
+  routerForm.name.dataset.touched = '1';
+}});
+
 async function loadRouters() {{
   const res = await fetch('/api/routers', {{cache: 'no-store'}});
   if (res.ok) {{
     const data = await res.json();
     window.ROUTERS = data.routers;
     render(window.ROUTERS);
+    fillRouterForm(false);
   }}
 }}
 
-document.getElementById('routerForm').addEventListener('submit', async (ev) => {{
+routerForm.addEventListener('submit', async (ev) => {{
   ev.preventDefault();
+  routerMsg.hidden = true;
   const body = new URLSearchParams(new FormData(ev.currentTarget));
+  const id = String(body.get('id') || '').trim();
+  const entryPort = Number(body.get('entry_port') || 0);
+  const duplicateId = (window.ROUTERS || []).find(r => String(r.id) === id);
+  const duplicatePort = (window.ROUTERS || []).find(r => Number(r.entry_port || 0) === entryPort);
+  if (duplicateId) {{
+    showRouterMsg(`Router ID "${{id}}" уже есть. Для второго роутера оставь предложенный ID или напиши новый.`, true);
+    return;
+  }}
+  if (duplicatePort) {{
+    showRouterMsg(`Порт ${{entryPort}} уже занят роутером "${{duplicatePort.id}}". Поставь следующий свободный порт.`, true);
+    routerForm.entry_port.value = String(nextEntryPort(window.ROUTERS || []));
+    return;
+  }}
   const res = await fetch('/api/router', {{method: 'POST', body}});
   if (res.ok) {{
     ev.currentTarget.reset();
+    routerForm.name.dataset.touched = '';
     await loadRouters();
+    fillRouterForm(true);
+    showRouterMsg('Роутер добавлен. Теперь открой OpenWrt config в его карточке и вставь команды на роутер.');
   }} else {{
-    alert(await res.text());
+    showRouterMsg(await res.text(), true);
   }}
 }});
 
@@ -776,6 +854,7 @@ document.getElementById('authForm').addEventListener('submit', async (ev) => {{
 }});
 
 render(window.ROUTERS);
+fillRouterForm(true);
 setInterval(loadRouters, 5000);
 </script>
 </body>
@@ -990,7 +1069,25 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/router":
             try:
                 payload = self.read_payload()
+                router_id = clean_router_id(payload.get("id"))
+                entry_port = int(payload.get("entry_port") or 0)
+                if entry_port <= 0:
+                    self.send_text(400, "entry_port должен быть больше 0")
+                    return
                 with self.app.conn() as conn:
+                    if get_router(conn, router_id):
+                        self.send_text(
+                            409,
+                            f"Router ID '{router_id}' уже есть. Для второго роутера укажи новый ID, например node-2 или main123.",
+                        )
+                        return
+                    port_owner = get_router_by_entry_port(conn, entry_port, router_id)
+                    if port_owner:
+                        self.send_text(
+                            409,
+                            f"entry_port {entry_port} уже занят роутером '{port_owner['id']}'. Для следующего роутера поставь другой порт, например {entry_port + 10}.",
+                        )
+                        return
                     row = upsert_router(conn, payload)
                     router = row_to_router(row)
                 self.send_json(200, {"ok": True, "router": router})
