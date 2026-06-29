@@ -820,25 +820,27 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}.routerMark{{display:grid;place-items:center;width:46px;height:46px;border-radius:8px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.08)}}.routerIcon{{position:relative;width:28px;height:18px;border:2px solid #ddd6fe;border-radius:5px}}.routerIcon::before,.routerIcon::after{{content:"";position:absolute;top:-9px;width:9px;height:9px;border-top:2px solid #ddd6fe}}.routerIcon::before{{left:2px;transform:rotate(-34deg)}}.routerIcon::after{{right:2px;transform:rotate(34deg)}}.routerIcon span{{position:absolute;left:5px;right:5px;bottom:4px;display:flex;justify-content:space-between}}.routerIcon span::before,.routerIcon span::after{{content:"";width:4px;height:4px;border-radius:50%;background:#ddd6fe}}
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
 .metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong{{color:#bbf7d0}}.metric.temp-warn strong{{color:#fde68a}}.metric.temp-bad strong{{color:#fecdd3}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+.brandPanel{{display:grid;grid-template-columns:repeat(2,minmax(0,132px));gap:8px}}.brandPanel .appBanner{{grid-column:1/-1;width:100%;min-width:0}}.brandPanel .links{{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:0}}.brandPanel .links a{{width:100%;min-width:0}}.nethavenTop{{border-color:rgba(34,211,238,.46);background:linear-gradient(110deg,rgba(14,165,233,.20),rgba(168,85,247,.22),rgba(34,197,94,.14));color:#ecfeff}}.sectionHead{{align-items:center;justify-content:center;flex-direction:column;text-align:center}}.summary{{justify-content:center}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.routerMark{{margin:0 auto}}.tagRow,.actions{{justify-content:center}}.name{{white-space:normal}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar,.authGrid{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{padding-top:0;justify-content:flex-start}}}}
 @media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.name{{white-space:normal;font-size:18px}}.sectionHead{{align-items:flex-start;flex-direction:column;margin:18px 0 10px}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
+@media(max-width:680px){{.brandPanel{{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}}.brandPanel .appBanner{{width:100%}}.sectionHead{{align-items:center;text-align:center}}.summary{{justify-content:center}}}}
 </style>
 </head>
 <body>
 <main class="wrap">
   <section class="top">
     <div class="brand">
-      <div>
+      <div class="brandPanel">
         <h1 class="appBanner"><span>OpenWrt Remote Hub</span></h1>
         <div class="links">
           <a href="https://t.me/kzolotarev95" target="_blank" rel="noopener noreferrer">Telegram</a>
           <a href="https://github.com/kzolotarev95" target="_blank" rel="noopener noreferrer">GitHub</a>
-          <a href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">NetHaven VPN</a>
         </div>
       </div>
     </div>
     <div class="headerActions">
+      <a class="badge nethavenTop" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">NetHaven VPN</a>
       <div class="badge"><span class="dot on"></span>Hub online</div>
       <button class="badge" id="xrayReload" type="button">Обновить Xray VPS</button>
       <button class="badge" id="xrayRestart" type="button">Рестарт Xray VPS</button>
@@ -1481,7 +1483,7 @@ body::before{{content:"";position:fixed;inset:-28%;pointer-events:none;backgroun
 .login{{position:relative;z-index:1;width:min(360px,100%);padding:16px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.40);backdrop-filter:blur(14px)}}
 .brand{{display:flex;gap:10px;align-items:center;margin-bottom:12px}}
 .logo{{width:72px;height:34px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,#22d3ee,#7c3aed 58%,#22c55e);box-shadow:0 12px 30px rgba(124,58,237,.28);font-size:12px;font-weight:950;color:white;letter-spacing:.1px}}
-h1{{margin:0;font-size:18px;line-height:1.1;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 12px;border:1px solid rgba(34,211,238,.34);border-radius:8px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));box-shadow:0 10px 24px rgba(124,58,237,.18),inset 0 1px 0 rgba(255,255,255,.10);font-size:14px;overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}@keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
+h1{{margin:0;font-size:18px;line-height:1.1;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 12px;border:1px solid rgba(34,211,238,.34);border-radius:8px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));box-shadow:0 10px 24px rgba(124,58,237,.18),inset 0 1px 0 rgba(255,255,255,.10);font-size:14px;overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.brand{{display:grid;grid-template-columns:72px minmax(0,1fr);align-items:start}}.brand>div:last-child{{min-width:0}}.brand .appBanner{{width:100%;height:34px}}@keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 p{{margin:3px 0 0;color:var(--muted)}}
 label{{display:block;margin:10px 0 5px;font-weight:850;color:#ede9fe}}
 input{{width:100%;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.74);color:var(--text);outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
@@ -1489,7 +1491,7 @@ input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,
 button{{width:100%;margin-top:13px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;cursor:pointer;box-shadow:0 14px 30px rgba(124,58,237,.28)}}
 button:hover{{filter:brightness(1.06)}}
 .err{{margin:0 0 12px;padding:11px 12px;border:1px solid rgba(251,113,133,.45);border-radius:8px;background:rgba(251,113,133,.14);color:#fecdd3;font-weight:800}}
-@media(max-width:520px){{body{{padding:14px}}.login{{padding:15px}}h1{{font-size:22px}}.logo{{width:68px;height:32px}}}}
+@media(max-width:520px){{body{{padding:14px}}.login{{padding:15px}}.brand{{grid-template-columns:68px minmax(0,1fr)}}h1{{font-size:22px}}.logo{{width:68px;height:32px}}.brand .appBanner{{height:32px}}}}
 </style>
 </head>
 <body>
@@ -2150,8 +2152,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.require_admin():
             return
         parts = path.split("/", 3)
-        if len(parts) < 3:
-            self.redirect("/access/")
+        if len(parts) < 3 or not parts[2]:
+            self.redirect("/")
             return
         router_id = urllib.parse.unquote(parts[2])
         rest = "/" + parts[3] if len(parts) == 4 else "/"

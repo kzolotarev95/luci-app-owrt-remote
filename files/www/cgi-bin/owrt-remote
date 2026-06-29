@@ -2,7 +2,7 @@
 
 KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
 AGENT="${AGENT:-/usr/sbin/owrt-remote}"
-OWRT_REMOTE_UI_VERSION="2026-06-29-xray-apply-v16"
+OWRT_REMOTE_UI_VERSION="2026-06-30-mobile-header-xray-v17"
 PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
 RESULT_TITLE=""
 RESULT_BODY=""
@@ -305,14 +305,16 @@ form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr
 .notice{max-height:280px;overflow:auto;margin-top:16px;border-radius:8px;padding:12px;border:1px solid var(--line);background:rgba(255,255,255,.08);white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}.notice strong{display:block;margin-bottom:4px;font:700 14px/1.4 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.notice.ok{border-color:rgba(34,197,94,.46);background:rgba(34,197,94,.12)}.notice.bad{border-color:rgba(251,113,133,.46);background:rgba(251,113,133,.12)}.notice.warn{border-color:rgba(245,158,11,.46);background:rgba(245,158,11,.12)}
 .code{background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:12px;overflow:auto;overflow-wrap:anywhere;min-height:120px;white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
 .helperText{margin:0 0 12px;color:var(--muted)}.xrayApply{margin-top:14px;padding:14px;border:1px solid rgba(34,211,238,.42);border-radius:8px;background:linear-gradient(135deg,rgba(34,211,238,.16),rgba(124,58,237,.20),rgba(236,72,153,.11));box-shadow:0 18px 42px rgba(34,211,238,.10)}.xrayApply h3{margin:0 0 8px;font-size:16px;color:#a5f3fc}.scriptBox{width:100%;min-height:240px;resize:vertical;border:1px solid rgba(34,211,238,.28);border-radius:8px;background:rgba(8,5,18,.78);padding:12px;color:var(--text);font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;overflow:auto}
+.brandPanel{display:grid;grid-template-columns:repeat(2,minmax(0,132px));gap:8px}.brandPanel .titleRow,.brandPanel .links{grid-column:1/-1}.brandPanel .appBanner{width:100%;min-width:0}.brandPanel .links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:0}.brandPanel .links a{width:100%;min-width:0}
 @media(max-width:820px){.grid,.formgrid,.metrics{grid-template-columns:1fr}.hero{align-items:flex-start;flex-direction:column}.topActions{justify-content:flex-start;padding-top:0}.wrap{padding:14px}h1{font-size:24px}.appBanner{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}.actions .btn,.actions button{width:100%}}
+@media(max-width:820px){.brandPanel{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.brandPanel .appBanner{width:100%}}
 </style>
 </head>
 <body>
 <main class="wrap">
   <section class="hero">
     <div class="brand">
-      <div>
+      <div class="brandPanel">
         <div class="titleRow">
           <h1 class="appBanner"><span>OpenWrt Remote Hub</span></h1>
         </div>
@@ -329,7 +331,6 @@ form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr
             <span>NetHaven VPN</span>
           </a>
       </div>
-      <div class="uiPill pill"><span class="dot $(h "$xray_tone")"></span>Xray: $(h "$xray_state")</div>
       <div class="returnCard">
         <a class="uiPill backBtn" href="/cgi-bin/luci/admin/services">Вернуться в службы OpenWrt</a>
       </div>

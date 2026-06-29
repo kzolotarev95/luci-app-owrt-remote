@@ -263,16 +263,33 @@ install_xray_tmp() {
 	printf 'OK: xray_bin сохранен в /etc/config/owrtremote\n'
 }
 
-ensure_tmp_xray() {
-	local configured
+ensure_xray_available() {
+	local configured candidate found
 	configured="$(uci_get xray_bin /usr/bin/xray)"
-	case "$configured" in
-		/tmp/owrt-xray/xray|/tmp/xray)
-			[ -x "$configured" ] && return 0
-			log "Xray был в /tmp и пропал после перезагрузки, ставлю заново..."
-			install_xray_tmp
-			;;
-	esac
+	[ -x "$configured" ] && return 0
+
+	for candidate in /usr/bin/xray /usr/bin/xray-core /usr/local/bin/xray /opt/bin/xray /tmp/owrt-xray/xray /tmp/xray; do
+		if [ -x "$candidate" ]; then
+			found="$candidate"
+			break
+		fi
+	done
+
+	if [ -z "$found" ]; then
+		found="$(command -v xray 2>/dev/null || command -v xray-core 2>/dev/null || true)"
+	fi
+
+	if [ -n "$found" ] && [ -x "$found" ]; then
+		[ "$found" = "$configured" ] || {
+			uci set "$CONFIG.$SECTION.xray_bin=$found"
+			uci commit "$CONFIG"
+			log "Xray найден: $found"
+		}
+		return 0
+	fi
+
+	log "Xray не найден ($configured), ставлю временный Xray в /tmp..."
+	install_xray_tmp
 }
 
 service_enabled() {
@@ -404,7 +421,7 @@ run_xray() {
 	enabled="$(uci_get enabled 0)"
 	truthy "$enabled" || die "сервис выключен: включи option enabled '1'"
 
-	ensure_tmp_xray
+	ensure_xray_available
 	xray_bin="$(xray_bin_path)"
 	xray_config="$(render_client_config)"
 	[ -x "$xray_bin" ] || die "xray не найден или не исполняемый: $xray_bin"
@@ -544,7 +561,7 @@ status() {
 doctor() {
 	local ok xray_bin
 	ok=1
-	ensure_tmp_xray
+	ensure_xray_available
 	xray_bin="$(xray_bin_path)"
 
 	[ -x "$xray_bin" ] || {
