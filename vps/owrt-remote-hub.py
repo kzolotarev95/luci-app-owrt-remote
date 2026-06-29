@@ -251,7 +251,7 @@ def heartbeat(conn, payload):
 
 
 def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLESS_PORT, decryption="none"):
-    users = []
+    clients = []
     inbounds = [
         {
             "tag": "owrt-remote-vless",
@@ -259,7 +259,7 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
             "port": int(listen_port),
             "protocol": "vless",
             "settings": {
-                "users": users,
+                "clients": clients,
                 "decryption": decryption,
             },
             "streamSettings": {
@@ -286,7 +286,7 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
         }
         if row["vless_flow"]:
             client["flow"] = row["vless_flow"]
-        users.append(client)
+        clients.append(client)
         inbounds.append(
             {
                 "tag": portal_in,
