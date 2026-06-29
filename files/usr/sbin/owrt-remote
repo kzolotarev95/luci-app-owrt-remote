@@ -165,7 +165,7 @@ fetch_file() {
 	url="$1"
 	dst="$2"
 	if command -v wget >/dev/null 2>&1; then
-		wget -O "$dst" "$url"
+		wget -q -O "$dst" "$url"
 		return
 	fi
 	if command -v curl >/dev/null 2>&1; then
@@ -188,7 +188,7 @@ xray_release_asset() {
 }
 
 install_xray_tmp() {
-	local dir zip asset url
+	local dir zip asset url version
 	dir="/tmp/owrt-xray"
 	zip="$dir/xray.zip"
 	asset="$(xray_release_asset)" || die "не знаю готовый Xray asset для $(uname -m 2>/dev/null)"
@@ -200,14 +200,17 @@ install_xray_tmp() {
 		opkg install unzip || die "не смог поставить unzip"
 	fi
 
+	printf 'Скачиваю Xray: %s\n' "$asset"
 	fetch_file "$url" "$zip"
 	( cd "$dir" && unzip -o "$zip" xray >/dev/null ) || die "не смог распаковать Xray"
 	chmod +x "$dir/xray"
-	"$dir/xray" version || die "скачанный Xray не запускается"
+	version="$("$dir/xray" version 2>&1)" || die "скачанный Xray не запускается"
+	version="$(printf '%s\n' "$version" | sed -n '1p')"
 
 	uci set "$CONFIG.$SECTION.xray_bin=$dir/xray"
 	uci commit "$CONFIG"
 	printf 'OK: Xray поставлен в %s\n' "$dir/xray"
+	printf 'OK: %s\n' "$version"
 	printf 'OK: xray_bin сохранен в /etc/config/owrtremote\n'
 }
 
