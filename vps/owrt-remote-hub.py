@@ -547,11 +547,11 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
   <section class="top">
     <div class="brand">
       <div>
-        <h1>OpenWrt Remote Hub</h1>
-        <p class="muted">Карточки роутеров, heartbeat и вход в LuCI через VPS.</p>
+        <h1>Wrt Удаленный доступ извне</h1>
         <div class="links">
           <a href="https://t.me/kzolotarev95" target="_blank" rel="noopener noreferrer">Telegram</a>
           <a href="https://github.com/kzolotarev95" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">NetHaven VPN</a>
         </div>
       </div>
     </div>
@@ -596,7 +596,6 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
   </section>
 
   <section id="cards" class="cards"></section>
-  <div class="hint muted">После добавления роутера открой <code>OpenWrt config</code>, вставь команды на роутере и перегенерируй server Xray config командой <code>owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json</code>.</div>
 </main>
 <script>
 window.ROUTERS = {routers_json};
@@ -715,10 +714,25 @@ cards.addEventListener('click', async (ev) => {{
 
 const authToggle = document.getElementById('authToggle');
 const authMenu = document.getElementById('authMenu');
+let authHideTimer;
+function showAuthMenu() {{
+  clearTimeout(authHideTimer);
+  authMenu.hidden = false;
+}}
+function scheduleHideAuthMenu() {{
+  clearTimeout(authHideTimer);
+  authHideTimer = setTimeout(() => {{
+    authMenu.hidden = true;
+  }}, 180);
+}}
 authToggle.addEventListener('click', (ev) => {{
   ev.stopPropagation();
   authMenu.hidden = !authMenu.hidden;
 }});
+authToggle.addEventListener('mouseenter', showAuthMenu);
+authToggle.addEventListener('mouseleave', scheduleHideAuthMenu);
+authMenu.addEventListener('mouseenter', showAuthMenu);
+authMenu.addEventListener('mouseleave', scheduleHideAuthMenu);
 authMenu.addEventListener('click', (ev) => ev.stopPropagation());
 document.addEventListener('click', () => {{
   authMenu.hidden = true;
