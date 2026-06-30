@@ -381,14 +381,14 @@ EOF
       </div>
       <form method="post" class="actions">
         <input type="hidden" name="key" value="$(h "$key")">
-        <button class="btn good" name="action" value="start">Запустить</button>
-        <button class="btn warn" name="action" value="restart">Перезапустить</button>
-        <button class="btn bad" name="action" value="stop">Остановить</button>
+        <button class="btn" name="action" value="start">Запустить</button>
+        <button class="btn" name="action" value="restart">Перезапустить</button>
+        <button class="btn" name="action" value="stop">Остановить</button>
         <button class="btn" name="action" value="heartbeat">Heartbeat</button>
         <button class="btn" name="action" value="doctor">Проверка</button>
-        <button class="btn primary" name="action" value="install_xray_tmp">Поставить Xray в /tmp</button>
+        <button class="btn" name="action" value="install_xray_tmp">Поставить Xray в /tmp</button>
         <a class="btn" href="?key=$(h "$key")&action=download_config">Скачать Xray config</a>
-        <button class="btn primary" name="action" value="show_xray_settings">Xray настройки</button>
+        <button class="btn" name="action" value="show_xray_settings">Xray настройки</button>
       </form>
 EOF
 	if [ -n "$RESULT_TITLE" ]; then
