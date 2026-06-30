@@ -47,17 +47,6 @@ curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/
 login:    admin
 password: admin
 ```
-Если нужен домен, передай его установщику:
-
-```sh
-curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh -s -- hub.example.com
-```
-
-Если HTTPS не нужен:
-
-```sh
-curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo env AUTO_HTTPS=0 sh
-```
 
 ### OpenWrt: поставить  Remote Hub на роутер 
 
@@ -70,6 +59,18 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 ```sh
 owrt-remote doctor
 owrt-remote status
+```
+
+Если нужен домен, передай его установщику:
+
+```sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh -s -- hub.example.com
+```
+
+Если HTTPS не нужен:
+
+```sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo env AUTO_HTTPS=0 sh
 ```
 
 ## Схема
