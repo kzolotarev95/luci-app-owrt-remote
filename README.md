@@ -10,13 +10,22 @@
 
 ## Что это
 
-Схема работы:
+`OpenWrt Remote Hub` - это легкая панель для удаленного доступа к OpenWrt через свой VPS.
+Роутер сам подключается к VPS изнутри сети, поэтому наружу LuCI и SSH на роутере открывать не нужно.
 
-```text
-Браузер -> VPS Hub -> Xray reverse -> OpenWrt LuCI / SSH
+## Схема работы
+
+```mermaid
+flowchart LR
+    browser["Браузер / телефон"] --> hub["VPS<br/>OpenWrt Remote Hub<br/>80 / 8088"]
+    hub --> luciEntry["127.0.0.1:18080<br/>LuCI entry-port"]
+    hub --> sshEntry["127.0.0.1:19080<br/>SSH entry-port"]
+    luciEntry --> xray["Xray VLESS reverse<br/>8443"]
+    sshEntry --> xray
+    xray --> router["OpenWrt роутер"]
+    router --> luci["LuCI<br/>127.0.0.1:80"]
+    router --> ssh["Dropbear SSH<br/>127.0.0.1:22"]
 ```
-
-Роутер сам подключается к VPS изнутри сети. Наружу LuCI и SSH на роутере открывать не нужно.
 
 В панели VPS можно:
 
@@ -35,6 +44,45 @@
 ```
 
 Пароль можно поменять в панели Hub.
+
+## Дерево проекта
+
+```text
+.
+├── install.sh
+│   └── установка агента на OpenWrt
+├── uninstall.sh
+│   └── удаление агента с OpenWrt
+├── files/
+│   ├── usr/sbin/owrt-remote
+│   │   └── CLI-агент, heartbeat, render-client, doctor
+│   ├── etc/init.d/owrt-remote
+│   │   └── procd-сервис OpenWrt
+│   ├── www/cgi-bin/owrt-remote
+│   │   └── веб-панель на роутере
+│   ├── usr/share/luci/menu.d/luci-app-owrt-remote.json
+│   │   └── пункт меню LuCI: Службы -> OpenWrt Remote
+│   └── usr/share/rpcd/acl.d/luci-app-owrt-remote.json
+│       └── права LuCI/rpcd
+└── vps/
+    ├── install-vps.sh
+    │   └── установка Hub на VPS одной командой
+    ├── uninstall-vps.sh
+    │   └── удаление Hub с VPS одной командой
+    ├── owrt-remote-hub.py
+    │   └── веб-панель VPS, карточки роутеров, proxy, SSH terminal
+    └── owrt-remote.service
+        └── systemd-сервис Hub
+```
+
+## Быстрые команды
+
+| Задача | Где запускать | Команда |
+| --- | --- | --- |
+| Поставить Hub | VPS | `curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh \| sudo sh` |
+| Поставить агент | OpenWrt | `wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" \| sh` |
+| Удалить Hub полностью | VPS | `curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh \| sudo sh` |
+| Удалить агент полностью | OpenWrt | `wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh?v=$(date +%s)" \| PURGE=1 sh` |
 
 ## Быстрая установка VPS
 
@@ -415,6 +463,62 @@ http://YOUR_VPS_IP:8088/
 - лучше привязать домен и сделать HTTPS/443 через Caddy или nginx.
 
 Важно: нормальный доверенный SSL на голый IP обычно не выпускается. Для красивого `https://` нужен домен.
+
+## Удаление
+
+### Удалить Hub с VPS полностью
+
+Одна команда на VPS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh | sudo sh
+```
+
+Что удалится:
+
+- сервис `owrt-remote`;
+- сервис `owrt-remote-xray`;
+- файлы `/opt/owrt-remote`;
+- конфиг `/etc/xray/owrt-remote.json`;
+- база роутеров `/var/lib/owrt-remote`;
+- правила `ufw` для `80/tcp`, `8088/tcp`, `8443/tcp`.
+
+Если хочешь удалить Hub, но оставить базу роутеров:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh | sudo env PURGE=0 sh
+```
+
+Если хочешь дополнительно удалить сам Xray binary с VPS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh | sudo env REMOVE_XRAY=1 sh
+```
+
+### Удалить агент с OpenWrt полностью
+
+Одна команда на роутере:
+
+```sh
+wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh?v=$(date +%s)" | PURGE=1 sh
+```
+
+Что удалится:
+
+- `/usr/sbin/owrt-remote`;
+- `/etc/init.d/owrt-remote`;
+- `/www/cgi-bin/owrt-remote`;
+- пункт меню LuCI;
+- rpcd ACL;
+- `/etc/config/owrtremote`;
+- `/etc/owrt-remote/web.key`;
+- `/etc/xray/owrt-remote-client.json`.
+
+Если хочешь удалить только файлы панели, но оставить конфиг:
+
+```sh
+wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh?v=$(date +%s)" | sh
+```
 
 ## Обновление
 
