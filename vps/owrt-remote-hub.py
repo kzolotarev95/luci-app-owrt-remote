@@ -1247,8 +1247,8 @@ body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radi
 .mobileInput{{display:none;gap:8px;padding:8px;border-top:1px solid var(--line);background:rgba(255,255,255,.045)}}.mobileInput input{{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.76);color:var(--text);font:14px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;outline:none}}.mobileInput input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12)}}.mobileInput button{{border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;white-space:nowrap}}
 #term{{flex:1;min-height:0;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;outline:none;cursor:text;background:rgba(0,0,0,.42);font:13px/1.34 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff;user-select:text;-webkit-user-select:text;touch-action:pan-y;scrollbar-width:thin;scrollbar-color:rgba(168,85,247,.72) rgba(255,255,255,.06)}}#term::selection,#term *::selection{{background:rgba(34,211,238,.34);color:#fff}}#term:focus{{box-shadow:inset 0 0 0 1px rgba(34,211,238,.30)}}#term::-webkit-scrollbar{{width:12px;height:12px}}#term::-webkit-scrollbar-track{{background:rgba(255,255,255,.06)}}#term::-webkit-scrollbar-thumb{{background:linear-gradient(180deg,#7c3aed,#22d3ee);border-radius:999px;border:3px solid rgba(10,6,18,.96)}}#term::-webkit-scrollbar-thumb:hover{{background:linear-gradient(180deg,#a855f7,#67e8f9)}}.term-error{{color:#fb7185;font-weight:900}}.term-warn{{color:#fde68a;font-weight:850}}.term-ok{{color:#bbf7d0;font-weight:850}}.term-info{{color:#67e8f9;font-weight:850}}.term-prompt{{color:#86efac;font-weight:900}}.term-metric{{color:#93c5fd;font-weight:850}}.term-muted{{color:#c4b5fd}}.term-inverse{{display:inline-block;background:#ddd6fe;color:#13091f;border-radius:3px;padding:0 3px;font-weight:900}}
 .bad{{color:#fecdd3}}
-@media(max-width:680px){{body{{padding:6px;font-size:13px;background-attachment:scroll}}.wrap{{gap:6px;min-height:calc(100svh - 12px)}}.top{{align-items:stretch;flex-direction:column;gap:6px;min-height:0}}.sshTitle{{align-items:flex-start;flex-direction:column;gap:5px}}h1{{font-size:16px}}.chips{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:5px}}.chip{{text-align:center;padding:5px 6px;font-size:10px;overflow:hidden;text-overflow:ellipsis}}.btn{{width:100%;min-width:0;padding:8px 10px}}.termBox{{height:calc(100svh - 112px);min-height:520px}}.bar{{align-items:stretch;flex-direction:column;gap:6px;padding:6px}}.terminalHint{{display:none}}.badge{{width:100%;justify-content:center;padding:7px 10px}}.termActions{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:5px}}.miniBtn{{padding:7px 6px;font-size:10px}}#term{{font-size:12px;line-height:1.28;padding:9px}}.mobileInput{{display:grid;grid-template-columns:1fr 74px 86px;gap:6px;padding:6px}}.mobileInput input{{grid-column:1/-1;padding:10px 11px;font-size:15px}}.mobileInput .pasteBtn,.mobileInput .enterBtn,.mobileInput .sendBtn{{grid-column:auto;padding:10px 8px;font-size:12px}}}}
-@media(max-width:420px){{.termBox{{height:calc(100svh - 104px);min-height:520px}}.mobileInput{{grid-template-columns:1fr 72px 84px}}.mobileInput button{{width:100%}}}}
+@media(max-width:980px),(pointer:coarse){{body{{padding:4px;font-size:13px;background-attachment:scroll}}.wrap{{gap:5px;min-height:calc(100svh - 8px);max-width:none}}.top{{align-items:stretch;flex-direction:column;gap:5px;min-height:0}}.sshTitle{{align-items:flex-start;flex-direction:column;gap:4px}}h1{{font-size:15px}}.chips{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:4px}}.chip{{text-align:center;padding:4px 5px;font-size:10px;overflow:hidden;text-overflow:ellipsis}}.btn{{width:100%;min-width:0;padding:7px 9px}}.termBox{{height:calc(100svh - 86px);min-height:620px;border-radius:6px}}.bar{{align-items:stretch;flex-direction:column;gap:5px;padding:5px}}.terminalHint{{display:none}}.badge{{width:100%;justify-content:center;padding:6px 9px;font-size:12px}}.termActions{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:4px}}.miniBtn{{padding:6px 5px;font-size:10px}}#term{{font-size:12px;line-height:1.25;padding:8px;min-height:0}}.mobileInput{{display:grid;grid-template-columns:1fr 72px 84px;gap:5px;padding:5px}}.mobileInput input{{grid-column:1/-1;padding:9px 10px;font-size:15px}}.mobileInput .pasteBtn,.mobileInput .enterBtn,.mobileInput .sendBtn{{grid-column:auto;padding:9px 7px;font-size:12px}}}}
+@media(max-width:420px){{.termBox{{height:calc(100svh - 78px);min-height:640px}}.mobileInput{{grid-template-columns:1fr 70px 82px}}.mobileInput button{{width:100%}}}}
 </style>
 </head>
 <body>
@@ -1343,16 +1343,29 @@ function send(text) {{
     return Promise.resolve(true);
   }}
   if (terminalMode === 'http' && httpSid) {{
-    return fetch('/api/ssh-session/' + encodeURIComponent(httpSid) + '/write', {{
+    const body = new URLSearchParams({{sid: httpSid, data: text}});
+    return fetch('/api/ssh-session-write', {{
       method: 'POST',
       headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
-      body: new URLSearchParams({{data: text}})
+      body
     }}).then(async (res) => {{
       let data = {{}};
       try {{ data = await res.json(); }} catch (e) {{}}
       if (!res.ok || !data.ok) {{
-        write('\\r\\n[HTTP-terminal: ввод не принят: ' + (data.error || res.status) + ']\\r\\n');
-        return false;
+        return fetch('/api/ssh-session/' + encodeURIComponent(httpSid) + '/write', {{
+          method: 'POST',
+          headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
+          body: new URLSearchParams({{data: text}})
+        }}).then(async (fallbackRes) => {{
+          let fallbackData = {{}};
+          try {{ fallbackData = await fallbackRes.json(); }} catch (e) {{}}
+          if (!fallbackRes.ok || !fallbackData.ok) {{
+            write('\\r\\n[HTTP-terminal: ввод не принят: ' + (fallbackData.error || data.error || fallbackRes.status || res.status) + ']\\r\\n');
+            return false;
+          }}
+          window.setTimeout(pollHttpTerminal, 90);
+          return true;
+        }});
       }}
       window.setTimeout(pollHttpTerminal, 90);
       return true;
@@ -2078,13 +2091,14 @@ class Handler(BaseHTTPRequestHandler):
             session["last_seen"] = now_ts()
         self.send_json(200, {"ok": True, "alive": alive, "data": data})
 
-    def ssh_http_write(self, sid):
+    def ssh_http_write(self, sid, payload=None):
         with SSH_HTTP_LOCK:
             session = SSH_HTTP_SESSIONS.get(sid)
         if not session:
             self.send_json(404, {"ok": False, "error": "terminal session not found"})
             return
-        payload = self.read_payload()
+        if payload is None:
+            payload = self.read_payload()
         data = payload.get("data", "")
         if not isinstance(data, str):
             data = str(data)
@@ -2099,6 +2113,16 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {"ok": True})
         except Exception as exc:
             self.send_json(500, {"ok": False, "error": str(exc)})
+
+    def ssh_http_write_short(self):
+        payload = self.read_payload()
+        sid = payload.get("sid", "")
+        if not sid:
+            sid = self.query().get("sid", [""])[0]
+        if not sid:
+            self.send_json(400, {"ok": False, "error": "terminal sid is empty"})
+            return
+        self.ssh_http_write(sid, payload)
 
     def ssh_http_close(self, sid):
         with SSH_HTTP_LOCK:
@@ -2217,6 +2241,9 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/ssh/") and path.endswith("/session"):
             self.ssh_http_session()
             return
+        if path == "/api/ssh-session-write":
+            self.ssh_http_write_short()
+            return
         if path.startswith("/api/ssh-session/"):
             self.ssh_session_action(path)
             return
@@ -2256,6 +2283,9 @@ class Handler(BaseHTTPRequestHandler):
         path = self.parsed().path
         if path == "/login":
             self.login()
+            return
+        if path == "/api/ssh-session-write":
+            self.ssh_http_write_short()
             return
         if path.startswith("/api/ssh-session/"):
             self.ssh_session_action(path)
