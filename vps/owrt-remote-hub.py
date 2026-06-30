@@ -1244,7 +1244,7 @@ body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radi
 .bar{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05)}}.terminalHint{{color:var(--muted);font-size:12px;font-weight:750}}.termActions{{display:flex;align-items:center;gap:7px;flex-wrap:wrap}}.miniBtn{{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;padding:6px 10px;font:800 12px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}}.miniBtn:hover{{background:rgba(255,255,255,.14)}}
 .keySink{{position:fixed;left:-1000px;top:-1000px;width:1px;height:1px;opacity:.01;border:0;padding:0;background:transparent;color:transparent;resize:none;outline:none}}
 .mobileInput{{display:none;gap:8px;padding:8px;border-top:1px solid var(--line);background:rgba(255,255,255,.045)}}.mobileInput input{{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.76);color:var(--text);font:14px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;outline:none}}.mobileInput input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12)}}.mobileInput button{{border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;white-space:nowrap}}
-#term{{flex:1;min-height:0;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;outline:none;cursor:text;background:rgba(0,0,0,.42);font:13px/1.34 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff;user-select:text;scrollbar-width:thin;scrollbar-color:rgba(168,85,247,.72) rgba(255,255,255,.06)}}#term:focus{{box-shadow:inset 0 0 0 1px rgba(34,211,238,.30)}}#term::-webkit-scrollbar{{width:12px;height:12px}}#term::-webkit-scrollbar-track{{background:rgba(255,255,255,.06)}}#term::-webkit-scrollbar-thumb{{background:linear-gradient(180deg,#7c3aed,#22d3ee);border-radius:999px;border:3px solid rgba(10,6,18,.96)}}#term::-webkit-scrollbar-thumb:hover{{background:linear-gradient(180deg,#a855f7,#67e8f9)}}.term-error{{color:#fb7185;font-weight:900}}.term-warn{{color:#fde68a;font-weight:850}}.term-ok{{color:#bbf7d0;font-weight:850}}.term-info{{color:#67e8f9;font-weight:850}}.term-prompt{{color:#86efac;font-weight:900}}.term-metric{{color:#93c5fd;font-weight:850}}.term-muted{{color:#c4b5fd}}.term-inverse{{display:inline-block;background:#ddd6fe;color:#13091f;border-radius:3px;padding:0 3px;font-weight:900}}
+#term{{flex:1;min-height:0;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;outline:none;cursor:text;background:rgba(0,0,0,.42);font:13px/1.34 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff;user-select:text;-webkit-user-select:text;touch-action:pan-y;scrollbar-width:thin;scrollbar-color:rgba(168,85,247,.72) rgba(255,255,255,.06)}}#term::selection,#term *::selection{{background:rgba(34,211,238,.34);color:#fff}}#term:focus{{box-shadow:inset 0 0 0 1px rgba(34,211,238,.30)}}#term::-webkit-scrollbar{{width:12px;height:12px}}#term::-webkit-scrollbar-track{{background:rgba(255,255,255,.06)}}#term::-webkit-scrollbar-thumb{{background:linear-gradient(180deg,#7c3aed,#22d3ee);border-radius:999px;border:3px solid rgba(10,6,18,.96)}}#term::-webkit-scrollbar-thumb:hover{{background:linear-gradient(180deg,#a855f7,#67e8f9)}}.term-error{{color:#fb7185;font-weight:900}}.term-warn{{color:#fde68a;font-weight:850}}.term-ok{{color:#bbf7d0;font-weight:850}}.term-info{{color:#67e8f9;font-weight:850}}.term-prompt{{color:#86efac;font-weight:900}}.term-metric{{color:#93c5fd;font-weight:850}}.term-muted{{color:#c4b5fd}}.term-inverse{{display:inline-block;background:#ddd6fe;color:#13091f;border-radius:3px;padding:0 3px;font-weight:900}}
 .bad{{color:#fecdd3}}
 @media(max-width:680px){{body{{padding:10px;font-size:13px;background-attachment:scroll}}.wrap{{gap:8px}}.top{{align-items:stretch;flex-direction:column;gap:8px}}.sshTitle{{align-items:flex-start;flex-direction:column;gap:7px}}h1{{font-size:17px}}.chips{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:6px}}.chip{{text-align:center;padding:6px 7px;font-size:11px;overflow:hidden;text-overflow:ellipsis}}.btn{{width:100%;min-width:0}}.termBox{{height:min(500px,calc(100vh - 150px));max-height:500px;min-height:300px}}.bar{{align-items:stretch;flex-direction:column}}.badge{{width:100%;justify-content:center}}.termActions{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:6px}}.miniBtn{{padding:8px 7px;font-size:11px}}#term{{font-size:12px;line-height:1.32;padding:10px}}.mobileInput{{display:grid;grid-template-columns:1fr 88px;gap:7px}}.mobileInput .pasteBtn,.mobileInput .enterBtn{{grid-column:span 1}}.mobileInput .sendBtn{{grid-column:1/-1}}}}
 @media(max-width:420px){{.chips,.termActions{{grid-template-columns:1fr}}.termBox{{height:min(420px,calc(100vh - 165px));max-height:420px}}.mobileInput{{grid-template-columns:1fr}}.mobileInput button{{width:100%}}}}
@@ -1298,6 +1298,8 @@ let httpSid = '';
 let httpPollTimer = 0;
 let terminalMode = 'ws';
 const isMobileTerminal = window.matchMedia('(max-width: 680px)').matches || /Android|iPhone|iPad|iPod|Mobile|Telegram/i.test(navigator.userAgent);
+let lastTerminalSelection = '';
+let lastTerminalSelectionAt = 0;
 function escapeHtmlText(text) {{
   return String(text ?? '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));
 }}
@@ -1369,6 +1371,54 @@ function isEditableTarget(target) {{
   const tag = String(target.tagName || '').toLowerCase();
   return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
 }}
+function terminalSelectionText() {{
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return '';
+  const text = String(sel.toString() || '');
+  if (!text) return '';
+  for (let i = 0; i < sel.rangeCount; i++) {{
+    const range = sel.getRangeAt(i);
+    if (term.contains(range.commonAncestorContainer) || range.intersectsNode(term)) {{
+      return text;
+    }}
+  }}
+  return '';
+}}
+function rememberTerminalSelection() {{
+  const text = terminalSelectionText();
+  if (text) {{
+    lastTerminalSelection = text;
+    lastTerminalSelectionAt = Date.now();
+  }}
+}}
+function recentTerminalSelection() {{
+  return terminalSelectionText() || (Date.now() - lastTerminalSelectionAt < 15000 ? lastTerminalSelection : '');
+}}
+async function copyText(text) {{
+  const value = String(text || '');
+  if (!value) return false;
+  try {{
+    await navigator.clipboard.writeText(value);
+    return true;
+  }} catch (e) {{
+    const area = document.createElement('textarea');
+    area.value = value;
+    area.setAttribute('readonly', 'readonly');
+    area.style.position = 'fixed';
+    area.style.left = '-1000px';
+    area.style.top = '-1000px';
+    document.body.appendChild(area);
+    area.select();
+    let ok = false;
+    try {{ ok = document.execCommand('copy'); }} catch (err) {{}}
+    area.remove();
+    return ok;
+  }}
+}}
+function flashCopyLabel(ok, selected) {{
+  copyTerm.textContent = ok ? (selected ? 'Выделенное скопировано' : 'Консоль скопирована') : 'Не скопировано';
+  window.setTimeout(() => {{ copyTerm.textContent = 'Копировать'; }}, 1300);
+}}
 function focusTerminal() {{
   term.focus({{preventScroll: true}});
   if (isMobileTerminal) {{
@@ -1383,7 +1433,13 @@ function handleTerminalKey(ev) {{
     return;
   }}
   if ((ev.ctrlKey || ev.metaKey) && lower === 'c') {{
-    if (String(window.getSelection())) return;
+    const selected = terminalSelectionText();
+    if (selected) {{
+      copyText(selected).then(ok => flashCopyLabel(ok, true));
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }}
     send('\\x03');
     ev.preventDefault();
     ev.stopPropagation();
@@ -1439,7 +1495,7 @@ function handleTerminalPaste(ev) {{
 async function sendCommandInput() {{
   const value = cmdInput.value;
   if (!value) return;
-  await send(value + '\\r');
+  await send(normalizePaste(value) + '\\r');
   cmdInput.value = '';
   cmdInput.focus();
   window.setTimeout(pollHttpTerminal, 120);
@@ -1538,11 +1594,21 @@ window.addEventListener('beforeunload', () => {{
     navigator.sendBeacon('/api/ssh-session/' + encodeURIComponent(httpSid) + '/close');
   }}
 }});
-term.addEventListener('pointerdown', () => window.setTimeout(focusTerminal, 0));
+term.addEventListener('click', () => {{
+  if (!terminalSelectionText()) window.setTimeout(focusTerminal, 0);
+}});
 term.addEventListener('keydown', handleTerminalKey);
 term.addEventListener('paste', handleTerminalPaste);
 keySink.addEventListener('keydown', handleTerminalKey);
 keySink.addEventListener('paste', handleTerminalPaste);
+document.addEventListener('selectionchange', () => window.setTimeout(rememberTerminalSelection, 0));
+document.addEventListener('copy', (ev) => {{
+  const selected = terminalSelectionText();
+  if (!selected || !ev.clipboardData) return;
+  ev.clipboardData.setData('text/plain', selected);
+  ev.preventDefault();
+  flashCopyLabel(true, true);
+}});
 document.addEventListener('paste', (ev) => {{
   if (isEditableTarget(ev.target)) return;
   focusTerminal();
@@ -1554,21 +1620,10 @@ document.addEventListener('keydown', (ev) => {{
   handleTerminalKey(ev);
 }});
 copyTerm.addEventListener('click', async () => {{
-  const text = term.textContent || '';
-  try {{
-    await navigator.clipboard.writeText(text);
-    copyTerm.textContent = 'Скопировано';
-  }} catch (e) {{
-    const range = document.createRange();
-    range.selectNodeContents(term);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-    document.execCommand('copy');
-    sel.removeAllRanges();
-    copyTerm.textContent = 'Скопировано';
-  }}
-  setTimeout(() => {{ copyTerm.textContent = 'Копировать'; }}, 1200);
+  const selected = recentTerminalSelection();
+  const text = selected || term.textContent || '';
+  const ok = await copyText(text);
+  flashCopyLabel(ok, Boolean(selected));
 }});
 scrollTopBtn.addEventListener('click', () => {{
   term.scrollTo({{top: 0, behavior: 'smooth'}});
