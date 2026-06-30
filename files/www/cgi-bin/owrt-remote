@@ -2,7 +2,7 @@
 
 KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
 AGENT="${AGENT:-/usr/sbin/owrt-remote}"
-OWRT_REMOTE_UI_VERSION="2026-06-30-mega-mobile-v18"
+OWRT_REMOTE_UI_VERSION="2026-06-30-stop-fix-centered-v19"
 PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
 RESULT_TITLE=""
 RESULT_BODY=""
@@ -176,17 +176,28 @@ run_action() {
 	rc=0
 	case "$action" in
 		start)
-			/etc/init.d/owrt-remote enable >"$output" 2>&1 || rc=$?
+			: >"$output"
+			uci_set enabled 1
+			uci commit owrtremote >>"$output" 2>&1 || rc=$?
+			/etc/init.d/owrt-remote enable >>"$output" 2>&1 || rc=$?
 			/etc/init.d/owrt-remote restart >>"$output" 2>&1 || rc=$?
 			set_result "Сервис запущен" "$(cat "$output")" "ok"
 			;;
 		stop)
-			/etc/init.d/owrt-remote stop >"$output" 2>&1 || rc=$?
+			: >"$output"
+			uci_set enabled 0
+			uci commit owrtremote >>"$output" 2>&1 || rc=$?
+			/etc/init.d/owrt-remote stop >>"$output" 2>&1 || rc=$?
+			"$AGENT" stop-xray >>"$output" 2>&1 || rc=$?
 			/etc/init.d/owrt-remote disable >>"$output" 2>&1 || rc=$?
 			set_result "Сервис остановлен" "$(cat "$output")" "warn"
 			;;
 		restart)
-			/etc/init.d/owrt-remote restart >"$output" 2>&1 || rc=$?
+			: >"$output"
+			uci_set enabled 1
+			uci commit owrtremote >>"$output" 2>&1 || rc=$?
+			/etc/init.d/owrt-remote enable >>"$output" 2>&1 || rc=$?
+			/etc/init.d/owrt-remote restart >>"$output" 2>&1 || rc=$?
 			set_result "Сервис перезапущен" "$(cat "$output")" "ok"
 			;;
 		heartbeat)
@@ -307,14 +318,14 @@ h1{margin:0;font-size:28px;line-height:1.2;letter-spacing:0}.appBanner{position:
 @keyframes bannerShine{0%,42%{transform:translateX(-120%)}70%,100%{transform:translateX(120%)}}@keyframes pulseDot{0%,100%{transform:scale(1);opacity:.72}50%{transform:scale(1.35);opacity:1}}
 .pill{min-width:118px;background:var(--panel);color:var(--muted)}.dot{width:9px;height:9px;border-radius:50%;background:var(--amber)}.dot.good{background:var(--green)}.dot.bad{background:var(--red)}
 .grid{display:grid;grid-template-columns:1fr;gap:16px;margin-top:18px}.panel{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}
-.panel h2{font-size:18px;margin:0 0 12px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{min-width:0;border:1px solid var(--line);border-radius:8px;padding:12px;background:rgba(255,255,255,.06)}.metric span{display:block;color:var(--muted);font-size:12px}.metric strong{display:block;margin-top:4px;font-size:18px;overflow-wrap:anywhere;word-break:break-word}.metric.good strong{color:var(--green)}.metric.bad strong{color:var(--red)}.metric.warn strong{color:var(--amber)}.linkMetric{grid-column:span 2}.metricLine{display:flex;align-items:center;justify-content:space-between;gap:10px}.metricLine strong{min-width:0}.miniGo{border:1px solid rgba(34,211,238,.34);border-radius:999px;padding:7px 10px;background:rgba(34,211,238,.13);color:#a5f3fc;text-decoration:none;font-weight:850;white-space:nowrap}
+.panel h2{font-size:18px;margin:0 0 12px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.metric{min-width:0;border:1px solid var(--line);border-radius:8px;padding:12px;background:rgba(255,255,255,.06);text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center}.metric span{display:block;color:var(--muted);font-size:12px}.metric strong{display:block;margin-top:4px;font-size:18px;overflow-wrap:anywhere;word-break:break-word}.metric.good strong{color:var(--green)}.metric.bad strong{color:var(--red)}.metric.warn strong{color:var(--amber)}.linkMetric{grid-column:span 2}.metricLine{display:inline-flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;max-width:100%}.metricLine strong{min-width:0}.miniGo{border:1px solid rgba(34,211,238,.34);border-radius:999px;padding:7px 10px;background:rgba(34,211,238,.13);color:#a5f3fc;text-decoration:none;font-weight:850;white-space:nowrap}
 form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.field{position:relative;display:block}.field span{display:flex;align-items:center;gap:7px;font-weight:650;margin-bottom:7px}.field span::after{content:"?";width:18px;height:18px;border-radius:50%;display:inline-grid;place-items:center;background:rgba(116,94,148,.24);border:1px solid rgba(169,126,255,.24);color:#c4b5fd;font-size:12px;font-weight:900}.field input{width:100%;border:1px solid var(--line);border-radius:8px;background:rgba(8,5,18,.72);padding:10px 11px;color:var(--text)}.field small{position:absolute;left:0;right:0;bottom:calc(100% + 8px);z-index:20;display:block;visibility:hidden;opacity:0;transform:translateY(6px);padding:10px 12px;border:1px solid rgba(169,126,255,.22);border-radius:8px;background:rgba(10,6,18,.97);box-shadow:0 18px 42px rgba(0,0,0,.42);color:#ddd6fe;transition:opacity .16s ease,transform .16s ease,visibility .16s ease;pointer-events:none}.field:hover small,.field:focus-within small{visibility:visible;opacity:1;transform:translateY(0)}
 .check{display:flex;gap:10px;align-items:center;margin-bottom:12px;font-weight:700}.check input{width:18px;height:18px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.btn{border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px 13px;font-weight:750;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.10);color:#f7f2ff}.btn.primary{background:var(--blue);color:#fff}.btn.good{background:var(--green);color:#07120a}.btn.bad{background:rgba(251,113,133,.18);color:#fecdd3}.btn.warn{background:rgba(245,158,11,.16);color:#fde68a;border:1px solid rgba(245,158,11,.34)}
 .notice{max-height:280px;overflow:auto;margin-top:16px;border-radius:8px;padding:12px;border:1px solid var(--line);background:rgba(255,255,255,.08);white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}.notice strong{display:block;margin-bottom:4px;font:700 14px/1.4 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.notice.ok{border-color:rgba(34,197,94,.46);background:rgba(34,197,94,.12)}.notice.bad{border-color:rgba(251,113,133,.46);background:rgba(251,113,133,.12)}.notice.warn{border-color:rgba(245,158,11,.46);background:rgba(245,158,11,.12)}
 .code{background:rgba(255,255,255,.06);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:12px;overflow:auto;overflow-wrap:anywhere;min-height:120px;white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
 .helperText{margin:0 0 12px;color:var(--muted)}.xrayApply{margin-top:14px;padding:16px;border:1px solid rgba(34,211,238,.42);border-radius:8px;background:linear-gradient(135deg,rgba(34,211,238,.16),rgba(124,58,237,.20),rgba(236,72,153,.11));box-shadow:0 18px 42px rgba(34,211,238,.10)}.xrayApply h3{margin:0 0 8px;font-size:16px;color:#a5f3fc}.scriptBox{width:100%;min-height:260px;resize:vertical;border:1px solid rgba(34,211,238,.28);border-radius:8px;background:rgba(255,255,255,.07);padding:12px;color:var(--text);font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;overflow:auto}
 .brandPanel{display:grid;grid-template-columns:repeat(2,minmax(0,132px));gap:8px}.brandPanel .titleRow,.brandPanel .links{grid-column:1/-1}.brandPanel .appBanner{width:100%;min-width:0}.brandPanel .links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:0}.brandPanel .links a{width:100%;min-width:0}
-@media(max-width:820px){.grid,.formgrid,.metrics{grid-template-columns:1fr}.linkMetric{grid-column:span 1}.metricLine{align-items:flex-start;flex-direction:column}.miniGo{width:100%;justify-content:center;display:inline-flex}.hero{align-items:flex-start;flex-direction:column}.topActions{justify-content:flex-start;padding-top:0}.wrap{padding:14px}h1{font-size:24px}.appBanner{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}.actions .btn,.actions button{width:100%}}
+@media(max-width:820px){.grid,.formgrid,.metrics{grid-template-columns:1fr}.linkMetric{grid-column:span 1}.metricLine{align-items:center;justify-content:center}.miniGo{width:auto;justify-content:center;display:inline-flex}.hero{align-items:flex-start;flex-direction:column}.topActions{justify-content:flex-start;padding-top:0}.wrap{padding:14px}h1{font-size:24px}.appBanner{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}.actions .btn,.actions button{width:100%}}
 @media(max-width:820px){.brandPanel{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.brandPanel .appBanner{width:100%}}
 </style>
 </head>

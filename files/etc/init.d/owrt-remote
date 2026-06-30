@@ -16,17 +16,30 @@ uci_get() {
 	printf '%s' "$default"
 }
 
-enabled() {
+config_enabled() {
 	case "$(uci_get enabled 0)" in
 		1|yes|true|on|enabled) return 0 ;;
 		*) return 1 ;;
 	esac
 }
 
+stop_xray_processes() {
+	local config pids pid
+	config="$(uci_get xray_config /etc/xray/owrt-remote-client.json)"
+	pids="$((ps w 2>/dev/null || ps 2>/dev/null) | grep '[x]ray' | grep -F "$config" | awk '{print $1}')"
+	for pid in $pids; do
+		kill "$pid" >/dev/null 2>&1 || true
+	done
+	sleep 1
+	for pid in $pids; do
+		kill -0 "$pid" >/dev/null 2>&1 && kill -9 "$pid" >/dev/null 2>&1 || true
+	done
+}
+
 start_service() {
 	mkdir -p /var/lock /var/run /tmp/owrt-xray
 
-	if ! enabled; then
+	if ! config_enabled; then
 		echo "owrt-remote disabled in /etc/config/owrtremote"
 		return 0
 	fi
@@ -49,6 +62,10 @@ start_service() {
 reload_service() {
 	stop
 	start
+}
+
+stop_service() {
+	stop_xray_processes
 }
 
 service_triggers() {
