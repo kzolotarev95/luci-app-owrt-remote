@@ -839,7 +839,7 @@ body::before{{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none
 @keyframes auraSpin{{from{{transform:rotate(0deg) scale(1)}}to{{transform:rotate(360deg) scale(1.08)}}}}
 .wrap{{position:relative;z-index:1;max-width:1220px;margin:0 auto;padding:22px}}.top{{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding:20px 0 18px}}
 .brand{{display:flex;align-items:center;gap:14px}}
-h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10);overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px}}.links{{margin-top:8px;flex-wrap:wrap}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{position:relative;align-self:flex-end;justify-content:flex-end;align-content:flex-end;flex-wrap:nowrap;padding-top:42px;max-width:none}}.headerActions .btn{{min-height:36px;min-width:132px;border-radius:999px;padding:8px 14px;white-space:nowrap}}.badge{{background:rgba(255,255,255,.08);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.nethavenTop{{border-color:rgba(34,211,238,.46);background:linear-gradient(110deg,rgba(14,165,233,.20),rgba(168,85,247,.22),rgba(34,197,94,.14));color:#ecfeff;box-shadow:0 10px 24px rgba(14,165,233,.14),inset 0 1px 0 rgba(255,255,255,.10)}}.nethavenTop::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite;pointer-events:none}}.authToggle{{cursor:pointer}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
+h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10);overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px}}.links{{margin-top:8px;flex-wrap:wrap}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{position:relative;align-self:flex-end;justify-content:flex-end;align-content:flex-end;flex-wrap:nowrap;padding-top:42px;max-width:none}}.headerActions .badge,.headerActions .btn{{width:142px;min-width:142px;max-width:142px;min-height:36px;border-radius:999px;padding:8px 10px;white-space:nowrap;font-size:12px}}.badge{{background:rgba(255,255,255,.08);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.nethavenTop{{border-color:rgba(34,211,238,.46);background:linear-gradient(110deg,rgba(14,165,233,.20),rgba(168,85,247,.22),rgba(34,197,94,.14));color:#ecfeff;box-shadow:0 10px 24px rgba(14,165,233,.14),inset 0 1px 0 rgba(255,255,255,.10)}}.nethavenTop::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite;pointer-events:none}}.authToggle{{cursor:pointer}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
  .toolbar{{display:grid;grid-template-columns:1fr 1fr 110px 110px 150px auto;gap:10px;margin:18px 0;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px)}}.toolbar input,.toolbar select{{background:rgba(255,255,255,.08);border-color:var(--line);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}}.toolbar input::placeholder{{color:#b9adc9}}
 .authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:5;width:min(520px,calc(100vw - 44px));padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px)}}.authMenu[hidden]{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr 1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
 input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:rgba(8,5,18,.72);color:var(--text)}}button,.btn{{border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:10px 13px;background:rgba(255,255,255,.10);color:#f7f2ff;font-weight:850;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}.authToggle{{border-radius:999px;padding:8px 14px;background:rgba(255,255,255,.08);color:#f3e8ff}}button.primary,.btn.primary{{background:var(--blue);color:#fff;box-shadow:0 10px 22px rgba(124,58,237,.22)}}button.bad,.btn.bad{{background:rgba(251,113,133,.16);color:#fecdd3}}.btn.good{{background:rgba(34,197,94,.16);color:#bbf7d0}}.btn.disabled{{opacity:.45;cursor:not-allowed}}
@@ -853,6 +853,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 .brandPanel{{display:grid;grid-template-columns:repeat(2,minmax(0,132px));gap:8px}}.brandPanel .appBanner{{grid-column:1/-1;width:100%;min-width:0}}.brandPanel .links{{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:0}}.brandPanel .links a{{width:100%;min-width:0}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.routerMark{{margin:0 auto}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:100%;padding:8px 12px;border:1px solid rgba(251,191,36,.30);border-radius:8px;background:linear-gradient(180deg,rgba(251,191,36,.12),rgba(255,255,255,.045));white-space:normal;color:#fbbf24;text-shadow:0 0 18px rgba(251,191,36,.22)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar,.authGrid{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{align-self:flex-start;flex-wrap:wrap;padding-top:0;justify-content:flex-start}}}}
 @media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.name{{white-space:normal;font-size:18px}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
+@media(max-width:680px){{.headerActions .badge,.headerActions .btn{{width:100%;min-width:0;max-width:none}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
 @media(max-width:680px){{.brandPanel{{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}}.brandPanel .appBanner{{width:100%}}.summary{{justify-content:center}}}}
 </style>
@@ -871,7 +872,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     </div>
     <div class="headerActions">
       <a class="badge nethavenTop" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">NetHaven VPN</a>
-      <button class="badge" id="xrayReload" type="button">Обновить Xray VPS</button>
+      <button class="badge" id="xrayReload" type="button">Обновить Xray CFG</button>
       <button class="badge" id="xrayRestart" type="button">Рестарт Xray VPS</button>
       <button class="badge authToggle" id="authToggle" type="button">{safe_username}</button>
       <a class="btn" href="/logout">Выйти</a>
@@ -1022,7 +1023,7 @@ function render(list) {{
       : `<span class="btn disabled">SSH</span>`;
     const metricHtml = [
       metric('Модель', model, 'span2'),
-      metric('OpenWrt', release),
+      metric('Система', release),
       metric('Xray', statusRu(xray)),
       metric('SSH', statusRu(ssh)),
       metric('В сети уже', uptime),
@@ -1385,6 +1386,11 @@ function write(text) {{
   term.innerHTML = highlightTerminal(terminalPlain);
   term.scrollTop = term.scrollHeight;
 }}
+function replaceTerminal(text) {{
+  terminalPlain = '';
+  term.innerHTML = '';
+  write(text);
+}}
 function send(text) {{
   if (ws && ws.readyState === WebSocket.OPEN) {{
     ws.send(text);
@@ -1581,6 +1587,7 @@ async function pasteIntoInput() {{
   }}
 }}
 let wsOpened = false;
+let receivedTerminalData = false;
 let diagnosticStarted = false;
 async function pollHttpTerminal() {{
   if (!httpSid) return;
@@ -1601,6 +1608,9 @@ async function pollHttpTerminal() {{
 async function startHttpTerminal(reason) {{
   if (terminalMode === 'http' || httpSid) return;
   terminalMode = 'http';
+  try {{
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) ws.close();
+  }} catch (e) {{}}
   if (reason === 'mobile') {{
     write('\\r\\nHTTP-terminal подключается...\\r\\n');
   }} else {{
@@ -1641,6 +1651,7 @@ async function explainTerminalError(source) {{
   }}
 }}
 function connect() {{
+  replaceTerminal('Подключение к SSH...\r\n');
   if (isMobileTerminal) {{
     startHttpTerminal('mobile');
     return;
@@ -1648,12 +1659,20 @@ function connect() {{
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
   ws = new WebSocket(proto + location.host + '{ws_path}');
   ws.onopen = () => {{ wsOpened = true; }};
-  ws.onmessage = (ev) => write(ev.data);
+  ws.onmessage = (ev) => {{
+    if (terminalMode === 'http') return;
+    if (!receivedTerminalData) replaceTerminal('');
+    receivedTerminalData = true;
+    write(ev.data);
+  }};
   ws.onerror = () => explainTerminalError('ошибка web-terminal');
   ws.onclose = () => {{
     if (wsOpened) write('\\r\\n[SSH соединение закрыто]\\r\\n');
     else explainTerminalError('SSH соединение закрыто');
   }};
+  window.setTimeout(() => {{
+    if (!receivedTerminalData && !httpSid) startHttpTerminal('SSH молчит больше 3 секунд');
+  }}, 3000);
 }}
 window.addEventListener('beforeunload', () => {{
   if (httpSid) {{
@@ -1738,7 +1757,7 @@ p{{margin:3px 0 0;color:var(--muted)}}
 label{{display:block;margin:10px 0 5px;font-weight:850;color:#ede9fe;text-align:center}}
 input{{width:100%;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.74);color:var(--text);outline:none;text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
 input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.04)}}
-.captcha{{margin-top:11px;border:1px solid var(--line);border-radius:8px;padding:10px;background:rgba(255,255,255,.07);text-align:center}}.captcha span{{display:block;color:var(--muted);font-size:12px;font-weight:800}}.captcha b{{display:block;margin-top:3px;color:#fde68a;font:950 26px/1.05 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:7px;text-indent:7px;text-shadow:0 0 18px rgba(251,191,36,.22)}}
+.captcha{{margin-top:11px;border:1px solid var(--line);border-radius:8px;padding:10px;background:rgba(0,0,0,.42);text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.captcha span{{display:block;color:#ede9fe;font-size:12px;font-weight:850}}.captcha b{{display:block;margin-top:4px;color:#fde68a;font:950 27px/1.05 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:7px;text-indent:7px;text-shadow:0 0 18px rgba(251,191,36,.28)}}
 button{{width:100%;margin-top:13px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;cursor:pointer;box-shadow:0 14px 30px rgba(124,58,237,.28)}}
 button:hover{{filter:brightness(1.06)}}
 .err{{margin:0 0 12px;padding:11px 12px;border:1px solid rgba(251,113,133,.45);border-radius:8px;background:rgba(251,113,133,.14);color:#fecdd3;font-weight:800}}
@@ -1755,9 +1774,9 @@ button:hover{{filter:brightness(1.06)}}
   <input id="hubUsername" name="username" autocomplete="username" autofocus required>
   <label for="hubPassword">Пароль</label>
   <input id="hubPassword" name="password" type="password" autocomplete="current-password" required>
-  <div class="captcha"><span>Код защиты</span><b>{safe_captcha_code}</b></div>
+  <div class="captcha"><span>Капча: введи эти цифры</span><b>{safe_captcha_code}</b></div>
   <input name="captcha_token" type="hidden" value="{safe_captcha_token}">
-  <label for="hubCaptcha">Повтори цифры</label>
+  <label for="hubCaptcha">Повтори капчу</label>
   <input id="hubCaptcha" name="captcha_answer" inputmode="numeric" pattern="[0-9]*" autocomplete="off" required>
   <button>Войти</button>
 </form>
@@ -1910,7 +1929,7 @@ class Handler(BaseHTTPRequestHandler):
         captcha_token = payload.get("captcha_token", "")
         captcha_answer = payload.get("captcha_answer", "")
         if not verify_captcha(captcha_token, captcha_answer):
-            self.send_bytes(401, login_html("Неверный код защиты").encode("utf-8"), "text/html; charset=utf-8")
+            self.send_bytes(401, login_html("Неверная капча").encode("utf-8"), "text/html; charset=utf-8")
             return
         if verify_login(username, password):
             self.redirect("/", [("Set-Cookie", self.session_cookie())])
