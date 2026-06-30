@@ -28,19 +28,7 @@
 </p>
 
 <p>
-  <a href="https://t.me/kzolotarev95"><b>Telegram</b></a>
-  ·
-  <a href="https://github.com/kzolotarev95"><b>GitHub</b></a>
-  ·
-  <a href="https://t.me/+LZDsQJhUfcNhYWEy"><b>NetHaven VPN</b></a>
-  ·
-  <a href="#быстрый-старт">Быстрый старт</a>
-  ·
-  <a href="#схема">Схема</a>
-  ·
-  <a href="#раскрыть-разделы">Разделы</a>
-  ·
-  <a href="#удаление">Удаление</a>
+
 </p>
 
 </div>
@@ -80,7 +68,7 @@ curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo env AUTO_HTTPS=0 sh
 ```
 
-### OpenWrt: поставить агент на роутер
+### OpenWrt: поставить  Remote Hub на роутер 
 
 ```sh
 wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" | sh
@@ -95,17 +83,8 @@ owrt-remote status
 
 ## Схема
 
-```mermaid
-flowchart LR
-    browser["Браузер / телефон"] --> hub["VPS<br/>OpenWrt Remote Hub<br/>80 / 443 / 8088"]
-    hub --> luciEntry["127.0.0.1:18080<br/>LuCI entry-port"]
-    hub --> sshEntry["127.0.0.1:19080<br/>SSH entry-port"]
-    luciEntry --> xray["Xray VLESS reverse<br/>8443"]
-    sshEntry --> xray
-    xray --> router["OpenWrt роутер"]
-    router --> luci["LuCI<br/>127.0.0.1:80"]
-    router --> ssh["Dropbear SSH<br/>127.0.0.1:22"]
-```
+<img width="2172" height="724" alt="ChatGPT Image 30 июн  2026 г , 11_31_11" src="https://github.com/user-attachments/assets/ea79f783-170e-4db1-be4d-2b217e623b99" />
+
 
 Роутер сам подключается к VPS изнутри сети. Наружу LuCI и SSH на роутере открывать не нужно.
 
@@ -493,7 +472,3 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 ```
 
 </details>
-
-## Лицензия
-
-MIT
