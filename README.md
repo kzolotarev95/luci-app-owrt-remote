@@ -2,22 +2,81 @@
 
 # OpenWrt Remote Hub
 
-Удаленный доступ к OpenWrt через свой VPS: карточки роутеров, online/offline, LuCI-админка, SSH web-terminal и Xray VLESS reverse-туннели.
+Удаленный доступ к OpenWrt через свой VPS: карточки роутеров, online/offline, LuCI-админка, SSH web-terminal, Xray VLESS reverse-туннели и HTTPS.
 
-[Telegram](https://t.me/kzolotarev95) · [GitHub](https://github.com/kzolotarev95) · [NetHaven VPN](https://t.me/+LZDsQJhUfcNhYWEy)
+<p>
+  <a href="https://t.me/kzolotarev95"><b>Telegram</b></a>
+  ·
+  <a href="https://github.com/kzolotarev95"><b>GitHub</b></a>
+  ·
+  <a href="https://t.me/+LZDsQJhUfcNhYWEy"><b>NetHaven VPN</b></a>
+</p>
+
+<p>
+  <a href="#быстрый-старт">Быстрый старт</a>
+  ·
+  <a href="#схема">Схема</a>
+  ·
+  <a href="#раскрыть-разделы">Разделы</a>
+  ·
+  <a href="#удаление">Удаление</a>
+</p>
 
 </div>
 
-## Что это
+## Быстрый старт
 
-`OpenWrt Remote Hub` - это легкая панель для удаленного доступа к OpenWrt через свой VPS.
-Роутер сам подключается к VPS изнутри сети, поэтому наружу LuCI и SSH на роутере открывать не нужно.
+### VPS: поставить Hub, Xray, firewall и HTTPS одной командой
 
-## Схема работы
+```sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh
+```
+
+После установки в конце будет вход:
+
+```text
+login:    admin
+password: admin
+```
+
+Панель будет доступна так:
+
+```text
+https://YOUR_VPS_IP/
+http://YOUR_VPS_IP/
+http://YOUR_VPS_IP:8088/
+```
+
+Если нужен домен, передай его установщику:
+
+```sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh -s -- hub.example.com
+```
+
+Если HTTPS не нужен:
+
+```sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo env AUTO_HTTPS=0 sh
+```
+
+### OpenWrt: поставить агент на роутер
+
+```sh
+wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" | sh
+```
+
+Проверка на роутере:
+
+```sh
+owrt-remote doctor
+owrt-remote status
+```
+
+## Схема
 
 ```mermaid
 flowchart LR
-    browser["Браузер / телефон"] --> hub["VPS<br/>OpenWrt Remote Hub<br/>80 / 8088"]
+    browser["Браузер / телефон"] --> hub["VPS<br/>OpenWrt Remote Hub<br/>80 / 443 / 8088"]
     hub --> luciEntry["127.0.0.1:18080<br/>LuCI entry-port"]
     hub --> sshEntry["127.0.0.1:19080<br/>SSH entry-port"]
     luciEntry --> xray["Xray VLESS reverse<br/>8443"]
@@ -27,225 +86,82 @@ flowchart LR
     router --> ssh["Dropbear SSH<br/>127.0.0.1:22"]
 ```
 
-В панели VPS можно:
+Роутер сам подключается к VPS изнутри сети. Наружу LuCI и SSH на роутере открывать не нужно.
 
-- видеть все роутеры красивыми карточками;
-- смотреть online/offline, модель, OpenWrt, Xray, uptime, RAM, flash, температуру и load;
-- открывать LuCI кнопкой `Админка`;
-- открывать SSH прямо в браузере кнопкой `SSH`;
-- получать готовые OpenWrt config-команды для каждого роутера;
-- обновлять и перезапускать Xray на VPS кнопками в панели.
+## Что умеет
 
-Первый вход в Hub:
+- красивые карточки роутеров на VPS;
+- online/offline индикация;
+- модель, OpenWrt, Xray, uptime, RAM, flash, температура и load;
+- вход в LuCI кнопкой `Админка`;
+- SSH прямо в браузере кнопкой `SSH`;
+- готовые OpenWrt config-команды для каждого роутера;
+- кнопки обновления и рестарта Xray на VPS;
+- автоматический HTTPS на `443/tcp`, если firewall VPS открыт.
 
-```text
-логин: admin
-пароль: admin
-```
+## Раскрыть разделы
 
-Пароль можно поменять в панели Hub.
+<details open>
+<summary><b>Установка VPS подробно</b></summary>
 
-## Дерево проекта
-
-```text
-.
-├── install.sh
-│   └── установка агента на OpenWrt
-├── uninstall.sh
-│   └── удаление агента с OpenWrt
-├── files/
-│   ├── usr/sbin/owrt-remote
-│   │   └── CLI-агент, heartbeat, render-client, doctor
-│   ├── etc/init.d/owrt-remote
-│   │   └── procd-сервис OpenWrt
-│   ├── www/cgi-bin/owrt-remote
-│   │   └── веб-панель на роутере
-│   ├── usr/share/luci/menu.d/luci-app-owrt-remote.json
-│   │   └── пункт меню LuCI: Службы -> OpenWrt Remote
-│   └── usr/share/rpcd/acl.d/luci-app-owrt-remote.json
-│       └── права LuCI/rpcd
-└── vps/
-    ├── install-vps.sh
-    │   └── установка Hub на VPS одной командой
-    ├── uninstall-vps.sh
-    │   └── удаление Hub с VPS одной командой
-    ├── enable-https.sh
-    │   └── включение HTTPS/443 для Hub
-    ├── owrt-remote-hub.py
-    │   └── веб-панель VPS, карточки роутеров, proxy, SSH terminal
-    └── owrt-remote.service
-        └── systemd-сервис Hub
-```
-
-## Быстрые команды
-
-| Задача | Где запускать | Команда |
-| --- | --- | --- |
-| Поставить Hub | VPS | `curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" \| sudo sh` |
-| Включить HTTPS | VPS | `curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" \| sudo sh -s -- YOUR_VPS_IP` |
-| Поставить агент | OpenWrt | `wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" \| sh` |
-| Удалить Hub полностью | VPS | `curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" \| sudo sh` |
-| Удалить агент полностью | OpenWrt | `wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh?v=$(date +%s)" \| PURGE=1 sh` |
-
-## Быстрая установка VPS
-
-Подходит для Ubuntu/Debian VPS. Команды выполнять под `root` или через `sudo`.
-
-Самый простой вариант - одна команда. Она поставит зависимости, скачает Hub, запустит сервис, откроет порты в `ufw` и в конце покажет ссылку панели и вход `admin/admin`.
+Команда установки:
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh
 ```
 
-После успешной установки в конце будет примерно так:
+Что делает установщик:
 
-```text
-OpenWrt Remote Hub установлен
-
-Панель:
-  http://YOUR_VPS_IP/
-  http://YOUR_VPS_IP:8088/
-
-Вход:
-  login:    admin
-  password: admin
-```
+- ставит зависимости;
+- скачивает Hub в `/opt/owrt-remote`;
+- создает systemd-сервис `owrt-remote`;
+- ставит Xray, если его нет;
+- создает systemd-сервис `owrt-remote-xray`;
+- открывает `80/tcp`, `443/tcp`, `8088/tcp`, `8443/tcp` в `ufw`;
+- создает логин `admin` и пароль `admin`;
+- пробует сразу включить HTTPS.
 
 В свежем установщике в начале вывода должно быть:
 
 ```text
-Installer: 2026-06-30-health-wait-v2
+Installer: 2026-06-30-auto-https-v4
 Жду запуск Hub...
 ```
 
-Если этих строк нет, значит GitHub raw/CDN отдал старый кеш. Запусти команду установки именно с `?v=$(date +%s)`, как в примере выше.
-
-Если хочешь явно указать IP или домен:
-
-```sh
-curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh -s -- YOUR_VPS_IP
-```
-
-Если ставишь повторно и хочешь снова сбросить вход на `admin/admin`, ничего дополнительно делать не надо: установщик по умолчанию выставляет `admin/admin`.
-
-Если не хочешь сбрасывать текущий пароль:
+Если хочешь поставить повторно, но не сбрасывать текущий пароль:
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo env RESET_LOGIN=0 sh
 ```
 
-Ручная установка, если нужна:
-
-```sh
-VPS_HOST="YOUR_VPS_IP"
-
-sudo apt update
-sudo apt install -y curl wget unzip python3 openssh-client ca-certificates ufw
-
-sudo mkdir -p /opt/owrt-remote /var/lib/owrt-remote /etc/xray
-
-sudo wget -O /opt/owrt-remote/owrt-remote-hub.py \
-  "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/owrt-remote-hub.py"
-
-sudo wget -O /etc/systemd/system/owrt-remote.service \
-  "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/owrt-remote.service"
-
-sudo chmod +x /opt/owrt-remote/owrt-remote-hub.py
-sudo /opt/owrt-remote/owrt-remote-hub.py init
-sudo /opt/owrt-remote/owrt-remote-hub.py set-login --username admin --password admin
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now owrt-remote
-sudo systemctl restart owrt-remote
-
-sudo ufw allow 80/tcp
-sudo ufw allow 8088/tcp
-sudo ufw allow 8443/tcp
-```
-
-Проверь, что панель поднялась:
-
-```sh
-sudo systemctl status owrt-remote --no-pager -l
-sudo ss -lntp | grep -E ':(80|8088)\b'
-curl -sS http://127.0.0.1:8088/health
-```
-
-Нормальный ответ health:
-
-```json
-{"ok":true}
-```
-
-Открыть панель:
-
-```text
-http://YOUR_VPS_IP/
-http://YOUR_VPS_IP:8088/
-```
-
-Если с домашнего интернета открывается, а с мобильного нет, чаще всего мобильный оператор или firewall VPS режет порт. Открой в личном кабинете VPS-провайдера:
-
-```text
-80/tcp
-8088/tcp
-8443/tcp
-```
-
-Важно: `ufw allow` открывает firewall внутри Ubuntu, но у многих VPS есть еще отдельный firewall в личном кабинете.
-
-Если после ручной установки панель не открывается и видно `owrt-remote.service inactive (dead)`, запусти:
-
-```sh
-sudo systemctl enable --now owrt-remote
-sudo systemctl restart owrt-remote
-sudo systemctl status owrt-remote --no-pager -l
-curl -sS http://127.0.0.1:8088/health
-```
-
-## HTTPS / SSL
-
-По умолчанию Hub сразу открывается по HTTP:
-
-```text
-http://YOUR_VPS_IP/
-http://YOUR_VPS_IP:8088/
-```
-
-HTTPS включается отдельной командой после установки. Так проще и надежнее: сначала поднимается панель, потом выпускается сертификат и включается порт `443/tcp`.
-
-### HTTPS на IP VPS
+Если HTTPS не включился автоматически, HTTP-панель все равно остается рабочей. После проверки firewall можно запустить:
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" | sudo sh -s -- YOUR_VPS_IP
 ```
 
-Пример:
+</details>
 
-```sh
-curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" | sudo sh -s -- 45.9.73.74
-```
+<details>
+<summary><b>HTTPS / SSL</b></summary>
 
-После этого панель будет тут:
+Установщик пытается включить HTTPS сам. Для этого должны быть открыты порты:
 
 ```text
-https://YOUR_VPS_IP/
+80/tcp   - проверка Let's Encrypt
+443/tcp  - HTTPS-панель
 ```
 
-Важно: IP-сертификаты Let's Encrypt короткие. Certbot сам ставит renew timer, а скрипт добавляет hook для перезапуска Hub после обновления сертификата.
+Включить HTTPS вручную на IP:
 
-### HTTPS на домен
+```sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" | sudo sh -s -- YOUR_VPS_IP
+```
 
-Сначала направь DNS `A`-запись домена на IP VPS. Потом:
+Включить HTTPS вручную на домен:
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" | sudo EMAIL="you@example.com" sh -s -- hub.example.com
-```
-
-После этого панель будет тут:
-
-```text
-https://hub.example.com/
 ```
 
 Проверка на VPS:
@@ -255,41 +171,12 @@ sudo ss -lntp | grep -E ':(80|443|8088)\b'
 curl -k https://127.0.0.1/health
 ```
 
-Если HTTPS не включился, проверь, что снаружи открыт порт `80/tcp` для проверки Let's Encrypt и `443/tcp` для самой панели.
+Важно: IP-сертификаты Let's Encrypt короткие. Certbot ставит auto-renew, а скрипт добавляет hook для перезапуска Hub после обновления сертификата.
 
-## Установка Xray на VPS
+</details>
 
-```sh
-sudo bash -c "$(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
-xray version || /usr/local/bin/xray version
-```
-
-Создай systemd-сервис для Xray reverse:
-
-```sh
-XRAY_BIN="$(command -v xray || command -v /usr/local/bin/xray || command -v /usr/bin/xray)"
-
-sudo tee /etc/systemd/system/owrt-remote-xray.service >/dev/null <<EOF
-[Unit]
-Description=OpenWrt Remote Xray Reverse
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-ExecStart=$XRAY_BIN run -config /etc/xray/owrt-remote.json
-Restart=on-failure
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload
-sudo systemctl enable --now owrt-remote-xray
-```
-
-## Добавить первый роутер
+<details>
+<summary><b>Добавить первый роутер</b></summary>
 
 На VPS:
 
@@ -309,33 +196,16 @@ sudo systemctl restart owrt-remote-xray
 
 Потом открой Hub, нажми у роутера `OpenWrt config`, скопируй команды и вставь их в SSH роутера.
 
-Либо вывести команды прямо на VPS:
+Вывести команды прямо на VPS:
 
 ```sh
 sudo /opt/owrt-remote/owrt-remote-hub.py print-openwrt-config \
   --id main \
-  --hub-url "http://$VPS_HOST:8088" \
+  --hub-url "https://$VPS_HOST" \
   --vps-host "$VPS_HOST"
 ```
 
-## Установка агента на OpenWrt
-
-На роутере:
-
-```sh
-wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" | sh
-```
-
-После установки:
-
-```sh
-owrt-remote doctor
-owrt-remote status
-```
-
-Если Xray не помещается в память через `opkg`, можно поставить временный Xray в `/tmp` кнопкой `Поставить Xray в /tmp` в панели роутера. После ребута агент сам восстановит Xray в `/tmp`, если он пропал.
-
-Если вставил OpenWrt config с VPS:
+После вставки команд на OpenWrt:
 
 ```sh
 owrt-remote render-client
@@ -344,9 +214,10 @@ owrt-remote render-client
 owrt-remote heartbeat
 ```
 
-В Hub карточка роутера должна стать online.
+</details>
 
-## Добавить второй и следующие роутеры
+<details>
+<summary><b>Добавить второй и следующие роутеры</b></summary>
 
 Каждому роутеру нужен свой `id` и свой `entry-port`.
 
@@ -379,33 +250,54 @@ sudo systemctl restart owrt-remote-xray
 Наружу открывать надо только:
 
 ```text
-80/tcp    - Hub с телефона и браузера
-8088/tcp  - Hub напрямую
-8443/tcp  - Xray reverse
+80/tcp
+443/tcp
+8088/tcp
+8443/tcp
 ```
 
 Порты `18080`, `18090`, `19080`, `19090` должны слушать только `127.0.0.1` на VPS. Их наружу открывать не надо.
 
-## Проверка после установки
+</details>
+
+<details>
+<summary><b>Установка агента на OpenWrt</b></summary>
+
+На роутере:
+
+```sh
+wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" | sh
+```
+
+После установки:
+
+```sh
+owrt-remote doctor
+owrt-remote status
+```
+
+Если Xray не помещается в память через `opkg`, можно поставить временный Xray в `/tmp` кнопкой `Поставить Xray в /tmp` в панели роутера. После ребута агент сам восстановит Xray в `/tmp`, если он пропал.
+
+</details>
+
+<details>
+<summary><b>Проверка после установки</b></summary>
 
 На VPS:
 
 ```sh
 sudo systemctl status owrt-remote --no-pager -l
 sudo systemctl status owrt-remote-xray --no-pager -l
-
-sudo ss -lntp | grep -E ':(80|8088|8443|18080|18090|19080|19090)\b'
-
+sudo ss -lntp | grep -E ':(80|443|8088|8443|18080|18090|19080|19090)\b'
 curl -sS http://127.0.0.1:8088/health
+curl -k https://127.0.0.1/health
 ```
 
 Должно быть:
 
 - `owrt-remote` active/running;
 - `owrt-remote-xray` active/running;
-- `*:80` или `0.0.0.0:80`;
-- `*:8088` или `0.0.0.0:8088`;
-- `*:8443`;
+- `*:80`, `*:443`, `*:8088`, `*:8443`;
 - `127.0.0.1:18080` для LuCI первого роутера;
 - `127.0.0.1:19080` для SSH первого роутера.
 
@@ -417,80 +309,34 @@ owrt-remote status
 owrt-remote heartbeat
 ```
 
-## Частые проблемы
+</details>
+
+<details>
+<summary><b>Частые проблемы</b></summary>
 
 ### Панель VPS не открывается
 
-Проверь сервис:
-
 ```sh
 sudo systemctl status owrt-remote --no-pager -l
 sudo journalctl -u owrt-remote -n 100 --no-pager
-```
-
-Проверь, слушает ли Hub:
-
-```sh
-sudo ss -lntp | grep -E ':(80|8088)\b'
+sudo ss -lntp | grep -E ':(80|443|8088)\b'
 curl -sS http://127.0.0.1:8088/health
 ```
 
-Если `curl` на VPS отвечает `{"ok":true}`, но снаружи сайт не открывается, проблема почти всегда в firewall:
+Если на VPS `curl` отвечает `{"ok":true}`, но снаружи сайт не открывается, проблема почти всегда в firewall VPS-провайдера.
 
-```sh
-sudo ufw allow 80/tcp
-sudo ufw allow 8088/tcp
-sudo ufw allow 8443/tcp
-sudo ufw status
-```
-
-И обязательно проверь firewall в личном кабинете VPS-провайдера.
-
-### Порт 80 не поднялся
-
-Проверь, кто занял порт:
-
-```sh
-sudo ss -lntp | grep ':80'
-sudo journalctl -u owrt-remote -n 100 --no-pager
-```
-
-Если порт 80 занят nginx/apache, открывай Hub через:
+Открой в личном кабинете VPS:
 
 ```text
-http://YOUR_VPS_IP:8088/
-```
-
-или настрой nginx/Caddy reverse proxy на `127.0.0.1:8088`.
-
-### Вход не принимает пароль
-
-Сбросить логин и пароль:
-
-```sh
-sudo /opt/owrt-remote/owrt-remote-hub.py set-login --username admin --password admin
-sudo systemctl restart owrt-remote
-```
-
-### Роутер offline
-
-На роутере:
-
-```sh
-owrt-remote doctor
-owrt-remote heartbeat
-```
-
-На VPS:
-
-```sh
-sudo systemctl status owrt-remote --no-pager -l
-sudo systemctl status owrt-remote-xray --no-pager -l
+80/tcp
+443/tcp
+8088/tcp
+8443/tcp
 ```
 
 ### Админка пишет `proxy error: [Errno 111] Connection refused`
 
-Xray на VPS не слушает entry-port этого роутера. Пересобери Xray config:
+Пересобери Xray config:
 
 ```sh
 sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
@@ -500,7 +346,7 @@ sudo ss -lntp | grep -E ':(18080|18090|19080|19090)\b'
 
 ### SSH web-terminal просит пароль и молчит
 
-Проверь, включен ли Dropbear на OpenWrt:
+Проверь Dropbear на OpenWrt:
 
 ```sh
 /etc/init.d/dropbear status
@@ -518,59 +364,60 @@ owrt-remote heartbeat
 Пробуй:
 
 ```text
+https://YOUR_VPS_IP/
 http://YOUR_VPS_IP/
 http://YOUR_VPS_IP:8088/
 ```
 
-Если по Wi-Fi работает, а через мобильный интернет нет:
+Если по Wi-Fi работает, а через мобильный интернет нет, открой порты в firewall VPS-провайдера и проверь:
 
-- открой `80/tcp`, `8088/tcp`, `8443/tcp` в firewall VPS-провайдера;
-- проверь `sudo ss -lntp | grep -E ':(80|8088)'`;
-- лучше привязать домен и сделать HTTPS/443 через Caddy или nginx.
+```sh
+sudo ss -lntp | grep -E ':(80|443|8088)'
+```
 
-Важно: нормальный доверенный SSL на голый IP обычно не выпускается. Для красивого `https://` нужен домен.
+</details>
 
 ## Удаление
 
-### Удалить Hub с VPS полностью
-
-Одна команда на VPS:
+<details>
+<summary><b>Удалить Hub с VPS полностью</b></summary>
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" | sudo sh
 ```
 
-Что удалится:
+Удалится:
 
-- сервис `owrt-remote`;
-- сервис `owrt-remote-xray`;
-- файлы `/opt/owrt-remote`;
-- конфиг `/etc/xray/owrt-remote.json`;
-- база роутеров `/var/lib/owrt-remote`;
+- `owrt-remote`;
+- `owrt-remote-xray`;
+- `/opt/owrt-remote`;
+- `/etc/xray/owrt-remote.json`;
+- `/var/lib/owrt-remote`;
+- HTTPS systemd override и renewal hook;
 - правила `ufw` для `80/tcp`, `443/tcp`, `8088/tcp`, `8443/tcp`.
-- HTTPS systemd override и renewal hook.
 
-Если хочешь удалить Hub, но оставить базу роутеров:
+Удалить Hub, но оставить базу роутеров:
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" | sudo env PURGE=0 sh
 ```
 
-Если хочешь дополнительно удалить сам Xray binary с VPS:
+Удалить дополнительно сам Xray binary:
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" | sudo env REMOVE_XRAY=1 sh
 ```
 
-### Удалить агент с OpenWrt полностью
+</details>
 
-Одна команда на роутере:
+<details>
+<summary><b>Удалить агент с OpenWrt полностью</b></summary>
 
 ```sh
 wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh?v=$(date +%s)" | PURGE=1 sh
 ```
 
-Что удалится:
+Удалится:
 
 - `/usr/sbin/owrt-remote`;
 - `/etc/init.d/owrt-remote`;
@@ -581,71 +428,51 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 - `/etc/owrt-remote/web.key`;
 - `/etc/xray/owrt-remote-client.json`.
 
-Если хочешь удалить только файлы панели, но оставить конфиг:
+Удалить только файлы панели, но оставить конфиг:
 
 ```sh
 wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh?v=$(date +%s)" | sh
 ```
 
-## Обновление
+</details>
 
-Обновить VPS:
+## Дерево проекта
 
-```sh
-sudo wget -O /opt/owrt-remote/owrt-remote-hub.py \
-  "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/owrt-remote-hub.py"
+<details>
+<summary><b>Открыть дерево файлов</b></summary>
 
-sudo wget -O /etc/systemd/system/owrt-remote.service \
-  "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/owrt-remote.service"
-
-sudo chmod +x /opt/owrt-remote/owrt-remote-hub.py
-sudo systemctl daemon-reload
-sudo systemctl restart owrt-remote
+```text
+.
+├── install.sh
+│   └── установка агента на OpenWrt
+├── uninstall.sh
+│   └── удаление агента с OpenWrt
+├── files/
+│   ├── usr/sbin/owrt-remote
+│   │   └── CLI-агент, heartbeat, render-client, doctor
+│   ├── etc/init.d/owrt-remote
+│   │   └── procd-сервис OpenWrt
+│   ├── www/cgi-bin/owrt-remote
+│   │   └── веб-панель на роутере
+│   ├── usr/share/luci/menu.d/luci-app-owrt-remote.json
+│   │   └── пункт меню LuCI: Службы -> OpenWrt Remote
+│   └── usr/share/rpcd/acl.d/luci-app-owrt-remote.json
+│       └── права LuCI/rpcd
+└── vps/
+    ├── install-vps.sh
+    │   └── установка Hub, Xray, firewall и HTTPS
+    ├── enable-https.sh
+    │   └── включение HTTPS/443 вручную
+    ├── uninstall-vps.sh
+    │   └── удаление Hub с VPS
+    ├── owrt-remote-hub.py
+    │   └── веб-панель VPS, карточки, proxy, SSH terminal
+    └── owrt-remote.service
+        └── systemd-сервис Hub
 ```
 
-Обновить OpenWrt:
+</details>
 
-```sh
-wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" | sh
-/etc/init.d/owrt-remote restart
-owrt-remote heartbeat
-```
+## Лицензия
 
-После добавления или удаления роутеров всегда обновляй Xray на VPS:
-
-```sh
-sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
-sudo systemctl restart owrt-remote-xray
-```
-
-## Полезные команды
-
-Список роутеров:
-
-```sh
-sudo /opt/owrt-remote/owrt-remote-hub.py list-routers
-```
-
-Показать OpenWrt config для роутера:
-
-```sh
-sudo /opt/owrt-remote/owrt-remote-hub.py print-openwrt-config \
-  --id main \
-  --hub-url http://YOUR_VPS_IP:8088 \
-  --vps-host YOUR_VPS_IP
-```
-
-Поменять entry-port без смены UUID:
-
-```sh
-sudo /opt/owrt-remote/owrt-remote-hub.py set-entry-port --id main --entry-port 18080
-sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
-sudo systemctl restart owrt-remote-xray
-```
-
-Сменить логин и пароль Hub:
-
-```sh
-sudo /opt/owrt-remote/owrt-remote-hub.py set-login --username admin --password admin
-sudo systemctl restart owrt-remote
-```
+MIT

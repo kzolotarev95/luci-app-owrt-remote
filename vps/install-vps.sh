@@ -2,12 +2,13 @@
 set -u
 
 APP_NAME="OpenWrt Remote Hub"
-INSTALLER_VERSION="2026-06-30-health-wait-v2"
+INSTALLER_VERSION="2026-06-30-auto-https-v4"
 RAW_BASE="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 STATE_DIR="${OWRT_REMOTE_STATE_DIR:-/var/lib/owrt-remote}"
 HUB_LOGIN="${HUB_LOGIN:-admin}"
 HUB_PASSWORD="${HUB_PASSWORD:-admin}"
 RESET_LOGIN="${RESET_LOGIN:-1}"
+AUTO_HTTPS="${AUTO_HTTPS:-1}"
 
 if [ "$(id -u)" -eq 0 ]; then
 	SUDO=""
@@ -75,7 +76,8 @@ install_files() {
 	$SUDO mkdir -p /opt/owrt-remote "$STATE_DIR" /etc/xray
 	$SUDO wget -O /opt/owrt-remote/owrt-remote-hub.py "$RAW_BASE/vps/owrt-remote-hub.py?v=$cache_bust"
 	$SUDO wget -O /etc/systemd/system/owrt-remote.service "$RAW_BASE/vps/owrt-remote.service?v=$cache_bust"
-	$SUDO chmod +x /opt/owrt-remote/owrt-remote-hub.py
+	$SUDO wget -O /opt/owrt-remote/enable-https.sh "$RAW_BASE/vps/enable-https.sh?v=$cache_bust"
+	$SUDO chmod +x /opt/owrt-remote/owrt-remote-hub.py /opt/owrt-remote/enable-https.sh
 }
 
 install_xray_service() {
@@ -102,6 +104,7 @@ EOF
 open_firewall() {
 	if command -v ufw >/dev/null 2>&1; then
 		$SUDO ufw allow 80/tcp >/dev/null 2>&1 || true
+		$SUDO ufw allow 443/tcp >/dev/null 2>&1 || true
 		$SUDO ufw allow 8088/tcp >/dev/null 2>&1 || true
 		$SUDO ufw allow 8443/tcp >/dev/null 2>&1 || true
 	fi
@@ -140,6 +143,30 @@ check_hub() {
 	return 1
 }
 
+enable_https() {
+	host="$1"
+	HTTPS_OK=0
+	if [ "$AUTO_HTTPS" != "1" ]; then
+		warn "HTTPS пропущен: AUTO_HTTPS=0"
+		return 0
+	fi
+	if [ "$host" = "YOUR_VPS_IP" ]; then
+		warn "HTTPS пропущен: не смог определить IP/домен VPS"
+		return 0
+	fi
+	if [ ! -x /opt/owrt-remote/enable-https.sh ]; then
+		warn "HTTPS пропущен: /opt/owrt-remote/enable-https.sh не найден"
+		return 0
+	fi
+	info "Включаю HTTPS/SSL..."
+	if $SUDO env RAW_URL="$RAW_BASE" /opt/owrt-remote/enable-https.sh "$host"; then
+		HTTPS_OK=1
+		return 0
+	fi
+	warn "HTTPS не включился автоматически. HTTP-панель уже работает, после проверки firewall можно запустить enable-https.sh вручную."
+	return 0
+}
+
 print_result() {
 	host="$1"
 	info ""
@@ -147,6 +174,9 @@ print_result() {
 	info "$APP_NAME установлен"
 	info "============================================================"
 	info "Панель:"
+	if [ "${HTTPS_OK:-0}" = "1" ]; then
+		info "  https://$host/"
+	fi
 	if [ "${HUB_PORT80_OK:-0}" = "1" ]; then
 		info "  http://$host/"
 	else
@@ -160,14 +190,19 @@ print_result() {
 	info ""
 	info "Проверка на VPS:"
 	info "  sudo systemctl status owrt-remote --no-pager -l"
-	info "  sudo ss -lntp | grep -E ':(80|8088|8443)'"
+	info "  sudo ss -lntp | grep -E ':(80|443|8088|8443)'"
 	info "  curl -sS http://127.0.0.1:8088/health"
+	if [ "${HTTPS_OK:-0}" = "1" ]; then
+		info "  curl -k https://127.0.0.1/health"
+	fi
 	info ""
 	info "Если снаружи не открывается, открой в firewall VPS-провайдера:"
-	info "  80/tcp, 8088/tcp, 8443/tcp"
-	info ""
-	info "Включить HTTPS после установки:"
-	info "  curl -fsSL \"https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=\\$(date +%s)\" | sudo sh -s -- $host"
+	info "  80/tcp, 443/tcp, 8088/tcp, 8443/tcp"
+	if [ "${HTTPS_OK:-0}" != "1" ]; then
+		info ""
+		info "Включить HTTPS вручную:"
+		info '  curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" | sudo sh -s -- '"$host"
+	fi
 	info "============================================================"
 }
 
@@ -186,6 +221,7 @@ main() {
 	open_firewall
 	start_hub
 	check_hub || die "Hub установлен, но сервис не поднялся. Лог выше."
+	enable_https "$host"
 	print_result "$host"
 }
 
