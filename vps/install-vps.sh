@@ -120,12 +120,18 @@ start_hub() {
 
 check_hub() {
 	HUB_PORT80_OK=0
-	if curl -fsS --max-time 5 http://127.0.0.1/health >/dev/null 2>&1; then
-		HUB_PORT80_OK=1
-	fi
-	if curl -fsS --max-time 5 http://127.0.0.1:8088/health >/tmp/owrt-remote-health.log 2>&1; then
-		return 0
-	fi
+	info "Жду запуск Hub..."
+	i=1
+	while [ "$i" -le 20 ]; do
+		if curl -fsS --max-time 2 http://127.0.0.1:8088/health >/tmp/owrt-remote-health.log 2>&1; then
+			if curl -fsS --max-time 2 http://127.0.0.1/health >/dev/null 2>&1; then
+				HUB_PORT80_OK=1
+			fi
+			return 0
+		fi
+		sleep 1
+		i=$((i + 1))
+	done
 	warn "Hub не ответил на http://127.0.0.1:8088/health"
 	$SUDO systemctl status owrt-remote --no-pager -l || true
 	$SUDO journalctl -u owrt-remote -n 80 --no-pager || true
