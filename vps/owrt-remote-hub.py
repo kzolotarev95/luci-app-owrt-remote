@@ -1247,8 +1247,8 @@ body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radi
 .mobileInput{{display:none;gap:8px;padding:8px;border-top:1px solid var(--line);background:rgba(255,255,255,.045)}}.mobileInput input{{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.76);color:var(--text);font:14px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;outline:none}}.mobileInput input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12)}}.mobileInput button{{border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;white-space:nowrap}}
 #term{{flex:1;min-height:0;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;outline:none;cursor:text;background:rgba(0,0,0,.42);font:13px/1.34 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff;user-select:text;-webkit-user-select:text;touch-action:pan-y;scrollbar-width:thin;scrollbar-color:rgba(168,85,247,.72) rgba(255,255,255,.06)}}#term::selection,#term *::selection{{background:rgba(34,211,238,.34);color:#fff}}#term:focus{{box-shadow:inset 0 0 0 1px rgba(34,211,238,.30)}}#term::-webkit-scrollbar{{width:12px;height:12px}}#term::-webkit-scrollbar-track{{background:rgba(255,255,255,.06)}}#term::-webkit-scrollbar-thumb{{background:linear-gradient(180deg,#7c3aed,#22d3ee);border-radius:999px;border:3px solid rgba(10,6,18,.96)}}#term::-webkit-scrollbar-thumb:hover{{background:linear-gradient(180deg,#a855f7,#67e8f9)}}.term-error{{color:#fb7185;font-weight:900}}.term-warn{{color:#fde68a;font-weight:850}}.term-ok{{color:#bbf7d0;font-weight:850}}.term-info{{color:#67e8f9;font-weight:850}}.term-prompt{{color:#86efac;font-weight:900}}.term-metric{{color:#93c5fd;font-weight:850}}.term-muted{{color:#c4b5fd}}.term-inverse{{display:inline-block;background:#ddd6fe;color:#13091f;border-radius:3px;padding:0 3px;font-weight:900}}
 .bad{{color:#fecdd3}}
-@media(max-width:680px){{body{{padding:10px;font-size:13px;background-attachment:scroll}}.wrap{{gap:8px}}.top{{align-items:stretch;flex-direction:column;gap:8px}}.sshTitle{{align-items:flex-start;flex-direction:column;gap:7px}}h1{{font-size:17px}}.chips{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:6px}}.chip{{text-align:center;padding:6px 7px;font-size:11px;overflow:hidden;text-overflow:ellipsis}}.btn{{width:100%;min-width:0}}.termBox{{height:min(500px,calc(100vh - 150px));max-height:500px;min-height:300px}}.bar{{align-items:stretch;flex-direction:column}}.badge{{width:100%;justify-content:center}}.termActions{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:6px}}.miniBtn{{padding:8px 7px;font-size:11px}}#term{{font-size:12px;line-height:1.32;padding:10px}}.mobileInput{{display:grid;grid-template-columns:1fr 88px;gap:7px}}.mobileInput .pasteBtn,.mobileInput .enterBtn{{grid-column:span 1}}.mobileInput .sendBtn{{grid-column:1/-1}}}}
-@media(max-width:420px){{.chips,.termActions{{grid-template-columns:1fr}}.termBox{{height:min(420px,calc(100vh - 165px));max-height:420px}}.mobileInput{{grid-template-columns:1fr}}.mobileInput button{{width:100%}}}}
+@media(max-width:680px){{body{{padding:6px;font-size:13px;background-attachment:scroll}}.wrap{{gap:6px;min-height:calc(100svh - 12px)}}.top{{align-items:stretch;flex-direction:column;gap:6px;min-height:0}}.sshTitle{{align-items:flex-start;flex-direction:column;gap:5px}}h1{{font-size:16px}}.chips{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:5px}}.chip{{text-align:center;padding:5px 6px;font-size:10px;overflow:hidden;text-overflow:ellipsis}}.btn{{width:100%;min-width:0;padding:8px 10px}}.termBox{{height:calc(100svh - 112px);min-height:520px}}.bar{{align-items:stretch;flex-direction:column;gap:6px;padding:6px}}.terminalHint{{display:none}}.badge{{width:100%;justify-content:center;padding:7px 10px}}.termActions{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:5px}}.miniBtn{{padding:7px 6px;font-size:10px}}#term{{font-size:12px;line-height:1.28;padding:9px}}.mobileInput{{display:grid;grid-template-columns:1fr 74px 86px;gap:6px;padding:6px}}.mobileInput input{{grid-column:1/-1;padding:10px 11px;font-size:15px}}.mobileInput .pasteBtn,.mobileInput .enterBtn,.mobileInput .sendBtn{{grid-column:auto;padding:10px 8px;font-size:12px}}}}
+@media(max-width:420px){{.termBox{{height:calc(100svh - 104px);min-height:520px}}.mobileInput{{grid-template-columns:1fr 72px 84px}}.mobileInput button{{width:100%}}}}
 </style>
 </head>
 <body>
@@ -1512,7 +1512,8 @@ async function pasteIntoInput() {{
     const pos = start + text.length;
     cmdInput.setSelectionRange(pos, pos);
   }} catch (e) {{
-    write('\\r\\n[браузер не дал доступ к буферу. Нажми в поле и выбери «Вставить» в меню телефона]\\r\\n');
+    cmdInput.placeholder = 'Зажми поле и выбери Вставить';
+    cmdInput.focus();
   }}
 }}
 let wsOpened = false;
@@ -2113,6 +2114,24 @@ class Handler(BaseHTTPRequestHandler):
             pass
         self.send_json(200, {"ok": True})
 
+    def ssh_session_action(self, path):
+        parts = path.strip("/").split("/")
+        if len(parts) != 4 or parts[0] != "api" or parts[1] != "ssh-session":
+            self.send_json(404, {"ok": False, "error": "terminal route not found"})
+            return
+        sid = urllib.parse.unquote(parts[2])
+        action = parts[3]
+        if action == "read":
+            self.ssh_http_read(sid)
+            return
+        if action == "write":
+            self.ssh_http_write(sid)
+            return
+        if action == "close":
+            self.ssh_http_close(sid)
+            return
+        self.send_json(404, {"ok": False, "error": "terminal action not found"})
+
     def run_ssh_session(self, router_id, port):
         try:
             import pty
@@ -2198,9 +2217,8 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/ssh/") and path.endswith("/session"):
             self.ssh_http_session()
             return
-        if path.startswith("/api/ssh-session/") and path.endswith("/read"):
-            sid = urllib.parse.unquote(path.split("/")[3])
-            self.ssh_http_read(sid)
+        if path.startswith("/api/ssh-session/"):
+            self.ssh_session_action(path)
             return
         if path.startswith("/ssh-ws/"):
             self.ssh_ws()
@@ -2212,14 +2230,6 @@ class Handler(BaseHTTPRequestHandler):
             self.proxy_access(path)
             return
         if self.maybe_proxy_luci_absolute(path):
-            return
-        if path.startswith("/api/ssh-session/") and path.endswith("/write"):
-            sid = urllib.parse.unquote(path.split("/")[3])
-            self.ssh_http_write(sid)
-            return
-        if path.startswith("/api/ssh-session/") and path.endswith("/close"):
-            sid = urllib.parse.unquote(path.split("/")[3])
-            self.ssh_http_close(sid)
             return
         if not self.require_admin():
             return
@@ -2246,6 +2256,9 @@ class Handler(BaseHTTPRequestHandler):
         path = self.parsed().path
         if path == "/login":
             self.login()
+            return
+        if path.startswith("/api/ssh-session/"):
+            self.ssh_session_action(path)
             return
         if path == "/api/heartbeat":
             if not self.agent_ok():
