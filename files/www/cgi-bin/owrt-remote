@@ -285,17 +285,17 @@ render_page() {
 	hub_url="$(uci_get hub_url '')"
 
 	if service_enabled; then
-		service_state="включен"
+		service_state="Включен"
 		service_tone="good"
 	else
-		service_state="выключен"
+		service_state="Выключен"
 		service_tone="warn"
 	fi
 	if xray_running; then
-		xray_state="запущен"
+		xray_state="Запущен"
 		xray_tone="good"
 	else
-		xray_state="остановлен"
+		xray_state="Остановлен"
 		xray_tone="bad"
 	fi
 	if [ "$(uci_get enabled 0)" = "1" ]; then
