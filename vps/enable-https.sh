@@ -151,6 +151,7 @@ enable_hub_tls() {
 [Service]
 Environment=OWRT_REMOTE_TLS_CERT=$live_dir/fullchain.pem
 Environment=OWRT_REMOTE_TLS_KEY=$live_dir/privkey.pem
+Environment=OWRT_REMOTE_EXTRA_PORTS=80
 Environment=OWRT_REMOTE_TLS_PORTS=443
 Environment=OWRT_REMOTE_PUBLIC_URL=https://$host
 EOF

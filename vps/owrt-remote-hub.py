@@ -2710,8 +2710,13 @@ def cmd_serve(args):
     auth = load_auth()
     server = make_http_server(app, args.host, args.port)
     extra_servers = []
+    tls_ports = parse_extra_ports(args.tls_ports) if args.tls_cert and args.tls_key else []
+    tls_port_set = set(tls_ports)
     for port in parse_extra_ports(args.extra_ports):
         if port == args.port:
+            continue
+        if port in tls_port_set:
+            print(f"WARNING: port {port} skipped for plain HTTP because TLS is enabled on it", file=sys.stderr)
             continue
         try:
             extra_server = make_http_server(app, args.host, port)
@@ -2723,7 +2728,7 @@ def cmd_serve(args):
         thread.start()
         print(f"{APP_NAME} also listening on http://{args.host}:{port}")
     if args.tls_cert and args.tls_key:
-        for port in parse_extra_ports(args.tls_ports):
+        for port in tls_ports:
             try:
                 tls_server = make_http_server(app, args.host, port, args.tls_cert, args.tls_key)
             except OSError as exc:
