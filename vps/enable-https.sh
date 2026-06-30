@@ -2,6 +2,7 @@
 set -u
 
 APP_NAME="OpenWrt Remote Hub"
+RAW_BASE="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 STATE_DIR="${OWRT_REMOTE_STATE_DIR:-/var/lib/owrt-remote}"
 ACME_WEBROOT="$STATE_DIR/acme-webroot"
 HOSTNAME_ARG="${1:-${HTTPS_HOST:-}}"
@@ -71,6 +72,21 @@ install_certbot() {
 	$SUDO ln -sf /snap/bin/certbot /usr/bin/certbot
 
 	command -v certbot >/dev/null 2>&1 || die "certbot не установился"
+}
+
+refresh_hub_files() {
+	cache_bust="$(date +%s)"
+	$SUDO mkdir -p /opt/owrt-remote "$STATE_DIR"
+	if command -v wget >/dev/null 2>&1; then
+		$SUDO wget -O /opt/owrt-remote/owrt-remote-hub.py "$RAW_BASE/vps/owrt-remote-hub.py?v=$cache_bust"
+		$SUDO wget -O /etc/systemd/system/owrt-remote.service "$RAW_BASE/vps/owrt-remote.service?v=$cache_bust"
+	else
+		$SUDO curl -fsSL -o /opt/owrt-remote/owrt-remote-hub.py "$RAW_BASE/vps/owrt-remote-hub.py?v=$cache_bust"
+		$SUDO curl -fsSL -o /etc/systemd/system/owrt-remote.service "$RAW_BASE/vps/owrt-remote.service?v=$cache_bust"
+	fi
+	$SUDO chmod +x /opt/owrt-remote/owrt-remote-hub.py
+	$SUDO systemctl daemon-reload
+	$SUDO systemctl restart owrt-remote
 }
 
 ensure_hub_http() {
@@ -172,6 +188,7 @@ main() {
 
 	info "Включаю HTTPS для $APP_NAME..."
 	info "Адрес: $host"
+	refresh_hub_files
 	install_certbot
 	if is_ipv4 "$host" && ! certbot --help all 2>/dev/null | grep -q -- '--ip-address'; then
 		die "этот certbot не умеет IP-сертификаты. Нужен свежий certbot 5.4+ через snap."
