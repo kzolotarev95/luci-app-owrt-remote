@@ -40,15 +40,45 @@
 
 Подходит для Ubuntu/Debian VPS. Команды выполнять под `root` или через `sudo`.
 
-Задай IP или домен своего VPS:
+Самый простой вариант - одна команда. Она поставит зависимости, скачает Hub, запустит сервис, откроет порты в `ufw` и в конце покажет ссылку панели и вход `admin/admin`.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh | sudo sh
+```
+
+После успешной установки в конце будет примерно так:
+
+```text
+OpenWrt Remote Hub установлен
+
+Панель:
+  http://YOUR_VPS_IP/
+  http://YOUR_VPS_IP:8088/
+
+Вход:
+  login:    admin
+  password: admin
+```
+
+Если хочешь явно указать IP или домен:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh | sudo sh -s -- YOUR_VPS_IP
+```
+
+Если ставишь повторно и хочешь снова сбросить вход на `admin/admin`, ничего дополнительно делать не надо: установщик по умолчанию выставляет `admin/admin`.
+
+Если не хочешь сбрасывать текущий пароль:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh | sudo env RESET_LOGIN=0 sh
+```
+
+Ручная установка, если нужна:
 
 ```sh
 VPS_HOST="YOUR_VPS_IP"
-```
 
-Установи зависимости и Hub:
-
-```sh
 sudo apt update
 sudo apt install -y curl wget unzip python3 openssh-client ca-certificates ufw
 
@@ -62,9 +92,11 @@ sudo wget -O /etc/systemd/system/owrt-remote.service \
 
 sudo chmod +x /opt/owrt-remote/owrt-remote-hub.py
 sudo /opt/owrt-remote/owrt-remote-hub.py init
+sudo /opt/owrt-remote/owrt-remote-hub.py set-login --username admin --password admin
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now owrt-remote
+sudo systemctl restart owrt-remote
 
 sudo ufw allow 80/tcp
 sudo ufw allow 8088/tcp
@@ -101,6 +133,15 @@ http://YOUR_VPS_IP:8088/
 ```
 
 Важно: `ufw allow` открывает firewall внутри Ubuntu, но у многих VPS есть еще отдельный firewall в личном кабинете.
+
+Если после ручной установки панель не открывается и видно `owrt-remote.service inactive (dead)`, запусти:
+
+```sh
+sudo systemctl enable --now owrt-remote
+sudo systemctl restart owrt-remote
+sudo systemctl status owrt-remote --no-pager -l
+curl -sS http://127.0.0.1:8088/health
+```
 
 ## Установка Xray на VPS
 
