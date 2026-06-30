@@ -47,15 +47,6 @@ curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/
 login:    admin
 password: admin
 ```
-
-Панель будет доступна так:
-
-```text
-https://YOUR_VPS_IP/
-http://YOUR_VPS_IP/
-http://YOUR_VPS_IP:8088/
-```
-
 Если нужен домен, передай его установщику:
 
 ```sh
@@ -88,45 +79,11 @@ owrt-remote status
 
 Роутер сам подключается к VPS изнутри сети. Наружу LuCI и SSH на роутере открывать не нужно.
 
-## Что умеет
-
-- красивые карточки роутеров на VPS;
-- online/offline индикация;
-- модель, OpenWrt, Xray, uptime, RAM, flash, температура и load;
-- вход в LuCI кнопкой `Админка`;
-- SSH прямо в браузере кнопкой `SSH`;
-- готовые OpenWrt config-команды для каждого роутера;
-- кнопки обновления и рестарта Xray на VPS;
-- автоматический HTTPS на `443/tcp`, если firewall VPS открыт.
 
 ## Раскрыть разделы
 
 <details open>
 <summary><b>Установка VPS подробно</b></summary>
-
-Команда установки:
-
-```sh
-curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh
-```
-
-Что делает установщик:
-
-- ставит зависимости;
-- скачивает Hub в `/opt/owrt-remote`;
-- создает systemd-сервис `owrt-remote`;
-- ставит Xray, если его нет;
-- создает systemd-сервис `owrt-remote-xray`;
-- открывает `80/tcp`, `443/tcp`, `8088/tcp`, `8443/tcp` в `ufw`;
-- создает логин `admin` и пароль `admin`;
-- пробует сразу включить HTTPS.
-
-В свежем установщике в начале вывода должно быть:
-
-```text
-Installer: 2026-06-30-auto-https-v4
-Жду запуск Hub...
-```
 
 Если хочешь поставить повторно, но не сбрасывать текущий пароль:
 
