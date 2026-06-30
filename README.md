@@ -2,7 +2,30 @@
 
 # OpenWrt Remote Hub
 
-Удаленный доступ к OpenWrt через свой VPS: карточки роутеров, online/offline, LuCI-админка, SSH web-terminal, Xray VLESS reverse-туннели и HTTPS.
+**Удаленный доступ к OpenWrt через свой VPS**
+
+<p>
+  Карточки роутеров
+  ·
+  Online/Offline
+  ·
+  LuCI
+  ·
+  SSH Web Terminal
+  ·
+  Xray Reverse
+  ·
+  HTTPS
+</p>
+
+<p>
+  <img alt="OpenWrt" src="https://img.shields.io/badge/OPENWRT-24.10.x-00A3E0?style=for-the-badge&labelColor=555555">
+  <img alt="LuCI" src="https://img.shields.io/badge/LUCI-SUPPORTED-44CC11?style=for-the-badge&labelColor=555555">
+  <img alt="VPS" src="https://img.shields.io/badge/VPS-HUB-7C3AED?style=for-the-badge&labelColor=555555">
+  <img alt="Xray" src="https://img.shields.io/badge/XRAY-REVERSE-F97316?style=for-the-badge&labelColor=555555">
+  <img alt="HTTPS" src="https://img.shields.io/badge/HTTPS-AUTO-22C55E?style=for-the-badge&labelColor=555555">
+  <img alt="Build" src="https://img.shields.io/badge/BUILD-V275-A855F7?style=for-the-badge&labelColor=555555">
+</p>
 
 <p>
   <a href="https://t.me/kzolotarev95"><b>Telegram</b></a>
@@ -10,9 +33,7 @@
   <a href="https://github.com/kzolotarev95"><b>GitHub</b></a>
   ·
   <a href="https://t.me/+LZDsQJhUfcNhYWEy"><b>NetHaven VPN</b></a>
-</p>
-
-<p>
+  ·
   <a href="#быстрый-старт">Быстрый старт</a>
   ·
   <a href="#схема">Схема</a>
