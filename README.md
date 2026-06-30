@@ -69,6 +69,8 @@ flowchart LR
     │   └── установка Hub на VPS одной командой
     ├── uninstall-vps.sh
     │   └── удаление Hub с VPS одной командой
+    ├── enable-https.sh
+    │   └── включение HTTPS/443 для Hub
     ├── owrt-remote-hub.py
     │   └── веб-панель VPS, карточки роутеров, proxy, SSH terminal
     └── owrt-remote.service
@@ -80,6 +82,7 @@ flowchart LR
 | Задача | Где запускать | Команда |
 | --- | --- | --- |
 | Поставить Hub | VPS | `curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" \| sudo sh` |
+| Включить HTTPS | VPS | `curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" \| sudo sh -s -- YOUR_VPS_IP` |
 | Поставить агент | OpenWrt | `wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" \| sh` |
 | Удалить Hub полностью | VPS | `curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" \| sudo sh` |
 | Удалить агент полностью | OpenWrt | `wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh?v=$(date +%s)" \| PURGE=1 sh` |
@@ -199,6 +202,60 @@ sudo systemctl restart owrt-remote
 sudo systemctl status owrt-remote --no-pager -l
 curl -sS http://127.0.0.1:8088/health
 ```
+
+## HTTPS / SSL
+
+По умолчанию Hub сразу открывается по HTTP:
+
+```text
+http://YOUR_VPS_IP/
+http://YOUR_VPS_IP:8088/
+```
+
+HTTPS включается отдельной командой после установки. Так проще и надежнее: сначала поднимается панель, потом выпускается сертификат и включается порт `443/tcp`.
+
+### HTTPS на IP VPS
+
+```sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" | sudo sh -s -- YOUR_VPS_IP
+```
+
+Пример:
+
+```sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" | sudo sh -s -- 45.9.73.74
+```
+
+После этого панель будет тут:
+
+```text
+https://YOUR_VPS_IP/
+```
+
+Важно: IP-сертификаты Let's Encrypt короткие. Certbot сам ставит renew timer, а скрипт добавляет hook для перезапуска Hub после обновления сертификата.
+
+### HTTPS на домен
+
+Сначала направь DNS `A`-запись домена на IP VPS. Потом:
+
+```sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" | sudo EMAIL="you@example.com" sh -s -- hub.example.com
+```
+
+После этого панель будет тут:
+
+```text
+https://hub.example.com/
+```
+
+Проверка на VPS:
+
+```sh
+sudo ss -lntp | grep -E ':(80|443|8088)\b'
+curl -k https://127.0.0.1/health
+```
+
+Если HTTPS не включился, проверь, что снаружи открыт порт `80/tcp` для проверки Let's Encrypt и `443/tcp` для самой панели.
 
 ## Установка Xray на VPS
 
@@ -490,7 +547,8 @@ curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/
 - файлы `/opt/owrt-remote`;
 - конфиг `/etc/xray/owrt-remote.json`;
 - база роутеров `/var/lib/owrt-remote`;
-- правила `ufw` для `80/tcp`, `8088/tcp`, `8443/tcp`.
+- правила `ufw` для `80/tcp`, `443/tcp`, `8088/tcp`, `8443/tcp`.
+- HTTPS systemd override и renewal hook.
 
 Если хочешь удалить Hub, но оставить базу роутеров:
 

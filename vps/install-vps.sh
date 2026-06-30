@@ -165,6 +165,9 @@ print_result() {
 	info ""
 	info "Если снаружи не открывается, открой в firewall VPS-провайдера:"
 	info "  80/tcp, 8088/tcp, 8443/tcp"
+	info ""
+	info "Включить HTTPS после установки:"
+	info "  curl -fsSL \"https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=\\$(date +%s)\" | sudo sh -s -- $host"
 	info "============================================================"
 }
 

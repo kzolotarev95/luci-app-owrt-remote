@@ -55,6 +55,8 @@ main() {
 
 	$SUDO rm -f /etc/systemd/system/owrt-remote.service
 	$SUDO rm -f /etc/systemd/system/owrt-remote-xray.service
+	$SUDO rm -rf /etc/systemd/system/owrt-remote.service.d
+	$SUDO rm -f /etc/letsencrypt/renewal-hooks/deploy/owrt-remote-restart.sh
 	$SUDO rm -rf /opt/owrt-remote
 	$SUDO rm -f /etc/xray/owrt-remote.json
 
@@ -63,6 +65,7 @@ main() {
 	fi
 
 	remove_ufw_rule 80
+	remove_ufw_rule 443
 	remove_ufw_rule 8088
 	remove_ufw_rule 8443
 
@@ -81,6 +84,8 @@ main() {
 	info "  /opt/owrt-remote"
 	info "  /etc/systemd/system/owrt-remote.service"
 	info "  /etc/systemd/system/owrt-remote-xray.service"
+	info "  /etc/systemd/system/owrt-remote.service.d"
+	info "  /etc/letsencrypt/renewal-hooks/deploy/owrt-remote-restart.sh"
 	info "  /etc/xray/owrt-remote.json"
 	if [ "$PURGE" = "1" ]; then
 		info "  $STATE_DIR"
@@ -89,7 +94,7 @@ main() {
 		info "  $STATE_DIR"
 	fi
 	info ""
-	info "Порты ufw закрыты: 80/tcp, 8088/tcp, 8443/tcp"
+	info "Порты ufw закрыты: 80/tcp, 443/tcp, 8088/tcp, 8443/tcp"
 	if [ "$REMOVE_XRAY" != "1" ]; then
 		info "Xray binary не удалялся. Чтобы удалить и его: REMOVE_XRAY=1"
 	fi

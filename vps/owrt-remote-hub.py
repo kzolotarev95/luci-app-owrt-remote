@@ -12,6 +12,7 @@ import secrets
 import select
 import signal
 import socket
+import ssl
 import sqlite3
 import struct
 import subprocess
@@ -30,6 +31,7 @@ DB_PATH = Path(os.environ.get("OWRT_REMOTE_DB", str(STATE_DIR / "hub.db")))
 AUTH_FILE = STATE_DIR / "hub-auth.json"
 SESSION_TOKEN_FILE = STATE_DIR / "hub-session.token"
 AGENT_TOKEN_FILE = STATE_DIR / "agent.token"
+ACME_WEBROOT = STATE_DIR / "acme-webroot"
 ONLINE_AFTER_SECONDS = int(os.environ.get("OWRT_REMOTE_ONLINE_AFTER", "75"))
 DEFAULT_VLESS_PORT = int(os.environ.get("OWRT_REMOTE_VLESS_PORT", "8443"))
 PBKDF2_ITERATIONS = 240000
@@ -1674,6 +1676,20 @@ class Handler(BaseHTTPRequestHandler):
     def clear_session_cookie(self):
         return f"{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"
 
+    def serve_acme_challenge(self, path):
+        prefix = "/.well-known/acme-challenge/"
+        token = urllib.parse.unquote(path[len(prefix):])
+        if not token or "/" in token or "\\" in token:
+            self.send_text(404, "not found")
+            return
+        challenge_path = ACME_WEBROOT / ".well-known" / "acme-challenge" / token
+        try:
+            body = challenge_path.read_bytes()
+        except OSError:
+            self.send_text(404, "not found")
+            return
+        self.send_bytes(200, body, "text/plain; charset=utf-8")
+
     def redirect(self, location, extra_headers=None):
         self.send_response(302)
         self.send_header("Location", location)
@@ -2026,6 +2042,9 @@ class Handler(BaseHTTPRequestHandler):
         path = self.parsed().path
         if path == "/health":
             self.send_json(200, {"ok": True})
+            return
+        if path.startswith("/.well-known/acme-challenge/"):
+            self.serve_acme_challenge(path)
             return
         if path == "/login":
             self.send_bytes(200, login_html().encode("utf-8"), "text/html; charset=utf-8")
@@ -2533,9 +2552,15 @@ def parse_extra_ports(value):
     return ports
 
 
-def make_http_server(app, host, port):
+def make_http_server(app, host, port, tls_cert="", tls_key=""):
     server = ThreadingHTTPServer((host, port), Handler)
     server.app = app
+    server.is_tls = False
+    if tls_cert and tls_key:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(tls_cert, tls_key)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        server.is_tls = True
     return server
 
 
@@ -2558,6 +2583,20 @@ def cmd_serve(args):
         thread = threading.Thread(target=extra_server.serve_forever, daemon=True)
         thread.start()
         print(f"{APP_NAME} also listening on http://{args.host}:{port}")
+    if args.tls_cert and args.tls_key:
+        for port in parse_extra_ports(args.tls_ports):
+            try:
+                tls_server = make_http_server(app, args.host, port, args.tls_cert, args.tls_key)
+            except OSError as exc:
+                print(f"WARNING: HTTPS port {port} not started: {exc}", file=sys.stderr)
+                continue
+            except ssl.SSLError as exc:
+                print(f"WARNING: HTTPS cert/key error: {exc}", file=sys.stderr)
+                continue
+            extra_servers.append(tls_server)
+            thread = threading.Thread(target=tls_server.serve_forever, daemon=True)
+            thread.start()
+            print(f"{APP_NAME} also listening on https://{args.host}:{port}")
     print(f"{APP_NAME} listening on http://{args.host}:{args.port}")
     print(f"HUB_LOGIN: {auth.get('username', 'admin')}")
     print(f"AGENT_TOKEN: {app.agent_token}")
@@ -2631,6 +2670,9 @@ def parser():
     serve.add_argument("--host", default=os.environ.get("OWRT_REMOTE_BIND", "0.0.0.0"))
     serve.add_argument("--port", type=int, default=int(os.environ.get("OWRT_REMOTE_PORT", "8088")))
     serve.add_argument("--extra-ports", default=os.environ.get("OWRT_REMOTE_EXTRA_PORTS", ""))
+    serve.add_argument("--tls-ports", default=os.environ.get("OWRT_REMOTE_TLS_PORTS", ""))
+    serve.add_argument("--tls-cert", default=os.environ.get("OWRT_REMOTE_TLS_CERT", ""))
+    serve.add_argument("--tls-key", default=os.environ.get("OWRT_REMOTE_TLS_KEY", ""))
     serve.add_argument("--public-url", default=os.environ.get("OWRT_REMOTE_PUBLIC_URL", ""))
     serve.set_defaults(func=cmd_serve)
 
