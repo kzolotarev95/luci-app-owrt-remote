@@ -39,6 +39,7 @@ PBKDF2_ITERATIONS = 240000
 MIN_PASSWORD_LENGTH = 4
 SESSION_COOKIE = "owrt_remote_session"
 ROUTER_COOKIE = "owrt_remote_router"
+CAPTCHA_TTL_SECONDS = 600
 LUCI_ABSOLUTE_ROOTS = ("/ubus", "/cgi-bin/luci", "/luci-static")
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 SSH_HTTP_SESSIONS = {}
@@ -167,6 +168,31 @@ def current_username():
         return load_auth().get("username", "admin")
     except Exception:
         return "admin"
+
+
+def captcha_challenge():
+    code = str(secrets.randbelow(9000) + 1000)
+    issued = str(now_ts())
+    nonce = secrets.token_urlsafe(8)
+    body = f"{issued}:{nonce}:{code}"
+    sig = hmac.new(session_token().encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+    token = base64.urlsafe_b64encode(f"{body}:{sig}".encode("utf-8")).decode("ascii")
+    return code, token
+
+
+def verify_captcha(token, answer):
+    try:
+        raw = base64.urlsafe_b64decode((token or "").encode("ascii")).decode("utf-8")
+        issued, nonce, code, sig = raw.split(":", 3)
+        body = f"{issued}:{nonce}:{code}"
+        expected = hmac.new(session_token().encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not secrets.compare_digest(sig, expected):
+            return False
+        if now_ts() - int(issued) > CAPTCHA_TTL_SECONDS:
+            return False
+        return secrets.compare_digest(str(answer or "").strip(), code)
+    except Exception:
+        return False
 
 
 def clean_router_id(value):
@@ -821,10 +847,10 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 .cards{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{position:relative;min-height:246px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}}.card::before{{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--green)}}.card.online{{border-color:rgba(34,197,94,.45);box-shadow:0 18px 46px rgba(0,0,0,.28),0 0 0 1px rgba(34,197,94,.10),0 0 34px rgba(34,197,94,.10)}}.card.off{{border-color:rgba(251,113,133,.42);box-shadow:0 18px 46px rgba(0,0,0,.28),0 0 0 1px rgba(251,113,133,.08),0 0 30px rgba(251,113,133,.08)}}.card.off::before{{background:var(--red)}}.card.warn::before{{background:var(--amber)}}.card.main{{grid-column:span 2}}
 @keyframes onlineGlow{{0%,100%{{transform:scale(.9);opacity:.55}}50%{{transform:scale(1.08);opacity:1}}}}@keyframes offlineGlow{{0%,100%{{transform:scale(.88);opacity:.34}}50%{{transform:scale(1.08);opacity:.9}}}}
 @keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
-.cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}.routerMark{{position:relative;display:grid;place-items:center;width:52px;height:52px;border-radius:8px;background:rgba(255,255,255,.08);overflow:hidden;box-shadow:0 0 24px rgba(34,211,238,.12)}}.routerMark::before{{content:"";position:absolute;inset:-45%;background:conic-gradient(from 0deg,transparent,rgba(34,211,238,.72),rgba(168,85,247,.62),rgba(251,191,36,.52),transparent);animation:routerHalo 5.8s linear infinite}}.routerMark::after{{content:"";position:absolute;inset:2px;border-radius:7px;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.05)),rgba(19,14,32,.95);border:1px solid rgba(255,255,255,.16)}}.routerIcon{{position:relative;z-index:1;width:30px;height:20px;border:2px solid #fbbf24;border-radius:6px;box-shadow:0 0 18px rgba(251,191,36,.24)}}.routerIcon::before,.routerIcon::after{{content:"";position:absolute;top:-10px;width:10px;height:10px;border-top:2px solid #a5f3fc}}.routerIcon::before{{left:1px;transform:rotate(-34deg)}}.routerIcon::after{{right:1px;transform:rotate(34deg)}}.routerIcon span{{position:absolute;left:5px;right:5px;bottom:4px;display:flex;justify-content:space-between}}.routerIcon span::before,.routerIcon span::after{{content:"";width:4px;height:4px;border-radius:50%;background:#22c55e;box-shadow:0 0 10px #22c55e;animation:statusPulse 1.8s ease-in-out infinite}}@keyframes routerHalo{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}
+.cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}.routerMark{{position:relative;display:grid;place-items:center;width:52px;height:52px;border-radius:8px;background:rgba(255,255,255,.08);overflow:hidden;box-shadow:0 0 24px rgba(34,211,238,.12)}}.routerMark::before{{content:"";position:absolute;inset:-45%;background:conic-gradient(from 0deg,transparent,rgba(34,211,238,.72),rgba(168,85,247,.62),rgba(251,191,36,.52),transparent);animation:routerHalo 5.8s linear infinite}}.routerMark::after{{content:"";position:absolute;inset:2px;border-radius:7px;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.05)),rgba(19,14,32,.95);border:1px solid rgba(255,255,255,.16)}}.routerIcon{{position:relative;z-index:1;width:30px;height:20px;border:2px solid #fbbf24;border-radius:6px;box-shadow:0 0 18px rgba(251,191,36,.24)}}.routerIcon::before,.routerIcon::after{{content:"";position:absolute;top:-10px;width:10px;height:10px;border-top:2px solid #a5f3fc}}.routerIcon::before{{left:1px;transform:rotate(-34deg)}}.routerIcon::after{{right:1px;transform:rotate(34deg)}}.routerIcon span{{position:absolute;left:5px;right:5px;bottom:4px;display:flex;justify-content:space-between}}.routerIcon span::before,.routerIcon span::after{{content:"";width:4px;height:4px;border-radius:50%;background:#22c55e;box-shadow:0 0 10px #22c55e;animation:statusPulse 1.8s ease-in-out infinite}}.card.off .routerIcon span::before,.card.off .routerIcon span::after{{background:#fb7185;box-shadow:0 0 10px #fb7185}}@keyframes routerHalo{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
 .metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong{{color:#fecdd3}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
-.brandPanel{{display:grid;grid-template-columns:repeat(2,minmax(0,132px));gap:8px}}.brandPanel .appBanner{{grid-column:1/-1;width:100%;min-width:0}}.brandPanel .links{{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:0}}.brandPanel .links a{{width:100%;min-width:0}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.routerMark{{margin:0 auto}}.tagRow,.actions{{justify-content:center}}.name{{white-space:normal;color:#fbbf24;text-shadow:0 0 18px rgba(251,191,36,.22)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
+.brandPanel{{display:grid;grid-template-columns:repeat(2,minmax(0,132px));gap:8px}}.brandPanel .appBanner{{grid-column:1/-1;width:100%;min-width:0}}.brandPanel .links{{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:0}}.brandPanel .links a{{width:100%;min-width:0}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.routerMark{{margin:0 auto}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:100%;padding:8px 12px;border:1px solid rgba(251,191,36,.30);border-radius:8px;background:linear-gradient(180deg,rgba(251,191,36,.12),rgba(255,255,255,.045));white-space:normal;color:#fbbf24;text-shadow:0 0 18px rgba(251,191,36,.22)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar,.authGrid{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{align-self:flex-start;flex-wrap:wrap;padding-top:0;justify-content:flex-start}}}}
 @media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.name{{white-space:normal;font-size:18px}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
@@ -1253,16 +1279,16 @@ def ssh_terminal_html(row, ws_token):
 body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radial-gradient(circle at 16% 10%,rgba(168,85,247,.45),transparent 30%),radial-gradient(circle at 88% 16%,rgba(59,130,246,.28),transparent 32%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:18px}}
 .wrap{{width:100%;max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:10px;min-width:0}}
 .top{{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:42px}}
-.sshTitle{{display:flex;align-items:center;gap:10px;flex-wrap:wrap}}h1{{margin:0;font-size:18px;line-height:1.15}}.muted{{color:var(--muted)}}.chips{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}.chip{{border:1px solid var(--line);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.07);color:var(--muted);font-size:12px;font-weight:800}}
+.sshTitle{{display:flex;align-items:center;gap:10px;flex-wrap:wrap}}h1{{margin:0;font-size:18px;line-height:1.15}}.muted{{color:var(--muted)}}
 .badge,.btn{{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 12px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:850;font-size:13px}}
 .dot{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green)}}
 .termBox{{width:100%;max-width:100%;min-width:0;height:min(520px,calc(100vh - 112px));min-height:320px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}}
-.bar{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05)}}.terminalHint{{color:var(--muted);font-size:12px;font-weight:750}}.termActions{{display:flex;align-items:center;gap:7px;flex-wrap:wrap}}.miniBtn{{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;padding:6px 10px;font:800 12px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}}.miniBtn:hover{{background:rgba(255,255,255,.14)}}
+.bar{{display:flex;align-items:center;justify-content:center;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05)}}
 .keySink{{position:fixed;left:-1000px;top:-1000px;width:1px;height:1px;opacity:.01;border:0;padding:0;background:transparent;color:transparent;resize:none;outline:none}}
 .mobileInput{{display:none;gap:8px;padding:8px;border-top:1px solid var(--line);background:rgba(255,255,255,.045)}}.mobileInput input{{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.76);color:var(--text);font:14px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;outline:none}}.mobileInput input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12)}}.mobileInput button{{border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;white-space:nowrap}}
 #term{{flex:1 1 auto;min-width:0;min-height:0;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;outline:none;cursor:text;background:rgba(0,0,0,.42);font:13px/1.34 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff;user-select:text;-webkit-user-select:text;touch-action:pan-y;scrollbar-width:thin;scrollbar-color:rgba(168,85,247,.72) rgba(255,255,255,.06)}}#term::selection,#term *::selection{{background:rgba(34,211,238,.34);color:#fff}}#term:focus{{box-shadow:inset 0 0 0 1px rgba(34,211,238,.30)}}#term::-webkit-scrollbar{{width:12px;height:12px}}#term::-webkit-scrollbar-track{{background:rgba(255,255,255,.06)}}#term::-webkit-scrollbar-thumb{{background:linear-gradient(180deg,#7c3aed,#22d3ee);border-radius:999px;border:3px solid rgba(10,6,18,.96)}}#term::-webkit-scrollbar-thumb:hover{{background:linear-gradient(180deg,#a855f7,#67e8f9)}}.term-error{{color:#fb7185;font-weight:900}}.term-warn{{color:#fde68a;font-weight:850}}.term-ok{{color:#bbf7d0;font-weight:850}}.term-info{{color:#67e8f9;font-weight:850}}.term-prompt{{color:#86efac;font-weight:900}}.term-metric{{color:#93c5fd;font-weight:850}}.term-muted{{color:#c4b5fd}}.term-inverse{{display:inline-block;background:#ddd6fe;color:#13091f;border-radius:3px;padding:0 3px;font-weight:900}}
 .bad{{color:#fecdd3}}
-@media(max-width:980px),(pointer:coarse){{html{{min-height:100%;overflow-x:hidden}}body{{min-height:100svh;padding:4px;font-size:13px;background-attachment:scroll;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain}}.wrap{{width:100%;max-width:none;gap:5px;min-height:0;overflow:visible}}.top{{align-items:stretch;flex-direction:column;gap:5px;min-height:0}}.sshTitle{{align-items:flex-start;flex-direction:column;gap:4px}}h1{{font-size:15px}}.chips{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:4px}}.chip{{text-align:center;padding:4px 5px;font-size:10px;overflow:hidden;text-overflow:ellipsis}}.btn{{width:100%;min-width:0;padding:7px 9px}}.termBox{{height:calc(100svh - 166px);min-height:520px;max-height:720px;border-radius:6px}}.bar{{flex:0 0 auto;align-items:stretch;flex-direction:column;gap:5px;padding:5px}}.terminalHint{{display:none}}.badge{{width:100%;justify-content:center;padding:6px 9px;font-size:12px}}.termActions{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:4px}}.miniBtn{{padding:6px 5px;font-size:10px}}#term{{font-size:11.5px;line-height:1.23;padding:8px;min-height:0;overflow-x:hidden}}.mobileInput{{flex:0 0 auto;display:grid;grid-template-columns:1fr 72px 84px;gap:5px;padding:5px}}.mobileInput input{{grid-column:1/-1;padding:9px 10px;font-size:15px}}.mobileInput .pasteBtn,.mobileInput .enterBtn,.mobileInput .sendBtn{{grid-column:auto;padding:9px 7px;font-size:12px}}}}
+@media(max-width:980px),(pointer:coarse){{html{{min-height:100%;overflow-x:hidden}}body{{min-height:100svh;padding:4px;font-size:13px;background-attachment:scroll;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain}}.wrap{{width:100%;max-width:none;gap:5px;min-height:0;overflow:visible}}.top{{align-items:stretch;flex-direction:column;gap:5px;min-height:0}}.sshTitle{{align-items:flex-start;flex-direction:column;gap:4px}}h1{{font-size:15px}}.btn{{width:100%;min-width:0;padding:7px 9px}}.termBox{{height:calc(100svh - 128px);min-height:520px;max-height:720px;border-radius:6px}}.bar{{flex:0 0 auto;padding:5px}}.badge{{width:100%;justify-content:center;padding:6px 9px;font-size:12px}}#term{{font-size:11.5px;line-height:1.23;padding:8px;min-height:0;overflow-x:hidden}}.mobileInput{{flex:0 0 auto;display:grid;grid-template-columns:1fr 72px 84px;gap:5px;padding:5px}}.mobileInput input{{grid-column:1/-1;padding:9px 10px;font-size:15px}}.mobileInput .pasteBtn,.mobileInput .enterBtn,.mobileInput .sendBtn{{grid-column:auto;padding:9px 7px;font-size:12px}}}}
 @media(max-width:420px){{.mobileInput{{grid-template-columns:1fr 70px 82px}}.mobileInput button{{width:100%}}}}
 </style>
 </head>
@@ -1271,23 +1297,12 @@ body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radi
   <div class="top">
     <div class="sshTitle">
       <h1>SSH · {safe_name}</h1>
-      <div class="chips">
-        <span class="chip">{safe_id}</span>
-        <span class="chip">VPS:{ssh_port}</span>
-        <span class="chip">OpenWrt:22</span>
-      </div>
     </div>
     <a class="btn" href="/">Назад в Hub</a>
   </div>
   <section class="termBox">
     <div class="bar">
       <span class="badge"><i class="dot"></i>Terminal</span>
-      <span class="terminalHint">Кликни в терминал, вставляй Ctrl+V, Enter отправляет</span>
-      <div class="termActions">
-        <button class="miniBtn" id="copyTerm" type="button">Копировать</button>
-        <button class="miniBtn" id="scrollTop" type="button">Вверх</button>
-        <button class="miniBtn" id="scrollBottom" type="button">Вниз</button>
-      </div>
     </div>
     <pre id="term" tabindex="0"></pre>
     <textarea id="keySink" class="keySink" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
@@ -1301,9 +1316,6 @@ body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radi
 </main>
 <script>
 const term = document.getElementById('term');
-const copyTerm = document.getElementById('copyTerm');
-const scrollTopBtn = document.getElementById('scrollTop');
-const scrollBottomBtn = document.getElementById('scrollBottom');
 const cmdInput = document.getElementById('cmdInput');
 const cmdSend = document.getElementById('cmdSend');
 const cmdPaste = document.getElementById('cmdPaste');
@@ -1313,6 +1325,7 @@ let ws;
 let httpSid = '';
 let httpPollTimer = 0;
 let terminalMode = 'ws';
+let terminalPlain = '';
 const isMobileTerminal = window.matchMedia('(max-width: 680px)').matches || /Android|iPhone|iPad|iPod|Mobile|Telegram/i.test(navigator.userAgent);
 let lastTerminalSelection = '';
 let lastTerminalSelectionAt = 0;
@@ -1341,6 +1354,18 @@ function cleanTerminal(text) {{
   value = value.replace(/(?:\\r?\\n){{3,}}/g, '\\r\\n\\r\\n');
   return {{text: value, clearScreen}};
 }}
+function applyTerminalControls(current, chunk) {{
+  let out = String(current || '');
+  const text = String(chunk || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  for (const ch of text) {{
+    if (ch === '\b' || ch === '\x7f') {{
+      if (out && !out.endsWith('\n')) out = out.slice(0, -1);
+      continue;
+    }}
+    out += ch;
+  }}
+  return out;
+}}
 function highlightTerminal(text) {{
   let html = escapeHtmlText(text);
   html = html.replace(/\\uE000([\\s\\S]*?)\\uE001/g, '<span class="term-inverse">$1</span>');
@@ -1355,8 +1380,9 @@ function highlightTerminal(text) {{
 }}
 function write(text) {{
   const cleaned = cleanTerminal(text);
-  if (cleaned.clearScreen) term.innerHTML = '';
-  term.insertAdjacentHTML('beforeend', highlightTerminal(cleaned.text));
+  if (cleaned.clearScreen) terminalPlain = '';
+  terminalPlain = applyTerminalControls(terminalPlain, cleaned.text);
+  term.innerHTML = highlightTerminal(terminalPlain);
   term.scrollTop = term.scrollHeight;
 }}
 function send(text) {{
@@ -1452,8 +1478,7 @@ async function copyText(text) {{
   }}
 }}
 function flashCopyLabel(ok, selected) {{
-  copyTerm.textContent = ok ? (selected ? 'Выделенное скопировано' : 'Консоль скопирована') : 'Не скопировано';
-  window.setTimeout(() => {{ copyTerm.textContent = 'Копировать'; }}, 1300);
+  if (!ok) return;
 }}
 function focusTerminal() {{
   term.focus({{preventScroll: true}});
@@ -1657,22 +1682,12 @@ document.addEventListener('paste', (ev) => {{
 }});
 document.addEventListener('keydown', (ev) => {{
   if (isEditableTarget(ev.target)) return;
+  if ((ev.ctrlKey || ev.metaKey) && String(ev.key || '').toLowerCase() === 'c' && terminalSelectionText()) {{
+    handleTerminalKey(ev);
+    return;
+  }}
   focusTerminal();
   handleTerminalKey(ev);
-}});
-copyTerm.addEventListener('click', async () => {{
-  const selected = recentTerminalSelection();
-  const text = selected || term.textContent || '';
-  const ok = await copyText(text);
-  flashCopyLabel(ok, Boolean(selected));
-}});
-scrollTopBtn.addEventListener('click', () => {{
-  term.scrollTo({{top: 0, behavior: 'smooth'}});
-  term.focus();
-}});
-scrollBottomBtn.addEventListener('click', () => {{
-  term.scrollTo({{top: term.scrollHeight, behavior: 'smooth'}});
-  term.focus();
 }});
 cmdSend.addEventListener('click', sendCommandInput);
 cmdEnter.addEventListener('click', async () => {{
@@ -1700,6 +1715,9 @@ window.setTimeout(focusTerminal, 80);
 
 def login_html(error=""):
     error_html = f"<div class=\"err\">{html.escape(error)}</div>" if error else ""
+    captcha_code, captcha_token = captcha_challenge()
+    safe_captcha_token = html.escape(captcha_token, quote=True)
+    safe_captcha_code = html.escape(captcha_code, quote=True)
     return f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -1713,25 +1731,23 @@ body{{position:relative;min-height:100vh;margin:0;overflow:hidden;background-col
 body::before{{content:"";position:fixed;inset:-28%;pointer-events:none;background:conic-gradient(from 0deg at 50% 50%,rgba(168,85,247,.06),rgba(236,72,153,.30),rgba(59,130,246,.22),rgba(34,211,238,.16),rgba(168,85,247,.06));filter:blur(58px);opacity:.74;animation:auraSpin 40s linear infinite}}
 @keyframes bgFlow{{0%{{background-position:0% 0%,100% 0%,50% 100%,0 0,0 0,0 0}}50%{{background-position:24% 18%,62% 28%,38% 82%,0 0,15px 24px,24px 15px}}100%{{background-position:46% 30%,42% 42%,74% 62%,0 0,30px 0,0 30px}}}}
 @keyframes auraSpin{{from{{transform:rotate(0deg) scale(1)}}to{{transform:rotate(360deg) scale(1.08)}}}}
-.login{{position:relative;z-index:1;width:min(360px,100%);padding:16px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.40);backdrop-filter:blur(14px)}}
-.brand{{display:flex;gap:10px;align-items:center;margin-bottom:12px}}
-.loginLogo{{position:relative;width:58px;height:58px;margin:0 auto 10px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,#22d3ee,#7c3aed 58%,#22c55e);box-shadow:0 14px 34px rgba(124,58,237,.32),0 0 26px rgba(34,211,238,.16);overflow:hidden}}.loginLogo::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.28),transparent);transform:translateX(-120%);animation:bannerShine 5.8s ease-in-out infinite}}.loginLogo span{{position:relative;width:30px;height:20px;border:2px solid #fff;border-radius:6px;box-shadow:0 0 18px rgba(255,255,255,.22)}}.loginLogo span::before,.loginLogo span::after{{content:"";position:absolute;top:-10px;width:10px;height:10px;border-top:2px solid #fff}}.loginLogo span::before{{left:1px;transform:rotate(-34deg)}}.loginLogo span::after{{right:1px;transform:rotate(34deg)}}
-h1{{margin:0;font-size:18px;line-height:1.1;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 12px;border:1px solid rgba(34,211,238,.34);border-radius:8px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));box-shadow:0 10px 24px rgba(124,58,237,.18),inset 0 1px 0 rgba(255,255,255,.10);font-size:14px;overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.brand{{display:grid;grid-template-columns:72px minmax(0,1fr);align-items:start}}.brand>div:last-child{{min-width:0}}.brand .appBanner{{width:100%;height:34px}}@keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
+.login{{position:relative;z-index:1;width:min(352px,100%);min-height:352px;padding:16px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.40);backdrop-filter:blur(14px)}}
+.brand{{display:block;text-align:center;margin-bottom:14px}}
+h1{{margin:0;font-size:18px;line-height:1.1;letter-spacing:0}}.appBanner{{position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:54px;padding:10px 12px;border:1px solid rgba(34,211,238,.34);border-radius:8px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));box-shadow:0 10px 24px rgba(124,58,237,.18),inset 0 1px 0 rgba(255,255,255,.10);font-size:17px;overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}@keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 p{{margin:3px 0 0;color:var(--muted)}}
 label{{display:block;margin:10px 0 5px;font-weight:850;color:#ede9fe;text-align:center}}
 input{{width:100%;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.74);color:var(--text);outline:none;text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
 input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.04)}}
+.captcha{{margin-top:11px;border:1px solid var(--line);border-radius:8px;padding:10px;background:rgba(255,255,255,.07);text-align:center}}.captcha span{{display:block;color:var(--muted);font-size:12px;font-weight:800}}.captcha b{{display:block;margin-top:3px;color:#fde68a;font:950 26px/1.05 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:7px;text-indent:7px;text-shadow:0 0 18px rgba(251,191,36,.22)}}
 button{{width:100%;margin-top:13px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;cursor:pointer;box-shadow:0 14px 30px rgba(124,58,237,.28)}}
 button:hover{{filter:brightness(1.06)}}
 .err{{margin:0 0 12px;padding:11px 12px;border:1px solid rgba(251,113,133,.45);border-radius:8px;background:rgba(251,113,133,.14);color:#fecdd3;font-weight:800}}
-.login .brand{{display:block;text-align:center;margin-bottom:14px}}.login .brand .appBanner{{width:100%;height:40px;font-size:15px}}
-@media(max-width:520px){{body{{padding:14px}}.login{{padding:15px}}h1{{font-size:22px}}.login .brand .appBanner{{height:38px}}}}
+@media(max-width:520px){{body{{padding:14px}}.login{{padding:15px;min-height:0}}h1{{font-size:22px}}.login .brand .appBanner{{min-height:50px}}}}
 </style>
 </head>
 <body>
 <form class="login" method="post" action="/login">
   <div class="brand">
-    <div class="loginLogo"><span></span></div>
     <h1 class="appBanner"><span>OpenWrt Remote Hub</span></h1>
   </div>
   {error_html}
@@ -1739,6 +1755,10 @@ button:hover{{filter:brightness(1.06)}}
   <input id="hubUsername" name="username" autocomplete="username" autofocus required>
   <label for="hubPassword">Пароль</label>
   <input id="hubPassword" name="password" type="password" autocomplete="current-password" required>
+  <div class="captcha"><span>Код защиты</span><b>{safe_captcha_code}</b></div>
+  <input name="captcha_token" type="hidden" value="{safe_captcha_token}">
+  <label for="hubCaptcha">Повтори цифры</label>
+  <input id="hubCaptcha" name="captcha_answer" inputmode="numeric" pattern="[0-9]*" autocomplete="off" required>
   <button>Войти</button>
 </form>
 </body>
@@ -1887,6 +1907,11 @@ class Handler(BaseHTTPRequestHandler):
         payload = self.read_payload()
         username = payload.get("username", "")
         password = payload.get("password", "")
+        captcha_token = payload.get("captcha_token", "")
+        captcha_answer = payload.get("captcha_answer", "")
+        if not verify_captcha(captcha_token, captcha_answer):
+            self.send_bytes(401, login_html("Неверный код защиты").encode("utf-8"), "text/html; charset=utf-8")
+            return
         if verify_login(username, password):
             self.redirect("/", [("Set-Cookie", self.session_cookie())])
             return
