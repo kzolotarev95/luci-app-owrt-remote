@@ -26,7 +26,7 @@ config_enabled() {
 stop_xray_processes() {
 	local config pids pid
 	config="$(uci_get xray_config /etc/xray/owrt-remote-client.json)"
-	pids="$((ps w 2>/dev/null || ps 2>/dev/null) | grep '[x]ray' | grep -F "$config" | awk '{print $1}')"
+	pids="$( (ps w 2>/dev/null || ps 2>/dev/null) | grep '[x]ray' | grep -F "$config" | awk '{print $1}')"
 	for pid in $pids; do
 		kill "$pid" >/dev/null 2>&1 || true
 	done

@@ -2,7 +2,7 @@
 
 KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
 AGENT="${AGENT:-/usr/sbin/owrt-remote}"
-OWRT_REMOTE_UI_VERSION="2026-06-30-stop-fix-centered-v19"
+OWRT_REMOTE_UI_VERSION="2026-06-30-init-ash-fix-v20"
 PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
 RESULT_TITLE=""
 RESULT_BODY=""
@@ -268,12 +268,11 @@ EOF
 }
 
 render_page() {
-	local key router_id router_name hub_url vps_host service_state service_tone xray_state xray_tone enabled_checked status_text
+	local key router_id router_name hub_url service_state service_tone xray_state xray_tone enabled_checked status_text
 	key="$(param key)"
 	router_id="$(uci_get router_id main)"
 	router_name="$(uci_get router_name "$router_id")"
 	hub_url="$(uci_get hub_url '')"
-	vps_host="$(uci_get vps_host '')"
 
 	if service_enabled; then
 		service_state="enabled"
@@ -363,7 +362,6 @@ form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr
 EOF
 	metric "procd service" "$service_state" "$service_tone"
 	metric "xray tunnel" "$xray_state" "$xray_tone"
-	metric "VPS host" "${vps_host:-не задан}" ""
 	if [ -n "$hub_url" ]; then
 		metric_link "Hub URL" "$hub_url" "$hub_url"
 	else
