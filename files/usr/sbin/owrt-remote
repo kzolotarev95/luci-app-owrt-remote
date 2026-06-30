@@ -179,16 +179,30 @@ ps_all() {
 	ps w 2>/dev/null || ps 2>/dev/null || true
 }
 
-xray_running() {
-	local config
+xray_pids() {
+	local config cmdline cmd pid
 	config="$(uci_get xray_config /etc/xray/owrt-remote-client.json)"
-	ps_all | grep '[x]ray' | grep -F "$config" >/dev/null 2>&1
+	[ -n "$config" ] || return 0
+	for cmdline in /proc/[0-9]*/cmdline; do
+		[ -r "$cmdline" ] || continue
+		cmd="$(tr '\000' ' ' <"$cmdline" 2>/dev/null || true)"
+		case "$cmd" in
+			*xray*"$config"*|*xray-core*"$config"*)
+				pid="${cmdline%/cmdline}"
+				pid="${pid##*/}"
+				printf '%s\n' "$pid"
+				;;
+		esac
+	done
+}
+
+xray_running() {
+	[ -n "$(xray_pids)" ]
 }
 
 stop_xray() {
-	local config pids pid alive
-	config="$(uci_get xray_config /etc/xray/owrt-remote-client.json)"
-	pids="$(ps_all | grep '[x]ray' | grep -F "$config" | awk '{print $1}')"
+	local pids pid alive
+	pids="$(xray_pids)"
 	if [ -z "$pids" ]; then
 		printf '%s\n' "OK: Xray уже остановлен"
 		return 0

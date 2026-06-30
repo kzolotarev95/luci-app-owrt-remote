@@ -2,7 +2,7 @@
 
 KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
 AGENT="${AGENT:-/usr/sbin/owrt-remote}"
-OWRT_REMOTE_UI_VERSION="2026-06-30-init-ash-fix-v20"
+OWRT_REMOTE_UI_VERSION="2026-06-30-stop-sync-v21"
 PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
 RESULT_TITLE=""
 RESULT_BODY=""
@@ -190,6 +190,7 @@ run_action() {
 			/etc/init.d/owrt-remote stop >>"$output" 2>&1 || rc=$?
 			"$AGENT" stop-xray >>"$output" 2>&1 || rc=$?
 			/etc/init.d/owrt-remote disable >>"$output" 2>&1 || rc=$?
+			"$AGENT" heartbeat >>"$output" 2>&1 || true
 			set_result "Сервис остановлен" "$(cat "$output")" "warn"
 			;;
 		restart)

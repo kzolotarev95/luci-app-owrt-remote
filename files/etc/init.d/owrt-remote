@@ -23,10 +23,26 @@ config_enabled() {
 	esac
 }
 
-stop_xray_processes() {
-	local config pids pid
+xray_pids() {
+	local config cmdline cmd pid
 	config="$(uci_get xray_config /etc/xray/owrt-remote-client.json)"
-	pids="$( (ps w 2>/dev/null || ps 2>/dev/null) | grep '[x]ray' | grep -F "$config" | awk '{print $1}')"
+	[ -n "$config" ] || return 0
+	for cmdline in /proc/[0-9]*/cmdline; do
+		[ -r "$cmdline" ] || continue
+		cmd="$(tr '\000' ' ' <"$cmdline" 2>/dev/null || true)"
+		case "$cmd" in
+			*xray*"$config"*|*xray-core*"$config"*)
+				pid="${cmdline%/cmdline}"
+				pid="${pid##*/}"
+				printf '%s\n' "$pid"
+				;;
+		esac
+	done
+}
+
+stop_xray_processes() {
+	local pids pid
+	pids="$(xray_pids)"
 	for pid in $pids; do
 		kill "$pid" >/dev/null 2>&1 || true
 	done
