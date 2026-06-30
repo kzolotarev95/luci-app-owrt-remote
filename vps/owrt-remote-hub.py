@@ -34,6 +34,7 @@ AGENT_TOKEN_FILE = STATE_DIR / "agent.token"
 ACME_WEBROOT = STATE_DIR / "acme-webroot"
 ONLINE_AFTER_SECONDS = int(os.environ.get("OWRT_REMOTE_ONLINE_AFTER", "75"))
 DEFAULT_VLESS_PORT = int(os.environ.get("OWRT_REMOTE_VLESS_PORT", "8443"))
+REQUEST_QUEUE_SIZE = int(os.environ.get("OWRT_REMOTE_REQUEST_QUEUE_SIZE", "128"))
 PBKDF2_ITERATIONS = 240000
 MIN_PASSWORD_LENGTH = 4
 SESSION_COOKIE = "owrt_remote_session"
@@ -2691,14 +2692,24 @@ def parse_extra_ports(value):
     return ports
 
 
+class HubHTTPServer(ThreadingHTTPServer):
+    request_queue_size = REQUEST_QUEUE_SIZE
+    daemon_threads = True
+    allow_reuse_address = True
+
+
 def make_http_server(app, host, port, tls_cert="", tls_key=""):
-    server = ThreadingHTTPServer((host, port), Handler)
+    server = HubHTTPServer((host, port), Handler)
     server.app = app
     server.is_tls = False
     if tls_cert and tls_key:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(tls_cert, tls_key)
-        server.socket = context.wrap_socket(server.socket, server_side=True)
+        server.socket = context.wrap_socket(
+            server.socket,
+            server_side=True,
+            do_handshake_on_connect=False,
+        )
         server.is_tls = True
     return server
 
