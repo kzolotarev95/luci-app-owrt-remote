@@ -2,6 +2,7 @@
 set -u
 
 APP_NAME="OpenWrt Remote Hub"
+INSTALLER_VERSION="2026-06-30-health-wait-v2"
 RAW_BASE="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 STATE_DIR="${OWRT_REMOTE_STATE_DIR:-/var/lib/owrt-remote}"
 HUB_LOGIN="${HUB_LOGIN:-admin}"
@@ -70,9 +71,10 @@ install_xray_binary() {
 }
 
 install_files() {
+	cache_bust="$(date +%s)"
 	$SUDO mkdir -p /opt/owrt-remote "$STATE_DIR" /etc/xray
-	$SUDO wget -O /opt/owrt-remote/owrt-remote-hub.py "$RAW_BASE/vps/owrt-remote-hub.py"
-	$SUDO wget -O /etc/systemd/system/owrt-remote.service "$RAW_BASE/vps/owrt-remote.service"
+	$SUDO wget -O /opt/owrt-remote/owrt-remote-hub.py "$RAW_BASE/vps/owrt-remote-hub.py?v=$cache_bust"
+	$SUDO wget -O /etc/systemd/system/owrt-remote.service "$RAW_BASE/vps/owrt-remote.service?v=$cache_bust"
 	$SUDO chmod +x /opt/owrt-remote/owrt-remote-hub.py
 }
 
@@ -168,6 +170,7 @@ print_result() {
 
 main() {
 	info "Ставлю $APP_NAME..."
+	info "Installer: $INSTALLER_VERSION"
 	install_packages
 	need_cmd curl
 	need_cmd wget

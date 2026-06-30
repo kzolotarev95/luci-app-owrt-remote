@@ -79,9 +79,9 @@ flowchart LR
 
 | Задача | Где запускать | Команда |
 | --- | --- | --- |
-| Поставить Hub | VPS | `curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh \| sudo sh` |
+| Поставить Hub | VPS | `curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" \| sudo sh` |
 | Поставить агент | OpenWrt | `wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" \| sh` |
-| Удалить Hub полностью | VPS | `curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh \| sudo sh` |
+| Удалить Hub полностью | VPS | `curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" \| sudo sh` |
 | Удалить агент полностью | OpenWrt | `wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh?v=$(date +%s)" \| PURGE=1 sh` |
 
 ## Быстрая установка VPS
@@ -91,7 +91,7 @@ flowchart LR
 Самый простой вариант - одна команда. Она поставит зависимости, скачает Hub, запустит сервис, откроет порты в `ufw` и в конце покажет ссылку панели и вход `admin/admin`.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh | sudo sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh
 ```
 
 После успешной установки в конце будет примерно так:
@@ -108,10 +108,19 @@ OpenWrt Remote Hub установлен
   password: admin
 ```
 
+В свежем установщике в начале вывода должно быть:
+
+```text
+Installer: 2026-06-30-health-wait-v2
+Жду запуск Hub...
+```
+
+Если этих строк нет, значит GitHub raw/CDN отдал старый кеш. Запусти команду установки именно с `?v=$(date +%s)`, как в примере выше.
+
 Если хочешь явно указать IP или домен:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh | sudo sh -s -- YOUR_VPS_IP
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh -s -- YOUR_VPS_IP
 ```
 
 Если ставишь повторно и хочешь снова сбросить вход на `admin/admin`, ничего дополнительно делать не надо: установщик по умолчанию выставляет `admin/admin`.
@@ -119,7 +128,7 @@ curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 Если не хочешь сбрасывать текущий пароль:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh | sudo env RESET_LOGIN=0 sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo env RESET_LOGIN=0 sh
 ```
 
 Ручная установка, если нужна:
@@ -471,7 +480,7 @@ http://YOUR_VPS_IP:8088/
 Одна команда на VPS:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh | sudo sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" | sudo sh
 ```
 
 Что удалится:
@@ -486,13 +495,13 @@ curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 Если хочешь удалить Hub, но оставить базу роутеров:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh | sudo env PURGE=0 sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" | sudo env PURGE=0 sh
 ```
 
 Если хочешь дополнительно удалить сам Xray binary с VPS:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh | sudo env REMOVE_XRAY=1 sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" | sudo env REMOVE_XRAY=1 sh
 ```
 
 ### Удалить агент с OpenWrt полностью
