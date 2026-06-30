@@ -1240,10 +1240,11 @@ body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radi
 .sshTitle{{display:flex;align-items:center;gap:10px;flex-wrap:wrap}}h1{{margin:0;font-size:18px;line-height:1.15}}.muted{{color:var(--muted)}}.chips{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}.chip{{border:1px solid var(--line);border-radius:999px;padding:6px 10px;background:rgba(255,255,255,.07);color:var(--muted);font-size:12px;font-weight:800}}
 .badge,.btn{{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 12px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:850;font-size:13px}}
 .dot{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green)}}
-.termBox{{height:min(560px,calc(100vh - 112px));min-height:340px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}}
-.bar{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05)}}.termActions{{display:flex;align-items:center;gap:7px;flex-wrap:wrap}}.miniBtn{{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;padding:6px 10px;font:800 12px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}}.miniBtn:hover{{background:rgba(255,255,255,.14)}}
-.mobileInput{{display:flex;gap:8px;padding:8px;border-top:1px solid var(--line);background:rgba(255,255,255,.045)}}.mobileInput input{{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.76);color:var(--text);font:14px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;outline:none}}.mobileInput input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12)}}.mobileInput button{{border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;white-space:nowrap}}
-#term{{flex:1;min-height:0;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;outline:none;background:rgba(0,0,0,.42);font:13px/1.34 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff;scrollbar-width:thin;scrollbar-color:rgba(168,85,247,.72) rgba(255,255,255,.06)}}#term::-webkit-scrollbar{{width:12px;height:12px}}#term::-webkit-scrollbar-track{{background:rgba(255,255,255,.06)}}#term::-webkit-scrollbar-thumb{{background:linear-gradient(180deg,#7c3aed,#22d3ee);border-radius:999px;border:3px solid rgba(10,6,18,.96)}}#term::-webkit-scrollbar-thumb:hover{{background:linear-gradient(180deg,#a855f7,#67e8f9)}}.term-error{{color:#fb7185;font-weight:900}}.term-warn{{color:#fde68a;font-weight:850}}.term-ok{{color:#bbf7d0;font-weight:850}}.term-info{{color:#67e8f9;font-weight:850}}.term-prompt{{color:#86efac;font-weight:900}}.term-metric{{color:#93c5fd;font-weight:850}}.term-muted{{color:#c4b5fd}}.term-inverse{{display:inline-block;background:#ddd6fe;color:#13091f;border-radius:3px;padding:0 3px;font-weight:900}}
+.termBox{{height:min(520px,calc(100vh - 112px));min-height:320px;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}}
+.bar{{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05)}}.terminalHint{{color:var(--muted);font-size:12px;font-weight:750}}.termActions{{display:flex;align-items:center;gap:7px;flex-wrap:wrap}}.miniBtn{{border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;padding:6px 10px;font:800 12px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}}.miniBtn:hover{{background:rgba(255,255,255,.14)}}
+.keySink{{position:fixed;left:-1000px;top:-1000px;width:1px;height:1px;opacity:.01;border:0;padding:0;background:transparent;color:transparent;resize:none;outline:none}}
+.mobileInput{{display:none;gap:8px;padding:8px;border-top:1px solid var(--line);background:rgba(255,255,255,.045)}}.mobileInput input{{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.76);color:var(--text);font:14px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;outline:none}}.mobileInput input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12)}}.mobileInput button{{border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;white-space:nowrap}}
+#term{{flex:1;min-height:0;margin:0;padding:12px;overflow:auto;white-space:pre-wrap;word-break:break-word;outline:none;cursor:text;background:rgba(0,0,0,.42);font:13px/1.34 "Cascadia Mono","Consolas","Liberation Mono",monospace;color:#e9d5ff;user-select:text;scrollbar-width:thin;scrollbar-color:rgba(168,85,247,.72) rgba(255,255,255,.06)}}#term:focus{{box-shadow:inset 0 0 0 1px rgba(34,211,238,.30)}}#term::-webkit-scrollbar{{width:12px;height:12px}}#term::-webkit-scrollbar-track{{background:rgba(255,255,255,.06)}}#term::-webkit-scrollbar-thumb{{background:linear-gradient(180deg,#7c3aed,#22d3ee);border-radius:999px;border:3px solid rgba(10,6,18,.96)}}#term::-webkit-scrollbar-thumb:hover{{background:linear-gradient(180deg,#a855f7,#67e8f9)}}.term-error{{color:#fb7185;font-weight:900}}.term-warn{{color:#fde68a;font-weight:850}}.term-ok{{color:#bbf7d0;font-weight:850}}.term-info{{color:#67e8f9;font-weight:850}}.term-prompt{{color:#86efac;font-weight:900}}.term-metric{{color:#93c5fd;font-weight:850}}.term-muted{{color:#c4b5fd}}.term-inverse{{display:inline-block;background:#ddd6fe;color:#13091f;border-radius:3px;padding:0 3px;font-weight:900}}
 .bad{{color:#fecdd3}}
 @media(max-width:680px){{body{{padding:10px;font-size:13px;background-attachment:scroll}}.wrap{{gap:8px}}.top{{align-items:stretch;flex-direction:column;gap:8px}}.sshTitle{{align-items:flex-start;flex-direction:column;gap:7px}}h1{{font-size:17px}}.chips{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:6px}}.chip{{text-align:center;padding:6px 7px;font-size:11px;overflow:hidden;text-overflow:ellipsis}}.btn{{width:100%;min-width:0}}.termBox{{height:min(500px,calc(100vh - 150px));max-height:500px;min-height:300px}}.bar{{align-items:stretch;flex-direction:column}}.badge{{width:100%;justify-content:center}}.termActions{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:6px}}.miniBtn{{padding:8px 7px;font-size:11px}}#term{{font-size:12px;line-height:1.32;padding:10px}}.mobileInput{{display:grid;grid-template-columns:1fr 88px;gap:7px}}.mobileInput .pasteBtn,.mobileInput .enterBtn{{grid-column:span 1}}.mobileInput .sendBtn{{grid-column:1/-1}}}}
 @media(max-width:420px){{.chips,.termActions{{grid-template-columns:1fr}}.termBox{{height:min(420px,calc(100vh - 165px));max-height:420px}}.mobileInput{{grid-template-columns:1fr}}.mobileInput button{{width:100%}}}}
@@ -1265,6 +1266,7 @@ body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radi
   <section class="termBox">
     <div class="bar">
       <span class="badge"><i class="dot"></i>Terminal</span>
+      <span class="terminalHint">Кликни в терминал, вставляй Ctrl+V, Enter отправляет</span>
       <div class="termActions">
         <button class="miniBtn" id="copyTerm" type="button">Копировать</button>
         <button class="miniBtn" id="scrollTop" type="button">Вверх</button>
@@ -1272,6 +1274,7 @@ body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radi
       </div>
     </div>
     <pre id="term" tabindex="0"></pre>
+    <textarea id="keySink" class="keySink" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
     <div class="mobileInput">
       <input id="cmdInput" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" placeholder="Команда или пароль">
       <button class="pasteBtn" id="cmdPaste" type="button">Вставить</button>
@@ -1289,10 +1292,12 @@ const cmdInput = document.getElementById('cmdInput');
 const cmdSend = document.getElementById('cmdSend');
 const cmdPaste = document.getElementById('cmdPaste');
 const cmdEnter = document.getElementById('cmdEnter');
+const keySink = document.getElementById('keySink');
 let ws;
 let httpSid = '';
 let httpPollTimer = 0;
 let terminalMode = 'ws';
+const isMobileTerminal = window.matchMedia('(max-width: 680px)').matches || /Android|iPhone|iPad|iPod|Mobile|Telegram/i.test(navigator.userAgent);
 function escapeHtmlText(text) {{
   return String(text ?? '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));
 }}
@@ -1308,6 +1313,7 @@ function cleanTerminal(text) {{
   }});
   value = value.replace(/\\x1b\\[7m([\\s\\S]*?)\\x1b\\[m/g, (_, inner) => `\\uE000${{inner}}\\uE001`);
   value = value.replace(/\\x1b\\[[0-9;?]*[ -/]*[@-~]/g, '');
+  value = value.replace(/(?:\\r?\\n){{3,}}/g, '\\r\\n\\r\\n');
   return {{text: value, clearScreen}};
 }}
 function highlightTerminal(text) {{
@@ -1354,6 +1360,81 @@ function send(text) {{
   }}
   write('\\r\\n[terminal еще подключается, повтори ввод через секунду]\\r\\n');
   return Promise.resolve(false);
+}}
+function normalizePaste(text) {{
+  return String(text || '').replace(/\\r\\n/g, '\\r').replace(/\\n/g, '\\r');
+}}
+function isEditableTarget(target) {{
+  if (!target) return false;
+  const tag = String(target.tagName || '').toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+}}
+function focusTerminal() {{
+  term.focus({{preventScroll: true}});
+  if (isMobileTerminal) {{
+    return;
+  }}
+  keySink.focus({{preventScroll: true}});
+}}
+function handleTerminalKey(ev) {{
+  const key = ev.key;
+  const lower = String(key || '').toLowerCase();
+  if ((ev.ctrlKey || ev.metaKey) && lower === 'v') {{
+    return;
+  }}
+  if ((ev.ctrlKey || ev.metaKey) && lower === 'c') {{
+    if (String(window.getSelection())) return;
+    send('\\x03');
+    ev.preventDefault();
+    ev.stopPropagation();
+    return;
+  }}
+  if ((ev.ctrlKey || ev.metaKey) && lower === 'd') {{
+    send('\\x04');
+    ev.preventDefault();
+    ev.stopPropagation();
+    return;
+  }}
+  if ((ev.ctrlKey || ev.metaKey) && lower === 'l') {{
+    send('\\x0c');
+    ev.preventDefault();
+    ev.stopPropagation();
+    return;
+  }}
+  if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  const keys = {{
+    Enter: '\\r',
+    Backspace: '\\x7f',
+    Tab: '\\t',
+    ArrowUp: '\\x1b[A',
+    ArrowDown: '\\x1b[B',
+    ArrowRight: '\\x1b[C',
+    ArrowLeft: '\\x1b[D',
+    Delete: '\\x1b[3~',
+    Home: '\\x1b[H',
+    End: '\\x1b[F',
+    PageUp: '\\x1b[5~',
+    PageDown: '\\x1b[6~'
+  }};
+  if (keys[key]) {{
+    send(keys[key]);
+    ev.preventDefault();
+    ev.stopPropagation();
+    return;
+  }}
+  if (key && key.length === 1) {{
+    send(key);
+    ev.preventDefault();
+    ev.stopPropagation();
+  }}
+}}
+function handleTerminalPaste(ev) {{
+  const text = (ev.clipboardData || window.clipboardData)?.getData('text') || '';
+  if (!text) return;
+  send(normalizePaste(text));
+  if (keySink) keySink.value = '';
+  ev.preventDefault();
+  ev.stopPropagation();
 }}
 async function sendCommandInput() {{
   const value = cmdInput.value;
@@ -1411,7 +1492,12 @@ async function startHttpTerminal(reason) {{
       return;
     }}
     httpSid = data.sid;
-    write('HTTP-terminal подключен. Ввод работает через поле снизу или клавиатуру.\\r\\n');
+    if (isMobileTerminal) {{
+      write('HTTP-terminal подключен. На телефоне вводи через поле снизу.\\r\\n');
+    }} else {{
+      write('HTTP-terminal подключен. Кликни в терминал и вводи или вставляй Ctrl+V.\\r\\n');
+      focusTerminal();
+    }}
     pollHttpTerminal();
   }} catch (e) {{
     write('HTTP-terminal не стартовал: ' + e + '\\r\\n');
@@ -1433,8 +1519,7 @@ async function explainTerminalError(source) {{
   }}
 }}
 function connect() {{
-  const mobileTerminal = window.matchMedia('(max-width: 680px)').matches || /Android|iPhone|iPad|iPod|Mobile|Telegram/i.test(navigator.userAgent);
-  if (mobileTerminal) {{
+  if (isMobileTerminal) {{
     startHttpTerminal('mobile');
     return;
   }}
@@ -1453,22 +1538,20 @@ window.addEventListener('beforeunload', () => {{
     navigator.sendBeacon('/api/ssh-session/' + encodeURIComponent(httpSid) + '/close');
   }}
 }});
-term.addEventListener('keydown', (ev) => {{
-  if (ev.ctrlKey && ev.key.toLowerCase() === 'c') {{ send('\\x03'); ev.preventDefault(); return; }}
-  if (ev.ctrlKey && ev.key.toLowerCase() === 'd') {{ send('\\x04'); ev.preventDefault(); return; }}
-  if (ev.key === 'Enter') {{ send('\\r'); ev.preventDefault(); return; }}
-  if (ev.key === 'Backspace') {{ send('\\x7f'); ev.preventDefault(); return; }}
-  if (ev.key === 'Tab') {{ send('\\t'); ev.preventDefault(); return; }}
-  if (ev.key === 'ArrowUp') {{ send('\\x1b[A'); ev.preventDefault(); return; }}
-  if (ev.key === 'ArrowDown') {{ send('\\x1b[B'); ev.preventDefault(); return; }}
-  if (ev.key === 'ArrowRight') {{ send('\\x1b[C'); ev.preventDefault(); return; }}
-  if (ev.key === 'ArrowLeft') {{ send('\\x1b[D'); ev.preventDefault(); return; }}
-  if (ev.key.length === 1 && !ev.metaKey && !ev.altKey) {{ send(ev.key); ev.preventDefault(); }}
+term.addEventListener('pointerdown', () => window.setTimeout(focusTerminal, 0));
+term.addEventListener('keydown', handleTerminalKey);
+term.addEventListener('paste', handleTerminalPaste);
+keySink.addEventListener('keydown', handleTerminalKey);
+keySink.addEventListener('paste', handleTerminalPaste);
+document.addEventListener('paste', (ev) => {{
+  if (isEditableTarget(ev.target)) return;
+  focusTerminal();
+  handleTerminalPaste(ev);
 }});
-term.addEventListener('paste', (ev) => {{
-  const text = (ev.clipboardData || window.clipboardData).getData('text');
-  if (text) send(text);
-  ev.preventDefault();
+document.addEventListener('keydown', (ev) => {{
+  if (isEditableTarget(ev.target)) return;
+  focusTerminal();
+  handleTerminalKey(ev);
 }});
 copyTerm.addEventListener('click', async () => {{
   const text = term.textContent || '';
@@ -1509,7 +1592,7 @@ cmdInput.addEventListener('keydown', (ev) => {{
   }}
 }});
 connect();
-term.focus();
+window.setTimeout(focusTerminal, 80);
 </script>
 </body>
 </html>"""
