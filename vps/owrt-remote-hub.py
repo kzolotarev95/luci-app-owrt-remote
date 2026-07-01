@@ -1959,6 +1959,35 @@ class Handler(BaseHTTPRequestHandler):
             except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
                 pass
 
+    def send_raw_bytes(self, status, body, content_type="application/octet-stream", extra_headers=None):
+        self.close_connection = True
+        reason = self.responses.get(status, ("OK",))[0]
+        headers = [
+            f"{self.protocol_version} {status} {reason}",
+            f"Server: {self.version_string()}",
+            f"Date: {self.date_time_string()}",
+            f"Content-Type: {content_type}",
+            "Cache-Control: no-store",
+            "Connection: close",
+            f"Content-Length: {len(body)}",
+        ]
+        if extra_headers:
+            for key, value in extra_headers:
+                low = key.lower()
+                if low in {"connection", "content-length", "content-type", "cache-control"}:
+                    continue
+                safe_key = str(key).replace("\r", "").replace("\n", "")
+                safe_value = str(value).replace("\r", "").replace("\n", "")
+                headers.append(f"{safe_key}: {safe_value}")
+        raw = ("\r\n".join(headers) + "\r\n\r\n").encode("iso-8859-1", "replace")
+        if self.command != "HEAD":
+            raw += body
+        try:
+            self.request.sendall(raw)
+            self.log_request(status, len(body))
+        except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
+            pass
+
     def send_text(self, status, text, content_type="text/plain; charset=utf-8"):
         self.send_bytes(status, text.encode("utf-8"), content_type)
 
@@ -2019,8 +2048,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_bytes(200, body, "text/plain; charset=utf-8")
 
     def redirect(self, location, extra_headers=None):
+        self.close_connection = True
         self.send_response(302)
         self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.send_header("Connection", "close")
         if extra_headers:
             for key, value in extra_headers:
                 self.send_header(key, value)
@@ -2608,7 +2640,7 @@ class Handler(BaseHTTPRequestHandler):
             if cached:
                 status, resp_body, content_type, resp_headers = cached
                 resp_headers.append(("X-OWRT-Static-Cache", "hit"))
-                self.send_bytes(status, resp_body, content_type, resp_headers)
+                self.send_raw_bytes(status, resp_body, content_type, resp_headers)
                 return
 
         body = self.read_body() if self.command in ("POST", "PUT", "PATCH") else None
@@ -2699,12 +2731,20 @@ class Handler(BaseHTTPRequestHandler):
                 )
             if not is_static:
                 resp_headers.append(("Set-Cookie", current_router_cookie(router_id)))
-            self.send_bytes(
-                resp_status,
-                resp_body,
-                content_type or "application/octet-stream",
-                resp_headers,
-            )
+            if is_static:
+                self.send_raw_bytes(
+                    resp_status,
+                    resp_body,
+                    content_type or "application/octet-stream",
+                    resp_headers + [("X-OWRT-Static-Cache", "miss")],
+                )
+            else:
+                self.send_bytes(
+                    resp_status,
+                    resp_body,
+                    content_type or "application/octet-stream",
+                    resp_headers,
+                )
         except Exception as exc:
             self.send_text(502, f"proxy error: {exc}")
         finally:
