@@ -74,6 +74,34 @@ install_certbot() {
 	command -v certbot >/dev/null 2>&1 || die "certbot не установился"
 }
 
+install_nginx() {
+	if ! command -v apt-get >/dev/null 2>&1; then
+		die "для HTTPS-прокси нужен Ubuntu/Debian с apt-get"
+	fi
+	info "Ставлю nginx для стабильного HTTPS..."
+	$SUDO apt-get update
+	policy_created=0
+	if [ ! -e /usr/sbin/policy-rc.d ]; then
+		$SUDO tee /usr/sbin/policy-rc.d >/dev/null <<'EOF'
+#!/bin/sh
+exit 101
+EOF
+		$SUDO chmod +x /usr/sbin/policy-rc.d
+		policy_created=1
+	fi
+	if ! $SUDO apt-get install -y nginx; then
+		if [ "$policy_created" = "1" ]; then
+			$SUDO rm -f /usr/sbin/policy-rc.d
+		fi
+		die "nginx не установился"
+	fi
+	if [ "$policy_created" = "1" ]; then
+		$SUDO rm -f /usr/sbin/policy-rc.d
+	fi
+	$SUDO rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
+	$SUDO systemctl stop nginx >/dev/null 2>&1 || true
+}
+
 refresh_hub_files() {
 	cache_bust="$(date +%s)"
 	$SUDO mkdir -p /opt/owrt-remote "$STATE_DIR"
@@ -140,26 +168,66 @@ issue_cert() {
 	fi
 }
 
-enable_hub_tls() {
+enable_nginx_tls() {
 	host="$1"
 	live_dir="/etc/letsencrypt/live/$host"
 	[ -f "$live_dir/fullchain.pem" ] || die "не найден сертификат: $live_dir/fullchain.pem"
 	[ -f "$live_dir/privkey.pem" ] || die "не найден ключ: $live_dir/privkey.pem"
 
+	# HTTPS обслуживает nginx. Hub остается обычным HTTP на 80/8088,
+	# так LuCI и SSH-terminal не спотыкаются о встроенный TLS Python.
 	$SUDO mkdir -p /etc/systemd/system/owrt-remote.service.d
 	$SUDO tee /etc/systemd/system/owrt-remote.service.d/https.conf >/dev/null <<EOF
 [Service]
-Environment=OWRT_REMOTE_TLS_CERT=$live_dir/fullchain.pem
-Environment=OWRT_REMOTE_TLS_KEY=$live_dir/privkey.pem
 Environment=OWRT_REMOTE_EXTRA_PORTS=80
-Environment=OWRT_REMOTE_TLS_PORTS=443
 Environment=OWRT_REMOTE_PUBLIC_URL=https://$host
+Environment=OWRT_REMOTE_TLS_CERT=
+Environment=OWRT_REMOTE_TLS_KEY=
+Environment=OWRT_REMOTE_TLS_PORTS=
 EOF
+
+	$SUDO mkdir -p /etc/nginx/conf.d /etc/nginx/sites-available /etc/nginx/sites-enabled
+	$SUDO tee /etc/nginx/conf.d/owrt-remote-map.conf >/dev/null <<'EOF'
+map $http_upgrade $owrt_remote_connection_upgrade {
+	default upgrade;
+	'' close;
+}
+EOF
+	$SUDO tee /etc/nginx/sites-available/owrt-remote >/dev/null <<EOF
+server {
+	listen 443 ssl http2;
+	server_name $host;
+
+	ssl_certificate $live_dir/fullchain.pem;
+	ssl_certificate_key $live_dir/privkey.pem;
+
+	client_max_body_size 64m;
+
+	location / {
+		proxy_pass http://127.0.0.1:8088;
+		proxy_http_version 1.1;
+		proxy_set_header Host \$host;
+		proxy_set_header X-Real-IP \$remote_addr;
+		proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+		proxy_set_header X-Forwarded-Proto https;
+		proxy_set_header X-Forwarded-Host \$host;
+		proxy_set_header Upgrade \$http_upgrade;
+		proxy_set_header Connection \$owrt_remote_connection_upgrade;
+		proxy_read_timeout 3600s;
+		proxy_send_timeout 3600s;
+		proxy_connect_timeout 30s;
+		proxy_buffering off;
+		proxy_request_buffering off;
+	}
+}
+EOF
+	$SUDO ln -sf /etc/nginx/sites-available/owrt-remote /etc/nginx/sites-enabled/owrt-remote
+	$SUDO rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
 
 	$SUDO mkdir -p /etc/letsencrypt/renewal-hooks/deploy
 	$SUDO tee /etc/letsencrypt/renewal-hooks/deploy/owrt-remote-restart.sh >/dev/null <<'EOF'
 #!/bin/sh
-systemctl restart owrt-remote >/dev/null 2>&1 || true
+systemctl reload nginx >/dev/null 2>&1 || systemctl restart nginx >/dev/null 2>&1 || true
 EOF
 	$SUDO chmod +x /etc/letsencrypt/renewal-hooks/deploy/owrt-remote-restart.sh
 
@@ -169,6 +237,9 @@ EOF
 
 	$SUDO systemctl daemon-reload
 	$SUDO systemctl restart owrt-remote
+	$SUDO nginx -t
+	$SUDO systemctl enable --now nginx
+	$SUDO systemctl restart nginx
 }
 
 check_https() {
@@ -191,12 +262,13 @@ main() {
 	info "Адрес: $host"
 	refresh_hub_files
 	install_certbot
+	install_nginx
 	if is_ipv4 "$host" && ! certbot --help all 2>/dev/null | grep -q -- '--ip-address'; then
 		die "этот certbot не умеет IP-сертификаты. Нужен свежий certbot 5.4+ через snap."
 	fi
 	ensure_hub_http
 	issue_cert "$host"
-	enable_hub_tls "$host"
+	enable_nginx_tls "$host"
 	if ! check_https; then
 		$SUDO systemctl status owrt-remote --no-pager -l || true
 		die "HTTPS не ответил на https://127.0.0.1/health"

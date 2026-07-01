@@ -57,6 +57,9 @@ main() {
 	$SUDO rm -f /etc/systemd/system/owrt-remote-xray.service
 	$SUDO rm -rf /etc/systemd/system/owrt-remote.service.d
 	$SUDO rm -f /etc/letsencrypt/renewal-hooks/deploy/owrt-remote-restart.sh
+	$SUDO rm -f /etc/nginx/conf.d/owrt-remote-map.conf
+	$SUDO rm -f /etc/nginx/sites-enabled/owrt-remote
+	$SUDO rm -f /etc/nginx/sites-available/owrt-remote
 	$SUDO rm -rf /opt/owrt-remote
 	$SUDO rm -f /etc/xray/owrt-remote.json
 
@@ -74,6 +77,7 @@ main() {
 	if command -v systemctl >/dev/null 2>&1; then
 		$SUDO systemctl daemon-reload >/dev/null 2>&1 || true
 		$SUDO systemctl reset-failed owrt-remote owrt-remote-xray >/dev/null 2>&1 || true
+		$SUDO systemctl reload nginx >/dev/null 2>&1 || true
 	fi
 
 	info ""
@@ -86,6 +90,9 @@ main() {
 	info "  /etc/systemd/system/owrt-remote-xray.service"
 	info "  /etc/systemd/system/owrt-remote.service.d"
 	info "  /etc/letsencrypt/renewal-hooks/deploy/owrt-remote-restart.sh"
+	info "  /etc/nginx/conf.d/owrt-remote-map.conf"
+	info "  /etc/nginx/sites-enabled/owrt-remote"
+	info "  /etc/nginx/sites-available/owrt-remote"
 	info "  /etc/xray/owrt-remote.json"
 	if [ "$PURGE" = "1" ]; then
 		info "  $STATE_DIR"
