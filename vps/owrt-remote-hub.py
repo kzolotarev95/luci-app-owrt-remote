@@ -2522,7 +2522,7 @@ class Handler(BaseHTTPRequestHandler):
         headers["Host"] = f"127.0.0.1:{port}"
         headers["X-Forwarded-Host"] = self.headers.get("Host", "")
         headers["X-Forwarded-Prefix"] = f"/access/{urllib.parse.quote(router_id)}"
-        headers["X-Forwarded-Proto"] = "https" if getattr(self.server, "is_tls", False) or self.headers.get("X-Forwarded-Proto", "") == "https" else "http"
+        headers["X-Forwarded-Proto"] = "http"
         if body is not None:
             headers["Content-Length"] = str(len(body))
 
@@ -2598,20 +2598,25 @@ def proxy_runtime_script(prefix):
   const roots = ["/ubus", "/cgi-bin/luci", "/luci-static"];
   window.__owrtRemotePrefix = prefix;
   function fixUrl(url) {
-    if (typeof url !== "string" || !url) return url;
-    if (url.startsWith(prefix + "/")) return url;
+    const original = url;
+    let raw = "";
+    if (typeof url === "string") raw = url;
+    else if (url && typeof url.href === "string") raw = url.href;
+    else if (url && typeof url.url === "string") raw = url.url;
+    if (!raw) return original;
+    if (raw.startsWith(prefix + "/")) return raw;
     try {
-      const absolute = /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith("//");
-      const parsed = absolute ? new URL(url, location.href) : null;
-      const value = parsed ? (parsed.pathname + parsed.search + parsed.hash) : url;
+      const absolute = /^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith("//");
+      const parsed = absolute ? new URL(raw, location.href) : null;
+      const value = parsed ? (parsed.pathname + parsed.search + parsed.hash) : raw;
       for (const root of roots) {
         if (value === root || value.startsWith(root + "/") || value.startsWith(root + "?")) {
           return prefix + value;
         }
       }
-      if (parsed && parsed.hostname !== location.hostname) return url;
+      if (parsed && parsed.hostname !== location.hostname) return raw;
     } catch (e) {}
-    return url;
+    return original;
   }
   function fixElementUrl(el, attr) {
     if (!el) return;
@@ -2624,6 +2629,8 @@ def proxy_runtime_script(prefix):
     window.fetch = function(input, init) {
       if (typeof input === "string") {
         input = fixUrl(input);
+      } else if (input && typeof input.href === "string") {
+        input = fixUrl(input.href);
       } else if (input && input.url) {
         const fixed = fixUrl(input.url);
         if (fixed !== input.url) input = new Request(fixed, input);
@@ -2636,6 +2643,12 @@ def proxy_runtime_script(prefix):
     XMLHttpRequest.prototype.open = function(method, url) {
       arguments[1] = fixUrl(url);
       return nativeOpen.apply(this, arguments);
+    };
+  }
+  if (navigator.sendBeacon) {
+    const nativeBeacon = navigator.sendBeacon.bind(navigator);
+    navigator.sendBeacon = function(url, data) {
+      return nativeBeacon(fixUrl(url), data);
     };
   }
   document.addEventListener("click", function(ev) {
