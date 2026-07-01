@@ -2520,6 +2520,7 @@ class Handler(BaseHTTPRequestHandler):
                 value = f"http://127.0.0.1:{port}"
             headers[key] = value
         headers["Host"] = f"127.0.0.1:{port}"
+        headers["Connection"] = "close"
         headers["X-Forwarded-Host"] = self.headers.get("Host", "")
         headers["X-Forwarded-Prefix"] = f"/access/{urllib.parse.quote(router_id)}"
         headers["X-Forwarded-Proto"] = "http"
@@ -2799,7 +2800,6 @@ def should_rewrite_body(content_type):
     return (
         "text/html" in content_type
         or "text/css" in content_type
-        or "javascript" in content_type
     )
 
 
