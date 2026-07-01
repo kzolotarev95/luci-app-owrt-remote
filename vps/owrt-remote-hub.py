@@ -1859,7 +1859,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header(key, value)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
     def send_text(self, status, text, content_type="text/plain; charset=utf-8"):
         self.send_bytes(status, text.encode("utf-8"), content_type)
@@ -2360,6 +2361,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_text(404, "not found")
 
+    def do_HEAD(self):
+        self.do_GET()
+
     def do_POST(self):
         path = self.parsed().path
         if path == "/login":
@@ -2518,7 +2522,7 @@ class Handler(BaseHTTPRequestHandler):
         headers["Host"] = f"127.0.0.1:{port}"
         headers["X-Forwarded-Host"] = self.headers.get("Host", "")
         headers["X-Forwarded-Prefix"] = f"/access/{urllib.parse.quote(router_id)}"
-        headers["X-Forwarded-Proto"] = "https" if self.headers.get("X-Forwarded-Proto", "") == "https" else "http"
+        headers["X-Forwarded-Proto"] = "https" if getattr(self.server, "is_tls", False) or self.headers.get("X-Forwarded-Proto", "") == "https" else "http"
         if body is not None:
             headers["Content-Length"] = str(len(body))
 
