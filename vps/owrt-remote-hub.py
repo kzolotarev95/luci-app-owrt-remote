@@ -1893,6 +1893,7 @@ class App:
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "owrt-remote-hub/1.0"
+    protocol_version = "HTTP/1.1"
 
     @property
     def app(self):
@@ -1954,6 +1955,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             try:
                 self.wfile.write(body)
+                self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
                 pass
 
