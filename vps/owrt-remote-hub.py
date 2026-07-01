@@ -1939,16 +1939,23 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def send_bytes(self, status, body, content_type="text/plain; charset=utf-8", extra_headers=None):
+        self.close_connection = True
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
         if extra_headers:
             for key, value in extra_headers:
+                if key.lower() in {"connection", "content-length", "content-type", "cache-control"}:
+                    continue
                 self.send_header(key, value)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if self.command != "HEAD":
-            self.wfile.write(body)
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError, ssl.SSLError):
+                pass
 
     def send_text(self, status, text, content_type="text/plain; charset=utf-8"):
         self.send_bytes(status, text.encode("utf-8"), content_type)
@@ -2598,7 +2605,6 @@ class Handler(BaseHTTPRequestHandler):
             cached = static_cache_get(cache_key)
             if cached:
                 status, resp_body, content_type, resp_headers = cached
-                resp_headers.append(("Set-Cookie", current_router_cookie(router_id)))
                 resp_headers.append(("X-OWRT-Static-Cache", "hit"))
                 self.send_bytes(status, resp_body, content_type, resp_headers)
                 return
@@ -2628,19 +2634,37 @@ class Handler(BaseHTTPRequestHandler):
 
         limiter = None if is_static else router_proxy_limiter(router_id)
         acquired = False
-        backend = None
         try:
             if limiter is not None:
                 acquired = limiter.acquire(timeout=PROXY_TIMEOUT)
                 if not acquired:
                     self.send_text(503, "proxy busy: router is handling too many requests")
                     return
-            backend = http.client.HTTPConnection("127.0.0.1", port, timeout=PROXY_TIMEOUT)
-            backend.request(self.command, target, body=body, headers=headers)
-            resp = backend.getresponse()
-            resp_body = resp.read()
+            attempts = 4 if is_static and self.command == "GET" else 1
+            last_exc = None
+            for attempt in range(attempts):
+                backend = None
+                try:
+                    backend = http.client.HTTPConnection("127.0.0.1", port, timeout=PROXY_TIMEOUT)
+                    backend.request(self.command, target, body=body, headers=headers)
+                    resp = backend.getresponse()
+                    resp_status = resp.status
+                    resp_raw_headers = resp.getheaders()
+                    resp_body = resp.read()
+                    content_type = resp.getheader("Content-Type", "")
+                    last_exc = None
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt + 1 < attempts:
+                        time.sleep(0.12 * (attempt + 1))
+                        continue
+                finally:
+                    if backend is not None:
+                        backend.close()
+            if last_exc is not None:
+                raise last_exc
             resp_headers = []
-            content_type = resp.getheader("Content-Type", "")
             prefix = f"/access/{urllib.parse.quote(router_id)}"
             public_hosts = normalize_public_hosts(
                 self.headers.get("Host", ""),
@@ -2652,7 +2676,7 @@ class Handler(BaseHTTPRequestHandler):
                 row["admin_host"],
                 f"{row['admin_host']}:{row['admin_port']}",
             )
-            for key, value in resp.getheaders():
+            for key, value in resp_raw_headers:
                 low = key.lower()
                 if low in {"cache-control", "connection", "content-length", "content-type", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade"}:
                     continue
@@ -2666,14 +2690,15 @@ class Handler(BaseHTTPRequestHandler):
             if cache_key and self.command == "GET":
                 static_cache_put(
                     cache_key,
-                    resp.status,
+                    resp_status,
                     resp_body,
                     content_type or "application/octet-stream",
                     static_cache_headers(resp_headers),
                 )
-            resp_headers.append(("Set-Cookie", current_router_cookie(router_id)))
+            if not is_static:
+                resp_headers.append(("Set-Cookie", current_router_cookie(router_id)))
             self.send_bytes(
-                resp.status,
+                resp_status,
                 resp_body,
                 content_type or "application/octet-stream",
                 resp_headers,
@@ -2681,8 +2706,6 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.send_text(502, f"proxy error: {exc}")
         finally:
-            if backend is not None:
-                backend.close()
             if acquired:
                 limiter.release()
 
