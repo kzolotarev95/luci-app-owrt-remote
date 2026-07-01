@@ -15,7 +15,7 @@
   ·
   Xray Reverse
   ·
-  HTTPS
+  HTTPS через nginx
 </p>
 
 <p>
@@ -23,7 +23,7 @@
   <img alt="LuCI" src="https://img.shields.io/badge/LUCI-SUPPORTED-44CC11?style=for-the-badge&labelColor=555555">
   <img alt="VPS" src="https://img.shields.io/badge/VPS-HUB-7C3AED?style=for-the-badge&labelColor=555555">
   <img alt="Xray" src="https://img.shields.io/badge/XRAY-REVERSE-F97316?style=for-the-badge&labelColor=555555">
-  <img alt="HTTPS" src="https://img.shields.io/badge/HTTPS-AUTO-22C55E?style=for-the-badge&labelColor=555555">
+  <img alt="HTTPS" src="https://img.shields.io/badge/HTTPS-NGINX-22C55E?style=for-the-badge&labelColor=555555">
   <img alt="Build" src="https://img.shields.io/badge/BUILD-V275-A855F7?style=for-the-badge&labelColor=555555">
 </p>
 
@@ -35,7 +35,7 @@
 
 ## Быстрый старт
 
-### VPS: поставить Hub, Xray, firewall и HTTPS одной командой
+### VPS: поставить Hub, Xray, firewall и HTTPS через nginx одной командой
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh
@@ -103,11 +103,14 @@ curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/
 <details>
 <summary><b>HTTPS / SSL</b></summary>
 
-Установщик пытается включить HTTPS сам. Для этого должны быть открыты порты:
+Установщик пытается включить HTTPS сам. Схема такая: Hub работает внутри на `80` и `8088`, а HTTPS на `443` принимает nginx и прокидывает запросы в Hub.
+
+Для установки должны быть открыты порты:
 
 ```text
-80/tcp   - проверка Let's Encrypt
-443/tcp  - HTTPS-панель
+80/tcp   - HTTP-панель и проверка Let's Encrypt
+443/tcp  - HTTPS-панель через nginx
+8088/tcp - прямой HTTP-порт Hub, можно закрыть позже в firewall провайдера
 ```
 
 Включить HTTPS вручную на IP:
@@ -126,10 +129,12 @@ curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/
 
 ```sh
 sudo ss -lntp | grep -E ':(80|443|8088)\b'
+curl -sS http://127.0.0.1:8088/health
 curl -k https://127.0.0.1/health
+sudo nginx -t
 ```
 
-Важно: IP-сертификаты Let's Encrypt короткие. Certbot ставит auto-renew, а скрипт добавляет hook для перезапуска Hub после обновления сертификата.
+Нормальная картина: `443` слушает `nginx`, а `80` и `8088` слушает `python3` Hub. Certbot ставит auto-renew, а скрипт добавляет hook для перезагрузки nginx после обновления сертификата.
 
 </details>
 
@@ -351,7 +356,7 @@ curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/
 - `/opt/owrt-remote`;
 - `/etc/xray/owrt-remote.json`;
 - `/var/lib/owrt-remote`;
-- HTTPS systemd override и renewal hook;
+- nginx-конфиг HTTPS, certbot renewal hook и старые TLS override-файлы;
 - правила `ufw` для `80/tcp`, `443/tcp`, `8088/tcp`, `8443/tcp`.
 
 Удалить Hub, но оставить базу роутеров:
@@ -418,9 +423,9 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 │       └── права LuCI/rpcd
 └── vps/
     ├── install-vps.sh
-    │   └── установка Hub, Xray, firewall и HTTPS
+    │   └── установка Hub, Xray, firewall и HTTPS через nginx
     ├── enable-https.sh
-    │   └── включение HTTPS/443 вручную
+    │   └── включение HTTPS/443 через nginx вручную
     ├── uninstall-vps.sh
     │   └── удаление Hub с VPS
     ├── owrt-remote-hub.py

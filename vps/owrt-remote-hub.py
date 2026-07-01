@@ -2810,6 +2810,60 @@ def proxy_runtime_script(prefix):
     const fixed = fixUrl(value);
     if (fixed !== value) el.setAttribute(attr, fixed);
   }
+  function fixTree(node) {
+    if (!node || node.nodeType !== 1) return node;
+    if (node.hasAttribute) {
+      if (node.hasAttribute("href")) fixElementUrl(node, "href");
+      if (node.hasAttribute("action")) fixElementUrl(node, "action");
+      if (node.hasAttribute("src")) fixElementUrl(node, "src");
+    }
+    if (node.querySelectorAll) {
+      node.querySelectorAll("a[href], form[action], link[href], script[src], img[src]").forEach(function(el) {
+        if (el.hasAttribute("href")) fixElementUrl(el, "href");
+        if (el.hasAttribute("action")) fixElementUrl(el, "action");
+        if (el.hasAttribute("src")) fixElementUrl(el, "src");
+      });
+    }
+    return node;
+  }
+  function patchUrlProperty(proto, prop) {
+    if (!proto) return;
+    const desc = Object.getOwnPropertyDescriptor(proto, prop);
+    if (!desc || !desc.set || !desc.get) return;
+    Object.defineProperty(proto, prop, {
+      configurable: true,
+      enumerable: desc.enumerable,
+      get: function() { return desc.get.call(this); },
+      set: function(value) { return desc.set.call(this, fixUrl(value)); }
+    });
+  }
+  if (window.Element && Element.prototype.setAttribute) {
+    const nativeSetAttribute = Element.prototype.setAttribute;
+    Element.prototype.setAttribute = function(name, value) {
+      const attr = String(name || "").toLowerCase();
+      if (attr === "href" || attr === "src" || attr === "action") value = fixUrl(value);
+      return nativeSetAttribute.call(this, name, value);
+    };
+  }
+  if (window.Node) {
+    const nativeAppendChild = Node.prototype.appendChild;
+    const nativeInsertBefore = Node.prototype.insertBefore;
+    if (nativeAppendChild) {
+      Node.prototype.appendChild = function(node) {
+        return nativeAppendChild.call(this, fixTree(node));
+      };
+    }
+    if (nativeInsertBefore) {
+      Node.prototype.insertBefore = function(node, before) {
+        return nativeInsertBefore.call(this, fixTree(node), before);
+      };
+    }
+  }
+  patchUrlProperty(window.HTMLAnchorElement && HTMLAnchorElement.prototype, "href");
+  patchUrlProperty(window.HTMLLinkElement && HTMLLinkElement.prototype, "href");
+  patchUrlProperty(window.HTMLScriptElement && HTMLScriptElement.prototype, "src");
+  patchUrlProperty(window.HTMLImageElement && HTMLImageElement.prototype, "src");
+  patchUrlProperty(window.HTMLFormElement && HTMLFormElement.prototype, "action");
   if (window.fetch) {
     const nativeFetch = window.fetch;
     window.fetch = function(input, init) {
@@ -2855,6 +2909,29 @@ def proxy_runtime_script(prefix):
   }
 })();
 </script>""" % prefix_json
+
+
+def protect_luci_resource_root(text):
+    protected = []
+
+    def protect_value(match):
+        token = f"__OWRT_REMOTE_LUCI_RESOURCE_{len(protected)}__"
+        protected.append(match.group(0))
+        return token
+
+    patterns = (
+        r"""((?:"resource"|'resource'|resource)\s*[:=]\s*)(["'])(/luci-static/resources)(\2)""",
+        r"""((?:"resource"|'resource'|resource)\s*[:=]\s*)(["'])(\\/luci-static\\/resources)(\2)""",
+    )
+    for pattern in patterns:
+        text = re.sub(pattern, protect_value, text)
+    return text, protected
+
+
+def restore_luci_resource_root(text, protected):
+    for index, value in enumerate(protected):
+        text = text.replace(f"__OWRT_REMOTE_LUCI_RESOURCE_{index}__", value)
+    return text
 
 
 def normalize_public_hosts(*values):
@@ -2915,6 +2992,7 @@ def rewrite_remaining_luci_roots(text, prefix):
 def rewrite_html(body, prefix, content_type="", public_hosts=None):
     text = body.decode("utf-8", errors="ignore")
     escaped_prefix = prefix.replace("/", "\\/")
+    text, protected_resource_roots = protect_luci_resource_root(text)
     replacements = {
         'href="/': f'href="{prefix}/',
         'src="/': f'src="{prefix}/',
@@ -2966,6 +3044,7 @@ def rewrite_html(body, prefix, content_type="", public_hosts=None):
         text = text.replace(old, new)
     text = rewrite_public_absolute_urls(text, prefix, public_hosts or [])
     text = rewrite_remaining_luci_roots(text, prefix)
+    text = restore_luci_resource_root(text, protected_resource_roots)
     if "text/html" in (content_type or "").lower():
         script = proxy_runtime_script(prefix)
         head_match = re.search(r"<head[^>]*>", text, flags=re.IGNORECASE)
