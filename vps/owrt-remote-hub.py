@@ -2534,6 +2534,7 @@ class Handler(BaseHTTPRequestHandler):
             resp_headers = []
             content_type = resp.getheader("Content-Type", "")
             prefix = f"/access/{urllib.parse.quote(router_id)}"
+            public_hosts = normalize_public_hosts(self.headers.get("Host", ""), self.app.public_url)
             for key, value in resp.getheaders():
                 low = key.lower()
                 if low in {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade", "content-length"}:
@@ -2545,7 +2546,7 @@ class Handler(BaseHTTPRequestHandler):
                 resp_headers.append((key, value))
             resp_headers.append(("Set-Cookie", current_router_cookie(router_id)))
             if should_rewrite_body(content_type):
-                resp_body = rewrite_html(resp_body, prefix, content_type)
+                resp_body = rewrite_html(resp_body, prefix, content_type, public_hosts)
             self.send_bytes(
                 resp.status,
                 resp_body,
@@ -2591,9 +2592,9 @@ def proxy_runtime_script(prefix):
     if (typeof url !== "string" || !url) return url;
     if (url.startsWith(prefix + "/")) return url;
     try {
-      const absolute = /^[a-z][a-z0-9+.-]*:/i.test(url);
-      const parsed = absolute ? new URL(url) : null;
-      if (parsed && parsed.origin !== location.origin) return url;
+      const absolute = /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith("//");
+      const parsed = absolute ? new URL(url, location.href) : null;
+      if (parsed && parsed.hostname !== location.hostname) return url;
       const value = parsed ? (parsed.pathname + parsed.search + parsed.hash) : url;
       for (const root of roots) {
         if (value === root || value.startsWith(root + "/") || value.startsWith(root + "?")) {
@@ -2648,7 +2649,39 @@ def proxy_runtime_script(prefix):
 </script>""" % prefix_json
 
 
-def rewrite_html(body, prefix, content_type=""):
+def normalize_public_hosts(*values):
+    hosts = set()
+    for value in values:
+        if not value:
+            continue
+        raw = str(value).strip()
+        if not raw:
+            continue
+        parsed = urllib.parse.urlsplit(raw if "://" in raw else f"//{raw}")
+        netloc = parsed.netloc or parsed.path.split("/", 1)[0]
+        netloc = netloc.split("@", 1)[-1].strip().lower()
+        if not netloc:
+            continue
+        hosts.add(netloc)
+        if ":" not in netloc:
+            hosts.add(f"{netloc}:80")
+            hosts.add(f"{netloc}:443")
+            hosts.add(f"{netloc}:8088")
+    return sorted(hosts, key=len, reverse=True)
+
+
+def rewrite_public_absolute_urls(text, prefix, public_hosts):
+    escaped_prefix = prefix.replace("/", "\\/")
+    for host in public_hosts or []:
+        for scheme in ("http", "https"):
+            for root in ("/ubus", "/cgi-bin/luci", "/luci-static"):
+                text = text.replace(f"{scheme}://{host}{root}", f"{prefix}{root}")
+                escaped_root = root.replace("/", "\\/")
+                text = text.replace(f"{scheme}:\\/\\/{host}{escaped_root}", f"{escaped_prefix}{escaped_root}")
+    return text
+
+
+def rewrite_html(body, prefix, content_type="", public_hosts=None):
     text = body.decode("utf-8", errors="ignore")
     escaped_prefix = prefix.replace("/", "\\/")
     replacements = {
@@ -2700,6 +2733,7 @@ def rewrite_html(body, prefix, content_type=""):
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
+    text = rewrite_public_absolute_urls(text, prefix, public_hosts or [])
     if "text/html" in (content_type or "").lower():
         script = proxy_runtime_script(prefix)
         head_match = re.search(r"<head[^>]*>", text, flags=re.IGNORECASE)
