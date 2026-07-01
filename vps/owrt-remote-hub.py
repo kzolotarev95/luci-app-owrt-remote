@@ -36,6 +36,10 @@ ACME_WEBROOT = STATE_DIR / "acme-webroot"
 ONLINE_AFTER_SECONDS = int(os.environ.get("OWRT_REMOTE_ONLINE_AFTER", "75"))
 DEFAULT_VLESS_PORT = int(os.environ.get("OWRT_REMOTE_VLESS_PORT", "8443"))
 REQUEST_QUEUE_SIZE = int(os.environ.get("OWRT_REMOTE_REQUEST_QUEUE_SIZE", "128"))
+ROUTER_PROXY_LIMIT = max(1, int(os.environ.get("OWRT_REMOTE_ROUTER_PROXY_LIMIT", "4")))
+PROXY_TIMEOUT = float(os.environ.get("OWRT_REMOTE_PROXY_TIMEOUT", "25"))
+STATIC_CACHE_TTL = int(os.environ.get("OWRT_REMOTE_STATIC_CACHE_TTL", "3600"))
+STATIC_CACHE_MAX_BYTES = int(os.environ.get("OWRT_REMOTE_STATIC_CACHE_MAX_BYTES", str(8 * 1024 * 1024)))
 PBKDF2_ITERATIONS = 240000
 MIN_PASSWORD_LENGTH = 4
 SESSION_COOKIE = "owrt_remote_session"
@@ -45,6 +49,11 @@ LUCI_ABSOLUTE_ROOTS = ("/ubus", "/cgi-bin/luci", "/luci-static")
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 SSH_HTTP_SESSIONS = {}
 SSH_HTTP_LOCK = threading.Lock()
+ROUTER_PROXY_LOCK = threading.Lock()
+ROUTER_PROXY_LIMITERS = {}
+STATIC_CACHE_LOCK = threading.Lock()
+STATIC_CACHE = {}
+STATIC_CACHE_BYTES = 0
 
 
 def now_ts():
@@ -55,6 +64,85 @@ def iso_time(ts):
     if not ts:
         return ""
     return dt.datetime.fromtimestamp(int(ts), tz=dt.timezone.utc).isoformat()
+
+
+def router_proxy_limiter(router_id):
+    with ROUTER_PROXY_LOCK:
+        limiter = ROUTER_PROXY_LIMITERS.get(router_id)
+        if limiter is None:
+            limiter = threading.BoundedSemaphore(ROUTER_PROXY_LIMIT)
+            ROUTER_PROXY_LIMITERS[router_id] = limiter
+        return limiter
+
+
+def is_luci_static_target(target):
+    return target.split("?", 1)[0].startswith("/luci-static/")
+
+
+def static_cache_key(router_id, target):
+    return f"{router_id}\0{target}"
+
+
+def static_cache_get(key):
+    global STATIC_CACHE_BYTES
+    if STATIC_CACHE_TTL <= 0 or STATIC_CACHE_MAX_BYTES <= 0:
+        return None
+    with STATIC_CACHE_LOCK:
+        item = STATIC_CACHE.get(key)
+        if not item:
+            return None
+        if time.time() - item["ts"] > STATIC_CACHE_TTL:
+            STATIC_CACHE_BYTES -= len(item["body"])
+            STATIC_CACHE.pop(key, None)
+            return None
+        return (
+            item["status"],
+            item["body"],
+            item["content_type"],
+            list(item["headers"]),
+        )
+
+
+def static_cache_put(key, status, body, content_type, headers):
+    global STATIC_CACHE_BYTES
+    if STATIC_CACHE_TTL <= 0 or STATIC_CACHE_MAX_BYTES <= 0:
+        return
+    if status != 200 or len(body) > STATIC_CACHE_MAX_BYTES:
+        return
+    with STATIC_CACHE_LOCK:
+        old = STATIC_CACHE.get(key)
+        if old:
+            STATIC_CACHE_BYTES -= len(old["body"])
+        STATIC_CACHE[key] = {
+            "ts": time.time(),
+            "status": status,
+            "body": body,
+            "content_type": content_type,
+            "headers": list(headers),
+        }
+        STATIC_CACHE_BYTES += len(body)
+        while STATIC_CACHE_BYTES > STATIC_CACHE_MAX_BYTES and STATIC_CACHE:
+            oldest_key = min(STATIC_CACHE, key=lambda item_key: STATIC_CACHE[item_key]["ts"])
+            oldest = STATIC_CACHE.pop(oldest_key)
+            STATIC_CACHE_BYTES -= len(oldest["body"])
+
+
+def static_cache_headers(headers):
+    skip = {
+        "cache-control",
+        "connection",
+        "content-length",
+        "content-type",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "set-cookie",
+        "te",
+        "trailers",
+        "transfer-encoding",
+        "upgrade",
+    }
+    return [(key, value) for key, value in headers if key.lower() not in skip]
 
 
 def ensure_state():
@@ -2504,6 +2592,17 @@ class Handler(BaseHTTPRequestHandler):
         if query:
             target += "?" + urllib.parse.urlencode(query)
 
+        is_static = self.command in ("GET", "HEAD") and is_luci_static_target(target)
+        cache_key = static_cache_key(router_id, target) if is_static else None
+        if cache_key:
+            cached = static_cache_get(cache_key)
+            if cached:
+                status, resp_body, content_type, resp_headers = cached
+                resp_headers.append(("Set-Cookie", current_router_cookie(router_id)))
+                resp_headers.append(("X-OWRT-Static-Cache", "hit"))
+                self.send_bytes(status, resp_body, content_type, resp_headers)
+                return
+
         body = self.read_body() if self.command in ("POST", "PUT", "PATCH") else None
         headers = {}
         skip = {"host", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade", "content-length", "accept-encoding"}
@@ -2527,10 +2626,17 @@ class Handler(BaseHTTPRequestHandler):
         if body is not None:
             headers["Content-Length"] = str(len(body))
 
+        limiter = router_proxy_limiter(router_id)
+        acquired = False
+        backend = None
         try:
-            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=35)
-            conn.request(self.command, target, body=body, headers=headers)
-            resp = conn.getresponse()
+            acquired = limiter.acquire(timeout=PROXY_TIMEOUT)
+            if not acquired:
+                self.send_text(503, "proxy busy: router is handling too many requests")
+                return
+            backend = http.client.HTTPConnection("127.0.0.1", port, timeout=PROXY_TIMEOUT)
+            backend.request(self.command, target, body=body, headers=headers)
+            resp = backend.getresponse()
             resp_body = resp.read()
             resp_headers = []
             content_type = resp.getheader("Content-Type", "")
@@ -2547,16 +2653,24 @@ class Handler(BaseHTTPRequestHandler):
             )
             for key, value in resp.getheaders():
                 low = key.lower()
-                if low in {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade", "content-length"}:
+                if low in {"cache-control", "connection", "content-length", "content-type", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade"}:
                     continue
                 if low == "location":
                     value = rewrite_location(value, prefix, port)
                 if low == "set-cookie":
                     value = rewrite_cookie_path(value, "/")
                 resp_headers.append((key, value))
-            resp_headers.append(("Set-Cookie", current_router_cookie(router_id)))
             if should_rewrite_body(content_type):
                 resp_body = rewrite_html(resp_body, prefix, content_type, public_hosts)
+            if cache_key and self.command == "GET":
+                static_cache_put(
+                    cache_key,
+                    resp.status,
+                    resp_body,
+                    content_type or "application/octet-stream",
+                    static_cache_headers(resp_headers),
+                )
+            resp_headers.append(("Set-Cookie", current_router_cookie(router_id)))
             self.send_bytes(
                 resp.status,
                 resp_body,
@@ -2565,6 +2679,11 @@ class Handler(BaseHTTPRequestHandler):
             )
         except Exception as exc:
             self.send_text(502, f"proxy error: {exc}")
+        finally:
+            if backend is not None:
+                backend.close()
+            if acquired:
+                limiter.release()
 
 
 def rewrite_location(value, prefix, port):
