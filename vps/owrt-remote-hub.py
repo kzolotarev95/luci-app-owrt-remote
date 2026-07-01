@@ -2626,14 +2626,15 @@ class Handler(BaseHTTPRequestHandler):
         if body is not None:
             headers["Content-Length"] = str(len(body))
 
-        limiter = router_proxy_limiter(router_id)
+        limiter = None if is_static else router_proxy_limiter(router_id)
         acquired = False
         backend = None
         try:
-            acquired = limiter.acquire(timeout=PROXY_TIMEOUT)
-            if not acquired:
-                self.send_text(503, "proxy busy: router is handling too many requests")
-                return
+            if limiter is not None:
+                acquired = limiter.acquire(timeout=PROXY_TIMEOUT)
+                if not acquired:
+                    self.send_text(503, "proxy busy: router is handling too many requests")
+                    return
             backend = http.client.HTTPConnection("127.0.0.1", port, timeout=PROXY_TIMEOUT)
             backend.request(self.command, target, body=body, headers=headers)
             resp = backend.getresponse()
