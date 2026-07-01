@@ -2703,6 +2703,29 @@ def rewrite_public_absolute_urls(text, prefix, public_hosts):
     return text
 
 
+def rewrite_remaining_luci_roots(text, prefix):
+    roots = ("/ubus", "/cgi-bin/luci", "/luci-static")
+    escaped_prefix = prefix.replace("/", "\\/")
+    for root in roots:
+        key = root.strip("/").replace("/", "_")
+        marker = f"__OWRT_REMOTE_RAW_ROOT_{key}__"
+        escaped_marker = f"__OWRT_REMOTE_ESC_ROOT_{key}__"
+
+        escaped_root = root.replace("/", "\\/")
+        escaped_prefixed = f"{escaped_prefix}{escaped_root}"
+        text = text.replace(escaped_prefixed, escaped_marker)
+        text = text.replace(escaped_root, escaped_prefixed)
+        text = text.replace(escaped_prefixed, escaped_marker)
+
+        prefixed = f"{prefix}{root}"
+        text = text.replace(prefixed, marker)
+        text = text.replace(root, prefixed)
+        text = text.replace(marker, prefixed)
+
+        text = text.replace(escaped_marker, escaped_prefixed)
+    return text
+
+
 def rewrite_html(body, prefix, content_type="", public_hosts=None):
     text = body.decode("utf-8", errors="ignore")
     escaped_prefix = prefix.replace("/", "\\/")
@@ -2756,6 +2779,7 @@ def rewrite_html(body, prefix, content_type="", public_hosts=None):
     for old, new in replacements.items():
         text = text.replace(old, new)
     text = rewrite_public_absolute_urls(text, prefix, public_hosts or [])
+    text = rewrite_remaining_luci_roots(text, prefix)
     if "text/html" in (content_type or "").lower():
         script = proxy_runtime_script(prefix)
         head_match = re.search(r"<head[^>]*>", text, flags=re.IGNORECASE)
@@ -2918,6 +2942,7 @@ def make_http_server(app, host, port, tls_cert="", tls_key=""):
     server.is_tls = False
     if tls_cert and tls_key:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.set_alpn_protocols(["http/1.1"])
         context.load_cert_chain(tls_cert, tls_key)
         server.socket = context.wrap_socket(
             server.socket,
