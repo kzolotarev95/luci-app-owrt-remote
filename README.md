@@ -41,6 +41,14 @@
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh
 ```
 
+Установщик спросит:
+
+```text
+IP/домен VPS:
+```
+
+Можно вставить домен, например `hub.example.com`, или нажать Enter, чтобы взять найденный IP сервера.
+
 После установки в конце будет вход:
 
 ```text
@@ -61,7 +69,7 @@ owrt-remote doctor
 owrt-remote status
 ```
 
-Если нужен домен, передай его установщику:
+Если хочешь без вопроса сразу передать домен:
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh -s -- hub.example.com

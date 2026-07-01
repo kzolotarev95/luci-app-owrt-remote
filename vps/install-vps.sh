@@ -2,7 +2,7 @@
 set -u
 
 APP_NAME="OpenWrt Remote Hub"
-INSTALLER_VERSION="2026-07-01-nginx-https-v5"
+INSTALLER_VERSION="2026-07-01-host-prompt-v6"
 RAW_BASE="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 STATE_DIR="${OWRT_REMOTE_STATE_DIR:-/var/lib/owrt-remote}"
 HUB_LOGIN="${HUB_LOGIN:-admin}"
@@ -33,6 +33,37 @@ need_cmd() {
 	command -v "$1" >/dev/null 2>&1 || die "не найдена команда: $1"
 }
 
+detect_public_vps_host() {
+	if command -v curl >/dev/null 2>&1; then
+		host="$(curl -4fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+		if [ -n "$host" ]; then
+			printf '%s\n' "$host"
+			return
+		fi
+	fi
+	hostname -I 2>/dev/null | awk '{print $1}'
+}
+
+prompt_vps_host() {
+	default_host="$(detect_public_vps_host)"
+	host=""
+
+	if [ -r /dev/tty ] && [ -w /dev/tty ]; then
+		printf '\n' >/dev/tty
+		printf 'IP или домен VPS для панели Hub\n' >/dev/tty
+		if [ -n "$default_host" ]; then
+			printf 'Нажми Enter, чтобы взять найденный IP: %s\n' "$default_host" >/dev/tty
+		fi
+		printf 'IP/домен VPS: ' >/dev/tty
+		IFS= read -r host </dev/tty || host=""
+	fi
+
+	if [ -z "$host" ]; then
+		host="$default_host"
+	fi
+	printf '%s\n' "$host"
+}
+
 detect_vps_host() {
 	if [ -n "${VPS_HOST:-}" ]; then
 		printf '%s\n' "$VPS_HOST"
@@ -42,14 +73,7 @@ detect_vps_host() {
 		printf '%s\n' "$1"
 		return
 	fi
-	if command -v curl >/dev/null 2>&1; then
-		host="$(curl -4fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
-		if [ -n "$host" ]; then
-			printf '%s\n' "$host"
-			return
-		fi
-	fi
-	hostname -I 2>/dev/null | awk '{print $1}'
+	prompt_vps_host
 }
 
 install_packages() {
@@ -215,6 +239,7 @@ main() {
 	need_cmd python3
 	host="$(detect_vps_host "${1:-}")"
 	[ -n "$host" ] || host="YOUR_VPS_IP"
+	info "IP/домен VPS: $host"
 	install_xray_binary
 	install_files
 	install_xray_service
