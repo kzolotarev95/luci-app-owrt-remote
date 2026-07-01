@@ -2534,7 +2534,16 @@ class Handler(BaseHTTPRequestHandler):
             resp_headers = []
             content_type = resp.getheader("Content-Type", "")
             prefix = f"/access/{urllib.parse.quote(router_id)}"
-            public_hosts = normalize_public_hosts(self.headers.get("Host", ""), self.app.public_url)
+            public_hosts = normalize_public_hosts(
+                self.headers.get("Host", ""),
+                self.app.public_url,
+                "127.0.0.1",
+                f"127.0.0.1:{port}",
+                "localhost",
+                f"localhost:{port}",
+                row["admin_host"],
+                f"{row['admin_host']}:{row['admin_port']}",
+            )
             for key, value in resp.getheaders():
                 low = key.lower()
                 if low in {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade", "content-length"}:
@@ -2594,13 +2603,13 @@ def proxy_runtime_script(prefix):
     try {
       const absolute = /^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith("//");
       const parsed = absolute ? new URL(url, location.href) : null;
-      if (parsed && parsed.hostname !== location.hostname) return url;
       const value = parsed ? (parsed.pathname + parsed.search + parsed.hash) : url;
       for (const root of roots) {
         if (value === root || value.startsWith(root + "/") || value.startsWith(root + "?")) {
           return prefix + value;
         }
       }
+      if (parsed && parsed.hostname !== location.hostname) return url;
     } catch (e) {}
     return url;
   }
