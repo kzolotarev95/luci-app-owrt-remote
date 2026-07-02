@@ -33,19 +33,16 @@
 
 <h2>🚀 Что это такое</h2>
 
-<b>OpenWrt Remote Hub</b> — это связка из VPS-панели и OpenWrt-агента, которая даёт удобный удалённый доступ к роутерам без проброса LuCI и SSH наружу.
-
-<br><br>
-
+<p>
+<b>OpenWrt Remote Hub</b> — это связка из VPS-панели и OpenWrt-агента, которая даёт удобный удалённый доступ к роутерам без проброса LuCI и SSH наружу.<br>
 Роутер сам подключается к VPS изнутри сети, а ты заходишь в Hub-панель и открываешь нужный роутер, LuCI или SSH Web Terminal.
-
-<br><br>
+</p>
 
 <table>
 <tr>
 <td width="50%" align="center">
 
-<h3>🎯 Для чего</h3>
+<h3> Для чего</h3>
 
 удалённо открыть LuCI  
 зайти в SSH через браузер  
@@ -56,7 +53,7 @@
 </td>
 <td width="50%" align="center">
 
-<h3>🧩 Из чего состоит</h3>
+<h3> Из чего состоит</h3>
 
 VPS Hub-панель  
 OpenWrt агент  
@@ -789,13 +786,10 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 
 <h2> Лицензия</h2>
 
-Этот проект распространяется под лицензией <b>MIT</b>.
-
-<br><br>
-
+<p>
+Этот проект распространяется под лицензией <b>MIT</b>.<br>
 Можно использовать, копировать, изменять, публиковать и распространять проект при сохранении текста лицензии.
-
-<br><br>
+</p>
 
 <a href="LICENSE">
   <img alt="MIT License" src="https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge&labelColor=111827">
