@@ -474,6 +474,11 @@ def list_notifications(after=0, limit=60):
     return sorted(items, key=lambda item: int(item.get("ts") or 0), reverse=True)[:limit]
 
 
+def clear_notifications():
+    with NOTIFICATIONS_LOCK:
+        save_notifications([])
+
+
 def run_quiet(args, timeout=2.5):
     try:
         return subprocess.run(
@@ -1286,7 +1291,7 @@ h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{positi
  .toolbar{{display:grid;grid-template-columns:1fr 1fr 110px 110px 150px auto;gap:10px;margin:18px 0;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px)}}.toolbar input,.toolbar select{{background:rgba(255,255,255,.08);border-color:var(--line);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}}.toolbar input::placeholder{{color:#b9adc9}}
 .authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:5;width:min(520px,calc(100vw - 44px));padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px)}}.authMenu[hidden]{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr 1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
 .sessionBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.sessionHead{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}}.sessionHead h3{{margin:0;font-size:15px}}.sessionList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.sessionRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.sessionTitle{{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-weight:900}}.sessionMeta{{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.sessionCurrent{{border:1px solid rgba(34,197,94,.38);border-radius:999px;padding:2px 7px;color:#bbf7d0;background:rgba(34,197,94,.13);font-size:11px}}.sessionBtn{{padding:7px 9px;font-size:12px;border-radius:999px}}.sessionEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}
-.notifyBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.notifyHint{{margin:-4px 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.notifyList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.notifyRow{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.notifyTitle{{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:950}}.notifyTitle span:first-child{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.notifyTime{{color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}}.notifyBody{{margin-top:4px;color:#ddd6fe;font-size:12px;line-height:1.35;word-break:break-word}}.notifyDetails{{margin:7px 0 0;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;max-height:92px;overflow:auto}}.notifyRow.warn{{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.08)}}.notifyRow.bad{{border-color:rgba(251,113,133,.38);background:rgba(251,113,133,.09)}}.notifyBtn.on{{border-color:rgba(34,197,94,.36);background:rgba(34,197,94,.15);color:#bbf7d0}}
+.notifyBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.notifyActions{{display:flex;gap:7px;align-items:center;justify-content:flex-end;flex-wrap:wrap}}.notifyHint{{margin:-4px 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.notifyList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.notifyRow{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.notifyTitle{{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:950}}.notifyTitle span:first-child{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.notifyTime{{color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}}.notifyBody{{margin-top:4px;color:#ddd6fe;font-size:12px;line-height:1.35;word-break:break-word}}.notifyDetails{{margin:7px 0 0;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;max-height:92px;overflow:auto}}.notifyRow.warn{{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.08)}}.notifyRow.bad{{border-color:rgba(251,113,133,.38);background:rgba(251,113,133,.09)}}.notifyBtn.on{{border-color:rgba(34,197,94,.36);background:rgba(34,197,94,.15);color:#bbf7d0}}
 input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:rgba(8,5,18,.72);color:var(--text)}}button,.btn{{border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:10px 13px;background:rgba(255,255,255,.10);color:#f7f2ff;font-weight:850;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}.authToggle{{border-radius:999px;padding:8px 14px;background:rgba(255,255,255,.08);color:#f3e8ff}}button.primary,.btn.primary{{background:var(--blue);color:#fff;box-shadow:0 10px 22px rgba(124,58,237,.22)}}button.bad,.btn.bad{{background:rgba(251,113,133,.16);color:#fecdd3}}.btn.good{{background:rgba(34,197,94,.16);color:#bbf7d0}}.btn.disabled{{opacity:.45;cursor:not-allowed}}
 .summary{{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}}.miniStat{{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.07);padding:8px 12px;color:#ddd6fe;font-weight:800;font-size:13px;line-height:1;white-space:nowrap}}
 .cards{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{position:relative;min-height:246px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}}.card::before{{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--green)}}.card.online{{border-color:rgba(34,197,94,.45);box-shadow:0 18px 46px rgba(0,0,0,.28),0 0 0 1px rgba(34,197,94,.10),0 0 34px rgba(34,197,94,.10)}}.card.off{{border-color:rgba(251,113,133,.42);box-shadow:0 18px 46px rgba(0,0,0,.28),0 0 0 1px rgba(251,113,133,.08),0 0 30px rgba(251,113,133,.08)}}.card.off::before{{background:var(--red)}}.card.warn::before{{background:var(--amber)}}.card.main{{grid-column:span 2}}
@@ -1342,7 +1347,10 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
         <div class="notifyBox">
           <div class="sessionHead">
             <h3>Уведомления</h3>
-            <button class="sessionBtn notifyBtn" id="notifyEnable" type="button">Включить</button>
+            <div class="notifyActions">
+              <button class="sessionBtn notifyBtn" id="notifyEnable" type="button">Включить</button>
+              <button class="sessionBtn" id="notifyClear" type="button">Очистить</button>
+            </div>
           </div>
           <div class="notifyHint">Входы в панель и запуск VPS/Hub. Если VPS полностью выключен, событие отключения появится после следующего запуска.</div>
           <div id="notifyList" class="notifyList"></div>
@@ -1681,6 +1689,7 @@ const sessionList = document.getElementById('sessionList');
 const revokeOtherSessions = document.getElementById('revokeOtherSessions');
 const notifyList = document.getElementById('notifyList');
 const notifyEnable = document.getElementById('notifyEnable');
+const notifyClear = document.getElementById('notifyClear');
 let authHideTimer;
 function showAuthMenu() {{
   clearTimeout(authHideTimer);
@@ -1767,6 +1776,8 @@ function renderNotifications(list) {{
 }}
 
 function notificationPermissionText() {{
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'iOS: в панели';
   if (!('Notification' in window)) return 'Не поддерживается';
   if (Notification.permission === 'granted') return 'Включено';
   if (Notification.permission === 'denied') return 'Запрещено';
@@ -1841,6 +1852,18 @@ async function loadNotifications({{initial = false}} = {{}}) {{
 }}
 
 notifyEnable.addEventListener('click', enableNotifications);
+notifyClear.addEventListener('click', async () => {{
+  if (!confirm('Очистить все уведомления?')) return;
+  const res = await fetch('/api/notifications/clear', {{method: 'POST'}});
+  if (!res.ok) {{
+    showRouterMsg(await res.text() || 'Не удалось очистить уведомления', true);
+    return;
+  }}
+  window.HUB_NOTIFICATIONS = [];
+  lastNotificationTs = Math.floor(Date.now() / 1000);
+  localStorage.setItem('owrtLastNotificationTs', String(lastNotificationTs));
+  renderNotifications(window.HUB_NOTIFICATIONS);
+}});
 
 sessionList.addEventListener('click', async (ev) => {{
   const id = ev.target?.dataset?.sessionRevoke;
@@ -3275,6 +3298,10 @@ class Handler(BaseHTTPRequestHandler):
                 if session.get("id") != current_id:
                     removed += revoke_hub_session(session_id=session.get("id", ""))
             self.send_json(200, {"ok": True, "removed": removed})
+            return
+        if path == "/api/notifications/clear":
+            clear_notifications()
+            self.send_json(200, {"ok": True})
             return
         if path == "/api/xray/reload":
             try:
