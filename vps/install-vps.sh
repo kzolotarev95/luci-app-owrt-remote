@@ -2,7 +2,7 @@
 set -u
 
 APP_NAME="OpenWrt Remote Hub"
-INSTALLER_VERSION="2026-07-01-host-prompt-v6"
+INSTALLER_VERSION="2026-07-02-login-logo-v7"
 RAW_BASE="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 STATE_DIR="${OWRT_REMOTE_STATE_DIR:-/var/lib/owrt-remote}"
 HUB_LOGIN="${HUB_LOGIN:-admin}"
@@ -97,10 +97,11 @@ install_xray_binary() {
 
 install_files() {
 	cache_bust="$(date +%s)"
-	$SUDO mkdir -p /opt/owrt-remote "$STATE_DIR" /etc/xray
+	$SUDO mkdir -p /opt/owrt-remote/static "$STATE_DIR" /etc/xray
 	$SUDO wget -O /opt/owrt-remote/owrt-remote-hub.py "$RAW_BASE/vps/owrt-remote-hub.py?v=$cache_bust"
 	$SUDO wget -O /etc/systemd/system/owrt-remote.service "$RAW_BASE/vps/owrt-remote.service?v=$cache_bust"
 	$SUDO wget -O /opt/owrt-remote/enable-https.sh "$RAW_BASE/vps/enable-https.sh?v=$cache_bust"
+	$SUDO wget -O /opt/owrt-remote/static/logo.png "$RAW_BASE/vps/static/logo.png?v=$cache_bust"
 	$SUDO chmod +x /opt/owrt-remote/owrt-remote-hub.py /opt/owrt-remote/enable-https.sh
 }
 
