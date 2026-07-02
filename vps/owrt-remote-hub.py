@@ -31,6 +31,7 @@ STATE_DIR = Path(os.environ.get("OWRT_REMOTE_STATE_DIR", "/var/lib/owrt-remote")
 DB_PATH = Path(os.environ.get("OWRT_REMOTE_DB", str(STATE_DIR / "hub.db")))
 AUTH_FILE = STATE_DIR / "hub-auth.json"
 SESSION_TOKEN_FILE = STATE_DIR / "hub-session.token"
+SESSIONS_FILE = STATE_DIR / "hub-sessions.json"
 AGENT_TOKEN_FILE = STATE_DIR / "agent.token"
 ACME_WEBROOT = STATE_DIR / "acme-webroot"
 ONLINE_AFTER_SECONDS = int(os.environ.get("OWRT_REMOTE_ONLINE_AFTER", "75"))
@@ -44,6 +45,7 @@ PBKDF2_ITERATIONS = 240000
 MIN_PASSWORD_LENGTH = 4
 SESSION_COOKIE = "owrt_remote_session"
 ROUTER_COOKIE = "owrt_remote_router"
+SESSION_TTL_SECONDS = int(os.environ.get("OWRT_REMOTE_SESSION_TTL", str(30 * 24 * 60 * 60)))
 CAPTCHA_TTL_SECONDS = 600
 LUCI_ABSOLUTE_ROOTS = ("/ubus", "/cgi-bin/luci", "/luci-static")
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -257,6 +259,147 @@ def current_username():
         return load_auth().get("username", "admin")
     except Exception:
         return "admin"
+
+
+def session_hash(token):
+    return hashlib.sha256((token or "").encode("utf-8")).hexdigest()
+
+
+def load_sessions():
+    ensure_state()
+    if not SESSIONS_FILE.exists():
+        return []
+    try:
+        data = json.loads(SESSIONS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if isinstance(data, dict):
+        data = data.get("sessions", [])
+    if not isinstance(data, list):
+        return []
+    now = now_ts()
+    return [item for item in data if isinstance(item, dict) and int(item.get("expires_at") or 0) > now]
+
+
+def save_sessions(sessions):
+    write_json_private(SESSIONS_FILE, {"sessions": sessions})
+
+
+def short_user_agent(value):
+    value = " ".join(str(value or "").split())
+    if not value:
+        return "unknown"
+    if len(value) > 160:
+        return value[:157] + "..."
+    return value
+
+
+def client_label(user_agent):
+    ua = (user_agent or "").lower()
+    if "iphone" in ua or "ipad" in ua:
+        device = "iPhone/iPad"
+    elif "android" in ua:
+        device = "Android"
+    elif "windows" in ua:
+        device = "Windows"
+    elif "mac os" in ua or "macintosh" in ua:
+        device = "Mac"
+    elif "linux" in ua:
+        device = "Linux"
+    else:
+        device = "Устройство"
+    if "telegram" in ua:
+        browser = "Telegram"
+    elif "edg/" in ua:
+        browser = "Edge"
+    elif "chrome/" in ua and "chromium" not in ua:
+        browser = "Chrome"
+    elif "safari/" in ua and "chrome/" not in ua:
+        browser = "Safari"
+    elif "firefox/" in ua:
+        browser = "Firefox"
+    else:
+        browser = "браузер"
+    return f"{device} · {browser}"
+
+
+def make_hub_session(username, ip, user_agent):
+    token = secrets.token_urlsafe(36)
+    ts = now_ts()
+    session = {
+        "id": secrets.token_hex(8),
+        "token_hash": session_hash(token),
+        "username": username or current_username(),
+        "ip": ip or "",
+        "user_agent": short_user_agent(user_agent),
+        "client": client_label(user_agent),
+        "created_at": ts,
+        "last_seen": ts,
+        "expires_at": ts + SESSION_TTL_SECONDS,
+    }
+    sessions = load_sessions()
+    sessions.append(session)
+    save_sessions(sessions[-60:])
+    return token, session
+
+
+def verify_hub_session(token, touch=True):
+    if not token:
+        return None
+    wanted = session_hash(token)
+    sessions = load_sessions()
+    changed = False
+    result = None
+    ts = now_ts()
+    for session in sessions:
+        if secrets.compare_digest(session.get("token_hash", ""), wanted):
+            result = session
+            if touch and ts - int(session.get("last_seen") or 0) > 60:
+                session["last_seen"] = ts
+                session["expires_at"] = ts + SESSION_TTL_SECONDS
+                changed = True
+            break
+    if changed:
+        save_sessions(sessions)
+    return result
+
+
+def revoke_hub_session(session_id="", token=""):
+    sessions = load_sessions()
+    wanted_hash = session_hash(token) if token else ""
+    kept = []
+    removed = 0
+    for session in sessions:
+        if session_id and session.get("id") == session_id:
+            removed += 1
+            continue
+        if wanted_hash and secrets.compare_digest(session.get("token_hash", ""), wanted_hash):
+            removed += 1
+            continue
+        kept.append(session)
+    if removed:
+        save_sessions(kept)
+    return removed
+
+
+def list_hub_sessions(current_token=""):
+    current_hash = session_hash(current_token) if current_token else ""
+    rows = []
+    for session in sorted(load_sessions(), key=lambda item: int(item.get("last_seen") or 0), reverse=True):
+        rows.append(
+            {
+                "id": session.get("id", ""),
+                "username": session.get("username", ""),
+                "ip": session.get("ip", ""),
+                "client": session.get("client") or client_label(session.get("user_agent", "")),
+                "user_agent": session.get("user_agent", ""),
+                "created_at": int(session.get("created_at") or 0),
+                "last_seen": int(session.get("last_seen") or 0),
+                "expires_at": int(session.get("expires_at") or 0),
+                "current": bool(current_hash and secrets.compare_digest(session.get("token_hash", ""), current_hash)),
+            }
+        )
+    return rows
 
 
 def captcha_challenge():
@@ -937,8 +1080,9 @@ def parse_resize_payload(payload):
     return message.get("rows"), message.get("cols")
 
 
-def dashboard_html(routers, username):
+def dashboard_html(routers, username, sessions=None):
     routers_json = json.dumps(routers, ensure_ascii=False)
+    sessions_json = json.dumps(sessions or [], ensure_ascii=False)
     safe_username = html.escape(username, quote=True)
     return f"""<!doctype html>
 <html lang="ru">
@@ -957,6 +1101,7 @@ body::before{{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none
 h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10);overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px}}.links{{margin-top:8px;flex-wrap:wrap}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{position:relative;align-self:flex-end;justify-content:flex-end;align-content:flex-end;flex-wrap:nowrap;padding-top:42px;max-width:none}}.headerActions .badge,.headerActions .btn{{width:142px;min-width:142px;max-width:142px;min-height:36px;border-radius:999px;padding:8px 10px;white-space:nowrap;font-size:12px}}.badge{{background:rgba(255,255,255,.08);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.nethavenTop{{border-color:rgba(34,211,238,.46);background:linear-gradient(110deg,rgba(14,165,233,.20),rgba(168,85,247,.22),rgba(34,197,94,.14));color:#ecfeff;box-shadow:0 10px 24px rgba(14,165,233,.14),inset 0 1px 0 rgba(255,255,255,.10)}}.nethavenTop::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite;pointer-events:none}}.authToggle{{cursor:pointer}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
  .toolbar{{display:grid;grid-template-columns:1fr 1fr 110px 110px 150px auto;gap:10px;margin:18px 0;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px)}}.toolbar input,.toolbar select{{background:rgba(255,255,255,.08);border-color:var(--line);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}}.toolbar input::placeholder{{color:#b9adc9}}
 .authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:5;width:min(520px,calc(100vw - 44px));padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px)}}.authMenu[hidden]{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr 1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
+.sessionBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.sessionHead{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}}.sessionHead h3{{margin:0;font-size:15px}}.sessionList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.sessionRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.sessionTitle{{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-weight:900}}.sessionMeta{{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.sessionCurrent{{border:1px solid rgba(34,197,94,.38);border-radius:999px;padding:2px 7px;color:#bbf7d0;background:rgba(34,197,94,.13);font-size:11px}}.sessionBtn{{padding:7px 9px;font-size:12px;border-radius:999px}}.sessionEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}
 input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:rgba(8,5,18,.72);color:var(--text)}}button,.btn{{border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:10px 13px;background:rgba(255,255,255,.10);color:#f7f2ff;font-weight:850;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}.authToggle{{border-radius:999px;padding:8px 14px;background:rgba(255,255,255,.08);color:#f3e8ff}}button.primary,.btn.primary{{background:var(--blue);color:#fff;box-shadow:0 10px 22px rgba(124,58,237,.22)}}button.bad,.btn.bad{{background:rgba(251,113,133,.16);color:#fecdd3}}.btn.good{{background:rgba(34,197,94,.16);color:#bbf7d0}}.btn.disabled{{opacity:.45;cursor:not-allowed}}
 .summary{{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}}.miniStat{{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.07);padding:8px 12px;color:#ddd6fe;font-weight:800;font-size:13px;line-height:1;white-space:nowrap}}
 .cards{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{position:relative;min-height:246px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}}.card::before{{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--green)}}.card.online{{border-color:rgba(34,197,94,.45);box-shadow:0 18px 46px rgba(0,0,0,.28),0 0 0 1px rgba(34,197,94,.10),0 0 34px rgba(34,197,94,.10)}}.card.off{{border-color:rgba(251,113,133,.42);box-shadow:0 18px 46px rgba(0,0,0,.28),0 0 0 1px rgba(251,113,133,.08),0 0 30px rgba(251,113,133,.08)}}.card.off::before{{background:var(--red)}}.card.warn::before{{background:var(--amber)}}.card.main{{grid-column:span 2}}
@@ -1002,6 +1147,13 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
           <button class="primary wide">Сохранить</button>
         </form>
         <div id="authMsg" class="msg" hidden></div>
+        <div class="sessionBox">
+          <div class="sessionHead">
+            <h3>Управление сессиями</h3>
+            <button class="sessionBtn bad" id="revokeOtherSessions" type="button">Завершить остальные</button>
+          </div>
+          <div id="sessionList" class="sessionList"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -1020,6 +1172,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 </main>
 <script>
 window.ROUTERS = {routers_json};
+window.HUB_SESSIONS = {sessions_json};
 const cards = document.getElementById('cards');
 const routerForm = document.getElementById('routerForm');
 const routerMsg = document.getElementById('routerMsg');
@@ -1330,6 +1483,8 @@ cards.addEventListener('click', async (ev) => {{
 
 const authToggle = document.getElementById('authToggle');
 const authMenu = document.getElementById('authMenu');
+const sessionList = document.getElementById('sessionList');
+const revokeOtherSessions = document.getElementById('revokeOtherSessions');
 let authHideTimer;
 function showAuthMenu() {{
   clearTimeout(authHideTimer);
@@ -1354,6 +1509,57 @@ document.addEventListener('click', () => {{
   authMenu.hidden = true;
 }});
 
+function formatSessionTime(ts) {{
+  if (!ts) return '—';
+  try {{ return new Date(Number(ts) * 1000).toLocaleString('ru-RU'); }} catch (e) {{ return '—'; }}
+}}
+
+function renderSessions(list) {{
+  const sessions = Array.isArray(list) ? list : [];
+  if (!sessions.length) {{
+    sessionList.innerHTML = '<div class="sessionEmpty">Активных сессий пока нет</div>';
+    return;
+  }}
+  sessionList.innerHTML = sessions.map(s => `
+    <div class="sessionRow">
+      <div>
+        <div class="sessionTitle">
+          <span>${{escapeHtml(s.client || 'Устройство')}}</span>
+          ${{s.current ? '<span class="sessionCurrent">сейчас</span>' : ''}}
+        </div>
+        <div class="sessionMeta">
+          IP: ${{escapeHtml(s.ip || 'unknown')}}<br>
+          Вход: ${{formatSessionTime(s.created_at)}}<br>
+          Активность: ${{formatSessionTime(s.last_seen)}}<br>
+          До: ${{formatSessionTime(s.expires_at)}}
+        </div>
+      </div>
+      <button class="sessionBtn bad" data-session-revoke="${{escapeAttr(s.id || '')}}" ${{s.current ? 'disabled title="Текущую сессию заверши кнопкой Выйти"' : ''}}>Завершить</button>
+    </div>
+  `).join('');
+}}
+
+async function loadSessions() {{
+  const res = await fetch('/api/sessions', {{cache: 'no-store'}});
+  if (!res.ok) return;
+  const data = await res.json();
+  window.HUB_SESSIONS = data.sessions || [];
+  renderSessions(window.HUB_SESSIONS);
+}}
+
+sessionList.addEventListener('click', async (ev) => {{
+  const id = ev.target?.dataset?.sessionRevoke;
+  if (!id) return;
+  const body = new URLSearchParams({{id}});
+  const res = await fetch('/api/session/revoke', {{method: 'POST', body}});
+  if (res.ok) await loadSessions();
+}});
+
+revokeOtherSessions.addEventListener('click', async () => {{
+  const res = await fetch('/api/session/revoke-others', {{method: 'POST'}});
+  if (res.ok) await loadSessions();
+}});
+
 document.getElementById('authForm').addEventListener('submit', async (ev) => {{
   ev.preventDefault();
   const msg = document.getElementById('authMsg');
@@ -1374,6 +1580,7 @@ document.getElementById('authForm').addEventListener('submit', async (ev) => {{
   }}
 }});
 
+renderSessions(window.HUB_SESSIONS);
 render(window.ROUTERS);
 fillRouterForm(true);
 setInterval(loadRouters, 5000);
@@ -1882,9 +2089,9 @@ h1{margin:0;font-size:18px;line-height:1.15;white-space:nowrap;overflow:hidden;t
 .termBox{width:100%;min-width:0;min-height:0;flex:1 1 auto;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05);flex:0 0 auto}.tools{display:flex;align-items:center;gap:7px;min-width:0;flex-wrap:wrap;justify-content:flex-end}
 #terminal{flex:1 1 auto;min-height:0;min-width:0;background:#0b0714}#terminal.loading{display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:800}#terminal .xterm{height:100%;padding:10px}#terminal .xterm-viewport{background:transparent!important;scrollbar-width:thin;scrollbar-color:rgba(168,85,247,.72) rgba(255,255,255,.06);scroll-behavior:auto;overscroll-behavior:contain}body.mobile #terminal .xterm-viewport{-webkit-overflow-scrolling:touch;touch-action:pan-y;contain:content}#terminal .xterm-screen{height:100%}.xterm .xterm-viewport::-webkit-scrollbar{width:12px;height:12px}.xterm .xterm-viewport::-webkit-scrollbar-track{background:rgba(255,255,255,.06)}.xterm .xterm-viewport::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#7c3aed,#22d3ee);border-radius:999px;border:3px solid rgba(10,6,18,.96)}
 .mobileInput{display:none;gap:7px;padding:8px;border-top:1px solid var(--line);background:rgba(255,255,255,.045);flex:0 0 auto}.mobileInput textarea{flex:1;min-width:0;min-height:44px;max-height:96px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.76);color:var(--text);font:14px/1.25 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;outline:none}.mobileInput textarea:focus{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12)}.mobileInput button{border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;white-space:nowrap}
-body.mobile .mobileInput{display:grid;grid-template-columns:1fr 74px 92px}body.mobile .mobileInput textarea{grid-column:1/-1}
+body.mobile .mobileInput{display:grid;grid-template-columns:1fr 104px}body.mobile .mobileInput textarea{grid-column:auto}
 @supports(height:100svh){body{height:100svh}.wrap{height:calc(100svh - 28px)}}
-@media(max-width:680px),(pointer:coarse){body{padding:4px;background-attachment:scroll;background-image:linear-gradient(145deg,#07040f,#120a24 54%,#05030a)}.wrap{height:calc(100svh - 8px);max-width:none;gap:5px}.top{gap:6px;align-items:stretch;flex-direction:column}.sshTitle{min-height:28px}h1{font-size:15px}.btn{width:100%;padding:8px 10px}.bar{padding:5px;align-items:stretch;flex-direction:column}.badge{width:100%;padding:7px 10px}.tools{width:100%;display:grid;grid-template-columns:1fr 1fr 1fr}.toolBtn{padding:7px 8px;font-size:12px}.termBox{border-radius:6px;background:rgba(19,14,32,.96);box-shadow:none}#terminal .xterm{padding:6px}.mobileInput{grid-template-columns:1fr 70px 84px;padding:5px;gap:5px}.mobileInput textarea{font-size:15px;padding:10px}.mobileInput button{padding:10px 8px;font-size:12px}}
+@media(max-width:680px),(pointer:coarse){body{padding:4px;background-attachment:scroll;background-image:linear-gradient(145deg,#07040f,#120a24 54%,#05030a)}.wrap{height:calc(100svh - 8px);max-width:none;gap:5px}.top{gap:6px;align-items:stretch;flex-direction:column}.sshTitle{min-height:28px}h1{font-size:15px}.btn{width:100%;padding:8px 10px}.bar{padding:5px;align-items:stretch;flex-direction:column}.badge{width:100%;padding:7px 10px}.tools{width:100%;display:grid;grid-template-columns:1fr 1fr 1fr}.toolBtn{padding:7px 8px;font-size:12px}.termBox{border-radius:6px;background:rgba(19,14,32,.96);box-shadow:none}#terminal .xterm{padding:5px}body.mobile #terminal .xterm-viewport{scrollbar-width:none}body.mobile .xterm .xterm-viewport::-webkit-scrollbar{display:none}.mobileInput{grid-template-columns:1fr 104px;padding:5px;gap:5px}.mobileInput textarea{font-size:15px;padding:10px}.mobileInput button{padding:10px 8px;font-size:12px}}
 </style>
 </head>
 <body>
@@ -1905,8 +2112,6 @@ body.mobile .mobileInput{display:grid;grid-template-columns:1fr 74px 92px}body.m
     <div id="terminal" class="loading">Загрузка терминала...</div>
     <div class="mobileInput">
       <textarea id="cmdInput" rows="2" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" placeholder="Команды или пароль"></textarea>
-      <button id="cmdPaste" type="button">Вставить</button>
-      <button id="cmdEnter" type="button">Enter</button>
       <button id="cmdSend" type="button">Отправить</button>
     </div>
   </section>
@@ -1918,8 +2123,6 @@ const SESSION_PATH = __SESSION_PATH_JSON__;
 const terminalEl = document.getElementById('terminal');
 const cmdInput = document.getElementById('cmdInput');
 const cmdSend = document.getElementById('cmdSend');
-const cmdPaste = document.getElementById('cmdPaste');
-const cmdEnter = document.getElementById('cmdEnter');
 const copyBtn = document.getElementById('copyBtn');
 const clearBtn = document.getElementById('clearBtn');
 const reconnectBtn = document.getElementById('reconnectBtn');
@@ -1951,12 +2154,12 @@ async function pollHttpTerminal(){if(!httpSid)return;try{const res=await fetch('
 async function startHttpTerminal(reason){if(terminalMode==='http'||httpSid)return;terminalMode='http';try{if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))ws.close();}catch(e){}notice(reason==='mobile'?'HTTP-terminal подключается...':reason+'. Включаю запасной HTTP-terminal...','36');try{const res=await fetch(appendQuery(SESSION_PATH,{cols:term.cols||80,rows:term.rows||24}),{cache:'no-store'});const data=await res.json();if(!res.ok||!data.ok){notice('HTTP-terminal не стартовал: '+(data.error||res.status),'31');return;}httpSid=data.sid;notice(isMobileTerminal?'HTTP-terminal подключен. Вводи через поле снизу или клавиатуру.':'HTTP-terminal подключен. Кликни в терминал, Ctrl+V вставляет.','32');sendResize();pollHttpTerminal();}catch(e){notice('HTTP-terminal не стартовал: '+e,'31');}}
 async function explainTerminalError(source){if(diagnosticStarted)return;diagnosticStarted=true;try{const res=await fetch(CHECK_PATH,{cache:'no-store'});const data=await res.json();if(data.tcp_ok)await startHttpTerminal(source);else{notice('SSH-туннель на VPS не отвечает: '+(data.error||'порт закрыт'),'31');notice('В Hub нажми: Обновить Xray CFG, потом Рестарт Xray VPS, и проверь heartbeat роутера.','33');}}catch(e){notice('Не смог проверить SSH-туннель. Проверь firewall VPS и доступ к Hub.','31');}}
 function connect(){wsOpened=false;receivedTerminalData=false;diagnosticStarted=false;terminalMode='ws';httpSid='';inputQueue='';if(inputFlushTimer){clearTimeout(inputFlushTimer);inputFlushTimer=0;}if(term){term.reset();notice('Подключение к SSH...','36');}const proto=location.protocol==='https:'?'wss://':'ws://';ws=new WebSocket(proto+location.host+WS_PATH);ws.binaryType='arraybuffer';ws.onopen=()=>{wsOpened=true;sendResize();};ws.onmessage=async(ev)=>{if(terminalMode==='http')return;let text='';if(typeof ev.data==='string')text=ev.data;else if(ev.data instanceof Blob)text=await ev.data.text();else text=decoder.decode(ev.data);if(!receivedTerminalData)term.clear();receivedTerminalData=true;term.write(text);};ws.onerror=()=>explainTerminalError('ошибка web-terminal');ws.onclose=()=>{if(terminalMode==='http')return;if(wsOpened)notice('SSH соединение закрыто','33');else explainTerminalError('SSH соединение закрыто');};setTimeout(()=>{if(!receivedTerminalData&&!httpSid)startHttpTerminal('SSH молчит больше 3 секунд');},3000);}
-function initTerminal(){if(!window.Terminal){terminalEl.classList.remove('loading');terminalEl.textContent='xterm.js не загрузился. Проверь доступ браузера к cdn.jsdelivr.net.';return;}terminalEl.classList.remove('loading');terminalEl.textContent='';term=new Terminal({cursorBlink:true,convertEol:false,scrollback:isMobileTerminal?600:5000,scrollSensitivity:isMobileTerminal?6:1,fastScrollSensitivity:isMobileTerminal?10:5,smoothScrollDuration:0,fontFamily:'"Cascadia Mono","Consolas","Liberation Mono",monospace',fontSize:isMobileTerminal?12:14,lineHeight:1.14,theme:{background:'#0b0714',foreground:'#f7f2ff',cursor:'#fbbf24',selectionBackground:'#334155',black:'#0b0714',red:'#fb7185',green:'#86efac',yellow:'#fde68a',blue:'#93c5fd',magenta:'#c084fc',cyan:'#67e8f9',white:'#f7f2ff'}});if(window.FitAddon&&FitAddon.FitAddon){fitAddon=new FitAddon.FitAddon();term.loadAddon(fitAddon);}term.open(terminalEl);term.onData(sendData);term.onResize(sendResize);term.attachCustomKeyEventHandler((ev)=>{const key=String(ev.key||'').toLowerCase();if((ev.ctrlKey||ev.metaKey)&&key==='c'&&term.hasSelection&&term.hasSelection()){copySelection();return false;}return true;});terminalEl.addEventListener('click',()=>term.focus());fitTerminal(true);connect();setTimeout(()=>{fitTerminal(true);term.focus();},120);}
+function initTerminal(){if(!window.Terminal){terminalEl.classList.remove('loading');terminalEl.textContent='xterm.js не загрузился. Проверь доступ браузера к cdn.jsdelivr.net.';return;}terminalEl.classList.remove('loading');terminalEl.textContent='';term=new Terminal({cursorBlink:!isMobileTerminal,convertEol:false,scrollback:isMobileTerminal?200:5000,scrollSensitivity:isMobileTerminal?8:1,fastScrollSensitivity:isMobileTerminal?14:5,smoothScrollDuration:0,fontFamily:'"Cascadia Mono","Consolas","Liberation Mono",monospace',fontSize:isMobileTerminal?12:14,lineHeight:1.14,theme:{background:'#0b0714',foreground:'#f7f2ff',cursor:'#fbbf24',selectionBackground:'#334155',black:'#0b0714',red:'#fb7185',green:'#86efac',yellow:'#fde68a',blue:'#93c5fd',magenta:'#c084fc',cyan:'#67e8f9',white:'#f7f2ff'}});if(window.FitAddon&&FitAddon.FitAddon){fitAddon=new FitAddon.FitAddon();term.loadAddon(fitAddon);}term.open(terminalEl);term.onData(sendData);term.onResize(sendResize);term.attachCustomKeyEventHandler((ev)=>{const key=String(ev.key||'').toLowerCase();if((ev.ctrlKey||ev.metaKey)&&key==='c'&&term.hasSelection&&term.hasSelection()){copySelection();return false;}return true;});terminalEl.addEventListener('click',()=>term.focus());fitTerminal(true);connect();setTimeout(()=>{fitTerminal(true);term.focus();},120);}
 document.addEventListener('paste',(ev)=>{if(isEditableTarget(ev.target))return;if(!terminalFocused())return;handlePaste(ev);});
 window.addEventListener('beforeunload',()=>{if(httpSid)navigator.sendBeacon('/api/ssh-session/'+encodeURIComponent(httpSid)+'/close');});
 let resizeTimer=0;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>fitTerminal(false),160);});
 copyBtn.addEventListener('click',copyTerminalAll);clearBtn.addEventListener('click',()=>term&&term.clear());reconnectBtn.addEventListener('click',()=>{try{if(ws)ws.close();}catch(e){}if(httpSid)navigator.sendBeacon('/api/ssh-session/'+encodeURIComponent(httpSid)+'/close');connect();});
-cmdSend.addEventListener('click',sendCommandInput);cmdEnter.addEventListener('click',async()=>{await sendData('\r',true);cmdInput.focus();setTimeout(pollHttpTerminal,120);});cmdPaste.addEventListener('click',pasteIntoInput);cmdInput.addEventListener('keydown',(ev)=>{if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)){sendCommandInput();ev.preventDefault();}});
+cmdSend.addEventListener('click',sendCommandInput);cmdInput.addEventListener('keydown',(ev)=>{if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)){sendCommandInput();ev.preventDefault();}});
 window.addEventListener('load',initTerminal);
 </script>
 </body>
@@ -2063,9 +2266,26 @@ class Handler(BaseHTTPRequestHandler):
             return True
         return False
 
+    def client_ip(self):
+        forwarded = self.headers.get("X-Forwarded-For", "")
+        if forwarded:
+            return forwarded.split(",", 1)[0].strip()
+        try:
+            return self.client_address[0]
+        except Exception:
+            return ""
+
+    def current_session_token(self):
+        return parse_cookies(self.headers.get("Cookie", "")).get(SESSION_COOKIE, "")
+
+    def current_hub_session(self, touch=True):
+        return verify_hub_session(self.current_session_token(), touch=touch)
+
+    def legacy_admin_ok(self):
+        return secrets.compare_digest(self.current_session_token(), self.app.session_token)
+
     def admin_ok(self):
-        cookies = parse_cookies(self.headers.get("Cookie", ""))
-        return secrets.compare_digest(cookies.get(SESSION_COOKIE, ""), self.app.session_token)
+        return bool(self.current_hub_session()) or self.legacy_admin_ok()
 
     def ssh_token_ok(self, router_id):
         token = self.query().get("t", [""])[0]
@@ -2167,8 +2387,8 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.parse_qs(body.decode("utf-8"))
         return {k: v[-1] for k, v in parsed.items()}
 
-    def session_cookie(self):
-        return f"{SESSION_COOKIE}={self.app.session_token}; HttpOnly; SameSite=Lax; Path=/"
+    def session_cookie(self, token):
+        return f"{SESSION_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={SESSION_TTL_SECONDS}"
 
     def clear_session_cookie(self):
         return f"{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"
@@ -2208,7 +2428,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(401, login_html("Неверная капча").encode("utf-8"), "text/html; charset=utf-8")
             return
         if verify_login(username, password):
-            self.redirect("/", [("Set-Cookie", self.session_cookie())])
+            token, _ = make_hub_session(username, self.client_ip(), self.headers.get("User-Agent", ""))
+            self.redirect("/", [("Set-Cookie", self.session_cookie(token))])
             return
         self.send_bytes(401, login_html("Неверный логин или пароль").encode("utf-8"), "text/html; charset=utf-8")
 
@@ -2609,6 +2830,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(200, login_html().encode("utf-8"), "text/html; charset=utf-8")
             return
         if path == "/logout":
+            revoke_hub_session(token=self.current_session_token())
             self.redirect("/login", [("Set-Cookie", self.clear_session_cookie())])
             return
         if path.startswith("/api/ssh/") and path.endswith("/check"):
@@ -2637,18 +2859,27 @@ class Handler(BaseHTTPRequestHandler):
         if not self.require_admin():
             return
         if path == "/" or path == "":
+            extra_headers = []
+            session_token_value = self.current_session_token()
+            if self.legacy_admin_ok() and not self.current_hub_session(touch=False):
+                session_token_value, _ = make_hub_session(current_username(), self.client_ip(), self.headers.get("User-Agent", ""))
+                extra_headers.append(("Set-Cookie", self.session_cookie(session_token_value)))
             with self.app.conn() as conn:
                 routers = [row_to_router(r) for r in list_router_rows(conn)]
             self.send_bytes(
                 200,
-                dashboard_html(routers, current_username()).encode("utf-8"),
+                dashboard_html(routers, current_username(), list_hub_sessions(session_token_value)).encode("utf-8"),
                 "text/html; charset=utf-8",
+                extra_headers,
             )
             return
         if path == "/api/routers":
             with self.app.conn() as conn:
                 routers = [row_to_router(r) for r in list_router_rows(conn)]
             self.send_json(200, {"routers": routers})
+            return
+        if path == "/api/sessions":
+            self.send_json(200, {"sessions": list_hub_sessions(self.current_session_token())})
             return
         if path.startswith("/router/"):
             self.router_asset(path)
@@ -2691,6 +2922,28 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/auth":
             self.update_auth()
+            return
+        if path == "/api/session/revoke":
+            payload = self.read_payload()
+            session_id = payload.get("id", "")
+            if not session_id:
+                self.send_text(400, "session id is empty")
+                return
+            current = self.current_hub_session(touch=False)
+            if current and session_id == current.get("id"):
+                self.send_text(400, "Текущую сессию заверши кнопкой Выйти")
+                return
+            removed = revoke_hub_session(session_id=session_id)
+            self.send_json(200, {"ok": True, "removed": removed})
+            return
+        if path == "/api/session/revoke-others":
+            current = self.current_hub_session(touch=False)
+            current_id = current.get("id", "") if current else ""
+            removed = 0
+            for session in list_hub_sessions(self.current_session_token()):
+                if session.get("id") != current_id:
+                    removed += revoke_hub_session(session_id=session.get("id", ""))
+            self.send_json(200, {"ok": True, "removed": removed})
             return
         if path == "/api/xray/reload":
             try:
