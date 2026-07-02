@@ -69,18 +69,6 @@ owrt-remote doctor
 owrt-remote status
 ```
 
-Если хочешь без вопроса сразу передать домен:
-
-```sh
-curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh -s -- hub.example.com
-```
-
-Если HTTPS не нужен:
-
-```sh
-curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo env AUTO_HTTPS=0 sh
-```
-
 ## Схема
 
 <img width="2172" height="724" alt="ChatGPT Image 30 июн  2026 г , 11_31_11" src="https://github.com/user-attachments/assets/ea79f783-170e-4db1-be4d-2b217e623b99" />
