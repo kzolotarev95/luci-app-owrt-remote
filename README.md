@@ -16,6 +16,7 @@
   <img alt="Xray" src="https://img.shields.io/badge/Xray-reverse-F97316?style=flat-square">
   <img alt="Nginx" src="https://img.shields.io/badge/Nginx-HTTPS-22C55E?style=flat-square&logo=nginx&logoColor=white">
   <img alt="Build" src="https://img.shields.io/badge/Build-v275-A855F7?style=flat-square">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-22C55E?style=flat-square">
 </p>
 
 <h3>Удалённый доступ к OpenWrt через свой VPS</h3>
@@ -543,6 +544,24 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 | OpenWrt | `owrt-remote doctor` | диагностика агента |
 | OpenWrt | `owrt-remote status` | текущий статус |
 | OpenWrt | `owrt-remote heartbeat` | отправить heartbeat |
+
+</div>
+
+---
+
+<h2 align="center"> Лицензия</h2>
+
+<div align="center">
+
+Этот проект распространяется под лицензией **MIT**.
+
+Можно использовать, копировать, изменять, публиковать и распространять проект при сохранении текста лицензии.
+
+<br>
+
+<a href="LICENSE">
+  <img alt="MIT License" src="https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge&labelColor=111827">
+</a>
 
 </div>
 
