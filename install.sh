@@ -2,6 +2,8 @@
 
 set -eu
 
+export PATH="/bin:/sbin:/usr/bin:/usr/sbin:${PATH:-}"
+
 RAW_URL="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 ROOT="${ROOT:-/}"
 SCRIPT_DIR="$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd)"
@@ -107,6 +109,31 @@ installed_ui_version() {
 	awk -F '"' '/^OWRT_REMOTE_UI_VERSION=/ { print $2; exit }' "$file" 2>/dev/null || true
 }
 
+openwrt_version() {
+	local file
+	file="$(target_path etc/openwrt_release)"
+	if [ -r "$file" ]; then
+		(
+			. "$file" 2>/dev/null
+			printf '%s %s' "${DISTRIB_ID:-OpenWrt}" "${DISTRIB_RELEASE:-unknown}"
+		)
+		return
+	fi
+	printf 'OpenWrt unknown'
+}
+
+package_manager() {
+	if command -v apk >/dev/null 2>&1; then
+		printf 'apk'
+		return
+	fi
+	if command -v opkg >/dev/null 2>&1; then
+		printf 'opkg'
+		return
+	fi
+	printf 'unknown'
+}
+
 install_file "usr/sbin/owrt-remote" 0755
 install_file "etc/init.d/owrt-remote" 0755
 install_config
@@ -129,8 +156,12 @@ fi
 key="$(make_key)"
 ip="$(router_ip)"
 ui_version="$(installed_ui_version)"
+owrt_version="$(openwrt_version)"
+pkg_manager="$(package_manager)"
 
 info "OpenWrt Remote установлен."
+info "OpenWrt: $owrt_version"
+info "PKG:    $pkg_manager"
 if [ -n "$ui_version" ]; then
 	info "UI:     $ui_version"
 fi

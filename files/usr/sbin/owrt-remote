@@ -1,5 +1,7 @@
 #!/bin/sh
 
+export PATH="/bin:/sbin:/usr/bin:/usr/sbin:${PATH:-}"
+
 CONFIG="owrtremote"
 SECTION="main"
 
@@ -277,6 +279,21 @@ xray_release_asset() {
 	esac
 }
 
+install_package() {
+	local pkg
+	pkg="$1"
+	if command -v opkg >/dev/null 2>&1; then
+		opkg update || die "не смог обновить opkg для установки $pkg"
+		opkg install "$pkg" || die "не смог поставить $pkg через opkg"
+		return
+	fi
+	if command -v apk >/dev/null 2>&1; then
+		apk -U add "$pkg" ca-certificates || die "не смог поставить $pkg через apk"
+		return
+	fi
+	die "не найден пакетный менеджер opkg или apk для установки $pkg"
+}
+
 install_xray_tmp() {
 	local dir zip asset url version
 	dir="/tmp/owrt-xray"
@@ -286,8 +303,7 @@ install_xray_tmp() {
 
 	mkdir -p /var/lock /var/run "$dir"
 	if ! command -v unzip >/dev/null 2>&1; then
-		opkg update || die "не смог обновить opkg для установки unzip"
-		opkg install unzip || die "не смог поставить unzip"
+		install_package unzip
 	fi
 
 	printf 'Скачиваю Xray: %s\n' "$asset"
