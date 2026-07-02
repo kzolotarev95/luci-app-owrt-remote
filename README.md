@@ -68,11 +68,13 @@ web terminal
 
 ---
 
+<div align="center">
+
 ## 🧱 Tech Stack
 
 ### Router / Network / OpenWrt
 
-<p>
+<p align="center">
   <img alt="OpenWrt" src="https://img.shields.io/badge/OpenWrt-00A3E0?style=for-the-badge&logo=openwrt&logoColor=white">
   <img alt="LuCI" src="https://img.shields.io/badge/LuCI-44CC11?style=for-the-badge&logo=lua&logoColor=white">
   <img alt="Dropbear" src="https://img.shields.io/badge/Dropbear-SSH-64748B?style=for-the-badge">
@@ -81,7 +83,7 @@ web terminal
 
 ### VPS / Reverse / HTTPS
 
-<p>
+<p align="center">
   <img alt="Linux" src="https://img.shields.io/badge/Linux-VPS-FCC624?style=for-the-badge&logo=linux&logoColor=111111">
   <img alt="Python" src="https://img.shields.io/badge/Python-Hub-3776AB?style=for-the-badge&logo=python&logoColor=white">
   <img alt="Shell" src="https://img.shields.io/badge/Shell-Installer-4EAA25?style=for-the-badge&logo=gnu-bash&logoColor=white">
@@ -89,9 +91,11 @@ web terminal
   <img alt="nginx" src="https://img.shields.io/badge/nginx-HTTPS-009639?style=for-the-badge&logo=nginx&logoColor=white">
 </p>
 
+</div>
+
 ---
 
-## ⚡ Быстрый старт
+<h2 align="center">⚡ Быстрый старт</h2>
 
 > После установки в конце появится вход:
 >
@@ -137,7 +141,7 @@ owrt-remote status
 
 ---
 
-## 🛰️ Схема работы
+<h2 align="center">🛰️ Схема работы</h2>
 
 ```mermaid
 flowchart LR
@@ -153,10 +157,12 @@ flowchart LR
 
 ---
 
-## 🎛️ Возможности
+<h2 align="center">🎛️ Возможности</h2>
+
+<div align="center">
 
 | Возможность | Описание |
-|---|---|
+|:---:|:---:|
 | 🧭 **Router Cards** | Карточки роутеров в Hub-панели |
 | 🟢 **Online / Offline** | Быстрая проверка состояния роутеров |
 | 🌐 **LuCI через VPS** | Доступ к LuCI без прямого проброса портов |
@@ -168,7 +174,7 @@ flowchart LR
 
 ---
 
-## 📦 Подробная установка
+<h2 align="center">📦 Подробная установка</h2>
 
 <details>
 <summary><b>🖥️ Установка VPS подробно</b></summary>
@@ -272,7 +278,7 @@ owrt-remote heartbeat
 
 ---
 
-## 🧯 Частые проблемы
+<h2 align="center">🧯 Частые проблемы</h2>
 
 <details>
 <summary><b>❌ Панель VPS не открывается</b></summary>
@@ -351,7 +357,7 @@ sudo ss -lntp | grep -E ':(80|443|8088)'
 
 ---
 
-## 🗑️ Удаление
+<h2 align="center">🗑️ Удаление</h2>
 
 <details>
 <summary><b>🖥️ Удалить Hub с VPS полностью</b></summary>
@@ -412,7 +418,7 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 
 ---
 
-## 🌳 Дерево проекта
+<h2 align="center">🌳 Дерево проекта</h2>
 
 <details>
 <summary><b>Открыть дерево файлов</b></summary>
@@ -451,10 +457,12 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 
 ---
 
-##  Мини-шпаргалка команд
+<h2 align="center"> Мини-шпаргалка команд</h2>
+
+<div align="center">
 
 | Где | Команда | Что делает |
-|---|---|---|
+|:---:|:---:|:---:|
 | VPS | `systemctl status owrt-remote` | статус Hub |
 | VPS | `systemctl status owrt-remote-xray` | статус Xray reverse |
 | VPS | `curl -sS http://127.0.0.1:8088/health` | healthcheck Hub |
@@ -462,6 +470,8 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 | OpenWrt | `owrt-remote doctor` | диагностика агента |
 | OpenWrt | `owrt-remote status` | текущий статус |
 | OpenWrt | `owrt-remote heartbeat` | отправить heartbeat |
+
+</div>
 
 ---
 
