@@ -911,6 +911,32 @@ def ws_send_frame(sock, payload, opcode=1):
     sock.sendall(head + payload)
 
 
+def set_pty_size(fd, rows, cols):
+    try:
+        rows = max(8, min(80, int(rows or 24)))
+        cols = max(20, min(260, int(cols or 80)))
+    except Exception:
+        return False
+    try:
+        import fcntl
+        import termios
+
+        fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+        return True
+    except Exception:
+        return False
+
+
+def parse_resize_payload(payload):
+    try:
+        message = json.loads(payload.decode("utf-8", errors="ignore"))
+    except Exception:
+        return None
+    if not isinstance(message, dict) or message.get("type") != "resize":
+        return None
+    return message.get("rows"), message.get("cols")
+
+
 def dashboard_html(routers, username):
     routers_json = json.dumps(routers, ensure_ascii=False)
     safe_username = html.escape(username, quote=True)
@@ -1829,6 +1855,115 @@ window.setTimeout(focusTerminal, 80);
 </html>"""
 
 
+def ssh_terminal_html_v2(row, ws_token):
+    router_id = row["id"]
+    safe_name = html.escape(row["name"] or router_id, quote=True)
+    quoted_id = urllib.parse.quote(router_id)
+    ws_path = f"/ssh-ws/{quoted_id}?t={urllib.parse.quote(ws_token)}"
+    check_path = f"/api/ssh/{quoted_id}/check?t={urllib.parse.quote(ws_token)}"
+    session_path = f"/api/ssh/{quoted_id}/session?t={urllib.parse.quote(ws_token)}"
+    page = r"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SSH __SAFE_NAME__</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+<style>
+:root{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.92);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.30);--green:#22c55e;--blue:#7c3aed;--cyan:#22d3ee;--grid:rgba(168,85,247,.13)}
+*{box-sizing:border-box}html,body{height:100%;margin:0;overflow:hidden}
+body{background-color:var(--bg);background-image:radial-gradient(circle at 16% 10%,rgba(168,85,247,.45),transparent 30%),radial-gradient(circle at 88% 16%,rgba(59,130,246,.28),transparent 32%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:14px}
+.wrap{width:100%;max-width:1180px;height:calc(100vh - 28px);margin:0 auto;display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:0 0 auto;min-height:38px}.sshTitle{display:flex;align-items:center;gap:10px;min-width:0}
+h1{margin:0;font-size:18px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.btn,.badge,.toolBtn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 12px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:850;font-size:13px;white-space:nowrap}.toolBtn{cursor:pointer;font:inherit}.toolBtn:hover,.btn:hover{border-color:rgba(34,211,238,.52);background:rgba(255,255,255,.12)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green)}
+.termBox{width:100%;min-width:0;min-height:0;flex:1 1 auto;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05);flex:0 0 auto}.tools{display:flex;align-items:center;gap:7px;min-width:0;flex-wrap:wrap;justify-content:flex-end}
+#terminal{flex:1 1 auto;min-height:0;min-width:0;background:#0b0714}#terminal.loading{display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:800}#terminal .xterm{height:100%;padding:10px}#terminal .xterm-viewport{background:transparent!important;scrollbar-width:thin;scrollbar-color:rgba(168,85,247,.72) rgba(255,255,255,.06)}#terminal .xterm-screen{height:100%}.xterm .xterm-viewport::-webkit-scrollbar{width:12px;height:12px}.xterm .xterm-viewport::-webkit-scrollbar-track{background:rgba(255,255,255,.06)}.xterm .xterm-viewport::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#7c3aed,#22d3ee);border-radius:999px;border:3px solid rgba(10,6,18,.96)}
+.mobileInput{display:none;gap:7px;padding:8px;border-top:1px solid var(--line);background:rgba(255,255,255,.045);flex:0 0 auto}.mobileInput input{flex:1;min-width:0;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.76);color:var(--text);font:14px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;outline:none}.mobileInput input:focus{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12)}.mobileInput button{border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;white-space:nowrap}
+body.mobile .mobileInput{display:grid;grid-template-columns:1fr 74px 92px}body.mobile .mobileInput input{grid-column:1/-1}
+@supports(height:100svh){body{height:100svh}.wrap{height:calc(100svh - 28px)}}
+@media(max-width:680px),(pointer:coarse){body{padding:4px;background-attachment:scroll}.wrap{height:calc(100svh - 8px);max-width:none;gap:5px}.top{gap:6px;align-items:stretch;flex-direction:column}.sshTitle{min-height:28px}h1{font-size:15px}.btn{width:100%;padding:8px 10px}.bar{padding:5px;align-items:stretch;flex-direction:column}.badge{width:100%;padding:7px 10px}.tools{width:100%;display:grid;grid-template-columns:1fr 1fr 1fr}.toolBtn{padding:7px 8px;font-size:12px}.termBox{border-radius:6px}#terminal .xterm{padding:7px}.mobileInput{grid-template-columns:1fr 70px 84px;padding:5px;gap:5px}.mobileInput input{font-size:15px;padding:10px}.mobileInput button{padding:10px 8px;font-size:12px}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <div class="sshTitle"><h1>SSH · __SAFE_NAME__</h1></div>
+    <a class="btn" href="/">Назад в Hub</a>
+  </div>
+  <section class="termBox">
+    <div class="bar">
+      <span class="badge"><i class="dot"></i>Terminal</span>
+      <div class="tools">
+        <button class="toolBtn" id="copyBtn" type="button">Копировать</button>
+        <button class="toolBtn" id="clearBtn" type="button">Очистить</button>
+        <button class="toolBtn" id="reconnectBtn" type="button">Переподключить</button>
+      </div>
+    </div>
+    <div id="terminal" class="loading">Загрузка терминала...</div>
+    <div class="mobileInput">
+      <input id="cmdInput" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="send" placeholder="Команда или пароль">
+      <button id="cmdPaste" type="button">Вставить</button>
+      <button id="cmdEnter" type="button">Enter</button>
+      <button id="cmdSend" type="button">Отправить</button>
+    </div>
+  </section>
+</main>
+<script>
+const WS_PATH = __WS_PATH_JSON__;
+const CHECK_PATH = __CHECK_PATH_JSON__;
+const SESSION_PATH = __SESSION_PATH_JSON__;
+const terminalEl = document.getElementById('terminal');
+const cmdInput = document.getElementById('cmdInput');
+const cmdSend = document.getElementById('cmdSend');
+const cmdPaste = document.getElementById('cmdPaste');
+const cmdEnter = document.getElementById('cmdEnter');
+const copyBtn = document.getElementById('copyBtn');
+const clearBtn = document.getElementById('clearBtn');
+const reconnectBtn = document.getElementById('reconnectBtn');
+const isMobileTerminal = window.matchMedia('(max-width: 680px)').matches || /Android|iPhone|iPad|iPod|Mobile|Telegram/i.test(navigator.userAgent);
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+let ws, term, fitAddon, httpSid = '', httpPollTimer = 0, terminalMode = 'ws';
+let wsOpened = false, receivedTerminalData = false, diagnosticStarted = false;
+document.body.classList.toggle('mobile', isMobileTerminal);
+function appendQuery(url, params){const sep=url.indexOf('?')===-1?'?':'&';return url+sep+new URLSearchParams(params).toString();}
+function normalizePaste(text){return String(text||'').replace(/\r\n/g,'\r').replace(/\n/g,'\r');}
+function notice(text,color='36'){if(term)term.write(`\r\n\x1b[${color}m${text}\x1b[0m\r\n`);}
+function isEditableTarget(target){const tag=String((target&&target.tagName)||'').toLowerCase();return tag==='input'||tag==='textarea'||tag==='select'||(target&&target.isContentEditable);}
+function terminalFocused(){const active=document.activeElement;return terminalEl.contains(active)||active===document.body;}
+function fitTerminal(force=false){if(!term)return;if(isMobileTerminal&&document.activeElement===cmdInput&&!force)return;try{if(fitAddon)fitAddon.fit();}catch(e){}setTimeout(sendResize,40);}
+function sendResize(){if(!term)return;const cols=term.cols||80,rows=term.rows||24;if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'resize',cols,rows}));if(httpSid){fetch('/api/ssh-session/'+encodeURIComponent(httpSid)+'/resize',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({cols,rows})}).catch(()=>{});}}
+function sendData(text){if(!text)return Promise.resolve(true);if(ws&&ws.readyState===WebSocket.OPEN){ws.send(encoder.encode(text));return Promise.resolve(true);}if(terminalMode==='http'&&httpSid){return fetch('/api/ssh-session-write',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({sid:httpSid,data:text})}).then(async(res)=>{let data={};try{data=await res.json();}catch(e){}if(!res.ok||!data.ok){notice('HTTP-terminal: ввод не принят: '+(data.error||res.status),'31');return false;}setTimeout(pollHttpTerminal,80);return true;}).catch(()=>{notice('Не смог отправить ввод в HTTP-terminal','31');return false;});}notice('Терминал еще подключается, повтори ввод через секунду','33');return Promise.resolve(false);}
+async function copyText(text){const value=String(text||'');if(!value)return false;try{await navigator.clipboard.writeText(value);return true;}catch(e){const area=document.createElement('textarea');area.value=value;area.setAttribute('readonly','readonly');area.style.position='fixed';area.style.left='-1000px';document.body.appendChild(area);area.select();let ok=false;try{ok=document.execCommand('copy');}catch(err){}area.remove();return ok;}}
+async function copySelection(){if(!term)return false;const text=term.getSelection?term.getSelection():'';return copyText(text);}
+function handlePaste(ev){const text=(ev.clipboardData||window.clipboardData)?.getData('text')||'';if(!text)return;sendData(normalizePaste(text));ev.preventDefault();ev.stopPropagation();}
+async function sendCommandInput(){const value=cmdInput.value;if(!value)return;await sendData(normalizePaste(value)+'\r');cmdInput.value='';cmdInput.focus();setTimeout(pollHttpTerminal,120);}
+async function pasteIntoInput(){cmdInput.focus();try{const text=await navigator.clipboard.readText();if(!text)return;const start=cmdInput.selectionStart??cmdInput.value.length,end=cmdInput.selectionEnd??cmdInput.value.length;cmdInput.value=cmdInput.value.slice(0,start)+text+cmdInput.value.slice(end);const pos=start+text.length;cmdInput.setSelectionRange(pos,pos);}catch(e){cmdInput.placeholder='Зажми поле и выбери Вставить';}}
+async function pollHttpTerminal(){if(!httpSid)return;try{const res=await fetch('/api/ssh-session/'+encodeURIComponent(httpSid)+'/read',{cache:'no-store'});const data=await res.json();if(data.data)term.write(data.data);if(data.alive)httpPollTimer=setTimeout(pollHttpTerminal,650);else httpSid='';}catch(e){notice('HTTP-terminal: потеряна связь с Hub','31');httpSid='';}}
+async function startHttpTerminal(reason){if(terminalMode==='http'||httpSid)return;terminalMode='http';try{if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))ws.close();}catch(e){}notice(reason==='mobile'?'HTTP-terminal подключается...':reason+'. Включаю запасной HTTP-terminal...','36');try{const res=await fetch(appendQuery(SESSION_PATH,{cols:term.cols||80,rows:term.rows||24}),{cache:'no-store'});const data=await res.json();if(!res.ok||!data.ok){notice('HTTP-terminal не стартовал: '+(data.error||res.status),'31');return;}httpSid=data.sid;notice(isMobileTerminal?'HTTP-terminal подключен. Вводи через поле снизу или клавиатуру.':'HTTP-terminal подключен. Кликни в терминал, Ctrl+V вставляет.','32');sendResize();pollHttpTerminal();}catch(e){notice('HTTP-terminal не стартовал: '+e,'31');}}
+async function explainTerminalError(source){if(diagnosticStarted)return;diagnosticStarted=true;try{const res=await fetch(CHECK_PATH,{cache:'no-store'});const data=await res.json();if(data.tcp_ok)await startHttpTerminal(source);else{notice('SSH-туннель на VPS не отвечает: '+(data.error||'порт закрыт'),'31');notice('В Hub нажми: Обновить Xray CFG, потом Рестарт Xray VPS, и проверь heartbeat роутера.','33');}}catch(e){notice('Не смог проверить SSH-туннель. Проверь firewall VPS и доступ к Hub.','31');}}
+function connect(){wsOpened=false;receivedTerminalData=false;diagnosticStarted=false;terminalMode='ws';httpSid='';if(term){term.reset();notice('Подключение к SSH...','36');}const proto=location.protocol==='https:'?'wss://':'ws://';ws=new WebSocket(proto+location.host+WS_PATH);ws.binaryType='arraybuffer';ws.onopen=()=>{wsOpened=true;sendResize();};ws.onmessage=async(ev)=>{if(terminalMode==='http')return;let text='';if(typeof ev.data==='string')text=ev.data;else if(ev.data instanceof Blob)text=await ev.data.text();else text=decoder.decode(ev.data);if(!receivedTerminalData)term.clear();receivedTerminalData=true;term.write(text);};ws.onerror=()=>explainTerminalError('ошибка web-terminal');ws.onclose=()=>{if(terminalMode==='http')return;if(wsOpened)notice('SSH соединение закрыто','33');else explainTerminalError('SSH соединение закрыто');};setTimeout(()=>{if(!receivedTerminalData&&!httpSid)startHttpTerminal('SSH молчит больше 3 секунд');},3000);}
+function initTerminal(){if(!window.Terminal){terminalEl.classList.remove('loading');terminalEl.textContent='xterm.js не загрузился. Проверь доступ браузера к cdn.jsdelivr.net.';return;}terminalEl.classList.remove('loading');terminalEl.textContent='';term=new Terminal({cursorBlink:true,convertEol:false,scrollback:8000,fontFamily:'"Cascadia Mono","Consolas","Liberation Mono",monospace',fontSize:isMobileTerminal?12:14,lineHeight:1.14,theme:{background:'#0b0714',foreground:'#f7f2ff',cursor:'#fbbf24',selectionBackground:'#334155',black:'#0b0714',red:'#fb7185',green:'#86efac',yellow:'#fde68a',blue:'#93c5fd',magenta:'#c084fc',cyan:'#67e8f9',white:'#f7f2ff'}});if(window.FitAddon&&FitAddon.FitAddon){fitAddon=new FitAddon.FitAddon();term.loadAddon(fitAddon);}term.open(terminalEl);term.onData(sendData);term.onResize(sendResize);term.attachCustomKeyEventHandler((ev)=>{const key=String(ev.key||'').toLowerCase();if((ev.ctrlKey||ev.metaKey)&&key==='c'&&term.hasSelection&&term.hasSelection()){copySelection();return false;}return true;});terminalEl.addEventListener('click',()=>term.focus());fitTerminal(true);connect();setTimeout(()=>{fitTerminal(true);term.focus();},120);}
+document.addEventListener('paste',(ev)=>{if(isEditableTarget(ev.target))return;if(!terminalFocused())return;handlePaste(ev);});
+window.addEventListener('beforeunload',()=>{if(httpSid)navigator.sendBeacon('/api/ssh-session/'+encodeURIComponent(httpSid)+'/close');});
+let resizeTimer=0;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>fitTerminal(false),160);});
+copyBtn.addEventListener('click',copySelection);clearBtn.addEventListener('click',()=>term&&term.clear());reconnectBtn.addEventListener('click',()=>{try{if(ws)ws.close();}catch(e){}if(httpSid)navigator.sendBeacon('/api/ssh-session/'+encodeURIComponent(httpSid)+'/close');connect();});
+cmdSend.addEventListener('click',sendCommandInput);cmdEnter.addEventListener('click',async()=>{await sendData('\r');cmdInput.focus();setTimeout(pollHttpTerminal,120);});cmdPaste.addEventListener('click',pasteIntoInput);cmdInput.addEventListener('keydown',(ev)=>{if(ev.key==='Enter'){sendCommandInput();ev.preventDefault();}});
+window.addEventListener('load',initTerminal);
+</script>
+</body>
+</html>"""
+    return (
+        page.replace("__SAFE_NAME__", safe_name)
+        .replace("__WS_PATH_JSON__", json.dumps(ws_path))
+        .replace("__CHECK_PATH_JSON__", json.dumps(check_path))
+        .replace("__SESSION_PATH_JSON__", json.dumps(session_path))
+    )
+
+
 def login_html(error=""):
     error_html = f"<div class=\"err\">{html.escape(error)}</div>" if error else ""
     captcha_code, captcha_token = captcha_challenge()
@@ -2118,7 +2253,7 @@ class Handler(BaseHTTPRequestHandler):
         ws_token = ssh_ws_token(self.app.session_token, router_id)
         self.send_bytes(
             200,
-            ssh_terminal_html(row, ws_token).encode("utf-8"),
+            ssh_terminal_html_v2(row, ws_token).encode("utf-8"),
             "text/html; charset=utf-8",
             [("Set-Cookie", current_router_cookie(router_id))],
         )
@@ -2178,7 +2313,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def ssh_args(self, port):
         env = os.environ.copy()
-        env["TERM"] = "dumb"
+        env["TERM"] = "xterm-256color"
         args = [
             "ssh",
             "-tt",
@@ -2285,6 +2420,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             session = self.start_ssh_http_session(router_id, port)
+            query = self.query()
+            set_pty_size(session["fd"], query.get("rows", ["24"])[0], query.get("cols", ["80"])[0])
             self.send_json(200, {"ok": True, "sid": session["id"], "router_id": router_id, "port": port})
         except Exception as exc:
             self.send_json(500, {"ok": False, "error": str(exc)})
@@ -2325,6 +2462,17 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             self.send_json(500, {"ok": False, "error": str(exc)})
 
+    def ssh_http_resize(self, sid, payload=None):
+        with SSH_HTTP_LOCK:
+            session = SSH_HTTP_SESSIONS.get(sid)
+        if not session:
+            self.send_json(404, {"ok": False, "error": "terminal session not found"})
+            return
+        if payload is None:
+            payload = self.read_payload()
+        ok = set_pty_size(session["fd"], payload.get("rows", 24), payload.get("cols", 80))
+        self.send_json(200, {"ok": bool(ok)})
+
     def ssh_http_write_short(self):
         payload = self.read_payload()
         sid = payload.get("sid", "")
@@ -2361,6 +2509,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if action == "write":
             self.ssh_http_write(sid)
+            return
+        if action == "resize":
+            self.ssh_http_resize(sid)
             return
         if action == "close":
             self.ssh_http_close(sid)
@@ -2411,6 +2562,11 @@ class Handler(BaseHTTPRequestHandler):
                     if opcode == 9:
                         ws_send_frame(self.connection, payload, opcode=10)
                         continue
+                    if opcode == 1 and payload:
+                        resize = parse_resize_payload(payload)
+                        if resize:
+                            set_pty_size(fd, resize[0], resize[1])
+                            continue
                     if opcode in (1, 2) and payload:
                         os.write(fd, payload)
         except Exception as exc:
