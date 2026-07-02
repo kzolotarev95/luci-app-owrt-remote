@@ -158,7 +158,7 @@ flowchart LR
 
 ---
 
-<h2 align="center">🖼️ Скриншоты интерфейса</h2>
+<h2 align="center"> Скриншоты интерфейса</h2>
 
 <div align="center">
 
@@ -228,44 +228,41 @@ flowchart LR
 
 ---
 
-<h2 align="center">🎬 Видео-демо</h2>
+<h2 align="center"> Видео-демо</h2>
 
 <div align="center">
 
-[![OpenWrt Remote Hub video demo](assets/video/openwrt-remote-demo-cover.jpg)](assets/video/openwrt-remote-demo.mp4)
-
-<br>
 <b>Видео-демо</b>
 <br>
 <sub>Открытие Hub с телефона: статус роутера, LuCI и SSH Web Terminal.</sub>
 
 </div>
 
----
+https://github.com/user-attachments/assets/f7990b3c-2cfe-4fbf-bb01-c846102e1c94
 
-<h2 align="center">🎛️ Возможности</h2>
+<h2 align="center"> Возможности</h2>
 
 <div align="center">
 
 | Возможность | Описание |
 |:---:|:---:|
-| 🧭 **Router Cards** | Карточки роутеров в Hub-панели |
-| 🟢 **Online / Offline** | Быстрая проверка состояния роутеров |
-| 🌐 **LuCI через VPS** | Доступ к LuCI без прямого проброса портов |
-| 💻 **SSH Web Terminal** | SSH в браузере, удобно даже с телефона |
-| 🔁 **Xray Reverse** | Роутер подключается к VPS сам |
-| 🔐 **HTTPS через nginx** | TLS-точка входа на `443/tcp` |
-| 🧯 **Firewall automation** | Скрипты помогают открыть нужные порты |
-| 🩺 **Doctor / Status** | Команды диагностики на OpenWrt |
+|  **Router Cards** | Карточки роутеров в Hub-панели |
+|  **Online / Offline** | Быстрая проверка состояния роутеров |
+|  **LuCI через VPS** | Доступ к LuCI без прямого проброса портов |
+|  **SSH Web Terminal** | SSH в браузере, удобно даже с телефона |
+|  **Xray Reverse** | Роутер подключается к VPS сам |
+|  **HTTPS через nginx** | TLS-точка входа на `443/tcp` |
+|  **Firewall automation** | Скрипты помогают открыть нужные порты |
+|  **Doctor / Status** | Команды диагностики на OpenWrt |
 
 </div>
 
 ---
 
-<h2 align="center">📦 Подробная установка</h2>
+<h2 align="center"> Подробная установка</h2>
 
 <details>
-<summary><b>🖥️ Установка VPS подробно</b></summary>
+<summary><b> Установка VPS подробно</b></summary>
 
 Если хочешь поставить повторно, но не сбрасывать текущий пароль:
 
@@ -282,7 +279,7 @@ curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/
 </details>
 
 <details>
-<summary><b>🔐 HTTPS / SSL</b></summary>
+<summary><b> HTTPS / SSL</b></summary>
 
 Установщик пытается включить HTTPS сам.
 
@@ -334,7 +331,7 @@ sudo nginx -t
 </details>
 
 <details>
-<summary><b>🔔 Уведомления и мини-лог VPS</b></summary>
+<summary><b> Уведомления и мини-лог VPS</b></summary>
 
 В панели Hub открой кнопку с логином, блок `Уведомления`, и нажми `Включить`.
 
@@ -350,7 +347,7 @@ sudo nginx -t
 </details>
 
 <details>
-<summary><b>✅ Проверка после установки</b></summary>
+<summary><b> Проверка после установки</b></summary>
 
 На VPS:
 
@@ -382,10 +379,10 @@ owrt-remote heartbeat
 
 ---
 
-<h2 align="center">🧯 Частые проблемы</h2>
+<h2 align="center"> Частые проблемы</h2>
 
 <details>
-<summary><b>❌ Панель VPS не открывается</b></summary>
+<summary><b> Панель VPS не открывается</b></summary>
 
 Проверь сервисы и порты:
 
@@ -410,7 +407,7 @@ curl -sS http://127.0.0.1:8088/health
 </details>
 
 <details>
-<summary><b>🔌 Админка пишет <code>proxy error: [Errno 111] Connection refused</code></b></summary>
+<summary><b> Админка пишет <code>proxy error: [Errno 111] Connection refused</code></b></summary>
 
 Пересобери Xray config:
 
@@ -423,7 +420,7 @@ sudo ss -lntp | grep -E ':(18080|18090|19080|19090)\b'
 </details>
 
 <details>
-<summary><b>⌨️ SSH web-terminal просит пароль и молчит</b></summary>
+<summary><b> SSH web-terminal просит пароль и молчит</b></summary>
 
 Проверь Dropbear на OpenWrt:
 
@@ -441,7 +438,7 @@ owrt-remote heartbeat
 </details>
 
 <details>
-<summary><b>📱 С мобильного интернета не открывается</b></summary>
+<summary><b> С мобильного интернета не открывается</b></summary>
 
 Пробуй:
 
@@ -461,10 +458,10 @@ sudo ss -lntp | grep -E ':(80|443|8088)'
 
 ---
 
-<h2 align="center">🗑️ Удаление</h2>
+<h2 align="center"> Удаление</h2>
 
 <details>
-<summary><b>🖥️ Удалить Hub с VPS полностью</b></summary>
+<summary><b> Удалить Hub с VPS полностью</b></summary>
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" | sudo sh
@@ -495,7 +492,7 @@ curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/
 </details>
 
 <details>
-<summary><b>📡 Удалить агент с OpenWrt полностью</b></summary>
+<summary><b> Удалить агент с OpenWrt полностью</b></summary>
 
 ```sh
 wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh?v=$(date +%s)" | PURGE=1 sh
@@ -522,7 +519,7 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 
 ---
 
-<h2 align="center">🌳 Дерево проекта</h2>
+<h2 align="center"> Дерево проекта</h2>
 
 <details>
 <summary><b>Открыть дерево файлов</b></summary>
