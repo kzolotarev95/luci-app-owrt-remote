@@ -157,6 +157,77 @@ flowchart LR
 
 ---
 
+<h2 align="center">🖼️ Скриншоты интерфейса</h2>
+
+<div align="center">
+
+<table>
+<tr>
+<td align="center">
+
+<img src="assets/screenshots/hub-dashboard.jpg" alt="OpenWrt Remote Hub dashboard" width="100%" />
+
+<br>
+<b>Hub-панель</b>
+<br>
+<sub>Карточки роутеров, статусы Online/Offline, LuCI, SSH, OpenWrt config и Client JSON.</sub>
+
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="50%" align="center">
+
+<img src="assets/screenshots/login-screen.jpg" alt="Login screen with captcha" width="320" />
+
+<br>
+<b>Вход в Hub</b>
+<br>
+<sub>Логин, пароль и простая капча для защиты панели.</sub>
+
+</td>
+<td width="50%" align="center">
+
+<img src="assets/screenshots/access-settings.png" alt="Access settings and sessions" width="420" />
+
+<br>
+<b>Доступ и сессии</b>
+<br>
+<sub>Смена логина/пароля и управление активными сессиями.</sub>
+
+</td>
+</tr>
+<tr>
+<td width="50%" align="center">
+
+<img src="assets/screenshots/router-settings.png" alt="OpenWrt router settings" width="100%" />
+
+<br>
+<b>Настройки роутера</b>
+<br>
+<sub>Router ID, Hub URL, токены, Xray, reverse tags и SSH параметры.</sub>
+
+</td>
+<td width="50%" align="center">
+
+<img src="assets/screenshots/ssh-web-terminal.jpg" alt="SSH web terminal" width="100%" />
+
+<br>
+<b>SSH Web Terminal</b>
+<br>
+<sub>Терминал OpenWrt прямо в браузере, удобно даже с телефона.</sub>
+
+</td>
+</tr>
+</table>
+
+</div>
+
+
+---
+
 <h2 align="center">🎛️ Возможности</h2>
 
 <div align="center">
@@ -171,6 +242,8 @@ flowchart LR
 | 🔐 **HTTPS через nginx** | TLS-точка входа на `443/tcp` |
 | 🧯 **Firewall automation** | Скрипты помогают открыть нужные порты |
 | 🩺 **Doctor / Status** | Команды диагностики на OpenWrt |
+
+</div>
 
 ---
 
