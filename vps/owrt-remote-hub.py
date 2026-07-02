@@ -27,11 +27,8 @@ from pathlib import Path
 
 
 APP_NAME = "OpenWrt Remote Hub"
-APP_DIR = Path(__file__).resolve().parent
 STATE_DIR = Path(os.environ.get("OWRT_REMOTE_STATE_DIR", "/var/lib/owrt-remote"))
 DB_PATH = Path(os.environ.get("OWRT_REMOTE_DB", str(STATE_DIR / "hub.db")))
-STATIC_DIR = Path(os.environ.get("OWRT_REMOTE_STATIC_DIR", str(APP_DIR / "static")))
-LOGO_FILE = STATIC_DIR / "logo.png"
 AUTH_FILE = STATE_DIR / "hub-auth.json"
 SESSION_TOKEN_FILE = STATE_DIR / "hub-session.token"
 SESSIONS_FILE = STATE_DIR / "hub-sessions.json"
@@ -2197,8 +2194,6 @@ body::before{{content:"";position:fixed;inset:-28%;pointer-events:none;backgroun
 .brand{{display:block;text-align:center;margin-bottom:14px}}
 h1{{margin:0;font-size:18px;line-height:1.1;letter-spacing:0}}.appBanner{{position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:54px;padding:10px 12px;border:1px solid rgba(34,211,238,.34);border-radius:8px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));box-shadow:0 10px 24px rgba(124,58,237,.18),inset 0 1px 0 rgba(255,255,255,.10);font-size:17px;overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}@keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 p{{margin:3px 0 0;color:var(--muted)}}
-.loginLogo{{display:flex;align-items:center;justify-content:center;margin:-2px 0 12px;padding:10px 12px;border:1px solid rgba(34,211,238,.28);border-radius:8px;background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(34,211,238,.05),rgba(124,58,237,.10));box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 12px 28px rgba(0,0,0,.18);overflow:hidden}}
-.loginLogo img{{display:block;width:100%;max-width:305px;height:auto;filter:drop-shadow(0 10px 18px rgba(0,0,0,.24))}}
 label{{display:block;margin:10px 0 5px;font-weight:850;color:#ede9fe;text-align:center}}
 input{{width:100%;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.74);color:var(--text);outline:none;text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
 input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.04)}}
@@ -2211,7 +2206,6 @@ button:hover{{filter:brightness(1.06)}}
 </head>
 <body>
 <form class="login" method="post" action="/login">
-  <div class="loginLogo"><img src="/static/logo.png" alt="OpenWrt Remote Hub"></div>
   {error_html}
   <label for="hubUsername">Логин</label>
   <input id="hubUsername" name="username" autocomplete="username" autofocus required>
@@ -2360,14 +2354,6 @@ class Handler(BaseHTTPRequestHandler):
     def send_json(self, status, payload):
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_bytes(status, body, "application/json; charset=utf-8")
-
-    def serve_static_logo(self):
-        try:
-            body = LOGO_FILE.read_bytes()
-        except OSError:
-            self.send_text(404, "logo not found")
-            return
-        self.send_bytes(200, body, "image/png")
 
     def require_admin(self):
         if self.admin_ok():
@@ -2839,9 +2825,6 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/.well-known/acme-challenge/"):
             self.serve_acme_challenge(path)
-            return
-        if path == "/static/logo.png":
-            self.serve_static_logo()
             return
         if path == "/login":
             self.send_bytes(200, login_html().encode("utf-8"), "text/html; charset=utf-8")
