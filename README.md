@@ -31,17 +31,21 @@
 
 <div align="center">
 
-##  Что это такое
+<h2>🚀 Что это такое</h2>
 
-**OpenWrt Remote Hub** — это связка из VPS-панели и OpenWrt-агента, которая даёт удобный удалённый доступ к роутерам без проброса LuCI и SSH наружу.
+<b>OpenWrt Remote Hub</b> — это связка из VPS-панели и OpenWrt-агента, которая даёт удобный удалённый доступ к роутерам без проброса LuCI и SSH наружу.
+
+<br><br>
 
 Роутер сам подключается к VPS изнутри сети, а ты заходишь в Hub-панель и открываешь нужный роутер, LuCI или SSH Web Terminal.
+
+<br><br>
 
 <table>
 <tr>
 <td width="50%" align="center">
 
-###  Для чего
+<h3>🎯 Для чего</h3>
 
 удалённо открыть LuCI  
 зайти в SSH через браузер  
@@ -52,7 +56,7 @@
 </td>
 <td width="50%" align="center">
 
-###  Из чего состоит
+<h3>🧩 Из чего состоит</h3>
 
 VPS Hub-панель  
 OpenWrt агент  
@@ -71,20 +75,20 @@ web terminal
 
 <div align="center">
 
-##  Tech Stack
+<h2>🧰 Tech Stack</h2>
 
-### Router / Network / OpenWrt
+<h3>📡 Router / Network / OpenWrt</h3>
 
-<p align="center">
+<p>
   <img alt="OpenWrt" src="https://img.shields.io/badge/OpenWrt-00A3E0?style=for-the-badge&logo=openwrt&logoColor=white">
   <img alt="LuCI" src="https://img.shields.io/badge/LuCI-44CC11?style=for-the-badge&logo=lua&logoColor=white">
   <img alt="Dropbear" src="https://img.shields.io/badge/Dropbear-SSH-64748B?style=for-the-badge">
   <img alt="CGI" src="https://img.shields.io/badge/CGI-Web%20Panel-A855F7?style=for-the-badge">
 </p>
 
-### VPS / Reverse / HTTPS
+<h3>🖥️ VPS / Reverse / HTTPS</h3>
 
-<p align="center">
+<p>
   <img alt="Linux" src="https://img.shields.io/badge/Linux-VPS-FCC624?style=for-the-badge&logo=linux&logoColor=111111">
   <img alt="Python" src="https://img.shields.io/badge/Python-Hub-3776AB?style=for-the-badge&logo=python&logoColor=white">
   <img alt="Shell" src="https://img.shields.io/badge/Shell-Installer-4EAA25?style=for-the-badge&logo=gnu-bash&logoColor=white">
@@ -96,18 +100,20 @@ web terminal
 
 ---
 
-<h2 align="center"> Быстрый старт</h2>
+<div align="center">
 
-> После установки в конце появится вход:
->
-> ```text
-> login:    admin
-> password: admin
-> ```
->
-> Пароль лучше поменять сразу после первого входа.
+<h2>⚡ Быстрый старт</h2>
 
-###  VPS: поставить Hub, Xray, firewall и HTTPS одной командой
+После установки в конце появится вход:
+
+```text
+login:    admin
+password: admin
+```
+
+Пароль лучше поменять сразу после первого входа.
+
+<h3>1️⃣ VPS: поставить Hub, Xray, firewall и HTTPS одной командой</h3>
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh
@@ -125,9 +131,9 @@ IP/домен VPS:
 hub.example.com
 ```
 
-Или просто нажать **Enter**, чтобы взять найденный IP сервера.
+Или просто нажать <b>Enter</b>, чтобы взять найденный IP сервера.
 
-###  OpenWrt: поставить Remote Hub на роутер
+<h3>2️⃣ OpenWrt: поставить Remote Hub на роутер</h3>
 
 ```sh
 wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" | sh
@@ -140,9 +146,15 @@ owrt-remote doctor
 owrt-remote status
 ```
 
+</div>
+
 ---
 
-<h2 align="center"> Схема работы</h2>
+<div align="center">
+
+<h2>🛰️ Схема работы</h2>
+
+</div>
 
 ```mermaid
 flowchart LR
@@ -154,13 +166,17 @@ flowchart LR
     R --> S[SSH / Dropbear]
 ```
 
-**Главная идея:** роутер сам подключается к VPS изнутри сети. Наружу LuCI и SSH на роутере открывать не нужно.
+<div align="center">
+
+<b>Главная идея:</b> роутер сам подключается к VPS изнутри сети. Наружу LuCI и SSH на роутере открывать не нужно.
+
+</div>
 
 ---
 
-<h2 align="center"> Скриншоты интерфейса</h2>
-
 <div align="center">
+
+<h2>🖼️ Скриншоты интерфейса</h2>
 
 <table>
 <tr>
@@ -228,9 +244,9 @@ flowchart LR
 
 ---
 
-<h2 align="center"> Видео-демо</h2>
-
 <div align="center">
+
+<h2>🎬 Видео-демо</h2>
 
 <b>Видео-демо</b>
 <br>
@@ -244,33 +260,77 @@ flowchart LR
 
 ---
 
-| Возможность | Описание |
-|:---:|:---:|
-|  **Router Cards** | Карточки роутеров в Hub-панели |
-|  **Online / Offline** | Быстрая проверка состояния роутеров |
-|  **LuCI через VPS** | Доступ к LuCI без прямого проброса портов |
-|  **SSH Web Terminal** | SSH в браузере, удобно даже с телефона |
-|  **Xray Reverse** | Роутер подключается к VPS сам |
-|  **HTTPS через nginx** | TLS-точка входа на `443/tcp` |
-|  **Firewall automation** | Скрипты помогают открыть нужные порты |
-|  **Doctor / Status** | Команды диагностики на OpenWrt |
+<div align="center">
+
+<h2>🎛️ Возможности</h2>
+
+<table>
+<tr>
+<th align="center">Возможность</th>
+<th align="center">Описание</th>
+</tr>
+<tr>
+<td align="center">🧭 <b>Router Cards</b></td>
+<td align="center">Карточки роутеров в Hub-панели</td>
+</tr>
+<tr>
+<td align="center">🟢 <b>Online / Offline</b></td>
+<td align="center">Быстрая проверка состояния роутеров</td>
+</tr>
+<tr>
+<td align="center">🌐 <b>LuCI через VPS</b></td>
+<td align="center">Доступ к LuCI без прямого проброса портов</td>
+</tr>
+<tr>
+<td align="center">💻 <b>SSH Web Terminal</b></td>
+<td align="center">SSH в браузере, удобно даже с телефона</td>
+</tr>
+<tr>
+<td align="center">🔁 <b>Xray Reverse</b></td>
+<td align="center">Роутер подключается к VPS сам</td>
+</tr>
+<tr>
+<td align="center">🔐 <b>HTTPS через nginx</b></td>
+<td align="center">TLS-точка входа на <code>443/tcp</code></td>
+</tr>
+<tr>
+<td align="center">🧯 <b>Firewall automation</b></td>
+<td align="center">Скрипты помогают открыть нужные порты</td>
+</tr>
+<tr>
+<td align="center">🩺 <b>Doctor / Status</b></td>
+<td align="center">Команды диагностики на OpenWrt</td>
+</tr>
+</table>
 
 </div>
 
 ---
 
-<h2 align="center"> Подробная установка</h2>
+<div align="center">
+
+<h2>📦 Подробная установка</h2>
+
+</div>
 
 <details>
-<summary><b> Установка VPS подробно</b></summary>
+<summary align="center"><b>🖥️ Установка VPS подробно</b></summary>
+
+<div align="center">
 
 Если хочешь поставить повторно, но не сбрасывать текущий пароль:
+
+</div>
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo env RESET_LOGIN=0 sh
 ```
 
+<div align="center">
+
 Если HTTPS не включился автоматически, HTTP-панель всё равно остаётся рабочей. После проверки firewall можно запустить:
+
+</div>
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" | sudo sh -s -- YOUR_VPS_IP
@@ -279,19 +339,31 @@ curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/
 </details>
 
 <details>
-<summary><b> HTTPS / SSL</b></summary>
+<summary align="center"><b>🔐 HTTPS / SSL</b></summary>
+
+<div align="center">
 
 Установщик пытается включить HTTPS сам.
 
+<br><br>
+
 Схема такая:
+
+</div>
 
 ```text
 Internet -> 443/nginx -> Hub -> Xray reverse -> OpenWrt
 ```
 
-Hub работает внутри на `80` и `8088`, а HTTPS на `443` принимает nginx и прокидывает запросы в Hub.
+<div align="center">
+
+Hub работает внутри на <code>80</code> и <code>8088</code>, а HTTPS на <code>443</code> принимает nginx и прокидывает запросы в Hub.
+
+<br><br>
 
 Для установки должны быть открыты порты:
+
+</div>
 
 ```text
 80/tcp    - HTTP-панель и проверка Let's Encrypt
@@ -300,19 +372,31 @@ Hub работает внутри на `80` и `8088`, а HTTPS на `443` пр�
 8443/tcp  - Xray / reverse endpoint
 ```
 
+<div align="center">
+
 Включить HTTPS вручную на IP:
+
+</div>
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" | sudo sh -s -- YOUR_VPS_IP
 ```
 
+<div align="center">
+
 Включить HTTPS вручную на домен:
+
+</div>
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" | sudo EMAIL="you@example.com" sh -s -- hub.example.com
 ```
 
+<div align="center">
+
 Проверка на VPS:
+
+</div>
 
 ```sh
 sudo ss -lntp | grep -E ':(80|443|8088)\b'
@@ -321,35 +405,55 @@ curl -k https://127.0.0.1/health
 sudo nginx -t
 ```
 
+<div align="center">
+
 Нормальная картина:
 
-- `443` слушает `nginx`;
-- `80` и `8088` слушает `python3` Hub;
-- certbot ставит auto-renew;
-- скрипт добавляет hook для перезагрузки nginx после обновления сертификата.
+<br><br>
+
+<code>443</code> слушает <code>nginx</code><br>
+<code>80</code> и <code>8088</code> слушает <code>python3</code> Hub<br>
+certbot ставит auto-renew<br>
+скрипт добавляет hook для перезагрузки nginx после обновления сертификата
+
+</div>
 
 </details>
 
 <details>
-<summary><b> Уведомления и мини-лог VPS</b></summary>
+<summary align="center"><b>🔔 Уведомления и мини-лог VPS</b></summary>
 
-В панели Hub открой кнопку с логином, блок `Уведомления`, и нажми `Включить`.
+<div align="center">
+
+В панели Hub открой кнопку с логином, блок <code>Уведомления</code>, и нажми <code>Включить</code>.
+
+<br><br>
 
 Что пишет Hub:
 
-- вход в панель: устройство, браузер и IP;
-- запуск Hub;
-- запуск VPS после перезагрузки;
-- короткую причину прошлого выключения/ребута по журналу VPS.
+<br><br>
+
+вход в панель: устройство, браузер и IP<br>
+запуск Hub<br>
+запуск VPS после перезагрузки<br>
+короткую причину прошлого выключения/ребута по журналу VPS
+
+<br><br>
 
 Важно: если VPS полностью выключился или пропал интернет, сам VPS не сможет отправить уведомление в момент падения. Событие появится после следующего запуска, когда Hub снова поднимется.
+
+</div>
 
 </details>
 
 <details>
-<summary><b> Проверка после установки</b></summary>
+<summary align="center"><b>✅ Проверка после установки</b></summary>
+
+<div align="center">
 
 На VPS:
+
+</div>
 
 ```sh
 sudo systemctl status owrt-remote --no-pager -l
@@ -359,15 +463,23 @@ curl -sS http://127.0.0.1:8088/health
 curl -k https://127.0.0.1/health
 ```
 
+<div align="center">
+
 Должно быть:
 
-- `owrt-remote` active/running;
-- `owrt-remote-xray` active/running;
-- `*:80`, `*:443`, `*:8088`, `*:8443`;
-- `127.0.0.1:18080` для LuCI первого роутера;
-- `127.0.0.1:19080` для SSH первого роутера.
+<br><br>
+
+<code>owrt-remote</code> active/running<br>
+<code>owrt-remote-xray</code> active/running<br>
+<code>*:80</code>, <code>*:443</code>, <code>*:8088</code>, <code>*:8443</code><br>
+<code>127.0.0.1:18080</code> для LuCI первого роутера<br>
+<code>127.0.0.1:19080</code> для SSH первого роутера
+
+<br><br>
 
 На OpenWrt:
+
+</div>
 
 ```sh
 owrt-remote doctor
@@ -379,12 +491,20 @@ owrt-remote heartbeat
 
 ---
 
-<h2 align="center"> Частые проблемы</h2>
+<div align="center">
+
+<h2>🧯 Частые проблемы</h2>
+
+</div>
 
 <details>
-<summary><b> Панель VPS не открывается</b></summary>
+<summary align="center"><b>❌ Панель VPS не открывается</b></summary>
+
+<div align="center">
 
 Проверь сервисы и порты:
+
+</div>
 
 ```sh
 sudo systemctl status owrt-remote --no-pager -l
@@ -393,9 +513,15 @@ sudo ss -lntp | grep -E ':(80|443|8088)\b'
 curl -sS http://127.0.0.1:8088/health
 ```
 
-Если на VPS `curl` отвечает `{"ok":true}`, но снаружи сайт не открывается, проблема почти всегда в firewall VPS-провайдера.
+<div align="center">
+
+Если на VPS <code>curl</code> отвечает <code>{"ok":true}</code>, но снаружи сайт не открывается, проблема почти всегда в firewall VPS-провайдера.
+
+<br><br>
 
 Открой в личном кабинете VPS:
+
+</div>
 
 ```text
 80/tcp
@@ -407,9 +533,13 @@ curl -sS http://127.0.0.1:8088/health
 </details>
 
 <details>
-<summary><b> Админка пишет <code>proxy error: [Errno 111] Connection refused</code></b></summary>
+<summary align="center"><b>🔌 Админка пишет <code>proxy error: [Errno 111] Connection refused</code></b></summary>
+
+<div align="center">
 
 Пересобери Xray config:
+
+</div>
 
 ```sh
 sudo /opt/owrt-remote/owrt-remote-hub.py render-xray --out /etc/xray/owrt-remote.json
@@ -420,27 +550,41 @@ sudo ss -lntp | grep -E ':(18080|18090|19080|19090)\b'
 </details>
 
 <details>
-<summary><b> SSH web-terminal просит пароль и молчит</b></summary>
+<summary align="center"><b>⌨️ SSH web-terminal просит пароль и молчит</b></summary>
+
+<div align="center">
 
 Проверь Dropbear на OpenWrt:
+
+</div>
 
 ```sh
 /etc/init.d/dropbear status
 owrt-remote heartbeat
 ```
 
+<div align="center">
+
 В телефоне используй поле снизу терминала:
 
-- **Вставить** — вставить текст;
-- **Enter** — отправить Enter;
-- **Отправить** — отправить команду или пароль.
+<br><br>
+
+<b>Вставить</b> — вставить текст<br>
+<b>Enter</b> — отправить Enter<br>
+<b>Отправить</b> — отправить команду или пароль
+
+</div>
 
 </details>
 
 <details>
-<summary><b> С мобильного интернета не открывается</b></summary>
+<summary align="center"><b>📱 С мобильного интернета не открывается</b></summary>
+
+<div align="center">
 
 Пробуй:
+
+</div>
 
 ```text
 https://YOUR_VPS_IP/
@@ -448,7 +592,11 @@ http://YOUR_VPS_IP/
 http://YOUR_VPS_IP:8088/
 ```
 
+<div align="center">
+
 Если по Wi-Fi работает, а через мобильный интернет нет, открой порты в firewall VPS-провайдера и проверь:
+
+</div>
 
 ```sh
 sudo ss -lntp | grep -E ':(80|443|8088)'
@@ -458,32 +606,48 @@ sudo ss -lntp | grep -E ':(80|443|8088)'
 
 ---
 
-<h2 align="center"> Удаление</h2>
+<div align="center">
+
+<h2>🗑️ Удаление</h2>
+
+</div>
 
 <details>
-<summary><b> Удалить Hub с VPS полностью</b></summary>
+<summary align="center"><b>🖥️ Удалить Hub с VPS полностью</b></summary>
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" | sudo sh
 ```
 
+<div align="center">
+
 Удалится:
 
-- `owrt-remote`;
-- `owrt-remote-xray`;
-- `/opt/owrt-remote`;
-- `/etc/xray/owrt-remote.json`;
-- `/var/lib/owrt-remote`;
-- nginx-конфиг HTTPS, certbot renewal hook и старые TLS override-файлы;
-- правила `ufw` для `80/tcp`, `443/tcp`, `8088/tcp`, `8443/tcp`.
+<br><br>
+
+<code>owrt-remote</code><br>
+<code>owrt-remote-xray</code><br>
+<code>/opt/owrt-remote</code><br>
+<code>/etc/xray/owrt-remote.json</code><br>
+<code>/var/lib/owrt-remote</code><br>
+nginx-конфиг HTTPS, certbot renewal hook и старые TLS override-файлы<br>
+правила <code>ufw</code> для <code>80/tcp</code>, <code>443/tcp</code>, <code>8088/tcp</code>, <code>8443/tcp</code>
+
+<br><br>
 
 Удалить Hub, но оставить базу роутеров:
+
+</div>
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" | sudo env PURGE=0 sh
 ```
 
+<div align="center">
+
 Удалить дополнительно сам Xray binary:
+
+</div>
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" | sudo env REMOVE_XRAY=1 sh
@@ -492,24 +656,32 @@ curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/
 </details>
 
 <details>
-<summary><b> Удалить агент с OpenWrt полностью</b></summary>
+<summary align="center"><b>📡 Удалить агент с OpenWrt полностью</b></summary>
 
 ```sh
 wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh?v=$(date +%s)" | PURGE=1 sh
 ```
 
+<div align="center">
+
 Удалится:
 
-- `/usr/sbin/owrt-remote`;
-- `/etc/init.d/owrt-remote`;
-- `/www/cgi-bin/owrt-remote`;
-- пункт меню LuCI;
-- rpcd ACL;
-- `/etc/config/owrtremote`;
-- `/etc/owrt-remote/web.key`;
-- `/etc/xray/owrt-remote-client.json`.
+<br><br>
+
+<code>/usr/sbin/owrt-remote</code><br>
+<code>/etc/init.d/owrt-remote</code><br>
+<code>/www/cgi-bin/owrt-remote</code><br>
+пункт меню LuCI<br>
+rpcd ACL<br>
+<code>/etc/config/owrtremote</code><br>
+<code>/etc/owrt-remote/web.key</code><br>
+<code>/etc/xray/owrt-remote-client.json</code>
+
+<br><br>
 
 Удалить только файлы панели, но оставить конфиг:
+
+</div>
 
 ```sh
 wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh?v=$(date +%s)" | sh
@@ -519,10 +691,14 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 
 ---
 
-<h2 align="center"> Дерево проекта</h2>
+<div align="center">
+
+<h2>🌳 Дерево проекта</h2>
+
+</div>
 
 <details>
-<summary><b>Открыть дерево файлов</b></summary>
+<summary align="center"><b>Открыть дерево файлов</b></summary>
 
 ```text
 .
@@ -558,33 +734,68 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 
 ---
 
-<h2 align="center"> Мини-шпаргалка команд</h2>
-
 <div align="center">
 
-| Где | Команда | Что делает |
-|:---:|:---:|:---:|
-| VPS | `systemctl status owrt-remote` | статус Hub |
-| VPS | `systemctl status owrt-remote-xray` | статус Xray reverse |
-| VPS | `curl -sS http://127.0.0.1:8088/health` | healthcheck Hub |
-| VPS | `sudo nginx -t` | проверка nginx-конфига |
-| OpenWrt | `owrt-remote doctor` | диагностика агента |
-| OpenWrt | `owrt-remote status` | текущий статус |
-| OpenWrt | `owrt-remote heartbeat` | отправить heartbeat |
+<h2>🧾 Мини-шпаргалка команд</h2>
+
+<table>
+<tr>
+<th align="center">Где</th>
+<th align="center">Команда</th>
+<th align="center">Что делает</th>
+</tr>
+<tr>
+<td align="center">VPS</td>
+<td align="center"><code>systemctl status owrt-remote</code></td>
+<td align="center">статус Hub</td>
+</tr>
+<tr>
+<td align="center">VPS</td>
+<td align="center"><code>systemctl status owrt-remote-xray</code></td>
+<td align="center">статус Xray reverse</td>
+</tr>
+<tr>
+<td align="center">VPS</td>
+<td align="center"><code>curl -sS http://127.0.0.1:8088/health</code></td>
+<td align="center">healthcheck Hub</td>
+</tr>
+<tr>
+<td align="center">VPS</td>
+<td align="center"><code>sudo nginx -t</code></td>
+<td align="center">проверка nginx-конфига</td>
+</tr>
+<tr>
+<td align="center">OpenWrt</td>
+<td align="center"><code>owrt-remote doctor</code></td>
+<td align="center">диагностика агента</td>
+</tr>
+<tr>
+<td align="center">OpenWrt</td>
+<td align="center"><code>owrt-remote status</code></td>
+<td align="center">текущий статус</td>
+</tr>
+<tr>
+<td align="center">OpenWrt</td>
+<td align="center"><code>owrt-remote heartbeat</code></td>
+<td align="center">отправить heartbeat</td>
+</tr>
+</table>
 
 </div>
 
 ---
 
-<h2 align="center"> Лицензия</h2>
-
 <div align="center">
 
-Этот проект распространяется под лицензией **MIT**.
+<h2> Лицензия</h2>
+
+Этот проект распространяется под лицензией <b>MIT</b>.
+
+<br><br>
 
 Можно использовать, копировать, изменять, публиковать и распространять проект при сохранении текста лицензии.
 
-<br>
+<br><br>
 
 <a href="LICENSE">
   <img alt="MIT License" src="https://img.shields.io/badge/License-MIT-22C55E?style=for-the-badge&labelColor=111827">
@@ -601,6 +812,8 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 <br>
 
 <b>OpenWrt Remote Hub</b> — свой VPS, свой доступ, свои роутеры под контролем.
+
+<br><br>
 
 <img src="https://capsule-render.vercel.app/api?type=waving&color=0:F97316,45:7C3AED,100:00A3E0&height=120&section=footer" alt="Footer" width="100%" />
 
