@@ -28,7 +28,7 @@
 
 ---
 
-##  Что это такое
+## ✨ Что это такое
 
 **OpenWrt Remote Hub** — это связка из VPS-панели и OpenWrt-агента, которая даёт удобный удалённый доступ к роутерам без проброса LuCI и SSH наружу.
 
@@ -38,7 +38,7 @@
 <tr>
 <td width="50%">
 
-###  Для чего
+### 🚀 Для чего
 
 - удалённо открыть LuCI;
 - зайти в SSH через браузер;
@@ -49,7 +49,7 @@
 </td>
 <td width="50%">
 
-###  Из чего состоит
+### 🧩 Из чего состоит
 
 - VPS Hub-панель;
 - OpenWrt агент;
@@ -64,7 +64,7 @@
 
 ---
 
-##  Tech Stack
+## 🧱 Tech Stack
 
 ### Router / Network / OpenWrt
 
@@ -87,7 +87,7 @@
 
 ---
 
-##  Быстрый старт
+## ⚡ Быстрый старт
 
 > После установки в конце появится вход:
 >
@@ -98,7 +98,7 @@
 >
 > Пароль лучше поменять сразу после первого входа.
 
-###  VPS: поставить Hub, Xray, firewall и HTTPS одной командой
+### 1️⃣ VPS: поставить Hub, Xray, firewall и HTTPS одной командой
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh
@@ -118,7 +118,7 @@ hub.example.com
 
 Или просто нажать **Enter**, чтобы взять найденный IP сервера.
 
-###  OpenWrt: поставить Remote Hub на роутер
+### 2️⃣ OpenWrt: поставить Remote Hub на роутер
 
 ```sh
 wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" | sh
@@ -133,10 +133,11 @@ owrt-remote status
 
 ---
 
-##  Схема работы
+## 🛰️ Схема работы
 
 <div align="center">
 
+<img width="100%" alt="OpenWrt Remote Hub scheme" src="https://github.com/user-attachments/assets/ea79f783-170e-4db1-be4d-2b217e623b99" />
 
 </div>
 
@@ -154,25 +155,25 @@ flowchart LR
 
 ---
 
-##  Возможности
+## 🎛️ Возможности
 
 | Возможность | Описание |
 |---|---|
-|  **Router Cards** | Карточки роутеров в Hub-панели |
-|  **Online / Offline** | Быстрая проверка состояния роутеров |
-|  **LuCI через VPS** | Доступ к LuCI без прямого проброса портов |
-|  **SSH Web Terminal** | SSH в браузере, удобно даже с телефона |
-|  **Xray Reverse** | Роутер подключается к VPS сам |
-|  **HTTPS через nginx** | TLS-точка входа на `443/tcp` |
-|  **Firewall automation** | Скрипты помогают открыть нужные порты |
-|  **Doctor / Status** | Команды диагностики на OpenWrt |
+| 🧭 **Router Cards** | Карточки роутеров в Hub-панели |
+| 🟢 **Online / Offline** | Быстрая проверка состояния роутеров |
+| 🌐 **LuCI через VPS** | Доступ к LuCI без прямого проброса портов |
+| 💻 **SSH Web Terminal** | SSH в браузере, удобно даже с телефона |
+| 🔁 **Xray Reverse** | Роутер подключается к VPS сам |
+| 🔐 **HTTPS через nginx** | TLS-точка входа на `443/tcp` |
+| 🧯 **Firewall automation** | Скрипты помогают открыть нужные порты |
+| 🩺 **Doctor / Status** | Команды диагностики на OpenWrt |
 
 ---
 
-##  Подробная установка
+## 📦 Подробная установка
 
 <details open>
-<summary><b> Установка VPS подробно</b></summary>
+<summary><b>🖥️ Установка VPS подробно</b></summary>
 
 Если хочешь поставить повторно, но не сбрасывать текущий пароль:
 
