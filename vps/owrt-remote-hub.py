@@ -347,7 +347,7 @@ def make_hub_session(username, ip, user_agent):
     return token, session
 
 
-def verify_hub_session(token, touch=True):
+def verify_hub_session(token, touch=True, ip="", user_agent=""):
     if not token:
         return None
     wanted = session_hash(token)
@@ -355,13 +355,62 @@ def verify_hub_session(token, touch=True):
     changed = False
     result = None
     ts = now_ts()
+    current_ip = str(ip or "").strip()
+    current_user_agent = short_user_agent(user_agent or "")
+    current_client = client_label(user_agent or "")
     for session in sessions:
         if secrets.compare_digest(session.get("token_hash", ""), wanted):
             result = session
-            if touch and ts - int(session.get("last_seen") or 0) > 60:
-                session["last_seen"] = ts
-                session["expires_at"] = ts + SESSION_TTL_SECONDS
-                changed = True
+            if touch:
+                old_ip = str(session.get("ip") or "").strip()
+                if current_ip and old_ip and current_ip != old_ip:
+                    known_ips = [str(item).strip() for item in session.get("known_ips", []) if str(item).strip()]
+                    for value in (old_ip, current_ip):
+                        if value not in known_ips:
+                            known_ips.append(value)
+                    session["known_ips"] = known_ips[-10:]
+                    session["ip"] = current_ip
+                    session["ip_changed_at"] = ts
+                    if current_user_agent:
+                        session["user_agent"] = current_user_agent
+                    if current_client:
+                        session["client"] = current_client
+                    add_notification(
+                        "session-ip",
+                        "Новый IP в активной сессии",
+                        f"{session.get('client', 'устройство')} · {old_ip} -> {current_ip}",
+                        "warn",
+                        [current_user_agent] if current_user_agent else [],
+                        {"session_id": session.get("id", ""), "old_ip": old_ip, "ip": current_ip},
+                        dedupe_seconds=45,
+                    )
+                    session["last_seen"] = ts
+                    session["expires_at"] = ts + SESSION_TTL_SECONDS
+                    changed = True
+                elif current_ip and not old_ip:
+                    session["ip"] = current_ip
+                    changed = True
+                old_user_agent = str(session.get("user_agent") or "").strip()
+                if current_user_agent and old_user_agent and current_user_agent != old_user_agent:
+                    old_client = session.get("client") or client_label(old_user_agent)
+                    session["user_agent"] = current_user_agent
+                    session["client"] = current_client or client_label(current_user_agent)
+                    add_notification(
+                        "session-client",
+                        "Новое устройство в активной сессии",
+                        f"{old_client} -> {session.get('client', 'устройство')} · IP {current_ip or session.get('ip', 'unknown')}",
+                        "warn",
+                        [current_user_agent],
+                        {"session_id": session.get("id", ""), "ip": current_ip or session.get("ip", "")},
+                        dedupe_seconds=60,
+                    )
+                    changed = True
+                if ts - int(session.get("last_seen") or 0) > 60:
+                    session["last_seen"] = ts
+                    session["expires_at"] = ts + SESSION_TTL_SECONDS
+                    changed = True
+                elif changed:
+                    session["expires_at"] = ts + SESSION_TTL_SECONDS
             break
     if changed:
         save_sessions(sessions)
@@ -1775,10 +1824,20 @@ function renderNotifications(list) {{
   }}).join('');
 }}
 
-function notificationPermissionText() {{
+function isIOSDevice() {{
   const ua = navigator.userAgent || '';
-  if (/iPhone|iPad|iPod/i.test(ua)) return 'iOS: в панели';
-  if (!('Notification' in window)) return 'Не поддерживается';
+  return /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}}
+
+function isStandalonePwa() {{
+  return !!(window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
+}}
+
+function notificationPermissionText() {{
+  if (!('Notification' in window)) {{
+    if (isIOSDevice()) return isStandalonePwa() ? 'iOS: события в панели' : 'iOS: добавь на экран';
+    return 'В панели';
+  }}
   if (Notification.permission === 'granted') return 'Включено';
   if (Notification.permission === 'denied') return 'Запрещено';
   return 'Включить';
@@ -1791,7 +1850,14 @@ function updateNotifyButton() {{
 
 async function enableNotifications() {{
   if (!('Notification' in window)) {{
-    showRouterMsg('Этот браузер не поддерживает системные уведомления. На iOS лучше открыть Hub как приложение с экрана Домой.', true);
+    localStorage.setItem('owrtNotifyEnabled', '0');
+    updateNotifyButton();
+    const message = isIOSDevice()
+      ? (isStandalonePwa()
+        ? 'iOS открыл Hub как приложение, но системные пуши этому браузеру недоступны. События будут видны в ленте Hub.'
+        : 'На iOS добавь Hub на экран Домой. Если уведомления всё равно недоступны, события будут видны в ленте Hub.')
+      : 'Этот браузер не даёт системные уведомления. События будут видны в ленте Hub.';
+    showRouterMsg(message, false);
     return;
   }}
   if (Notification.permission === 'default') {{
@@ -2600,7 +2666,12 @@ class Handler(BaseHTTPRequestHandler):
         return parse_cookies(self.headers.get("Cookie", "")).get(SESSION_COOKIE, "")
 
     def current_hub_session(self, touch=True):
-        return verify_hub_session(self.current_session_token(), touch=touch)
+        return verify_hub_session(
+            self.current_session_token(),
+            touch=touch,
+            ip=self.client_ip() if touch else "",
+            user_agent=self.headers.get("User-Agent", "") if touch else "",
+        )
 
     def legacy_admin_ok(self):
         return secrets.compare_digest(self.current_session_token(), self.app.session_token)
