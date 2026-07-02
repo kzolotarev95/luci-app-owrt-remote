@@ -236,13 +236,13 @@ flowchart LR
 <br>
 <sub>Открытие Hub с телефона: статус роутера, LuCI и SSH Web Terminal.</sub>
 
+<br><br>
+
+<video src="https://github.com/user-attachments/assets/f7990b3c-2cfe-4fbf-bb01-c846102e1c94" width="360" controls></video>
+
 </div>
 
-https://github.com/user-attachments/assets/f7990b3c-2cfe-4fbf-bb01-c846102e1c94
-
-<h2 align="center"> Возможности</h2>
-
-<div align="center">
+---
 
 | Возможность | Описание |
 |:---:|:---:|
