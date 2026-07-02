@@ -25,6 +25,12 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+try:
+    from pywebpush import WebPushException, webpush
+except Exception:
+    WebPushException = None
+    webpush = None
+
 
 APP_NAME = "OpenWrt Remote Hub"
 STATE_DIR = Path(os.environ.get("OWRT_REMOTE_STATE_DIR", "/var/lib/owrt-remote"))
@@ -33,6 +39,9 @@ AUTH_FILE = STATE_DIR / "hub-auth.json"
 SESSION_TOKEN_FILE = STATE_DIR / "hub-session.token"
 SESSIONS_FILE = STATE_DIR / "hub-sessions.json"
 NOTIFICATIONS_FILE = STATE_DIR / "hub-notifications.json"
+PUSH_SUBSCRIPTIONS_FILE = STATE_DIR / "hub-push-subscriptions.json"
+VAPID_PRIVATE_KEY_FILE = STATE_DIR / "hub-vapid-private.pem"
+VAPID_PUBLIC_KEY_FILE = STATE_DIR / "hub-vapid-public.txt"
 BOOT_ID_FILE = STATE_DIR / "hub-boot.id"
 AGENT_TOKEN_FILE = STATE_DIR / "agent.token"
 ACME_WEBROOT = STATE_DIR / "acme-webroot"
@@ -58,6 +67,7 @@ ROUTER_PROXY_LOCK = threading.Lock()
 ROUTER_PROXY_LIMITERS = {}
 STATIC_CACHE_LOCK = threading.Lock()
 NOTIFICATIONS_LOCK = threading.Lock()
+PUSH_LOCK = threading.Lock()
 STATIC_CACHE = {}
 STATIC_CACHE_BYTES = 0
 
@@ -507,6 +517,7 @@ def add_notification(kind, title, body="", level="info", details=None, data=None
                     return old
         items.insert(0, item)
         save_notifications(items)
+    queue_web_push_notification(item)
     return item
 
 
@@ -526,6 +537,253 @@ def list_notifications(after=0, limit=60):
 def clear_notifications():
     with NOTIFICATIONS_LOCK:
         save_notifications([])
+
+
+def b64url(raw):
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def load_push_subscriptions():
+    ensure_state()
+    if not PUSH_SUBSCRIPTIONS_FILE.exists():
+        return []
+    try:
+        data = json.loads(PUSH_SUBSCRIPTIONS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if isinstance(data, dict):
+        data = data.get("subscriptions", [])
+    if not isinstance(data, list):
+        return []
+    return [item for item in data if isinstance(item, dict) and item.get("endpoint")]
+
+
+def save_push_subscriptions(items):
+    cleaned = []
+    seen = set()
+    for item in items:
+        endpoint = str(item.get("endpoint") or "").strip()
+        keys = item.get("keys") if isinstance(item.get("keys"), dict) else {}
+        if not endpoint or endpoint in seen:
+            continue
+        seen.add(endpoint)
+        cleaned.append(
+            {
+                "id": item.get("id") or hashlib.sha256(endpoint.encode("utf-8")).hexdigest()[:16],
+                "endpoint": endpoint,
+                "keys": {
+                    "p256dh": str(keys.get("p256dh") or ""),
+                    "auth": str(keys.get("auth") or ""),
+                },
+                "client": str(item.get("client") or "браузер")[:120],
+                "ip": str(item.get("ip") or "")[:80],
+                "user_agent": str(item.get("user_agent") or "")[:260],
+                "created_at": int(item.get("created_at") or now_ts()),
+                "last_seen": int(item.get("last_seen") or now_ts()),
+            }
+        )
+    write_json_private(PUSH_SUBSCRIPTIONS_FILE, {"subscriptions": cleaned[-80:]})
+
+
+def vapid_public_key():
+    ensure_state()
+    if VAPID_PUBLIC_KEY_FILE.exists() and VAPID_PRIVATE_KEY_FILE.exists():
+        value = VAPID_PUBLIC_KEY_FILE.read_text(encoding="utf-8").strip()
+        if value:
+            return value
+    try:
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import ec
+    except Exception:
+        return ""
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    public_numbers = private_key.public_key().public_numbers()
+    public_raw = b"\x04" + public_numbers.x.to_bytes(32, "big") + public_numbers.y.to_bytes(32, "big")
+    public_value = b64url(public_raw)
+    VAPID_PRIVATE_KEY_FILE.write_bytes(private_pem)
+    VAPID_PUBLIC_KEY_FILE.write_text(public_value + "\n", encoding="utf-8")
+    try:
+        os.chmod(VAPID_PRIVATE_KEY_FILE, 0o600)
+        os.chmod(VAPID_PUBLIC_KEY_FILE, 0o600)
+    except OSError:
+        pass
+    return public_value
+
+
+def web_push_ready():
+    return webpush is not None and WebPushException is not None and bool(vapid_public_key())
+
+
+def save_push_subscription(subscription, username="", ip="", user_agent=""):
+    if not isinstance(subscription, dict):
+        raise ValueError("subscription must be object")
+    endpoint = str(subscription.get("endpoint") or "").strip()
+    keys = subscription.get("keys") if isinstance(subscription.get("keys"), dict) else {}
+    p256dh = str(keys.get("p256dh") or "").strip()
+    auth = str(keys.get("auth") or "").strip()
+    if not endpoint or not p256dh or not auth:
+        raise ValueError("bad push subscription")
+    ts = now_ts()
+    item = {
+        "id": hashlib.sha256(endpoint.encode("utf-8")).hexdigest()[:16],
+        "endpoint": endpoint,
+        "keys": {"p256dh": p256dh, "auth": auth},
+        "client": client_label(user_agent),
+        "ip": ip or "",
+        "user_agent": short_user_agent(user_agent),
+        "username": username or current_username(),
+        "created_at": ts,
+        "last_seen": ts,
+    }
+    with PUSH_LOCK:
+        items = [old for old in load_push_subscriptions() if old.get("endpoint") != endpoint]
+        items.append(item)
+        save_push_subscriptions(items)
+    return item
+
+
+def remove_push_subscription(endpoint):
+    endpoint = str(endpoint or "").strip()
+    if not endpoint:
+        return 0
+    with PUSH_LOCK:
+        items = load_push_subscriptions()
+        kept = [item for item in items if item.get("endpoint") != endpoint]
+        if len(kept) != len(items):
+            save_push_subscriptions(kept)
+            return len(items) - len(kept)
+    return 0
+
+
+def push_payload_for_notification(item):
+    return {
+        "title": item.get("title") or APP_NAME,
+        "body": item.get("body") or "",
+        "tag": "owrt-" + str(item.get("id") or item.get("kind") or now_ts()),
+        "url": "/",
+        "kind": item.get("kind") or "info",
+        "ts": int(item.get("ts") or now_ts()),
+    }
+
+
+def send_web_push(subscription, payload):
+    if not web_push_ready():
+        return "unavailable"
+    try:
+        webpush(
+            subscription_info={
+                "endpoint": subscription.get("endpoint"),
+                "keys": subscription.get("keys") or {},
+            },
+            data=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            vapid_private_key=str(VAPID_PRIVATE_KEY_FILE),
+            vapid_claims={"sub": os.environ.get("OWRT_REMOTE_VAPID_SUB", "mailto:admin@localhost")},
+            timeout=10,
+            ttl=86400,
+        )
+        return "ok"
+    except Exception as exc:
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None)
+        if status_code in (404, 410):
+            return "gone"
+        return f"error:{status_code or exc.__class__.__name__}"
+
+
+def queue_web_push_payload(payload, subscriptions=None):
+    if subscriptions is None:
+        subscriptions = load_push_subscriptions()
+    if not subscriptions:
+        return
+
+    def worker():
+        gone = []
+        for subscription in subscriptions:
+            result = send_web_push(subscription, payload)
+            if result == "gone":
+                gone.append(subscription.get("endpoint", ""))
+        for endpoint in gone:
+            remove_push_subscription(endpoint)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def queue_web_push_notification(item):
+    if not item:
+        return
+    queue_web_push_payload(push_payload_for_notification(item))
+
+
+def service_worker_js():
+    return r"""
+self.addEventListener('install', event => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil(self.clients.claim());
+});
+
+self.addEventListener('push', event => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = {title: 'OpenWrt Remote Hub', body: event.data ? event.data.text() : ''};
+  }
+  const title = data.title || 'OpenWrt Remote Hub';
+  const options = {
+    body: data.body || '',
+    tag: data.tag || 'owrt-remote-hub',
+    renotify: true,
+    data: {url: data.url || '/'},
+    badge: data.badge || undefined,
+    icon: data.icon || undefined
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil((async () => {
+    const allClients = await self.clients.matchAll({type: 'window', includeUncontrolled: true});
+    for (const client of allClients) {
+      if ('focus' in client) {
+        await client.focus();
+        if ('navigate' in client) {
+          try { await client.navigate(url); } catch (e) {}
+        }
+        return;
+      }
+    }
+    if (self.clients.openWindow) await self.clients.openWindow(url);
+  })());
+});
+""".strip() + "\n"
+
+
+def web_manifest_json():
+    return json.dumps(
+        {
+            "name": "OpenWrt Remote Hub",
+            "short_name": "Wrt Hub",
+            "start_url": "/",
+            "scope": "/",
+            "display": "standalone",
+            "background_color": "#10081c",
+            "theme_color": "#7c3aed",
+            "description": "Удаленный доступ к OpenWrt через свой VPS",
+            "icons": [],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
 
 def run_quiet(args, timeout=2.5):
@@ -1327,6 +1585,8 @@ def dashboard_html(routers, username, sessions=None, notifications=None):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#7c3aed">
 <title>{APP_NAME}</title>
 <style>
 :root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.88);--panel2:rgba(255,255,255,.07);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.25);--blue:#7c3aed;--green:#22c55e;--red:#fb7185;--amber:#f59e0b;--cyan:#22d3ee;--teal:#a855f7;--grid:rgba(168,85,247,.14)}}
@@ -1401,7 +1661,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
               <button class="sessionBtn" id="notifyClear" type="button">Очистить</button>
             </div>
           </div>
-          <div class="notifyHint">Входы в панель и запуск VPS/Hub. Если VPS полностью выключен, событие отключения появится после следующего запуска.</div>
+          <div class="notifyHint">Web Push для входов в панель, смены IP и запуска VPS/Hub. На iOS включай из приложения Hub с экрана Домой.</div>
           <div id="notifyList" class="notifyList"></div>
         </div>
       </div>
@@ -1833,44 +2093,99 @@ function isStandalonePwa() {{
   return !!(window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
 }}
 
+function webPushSupported() {{
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}}
+
 function notificationPermissionText() {{
-  if (!('Notification' in window)) {{
-    if (isIOSDevice()) return isStandalonePwa() ? 'iOS: события в панели' : 'iOS: добавь на экран';
-    return 'В панели';
+  if (!webPushSupported()) {{
+    if (isIOSDevice()) return isStandalonePwa() ? 'Push недоступен' : 'iOS: добавь на экран';
+    return 'Push недоступен';
   }}
+  if (localStorage.getItem('owrtPushEnabled') === '1' && Notification.permission === 'granted') return 'Push включён';
   if (Notification.permission === 'granted') return 'Включено';
   if (Notification.permission === 'denied') return 'Запрещено';
-  return 'Включить';
+  return 'Включить Push';
 }}
 
 function updateNotifyButton() {{
   notifyEnable.textContent = notificationPermissionText();
-  notifyEnable.classList.toggle('on', 'Notification' in window && Notification.permission === 'granted');
+  notifyEnable.classList.toggle('on', localStorage.getItem('owrtPushEnabled') === '1' && webPushSupported() && Notification.permission === 'granted');
+}}
+
+function urlBase64ToUint8Array(value) {{
+  const padding = '='.repeat((4 - value.length % 4) % 4);
+  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const output = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) output[i] = raw.charCodeAt(i);
+  return output;
+}}
+
+async function registerPushSubscription() {{
+  const reg = await navigator.serviceWorker.register('/sw.js', {{scope: '/'}});
+  const ready = await navigator.serviceWorker.ready;
+  const keyRes = await fetch('/api/push/vapid-public-key', {{cache: 'no-store'}});
+  const keyData = await keyRes.json();
+  if (!keyRes.ok || !keyData.ok || !keyData.publicKey) {{
+    throw new Error(keyData.error || 'Web Push на VPS не готов. Обнови установку Hub.');
+  }}
+  let subscription = await ready.pushManager.getSubscription();
+  if (!subscription) {{
+    subscription = await ready.pushManager.subscribe({{
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
+    }});
+  }}
+  const res = await fetch('/api/push/subscribe', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify(subscription)
+  }});
+  const data = await res.json().catch(() => ({{}}));
+  if (!res.ok || !data.ok) throw new Error(data.error || 'Не смог сохранить push-подписку');
+  return data;
 }}
 
 async function enableNotifications() {{
-  if (!('Notification' in window)) {{
+  if (!webPushSupported()) {{
     localStorage.setItem('owrtNotifyEnabled', '0');
+    localStorage.setItem('owrtPushEnabled', '0');
     updateNotifyButton();
     const message = isIOSDevice()
       ? (isStandalonePwa()
-        ? 'iOS открыл Hub как приложение, но системные пуши этому браузеру недоступны. События будут видны в ленте Hub.'
-        : 'На iOS добавь Hub на экран Домой. Если уведомления всё равно недоступны, события будут видны в ленте Hub.')
-      : 'Этот браузер не даёт системные уведомления. События будут видны в ленте Hub.';
+        ? 'Этот iOS-браузер не дал Push API. Проверь iOS 16.4+, разрешения уведомлений для веб-приложений и открой Hub именно с экрана Домой.'
+        : 'На iOS открой Hub через Safari, нажми Поделиться -> На экран Домой, потом зайди из иконки и включи Push.')
+      : 'Этот браузер не даёт Web Push. Попробуй Chrome/Edge/Firefox или проверь разрешения уведомлений.';
     showRouterMsg(message, false);
     return;
   }}
   if (Notification.permission === 'default') {{
     await Notification.requestPermission();
   }}
-  localStorage.setItem('owrtNotifyEnabled', Notification.permission === 'granted' ? '1' : '0');
-  updateNotifyButton();
-  if (Notification.permission === 'granted') {{
-    new Notification('OpenWrt Remote Hub', {{body: 'Уведомления включены на этом устройстве.', tag: 'owrt-test'}});
+  if (Notification.permission !== 'granted') {{
+    localStorage.setItem('owrtNotifyEnabled', '0');
+    localStorage.setItem('owrtPushEnabled', '0');
+    updateNotifyButton();
+    showRouterMsg('Браузер не дал разрешение на уведомления. Проверь замочек возле адреса сайта и разреши уведомления.', true);
+    return;
   }}
+  try {{
+    showRouterMsg('Включаю настоящий Web Push для этого устройства...');
+    await registerPushSubscription();
+    localStorage.setItem('owrtNotifyEnabled', '1');
+    localStorage.setItem('owrtPushEnabled', '1');
+    showRouterMsg('Push включён. Теперь уведомления должны приходить даже когда вкладка закрыта.');
+  }} catch (e) {{
+    localStorage.setItem('owrtPushEnabled', '0');
+    localStorage.setItem('owrtNotifyEnabled', '0');
+    showRouterMsg(e.message || 'Не удалось включить Web Push', true);
+  }}
+  updateNotifyButton();
 }}
 
 function showBrowserNotification(item) {{
+  if (localStorage.getItem('owrtPushEnabled') === '1') return;
   if (!item || !('Notification' in window) || Notification.permission !== 'granted') return;
   if (localStorage.getItem('owrtNotifyEnabled') !== '1') return;
   try {{
@@ -2569,6 +2884,8 @@ def login_html(error=""):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#7c3aed">
 <title>OpenWrt Remote Hub</title>
 <style>
 :root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.9);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.28);--blue:#7c3aed;--cyan:#22d3ee;--red:#fb7185;--green:#22c55e;--grid:rgba(168,85,247,.13)}}
@@ -3223,6 +3540,17 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/health":
             self.send_json(200, {"ok": True})
             return
+        if path == "/sw.js":
+            self.send_bytes(
+                200,
+                service_worker_js().encode("utf-8"),
+                "application/javascript; charset=utf-8",
+                [("Service-Worker-Allowed", "/")],
+            )
+            return
+        if path == "/manifest.webmanifest":
+            self.send_bytes(200, web_manifest_json().encode("utf-8"), "application/manifest+json; charset=utf-8")
+            return
         if path.startswith("/.well-known/acme-challenge/"):
             self.serve_acme_challenge(path)
             return
@@ -3306,6 +3634,16 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
             return
+        if path == "/api/push/vapid-public-key":
+            public_key = vapid_public_key()
+            if not webpush:
+                self.send_json(503, {"ok": False, "error": "На VPS не установлен Web Push модуль. Запусти свежий install-vps.sh.", "publicKey": public_key})
+                return
+            if not public_key:
+                self.send_json(503, {"ok": False, "error": "Не смог создать VAPID ключи на VPS", "publicKey": ""})
+                return
+            self.send_json(200, {"ok": True, "publicKey": public_key})
+            return
         if path.startswith("/router/"):
             self.router_asset(path)
             return
@@ -3373,6 +3711,39 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/notifications/clear":
             clear_notifications()
             self.send_json(200, {"ok": True})
+            return
+        if path == "/api/push/subscribe":
+            try:
+                payload = self.read_payload()
+                session = self.current_hub_session(touch=False) or {}
+                subscription = save_push_subscription(
+                    payload,
+                    session.get("username", current_username()),
+                    self.client_ip(),
+                    self.headers.get("User-Agent", ""),
+                )
+                queue_web_push_payload(
+                    {
+                        "title": APP_NAME,
+                        "body": "Push включён на этом устройстве.",
+                        "tag": "owrt-push-test",
+                        "url": "/",
+                        "kind": "push-test",
+                        "ts": now_ts(),
+                    },
+                    [subscription],
+                )
+                self.send_json(200, {"ok": True, "subscription": {"id": subscription.get("id"), "client": subscription.get("client")}})
+            except Exception as exc:
+                self.send_json(400, {"ok": False, "error": str(exc)})
+            return
+        if path == "/api/push/unsubscribe":
+            try:
+                payload = self.read_payload()
+                removed = remove_push_subscription(payload.get("endpoint", ""))
+                self.send_json(200, {"ok": True, "removed": removed})
+            except Exception as exc:
+                self.send_json(400, {"ok": False, "error": str(exc)})
             return
         if path == "/api/xray/reload":
             try:

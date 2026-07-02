@@ -2,7 +2,7 @@
 set -u
 
 APP_NAME="OpenWrt Remote Hub"
-INSTALLER_VERSION="2026-07-02-login-clean-v8"
+INSTALLER_VERSION="2026-07-03-web-push-v1"
 RAW_BASE="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 STATE_DIR="${OWRT_REMOTE_STATE_DIR:-/var/lib/owrt-remote}"
 HUB_LOGIN="${HUB_LOGIN:-admin}"
@@ -79,7 +79,7 @@ detect_vps_host() {
 install_packages() {
 	if command -v apt-get >/dev/null 2>&1; then
 		$SUDO apt-get update
-		$SUDO apt-get install -y curl wget unzip python3 openssh-client ca-certificates ufw
+		$SUDO apt-get install -y curl wget unzip python3 python3-venv openssh-client ca-certificates ufw
 		return
 	fi
 	die "поддерживается Ubuntu/Debian с apt-get"
@@ -99,9 +99,24 @@ install_files() {
 	cache_bust="$(date +%s)"
 	$SUDO mkdir -p /opt/owrt-remote "$STATE_DIR" /etc/xray
 	$SUDO wget -O /opt/owrt-remote/owrt-remote-hub.py "$RAW_BASE/vps/owrt-remote-hub.py?v=$cache_bust"
+	$SUDO wget -O /opt/owrt-remote/owrt-remote-run.sh "$RAW_BASE/vps/owrt-remote-run.sh?v=$cache_bust"
 	$SUDO wget -O /etc/systemd/system/owrt-remote.service "$RAW_BASE/vps/owrt-remote.service?v=$cache_bust"
 	$SUDO wget -O /opt/owrt-remote/enable-https.sh "$RAW_BASE/vps/enable-https.sh?v=$cache_bust"
-	$SUDO chmod +x /opt/owrt-remote/owrt-remote-hub.py /opt/owrt-remote/enable-https.sh
+	$SUDO chmod +x /opt/owrt-remote/owrt-remote-hub.py /opt/owrt-remote/owrt-remote-run.sh /opt/owrt-remote/enable-https.sh
+}
+
+install_python_deps() {
+	info "РЎС‚Р°РІР»СЋ Web Push РґР»СЏ СЂРµР°Р»СЊРЅС‹С… push-СѓРІРµРґРѕРјР»РµРЅРёР№..."
+	if ! $SUDO python3 -m venv /opt/owrt-remote/venv; then
+		warn "РќРµ СЃРјРѕРі СЃРѕР·РґР°С‚СЊ Python venv. Hub Р·Р°РїСѓСЃС‚РёС‚СЃСЏ, РЅРѕ Web Push РЅСѓР¶РЅРѕ РґРѕСЃС‚Р°РІРёС‚СЊ РїРѕР·Р¶Рµ."
+		return 0
+	fi
+	if ! $SUDO /opt/owrt-remote/venv/bin/python -m pip install --upgrade pip wheel >/dev/null; then
+		warn "РќРµ СЃРјРѕРі РѕР±РЅРѕРІРёС‚СЊ pip РІ venv."
+	fi
+	if ! $SUDO /opt/owrt-remote/venv/bin/python -m pip install --upgrade pywebpush >/dev/null; then
+		warn "РќРµ СЃРјРѕРі РїРѕСЃС‚Р°РІРёС‚СЊ pywebpush. РџСЂРѕРІРµСЂСЊ internet/DNS РЅР° VPS."
+	fi
 }
 
 install_xray_service() {
@@ -242,6 +257,7 @@ main() {
 	info "IP/домен VPS: $host"
 	install_xray_binary
 	install_files
+	install_python_deps
 	install_xray_service
 	open_firewall
 	start_hub

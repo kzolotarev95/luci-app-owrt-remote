@@ -9,7 +9,7 @@ Environment=OWRT_REMOTE_BIND=0.0.0.0
 Environment=OWRT_REMOTE_PORT=8088
 Environment=OWRT_REMOTE_EXTRA_PORTS=80
 Environment=OWRT_REMOTE_STATE_DIR=/var/lib/owrt-remote
-ExecStart=/opt/owrt-remote/owrt-remote-hub.py serve
+ExecStart=/opt/owrt-remote/owrt-remote-run.sh serve
 Restart=on-failure
 RestartSec=3
 AmbientCapabilities=CAP_NET_BIND_SERVICE
