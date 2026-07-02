@@ -30,17 +30,17 @@
 
 <div align="center">
 
-## ✨ Что это такое
+##  Что это такое
 
 **OpenWrt Remote Hub** — это связка из VPS-панели и OpenWrt-агента, которая даёт удобный удалённый доступ к роутерам без проброса LuCI и SSH наружу.
 
-Роутер сам подключается к VPS изнутри сети, а ты заходишь в красивую Hub-панель и открываешь нужный роутер, LuCI или SSH Web Terminal.
+Роутер сам подключается к VPS изнутри сети, а ты заходишь в Hub-панель и открываешь нужный роутер, LuCI или SSH Web Terminal.
 
 <table>
 <tr>
 <td width="50%" align="center">
 
-### 🚀 Для чего
+###  Для чего
 
 удалённо открыть LuCI  
 зайти в SSH через браузер  
@@ -51,7 +51,7 @@
 </td>
 <td width="50%" align="center">
 
-### 🧩 Из чего состоит
+###  Из чего состоит
 
 VPS Hub-панель  
 OpenWrt агент  
@@ -70,7 +70,7 @@ web terminal
 
 <div align="center">
 
-## 🧱 Tech Stack
+##  Tech Stack
 
 ### Router / Network / OpenWrt
 
