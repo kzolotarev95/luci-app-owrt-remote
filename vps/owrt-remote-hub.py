@@ -32,6 +32,8 @@ DB_PATH = Path(os.environ.get("OWRT_REMOTE_DB", str(STATE_DIR / "hub.db")))
 AUTH_FILE = STATE_DIR / "hub-auth.json"
 SESSION_TOKEN_FILE = STATE_DIR / "hub-session.token"
 SESSIONS_FILE = STATE_DIR / "hub-sessions.json"
+NOTIFICATIONS_FILE = STATE_DIR / "hub-notifications.json"
+BOOT_ID_FILE = STATE_DIR / "hub-boot.id"
 AGENT_TOKEN_FILE = STATE_DIR / "agent.token"
 ACME_WEBROOT = STATE_DIR / "acme-webroot"
 ONLINE_AFTER_SECONDS = int(os.environ.get("OWRT_REMOTE_ONLINE_AFTER", "75"))
@@ -47,6 +49,7 @@ SESSION_COOKIE = "owrt_remote_session"
 ROUTER_COOKIE = "owrt_remote_router"
 SESSION_TTL_SECONDS = int(os.environ.get("OWRT_REMOTE_SESSION_TTL", str(30 * 24 * 60 * 60)))
 CAPTCHA_TTL_SECONDS = 600
+NOTIFICATIONS_MAX = 220
 LUCI_ABSOLUTE_ROOTS = ("/ubus", "/cgi-bin/luci", "/luci-static")
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 SSH_HTTP_SESSIONS = {}
@@ -54,6 +57,7 @@ SSH_HTTP_LOCK = threading.Lock()
 ROUTER_PROXY_LOCK = threading.Lock()
 ROUTER_PROXY_LIMITERS = {}
 STATIC_CACHE_LOCK = threading.Lock()
+NOTIFICATIONS_LOCK = threading.Lock()
 STATIC_CACHE = {}
 STATIC_CACHE_BYTES = 0
 
@@ -400,6 +404,185 @@ def list_hub_sessions(current_token=""):
             }
         )
     return rows
+
+
+def load_notifications():
+    ensure_state()
+    if not NOTIFICATIONS_FILE.exists():
+        return []
+    try:
+        data = json.loads(NOTIFICATIONS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if isinstance(data, dict):
+        data = data.get("notifications", [])
+    if not isinstance(data, list):
+        return []
+    return [item for item in data if isinstance(item, dict)]
+
+
+def save_notifications(items):
+    items = sorted(items, key=lambda item: int(item.get("ts") or 0), reverse=True)[:NOTIFICATIONS_MAX]
+    write_json_private(NOTIFICATIONS_FILE, {"notifications": items})
+
+
+def add_notification(kind, title, body="", level="info", details=None, data=None, dedupe_seconds=0):
+    ts = now_ts()
+    title = str(title or "").strip()[:120]
+    body = str(body or "").strip()[:500]
+    details = details or []
+    if isinstance(details, str):
+        details = [details]
+    details = [str(line).strip()[:260] for line in details if str(line).strip()][:12]
+    item = {
+        "id": secrets.token_hex(8),
+        "kind": str(kind or "info")[:40],
+        "level": str(level or "info")[:20],
+        "title": title,
+        "body": body,
+        "details": details,
+        "data": data if isinstance(data, dict) else {},
+        "ts": ts,
+        "iso": iso_time(ts),
+    }
+    with NOTIFICATIONS_LOCK:
+        items = load_notifications()
+        if dedupe_seconds:
+            for old in items:
+                if (
+                    old.get("kind") == item["kind"]
+                    and old.get("title") == item["title"]
+                    and old.get("body") == item["body"]
+                    and ts - int(old.get("ts") or 0) <= int(dedupe_seconds)
+                ):
+                    return old
+        items.insert(0, item)
+        save_notifications(items)
+    return item
+
+
+def list_notifications(after=0, limit=60):
+    try:
+        after = int(after or 0)
+    except (TypeError, ValueError):
+        after = 0
+    try:
+        limit = max(1, min(120, int(limit or 60)))
+    except (TypeError, ValueError):
+        limit = 60
+    items = [item for item in load_notifications() if int(item.get("ts") or 0) > after]
+    return sorted(items, key=lambda item: int(item.get("ts") or 0), reverse=True)[:limit]
+
+
+def run_quiet(args, timeout=2.5):
+    try:
+        return subprocess.run(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=timeout,
+            check=False,
+        ).stdout.strip()
+    except Exception:
+        return ""
+
+
+def current_boot_id():
+    try:
+        return Path("/proc/sys/kernel/random/boot_id").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def previous_boot_reason():
+    journal = run_quiet(["journalctl", "-b", "-1", "-n", "180", "--no-pager", "-o", "short-iso"], timeout=3.0)
+    last_log = run_quiet(["last", "-x", "-n", "8", "reboot", "shutdown"], timeout=2.0)
+    text = "\n".join([journal, last_log]).lower()
+    reason = "причина не найдена в журнале"
+    if any(word in text for word in ("out of memory", "oom-killer", "killed process", "memory cgroup out of memory")):
+        reason = "похоже на нехватку памяти / OOM"
+    elif any(word in text for word in ("kernel panic", "panic:")):
+        reason = "похоже на kernel panic"
+    elif any(word in text for word in ("watchdog", "hard lockup", "soft lockup")):
+        reason = "похоже на watchdog/зависание"
+    elif any(word in text for word in ("power key", "poweroff", "powering off")):
+        reason = "похоже на выключение питания"
+    elif any(word in text for word in ("the system will reboot now", "system reboot", "reboot.target", "systemd-reboot")):
+        reason = "штатная перезагрузка командой reboot/systemctl"
+    elif "shutdown" in text:
+        reason = "штатное выключение/shutdown"
+
+    details = []
+    for line in (journal + "\n" + last_log).splitlines():
+        low = line.lower()
+        if any(
+            marker in low
+            for marker in (
+                "reboot",
+                "shutdown",
+                "panic",
+                "oom",
+                "out of memory",
+                "watchdog",
+                "power",
+                "killed process",
+                "systemd-logind",
+                "systemd-reboot",
+            )
+        ):
+            details.append(" ".join(line.split()))
+        if len(details) >= 8:
+            break
+    return reason, details
+
+
+def record_hub_start_event():
+    ensure_state()
+    boot_id = current_boot_id()
+    previous_boot_id = ""
+    try:
+        previous_boot_id = BOOT_ID_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
+    if boot_id:
+        try:
+            BOOT_ID_FILE.write_text(boot_id + "\n", encoding="utf-8")
+            os.chmod(BOOT_ID_FILE, 0o600)
+        except OSError:
+            pass
+
+    if previous_boot_id and boot_id and previous_boot_id != boot_id:
+        reason, details = previous_boot_reason()
+        add_notification(
+            "vps_up",
+            "VPS снова онлайн",
+            f"Hub запущен после перезагрузки. Причина: {reason}.",
+            "warn",
+            details,
+            {"boot_id": boot_id},
+            dedupe_seconds=60,
+        )
+    elif previous_boot_id:
+        add_notification(
+            "hub_restart",
+            "Hub перезапущен",
+            "Служба OpenWrt Remote Hub снова запущена.",
+            "info",
+            [],
+            {"boot_id": boot_id},
+            dedupe_seconds=45,
+        )
+    else:
+        add_notification(
+            "hub_start",
+            "Hub запущен",
+            "OpenWrt Remote Hub стартовал первый раз на этом VPS.",
+            "info",
+            [],
+            {"boot_id": boot_id},
+            dedupe_seconds=60,
+        )
 
 
 def captcha_challenge():
@@ -1080,9 +1263,10 @@ def parse_resize_payload(payload):
     return message.get("rows"), message.get("cols")
 
 
-def dashboard_html(routers, username, sessions=None):
+def dashboard_html(routers, username, sessions=None, notifications=None):
     routers_json = json.dumps(routers, ensure_ascii=False)
     sessions_json = json.dumps(sessions or [], ensure_ascii=False)
+    notifications_json = json.dumps(notifications or [], ensure_ascii=False)
     safe_username = html.escape(username, quote=True)
     return f"""<!doctype html>
 <html lang="ru">
@@ -1102,6 +1286,7 @@ h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{positi
  .toolbar{{display:grid;grid-template-columns:1fr 1fr 110px 110px 150px auto;gap:10px;margin:18px 0;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px)}}.toolbar input,.toolbar select{{background:rgba(255,255,255,.08);border-color:var(--line);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}}.toolbar input::placeholder{{color:#b9adc9}}
 .authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:5;width:min(520px,calc(100vw - 44px));padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px)}}.authMenu[hidden]{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr 1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
 .sessionBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.sessionHead{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}}.sessionHead h3{{margin:0;font-size:15px}}.sessionList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.sessionRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.sessionTitle{{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-weight:900}}.sessionMeta{{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.sessionCurrent{{border:1px solid rgba(34,197,94,.38);border-radius:999px;padding:2px 7px;color:#bbf7d0;background:rgba(34,197,94,.13);font-size:11px}}.sessionBtn{{padding:7px 9px;font-size:12px;border-radius:999px}}.sessionEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}
+.notifyBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.notifyHint{{margin:-4px 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.notifyList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.notifyRow{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.notifyTitle{{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:950}}.notifyTitle span:first-child{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.notifyTime{{color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}}.notifyBody{{margin-top:4px;color:#ddd6fe;font-size:12px;line-height:1.35;word-break:break-word}}.notifyDetails{{margin:7px 0 0;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;max-height:92px;overflow:auto}}.notifyRow.warn{{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.08)}}.notifyRow.bad{{border-color:rgba(251,113,133,.38);background:rgba(251,113,133,.09)}}.notifyBtn.on{{border-color:rgba(34,197,94,.36);background:rgba(34,197,94,.15);color:#bbf7d0}}
 input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:rgba(8,5,18,.72);color:var(--text)}}button,.btn{{border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:10px 13px;background:rgba(255,255,255,.10);color:#f7f2ff;font-weight:850;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}.authToggle{{border-radius:999px;padding:8px 14px;background:rgba(255,255,255,.08);color:#f3e8ff}}button.primary,.btn.primary{{background:var(--blue);color:#fff;box-shadow:0 10px 22px rgba(124,58,237,.22)}}button.bad,.btn.bad{{background:rgba(251,113,133,.16);color:#fecdd3}}.btn.good{{background:rgba(34,197,94,.16);color:#bbf7d0}}.btn.disabled{{opacity:.45;cursor:not-allowed}}
 .summary{{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}}.miniStat{{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.07);padding:8px 12px;color:#ddd6fe;font-weight:800;font-size:13px;line-height:1;white-space:nowrap}}
 .cards{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{position:relative;min-height:246px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}}.card::before{{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--green)}}.card.online{{border-color:rgba(34,197,94,.45);box-shadow:0 18px 46px rgba(0,0,0,.28),0 0 0 1px rgba(34,197,94,.10),0 0 34px rgba(34,197,94,.10)}}.card.off{{border-color:rgba(251,113,133,.42);box-shadow:0 18px 46px rgba(0,0,0,.28),0 0 0 1px rgba(251,113,133,.08),0 0 30px rgba(251,113,133,.08)}}.card.off::before{{background:var(--red)}}.card.warn::before{{background:var(--amber)}}.card.main{{grid-column:span 2}}
@@ -1154,6 +1339,14 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
           </div>
           <div id="sessionList" class="sessionList"></div>
         </div>
+        <div class="notifyBox">
+          <div class="sessionHead">
+            <h3>Уведомления</h3>
+            <button class="sessionBtn notifyBtn" id="notifyEnable" type="button">Включить</button>
+          </div>
+          <div class="notifyHint">Входы в панель и запуск VPS/Hub. Если VPS полностью выключен, событие отключения появится после следующего запуска.</div>
+          <div id="notifyList" class="notifyList"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -1173,6 +1366,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 <script>
 window.ROUTERS = {routers_json};
 window.HUB_SESSIONS = {sessions_json};
+window.HUB_NOTIFICATIONS = {notifications_json};
 const cards = document.getElementById('cards');
 const routerForm = document.getElementById('routerForm');
 const routerMsg = document.getElementById('routerMsg');
@@ -1485,6 +1679,8 @@ const authToggle = document.getElementById('authToggle');
 const authMenu = document.getElementById('authMenu');
 const sessionList = document.getElementById('sessionList');
 const revokeOtherSessions = document.getElementById('revokeOtherSessions');
+const notifyList = document.getElementById('notifyList');
+const notifyEnable = document.getElementById('notifyEnable');
 let authHideTimer;
 function showAuthMenu() {{
   clearTimeout(authHideTimer);
@@ -1547,6 +1743,105 @@ async function loadSessions() {{
   renderSessions(window.HUB_SESSIONS);
 }}
 
+function notifyTime(ts) {{
+  if (!ts) return '';
+  try {{ return new Date(Number(ts) * 1000).toLocaleString('ru-RU'); }} catch (e) {{ return ''; }}
+}}
+
+function renderNotifications(list) {{
+  const items = Array.isArray(list) ? list : [];
+  if (!items.length) {{
+    notifyList.innerHTML = '<div class="sessionEmpty">Пока нет событий</div>';
+    return;
+  }}
+  notifyList.innerHTML = items.slice(0, 30).map(n => {{
+    const details = Array.isArray(n.details) && n.details.length
+      ? `<pre class="notifyDetails">${{escapeHtml(n.details.join('\\n'))}}</pre>`
+      : '';
+    return `<div class="notifyRow ${{escapeAttr(n.level || '')}}">
+      <div class="notifyTitle"><span>${{escapeHtml(n.title || 'Событие')}}</span><span class="notifyTime">${{notifyTime(n.ts)}}</span></div>
+      <div class="notifyBody">${{escapeHtml(n.body || '')}}</div>
+      ${{details}}
+    </div>`;
+  }}).join('');
+}}
+
+function notificationPermissionText() {{
+  if (!('Notification' in window)) return 'Не поддерживается';
+  if (Notification.permission === 'granted') return 'Включено';
+  if (Notification.permission === 'denied') return 'Запрещено';
+  return 'Включить';
+}}
+
+function updateNotifyButton() {{
+  notifyEnable.textContent = notificationPermissionText();
+  notifyEnable.classList.toggle('on', 'Notification' in window && Notification.permission === 'granted');
+}}
+
+async function enableNotifications() {{
+  if (!('Notification' in window)) {{
+    showRouterMsg('Этот браузер не поддерживает системные уведомления. На iOS лучше открыть Hub как приложение с экрана Домой.', true);
+    return;
+  }}
+  if (Notification.permission === 'default') {{
+    await Notification.requestPermission();
+  }}
+  localStorage.setItem('owrtNotifyEnabled', Notification.permission === 'granted' ? '1' : '0');
+  updateNotifyButton();
+  if (Notification.permission === 'granted') {{
+    new Notification('OpenWrt Remote Hub', {{body: 'Уведомления включены на этом устройстве.', tag: 'owrt-test'}});
+  }}
+}}
+
+function showBrowserNotification(item) {{
+  if (!item || !('Notification' in window) || Notification.permission !== 'granted') return;
+  if (localStorage.getItem('owrtNotifyEnabled') !== '1') return;
+  try {{
+    new Notification(item.title || 'OpenWrt Remote Hub', {{
+      body: item.body || '',
+      tag: 'owrt-' + (item.id || item.kind || item.ts || Date.now()),
+      renotify: false
+    }});
+  }} catch (e) {{}}
+}}
+
+function initialNotificationTs() {{
+  const stored = Number(localStorage.getItem('owrtLastNotificationTs') || 0);
+  const initial = (window.HUB_NOTIFICATIONS || []).reduce((max, n) => Math.max(max, Number(n.ts || 0)), 0);
+  const result = Math.max(stored, initial);
+  localStorage.setItem('owrtLastNotificationTs', String(result));
+  return result;
+}}
+
+let lastNotificationTs = initialNotificationTs();
+
+async function loadNotifications({{initial = false}} = {{}}) {{
+  const res = await fetch('/api/notifications?after=' + encodeURIComponent(initial ? 0 : lastNotificationTs), {{cache: 'no-store'}});
+  if (!res.ok) return;
+  const data = await res.json();
+  const items = data.notifications || [];
+  if (initial) {{
+    window.HUB_NOTIFICATIONS = items;
+    renderNotifications(window.HUB_NOTIFICATIONS);
+    return;
+  }}
+  if (!items.length) return;
+  const known = new Set((window.HUB_NOTIFICATIONS || []).map(n => n.id));
+  const fresh = items.filter(n => !known.has(n.id)).sort((a, b) => Number(a.ts || 0) - Number(b.ts || 0));
+  window.HUB_NOTIFICATIONS = [...items, ...(window.HUB_NOTIFICATIONS || [])]
+    .filter((item, idx, arr) => arr.findIndex(other => other.id === item.id) === idx)
+    .sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0))
+    .slice(0, 60);
+  for (const item of fresh) {{
+    lastNotificationTs = Math.max(lastNotificationTs, Number(item.ts || 0));
+    showBrowserNotification(item);
+  }}
+  localStorage.setItem('owrtLastNotificationTs', String(lastNotificationTs));
+  renderNotifications(window.HUB_NOTIFICATIONS);
+}}
+
+notifyEnable.addEventListener('click', enableNotifications);
+
 sessionList.addEventListener('click', async (ev) => {{
   const id = ev.target?.dataset?.sessionRevoke;
   if (!id) return;
@@ -1581,9 +1876,12 @@ document.getElementById('authForm').addEventListener('submit', async (ev) => {{
 }});
 
 renderSessions(window.HUB_SESSIONS);
+renderNotifications(window.HUB_NOTIFICATIONS);
+updateNotifyButton();
 render(window.ROUTERS);
 fillRouterForm(true);
 setInterval(loadRouters, 5000);
+setInterval(loadNotifications, 9000);
 </script>
 </body>
 </html>"""
@@ -2428,7 +2726,15 @@ class Handler(BaseHTTPRequestHandler):
             self.send_bytes(401, login_html("Неверная капча").encode("utf-8"), "text/html; charset=utf-8")
             return
         if verify_login(username, password):
-            token, _ = make_hub_session(username, self.client_ip(), self.headers.get("User-Agent", ""))
+            token, session = make_hub_session(username, self.client_ip(), self.headers.get("User-Agent", ""))
+            add_notification(
+                "login",
+                "Вход в Hub",
+                f"{session.get('client', 'устройство')} · IP {session.get('ip', 'unknown')}",
+                "warn",
+                [session.get("user_agent", "")],
+                {"session_id": session.get("id", ""), "ip": session.get("ip", "")},
+            )
             self.redirect("/", [("Set-Cookie", self.session_cookie(token))])
             return
         self.send_bytes(401, login_html("Неверный логин или пароль").encode("utf-8"), "text/html; charset=utf-8")
@@ -2862,13 +3168,26 @@ class Handler(BaseHTTPRequestHandler):
             extra_headers = []
             session_token_value = self.current_session_token()
             if self.legacy_admin_ok() and not self.current_hub_session(touch=False):
-                session_token_value, _ = make_hub_session(current_username(), self.client_ip(), self.headers.get("User-Agent", ""))
+                session_token_value, session = make_hub_session(current_username(), self.client_ip(), self.headers.get("User-Agent", ""))
+                add_notification(
+                    "login",
+                    "Вход в Hub",
+                    f"{session.get('client', 'устройство')} · IP {session.get('ip', 'unknown')}",
+                    "warn",
+                    [session.get("user_agent", "")],
+                    {"session_id": session.get("id", ""), "ip": session.get("ip", ""), "legacy": True},
+                )
                 extra_headers.append(("Set-Cookie", self.session_cookie(session_token_value)))
             with self.app.conn() as conn:
                 routers = [row_to_router(r) for r in list_router_rows(conn)]
             self.send_bytes(
                 200,
-                dashboard_html(routers, current_username(), list_hub_sessions(session_token_value)).encode("utf-8"),
+                dashboard_html(
+                    routers,
+                    current_username(),
+                    list_hub_sessions(session_token_value),
+                    list_notifications(0, 40),
+                ).encode("utf-8"),
                 "text/html; charset=utf-8",
                 extra_headers,
             )
@@ -2880,6 +3199,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/sessions":
             self.send_json(200, {"sessions": list_hub_sessions(self.current_session_token())})
+            return
+        if path == "/api/notifications":
+            query = self.query()
+            self.send_json(
+                200,
+                {
+                    "notifications": list_notifications(
+                        query.get("after", ["0"])[0],
+                        query.get("limit", ["60"])[0],
+                    )
+                },
+            )
             return
         if path.startswith("/router/"):
             self.router_asset(path)
@@ -3647,6 +3978,7 @@ def cmd_serve(args):
     app = App(args.db, session_token(), agent_token(), args.public_url)
     with app.conn():
         pass
+    record_hub_start_event()
     auth = load_auth()
     server = make_http_server(app, args.host, args.port)
     extra_servers = []
