@@ -96,7 +96,7 @@ web terminal
 
 ---
 
-<h2 align="center">⚡ Быстрый старт</h2>
+<h2 align="center"> Быстрый старт</h2>
 
 > После установки в конце появится вход:
 >
@@ -107,7 +107,7 @@ web terminal
 >
 > Пароль лучше поменять сразу после первого входа.
 
-### 1️⃣ VPS: поставить Hub, Xray, firewall и HTTPS одной командой
+###  VPS: поставить Hub, Xray, firewall и HTTPS одной командой
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh
@@ -127,7 +127,7 @@ hub.example.com
 
 Или просто нажать **Enter**, чтобы взять найденный IP сервера.
 
-### 2️⃣ OpenWrt: поставить Remote Hub на роутер
+###  OpenWrt: поставить Remote Hub на роутер
 
 ```sh
 wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" | sh
@@ -142,7 +142,7 @@ owrt-remote status
 
 ---
 
-<h2 align="center">🛰️ Схема работы</h2>
+<h2 align="center"> Схема работы</h2>
 
 ```mermaid
 flowchart LR
@@ -226,6 +226,20 @@ flowchart LR
 
 </div>
 
+---
+
+<h2 align="center">🎬 Видео-демо</h2>
+
+<div align="center">
+
+[![OpenWrt Remote Hub video demo](assets/video/openwrt-remote-demo-cover.jpg)](assets/video/openwrt-remote-demo.mp4)
+
+<br>
+<b>Видео-демо</b>
+<br>
+<sub>Открытие Hub с телефона: статус роутера, LuCI и SSH Web Terminal.</sub>
+
+</div>
 
 ---
 
@@ -437,7 +451,7 @@ http://YOUR_VPS_IP/
 http://YOUR_VPS_IP:8088/
 ```
 
-Если по Wi‑Fi работает, а через мобильный интернет нет, открой порты в firewall VPS-провайдера и проверь:
+Если по Wi-Fi работает, а через мобильный интернет нет, открой порты в firewall VPS-провайдера и проверь:
 
 ```sh
 sudo ss -lntp | grep -E ':(80|443|8088)'
