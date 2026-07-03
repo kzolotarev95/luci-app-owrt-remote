@@ -3976,7 +3976,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         query = urllib.parse.parse_qsl(self.parsed().query, keep_blank_values=True)
-        query = [(k, v) for k, v in query if k != "token"]
+        query = list(query)
         target = rest
         if query:
             target += "?" + urllib.parse.urlencode(query)
