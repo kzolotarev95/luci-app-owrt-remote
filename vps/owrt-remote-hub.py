@@ -673,14 +673,7 @@ def push_payload_for_notification(item):
 
 def send_web_push(subscription, payload):
     if not web_push_ready():
-        return {
-            "ok": False,
-            "code": "unavailable",
-            "remove": False,
-            "status_code": None,
-            "message": "Web Push на VPS не готов. Обнови install-vps.sh и проверь pywebpush/venv.",
-            "detail": "",
-        }
+        return "unavailable"
     try:
         webpush(
             subscription_info={
@@ -693,48 +686,13 @@ def send_web_push(subscription, payload):
             timeout=10,
             ttl=86400,
         )
-        return {
-            "ok": True,
-            "code": "ok",
-            "remove": False,
-            "status_code": 201,
-            "message": "",
-            "detail": "",
-        }
+        return "ok"
     except Exception as exc:
         response = getattr(exc, "response", None)
         status_code = getattr(response, "status_code", None)
-        detail = ""
-        if response is not None:
-            try:
-                detail = response.text or ""
-            except Exception:
-                try:
-                    detail = response.content.decode("utf-8", "ignore")
-                except Exception:
-                    detail = ""
-        detail = " ".join(str(detail or "").split())[:240]
-        remove = status_code in (400, 401, 403, 404, 410)
         if status_code in (404, 410):
-            code = "gone"
-            message = "Push-подписка устарела. Пересоздай подписку на устройстве."
-        elif status_code in (400, 401, 403):
-            code = "stale"
-            message = "Push-подписка больше не совпадает с текущими ключами или стала недействительной. Нужна переподписка."
-        elif status_code in (413, 429, 500, 502, 503, 504):
-            code = "temporary"
-            message = "Push-шлюз временно не принял уведомление. Повтори чуть позже."
-        else:
-            code = f"error:{status_code or exc.__class__.__name__}"
-            message = "Не удалось отправить Web Push."
-        return {
-            "ok": False,
-            "code": code,
-            "remove": remove,
-            "status_code": status_code,
-            "message": message,
-            "detail": detail,
-        }
+            return "gone"
+        return f"error:{status_code or exc.__class__.__name__}"
 
 
 def queue_web_push_payload(payload, subscriptions=None):
@@ -747,7 +705,7 @@ def queue_web_push_payload(payload, subscriptions=None):
         gone = []
         for subscription in subscriptions:
             result = send_web_push(subscription, payload)
-            if result.get("remove"):
+            if result == "gone":
                 gone.append(subscription.get("endpoint", ""))
         for endpoint in gone:
             remove_push_subscription(endpoint)
@@ -769,68 +727,6 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
   event.waitUntil(self.clients.claim());
-});
-
-function urlBase64ToUint8Array(value) {
-  const padding = '='.repeat((4 - value.length % 4) % 4);
-  const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
-  const raw = atob(base64);
-  const output = new Uint8Array(raw.length);
-  for (let i = 0; i < raw.length; i++) output[i] = raw.charCodeAt(i);
-  return output;
-}
-
-async function fetchVapidPublicKey() {
-  const res = await fetch('/api/push/vapid-public-key', {cache: 'no-store'});
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.ok || !data.publicKey) {
-    throw new Error(data.error || 'Missing VAPID public key');
-  }
-  return data.publicKey;
-}
-
-async function postSubscriptionToServer(subscription) {
-  const res = await fetch('/api/push/subscribe', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(subscription)
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.ok) {
-    throw new Error(data.error || 'Failed to save push subscription');
-  }
-}
-
-async function postUnsubscribeToServer(endpoint) {
-  if (!endpoint) return;
-  try {
-    await fetch('/api/push/unsubscribe', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({endpoint})
-    });
-  } catch (e) {}
-}
-
-self.addEventListener('pushsubscriptionchange', event => {
-  event.waitUntil((async () => {
-    const oldEndpoint = (event.oldSubscription && event.oldSubscription.endpoint) || '';
-    let nextSubscription = null;
-    try {
-      const publicKey = await fetchVapidPublicKey();
-      nextSubscription = await self.registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey)
-      });
-      await postSubscriptionToServer(nextSubscription);
-    } catch (e) {
-      if (oldEndpoint) await postUnsubscribeToServer(oldEndpoint);
-      return;
-    }
-    if (oldEndpoint && (!nextSubscription || nextSubscription.endpoint !== oldEndpoint)) {
-      await postUnsubscribeToServer(oldEndpoint);
-    }
-  })());
 });
 
 self.addEventListener('push', event => {
@@ -2381,138 +2277,6 @@ async function registerPushSubscription() {{
   return data;
 }}
 
-function uint8ArrayToUrlBase64(value) {{
-  let binary = '';
-  for (let i = 0; i < value.length; i++) binary += String.fromCharCode(value[i]);
-  return btoa(binary).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/g, '');
-}}
-
-function subscriptionMatchesPublicKey(subscription, publicKey) {{
-  try {{
-    const key = subscription && subscription.options ? subscription.options.applicationServerKey : null;
-    if (!key) return true;
-    const bytes = key instanceof Uint8Array ? key : new Uint8Array(key);
-    return uint8ArrayToUrlBase64(bytes) === String(publicKey || '').trim();
-  }} catch (e) {{
-    return true;
-  }}
-}}
-
-async function registerHubServiceWorker() {{
-  let reg;
-  try {{
-    reg = await navigator.serviceWorker.register('/sw.js', {{scope: '/', updateViaCache: 'none'}});
-  }} catch (e) {{
-    reg = await navigator.serviceWorker.register('/sw.js', {{scope: '/'}});
-  }}
-  try {{ await reg.update(); }} catch (e) {{}}
-  return navigator.serviceWorker.ready;
-}}
-
-async function loadVapidPublicKey() {{
-  const keyRes = await fetch('/api/push/vapid-public-key', {{cache: 'no-store'}});
-  const keyData = await keyRes.json();
-  if (!keyRes.ok || !keyData.ok || !keyData.publicKey) {{
-    throw new Error(keyData.error || 'Web Push РЅР° VPS РЅРµ РіРѕС‚РѕРІ. РћР±РЅРѕРІРё СѓСЃС‚Р°РЅРѕРІРєСѓ Hub.');
-  }}
-  return keyData.publicKey;
-}}
-
-async function postPushUnsubscribe(endpoint) {{
-  if (!endpoint) return;
-  try {{
-    await fetch('/api/push/unsubscribe', {{
-      method: 'POST',
-      headers: {{'Content-Type': 'application/json'}},
-      body: JSON.stringify({{endpoint}})
-    }});
-  }} catch (e) {{}}
-}}
-
-async function postPushSubscription(subscription) {{
-  const res = await fetch('/api/push/subscribe', {{
-    method: 'POST',
-    headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify(subscription)
-  }});
-  const data = await res.json().catch(() => ({{}}));
-  if (!res.ok || !data.ok) {{
-    const err = new Error(data.error || 'РќРµ СЃРјРѕРі СЃРѕС…СЂР°РЅРёС‚СЊ push-РїРѕРґРїРёСЃРєСѓ');
-    err.data = data || {{}};
-    err.status = res.status;
-    throw err;
-  }}
-  return data;
-}}
-
-async function recreatePushSubscription(pushManager, publicKey, currentSubscription) {{
-  const oldEndpoint = currentSubscription && currentSubscription.endpoint ? currentSubscription.endpoint : '';
-  if (currentSubscription) {{
-    try {{ await currentSubscription.unsubscribe(); }} catch (e) {{}}
-  }}
-  const stale = await pushManager.getSubscription();
-  if (stale) {{
-    try {{ await stale.unsubscribe(); }} catch (e) {{}}
-  }}
-  await postPushUnsubscribe(oldEndpoint);
-  return pushManager.subscribe({{
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(publicKey)
-  }});
-}}
-
-registerPushSubscription = async function(options = {{}}) {{
-  const ready = options.ready || await registerHubServiceWorker();
-  const publicKey = await loadVapidPublicKey();
-  let subscription = await ready.pushManager.getSubscription();
-  const mustRecreate = subscription && (options.forceResubscribe || !subscriptionMatchesPublicKey(subscription, publicKey));
-  if (mustRecreate) {{
-    subscription = await recreatePushSubscription(ready.pushManager, publicKey, subscription);
-  }}
-  if (!subscription) {{
-    subscription = await ready.pushManager.subscribe({{
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(publicKey)
-    }});
-  }}
-  try {{
-    return await postPushSubscription(subscription);
-  }} catch (e) {{
-    if (!options.forceResubscribe && e && e.data && e.data.needsResubscribe) {{
-      subscription = await recreatePushSubscription(ready.pushManager, publicKey, subscription);
-      return postPushSubscription(subscription);
-    }}
-    throw e;
-  }}
-}};
-
-async function syncPushSubscriptionSilently() {{
-  if (!webPushSupported()) {{
-    localStorage.setItem('owrtPushEnabled', '0');
-    updateNotifyButton();
-    return;
-  }}
-  if (Notification.permission !== 'granted') {{
-    localStorage.setItem('owrtPushEnabled', '0');
-    updateNotifyButton();
-    return;
-  }}
-  try {{
-    const ready = await registerHubServiceWorker();
-    const existing = await ready.pushManager.getSubscription();
-    if (!existing && localStorage.getItem('owrtPushEnabled') !== '1') {{
-      updateNotifyButton();
-      return;
-    }}
-    await registerPushSubscription({{ready}});
-    localStorage.setItem('owrtNotifyEnabled', '1');
-    localStorage.setItem('owrtPushEnabled', '1');
-  }} catch (e) {{
-    console.warn('push sync failed', e);
-  }}
-  updateNotifyButton();
-}}
-
 async function enableNotifications() {{
   if (!webPushSupported()) {{
     localStorage.setItem('owrtNotifyEnabled', '0');
@@ -2599,12 +2363,6 @@ async function loadNotifications({{initial = false}} = {{}}) {{
 }}
 
 notifyEnable.addEventListener('click', enableNotifications);
-document.addEventListener('visibilitychange', () => {{
-  if (!document.hidden) syncPushSubscriptionSilently();
-}});
-window.addEventListener('online', () => {{
-  syncPushSubscriptionSilently();
-}});
 notifyClear.addEventListener('click', async () => {{
   if (!confirm('Очистить все уведомления?')) return;
   const res = await fetch('/api/notifications/clear', {{method: 'POST'}});
@@ -2654,7 +2412,6 @@ document.getElementById('authForm').addEventListener('submit', async (ev) => {{
 renderSessions(window.HUB_SESSIONS);
 renderNotifications(window.HUB_NOTIFICATIONS);
 updateNotifyButton();
-syncPushSubscriptionSilently();
 render(window.ROUTERS);
 fillRouterForm(true);
 setInterval(loadRouters, 5000);
@@ -4095,8 +3852,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.client_ip(),
                     self.headers.get("User-Agent", ""),
                 )
-                test_result = send_web_push(
-                    subscription,
+                queue_web_push_payload(
                     {
                         "title": APP_NAME,
                         "body": "Push включён на этом устройстве.",
@@ -4105,23 +3861,8 @@ class Handler(BaseHTTPRequestHandler):
                         "kind": "push-test",
                         "ts": now_ts(),
                     },
+                    [subscription],
                 )
-                if not test_result.get("ok"):
-                    if test_result.get("remove"):
-                        remove_push_subscription(subscription.get("endpoint", ""))
-                    error = test_result.get("message") or "Не удалось проверить Web Push."
-                    if test_result.get("detail"):
-                        error += " " + test_result.get("detail")
-                    self.send_json(
-                        409 if test_result.get("remove") else 503,
-                        {
-                            "ok": False,
-                            "error": error,
-                            "code": test_result.get("code"),
-                            "needsResubscribe": bool(test_result.get("remove")),
-                        },
-                    )
-                    return
                 self.send_json(200, {"ok": True, "subscription": {"id": subscription.get("id"), "client": subscription.get("client")}})
             except Exception as exc:
                 self.send_json(400, {"ok": False, "error": str(exc)})
