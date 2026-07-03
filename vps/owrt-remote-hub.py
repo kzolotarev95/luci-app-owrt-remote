@@ -1607,11 +1607,11 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 @keyframes onlineGlow{{0%,100%{{transform:scale(.9);opacity:.55}}50%{{transform:scale(1.08);opacity:1}}}}@keyframes offlineGlow{{0%,100%{{transform:scale(.88);opacity:.34}}50%{{transform:scale(1.08);opacity:.9}}}}
 @keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}.routerMark{{position:relative;display:grid;place-items:center;width:52px;height:52px;border-radius:8px;background:rgba(255,255,255,.08);overflow:hidden;box-shadow:0 0 24px rgba(34,211,238,.12)}}.routerMark::before{{content:"";position:absolute;inset:-45%;background:conic-gradient(from 0deg,transparent,rgba(34,211,238,.72),rgba(168,85,247,.62),rgba(251,191,36,.52),transparent);animation:routerHalo 5.8s linear infinite}}.routerMark::after{{content:"";position:absolute;inset:2px;border-radius:7px;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.05)),rgba(19,14,32,.95);border:1px solid rgba(255,255,255,.16)}}.routerIcon{{position:relative;z-index:1;width:30px;height:20px;border:2px solid #fbbf24;border-radius:6px;box-shadow:0 0 18px rgba(251,191,36,.24)}}.routerIcon::before,.routerIcon::after{{content:"";position:absolute;top:-10px;width:10px;height:10px;border-top:2px solid #a5f3fc}}.routerIcon::before{{left:1px;transform:rotate(-34deg)}}.routerIcon::after{{right:1px;transform:rotate(34deg)}}.routerIcon span{{position:absolute;left:5px;right:5px;bottom:4px;display:flex;justify-content:space-between}}.routerIcon span::before,.routerIcon span::after{{content:"";width:4px;height:4px;border-radius:50%;background:#22c55e;box-shadow:0 0 10px #22c55e;animation:statusPulse 1.8s ease-in-out infinite}}.card.off .routerIcon span::before,.card.off .routerIcon span::after{{background:#fb7185;box-shadow:0 0 10px #fb7185}}@keyframes routerHalo{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}
-.status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.mobileToggle{{display:none;margin:10px auto 0;padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.07);color:#ddd6fe;font-size:12px;font-weight:850}}.cardBody{{display:block}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
+.status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.routerFormToggle{{display:none;width:100%;margin:14px 0 10px;border-radius:999px}}.routerFormWrap{{display:block}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
 .metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong{{color:#fecdd3}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 .brandPanel{{display:grid;grid-template-columns:repeat(2,minmax(0,132px));gap:8px}}.brandPanel .appBanner{{grid-column:1/-1;width:100%;min-width:0}}.brandPanel .links{{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:0}}.brandPanel .links a{{width:100%;min-width:0}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.routerMark{{margin:0 auto}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:100%;min-height:34px;margin-top:10px;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar,.authGrid{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{align-self:flex-start;flex-wrap:wrap;padding-top:0;justify-content:flex-start}}}}
-@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.name{{font-size:12px;max-width:92%}}.mobileToggle{{display:inline-flex}}.cardBody[hidden]{{display:none}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
+@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.name{{font-size:12px;max-width:92%}}.routerFormToggle{{display:inline-flex}}.routerFormWrap[hidden]{{display:none}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
 @media(max-width:680px){{.headerActions .badge,.headerActions .btn{{width:100%;min-width:0;max-width:none}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
 @media(max-width:680px){{.brandPanel{{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}}.brandPanel .appBanner{{width:100%}}.summary{{justify-content:center}}}}
@@ -1668,6 +1668,8 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     </div>
   </section>
 
+  <button class="routerFormToggle primary" id="routerFormToggle" type="button" hidden>Открыть добавление</button>
+  <div class="routerFormWrap" id="routerFormWrap">
   <form class="toolbar" id="routerForm">
     <input name="id" placeholder="router id: node-2" autocomplete="off" required>
     <input name="name" placeholder="Название роутера" required>
@@ -1677,6 +1679,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <button class="primary">Добавить</button>
   </form>
   <div id="routerMsg" class="formMsg" hidden></div>
+  </div>
 
   <section id="cards" class="cards"></section>
 </main>
@@ -1684,9 +1687,12 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 window.ROUTERS = {routers_json};
 window.HUB_SESSIONS = {sessions_json};
 window.HUB_NOTIFICATIONS = {notifications_json};
-const mobileCardsMq = window.matchMedia('(max-width: 680px)');
+const mobileLayoutMq = window.matchMedia('(max-width: 680px)');
+const mobileCardsMq = mobileLayoutMq;
 const cards = document.getElementById('cards');
+const routerFormWrap = document.getElementById('routerFormWrap');
 const routerForm = document.getElementById('routerForm');
+const routerFormToggle = document.getElementById('routerFormToggle');
 const routerMsg = document.getElementById('routerMsg');
 
 function ago(iso) {{
@@ -1778,7 +1784,6 @@ function render(list) {{
     cards.innerHTML = '<div class="empty">Пока нет роутеров. Добавь первый, например <b>main</b>.</div>';
     return;
   }}
-  const collapseCards = mobileCardsMq.matches;
   cards.innerHTML = list.map(r => {{
     const role = String(r.role || 'node');
     const isMain = role === 'main';
@@ -1822,7 +1827,6 @@ function render(list) {{
       metric('Температура', temperature, tempClass(temperature)),
       metric('Нагрузка', load, 'span2')
     ].join('');
-    const detailsId = 'card-body-' + String(r.id || '').replace(/[^a-zA-Z0-9_-]/g, '_');
     return `<article class="card ${{isMain ? 'main' : ''}} ${{online ? 'online' : 'off'}}">
       <div class="cardTop">
         <div class="routerMark"><div class="routerIcon"><span></span></div></div>
@@ -1856,6 +1860,76 @@ function escapeAttr(s) {{
   return escapeHtml(s);
 }}
 
+render = function(list) {{
+  if (!list.length) {{
+    cards.innerHTML = '<div class="empty">Пока нет роутеров. Добавь первый, например <b>main</b>.</div>';
+    return;
+  }}
+  cards.innerHTML = list.map(r => {{
+    const role = String(r.role || 'node');
+    const isMain = role === 'main';
+    const online = Boolean(r.online);
+    const stateClass = online ? 'on' : 'off';
+    const stateText = online ? 'Онлайн' : 'Оффлайн';
+    const model = (r.status && (r.status.model || r.status.board)) || 'OpenWrt';
+    const release = (r.status && r.status.release) || 'waiting heartbeat';
+    const xray = (r.status && r.status.xray) || 'unknown';
+    const ssh = (r.status && r.status.ssh) || 'unknown';
+    const uptime = r.status && r.status.uptime ? duration(r.status.uptime) : 'unknown';
+    const load = formatLoad((r.status && r.status.load) || 'unknown');
+    const memory = formatMemory((r.status && r.status.memory) || 'unknown');
+    const flash = (r.status && r.status.flash) || 'unknown';
+    const temperature = (r.status && r.status.temperature) || 'unknown';
+    const access = r.public_url || r.access_url;
+    const tags = [
+      isMain ? 'главный' : 'node',
+      r.entry_port ? 'entry ' + r.entry_port : '',
+      r.ssh_entry_port ? 'ssh ' + r.ssh_entry_port : '',
+      r.reverse_tag || '',
+      (r.admin_host || '127.0.0.1') + ':' + (r.admin_port || 80)
+    ].filter(Boolean).slice(0, 5);
+    const tagHtml = tags.map(t => `<span class="tag">${{escapeHtml(t)}}</span>`).join('');
+    const adminButton = online
+      ? `<a class="btn" href="${{escapeAttr(access)}}">Админка</a>`
+      : `<span class="btn disabled">Админка</span>`;
+    const sshReady = online && ssh === 'running' && Number(r.ssh_entry_port || 0) > 0;
+    const sshButton = sshReady
+      ? `<a class="btn" href="${{escapeAttr(r.ssh_url || ('/ssh/' + encodeURIComponent(r.id) + '/'))}}" target="_blank" rel="noopener noreferrer">SSH</a>`
+      : `<span class="btn disabled">SSH</span>`;
+    const metricHtml = [
+      metric('Модель', model, 'span2'),
+      metric('Система', release),
+      metric('Xray', statusRu(xray)),
+      metric('SSH', statusRu(ssh)),
+      metric('В сети уже', uptime),
+      metric('Был на связи', ago(r.last_seen_iso)),
+      metric('RAM', memory),
+      metric('Flash', flash, flashClass(flash)),
+      metric('Температура', temperature, tempClass(temperature)),
+      metric('Нагрузка', load, 'span2')
+    ].join('');
+    return `<article class="card ${{isMain ? 'main' : ''}} ${{online ? 'online' : 'off'}}">
+      <div class="cardTop">
+        <div class="routerMark"><div class="routerIcon"><span></span></div></div>
+        <div class="status ${{stateClass}}"><i></i>${{stateText}}</div>
+      </div>
+      <div class="name">${{escapeHtml(r.name)}}</div>
+      <div class="metaLine">ID: ${{escapeHtml(r.id)}} · роль: ${{escapeHtml(role)}}</div>
+      <div class="tagRow">${{tagHtml}}</div>
+      <div class="metrics">
+        ${{metricHtml}}
+      </div>
+      <div class="actions">
+        ${{adminButton}}
+        ${{sshButton}}
+        <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
+        <a class="btn" href="${{escapeAttr(r.xray_client_url)}}">Client JSON</a>
+        <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
+      </div>
+    </article>`;
+  }}).join('');
+}};
+
 function nextEntryPort(list) {{
   const used = new Set();
   list.forEach(r => {{
@@ -1887,6 +1961,29 @@ function defaultVpsHost(list) {{
   return withHost ? withHost.vps_host : window.location.hostname;
 }}
 
+function updateRouterFormToggle() {{
+  if (!routerFormToggle || !routerFormWrap) return;
+  const mobile = mobileLayoutMq.matches;
+  if (!mobile) {{
+    routerFormToggle.hidden = true;
+    routerFormWrap.hidden = false;
+    routerFormToggle.setAttribute('aria-expanded', 'true');
+    return;
+  }}
+  routerFormToggle.hidden = false;
+  const open = !routerFormWrap.hidden;
+  routerFormToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  routerFormToggle.textContent = open ? 'Скрыть добавление' : 'Открыть добавление';
+}}
+
+function initRouterFormToggle() {{
+  if (!routerFormToggle || !routerFormWrap) return;
+  if (mobileLayoutMq.matches) {{
+    routerFormWrap.hidden = true;
+  }}
+  updateRouterFormToggle();
+}}
+
 function fillRouterForm(force = false) {{
   const list = window.ROUTERS || [];
   const id = nextRouterId(list);
@@ -1911,6 +2008,13 @@ routerForm.id.addEventListener('input', () => {{
 routerForm.name.addEventListener('input', () => {{
   routerForm.name.dataset.touched = '1';
 }});
+if (routerFormToggle) {{
+  routerFormToggle.addEventListener('click', () => {{
+    routerFormWrap.hidden = !routerFormWrap.hidden;
+    updateRouterFormToggle();
+  }});
+}}
+initRouterFormToggle();
 
 document.getElementById('xrayReload').addEventListener('click', async () => {{
   showRouterMsg('Обновляю Xray на VPS...');
@@ -2011,6 +2115,11 @@ if (typeof mobileCardsMq.addEventListener === 'function') {{
   mobileCardsMq.addEventListener('change', () => render(window.ROUTERS || []));
 }} else if (typeof mobileCardsMq.addListener === 'function') {{
   mobileCardsMq.addListener(() => render(window.ROUTERS || []));
+}}
+if (typeof mobileLayoutMq.addEventListener === 'function') {{
+  mobileLayoutMq.addEventListener('change', updateRouterFormToggle);
+}} else if (typeof mobileLayoutMq.addListener === 'function') {{
+  mobileLayoutMq.addListener(updateRouterFormToggle);
 }}
 
 const authToggle = document.getElementById('authToggle');
