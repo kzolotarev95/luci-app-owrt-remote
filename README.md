@@ -31,7 +31,7 @@
 
 <div align="center">
 
-<h2>🚀 Что это такое</h2>
+<h2> Что это такое</h2>
 
 <p>
 <b>OpenWrt Remote Hub</b> — это связка из VPS-панели и OpenWrt-агента, которая даёт удобный удалённый доступ к роутерам без проброса LuCI и SSH наружу.<br>
@@ -72,9 +72,9 @@ web terminal
 
 <div align="center">
 
-<h2>🧰 Tech Stack</h2>
+<h2> Tech Stack</h2>
 
-<h3>📡 Router / Network / OpenWrt</h3>
+<h3> Router / Network / OpenWrt</h3>
 
 <p>
   <img alt="OpenWrt" src="https://img.shields.io/badge/OpenWrt-00A3E0?style=for-the-badge&logo=openwrt&logoColor=white">
@@ -83,7 +83,7 @@ web terminal
   <img alt="CGI" src="https://img.shields.io/badge/CGI-Web%20Panel-A855F7?style=for-the-badge">
 </p>
 
-<h3>🖥️ VPS / Reverse / HTTPS</h3>
+<h3> VPS / Reverse / HTTPS</h3>
 
 <p>
   <img alt="Linux" src="https://img.shields.io/badge/Linux-VPS-FCC624?style=for-the-badge&logo=linux&logoColor=111111">
@@ -99,7 +99,7 @@ web terminal
 
 <div align="center">
 
-<h2>⚡ Быстрый старт</h2>
+<h2> Быстрый старт</h2>
 
 После установки в конце появится вход:
 
@@ -110,7 +110,7 @@ password: admin
 
 Пароль лучше поменять сразу после первого входа.
 
-<h3>1️⃣ VPS: поставить Hub, Xray, firewall и HTTPS одной командой</h3>
+<h3> VPS: поставить Hub, Xray, firewall и HTTPS одной командой</h3>
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh
@@ -130,7 +130,7 @@ hub.example.com
 
 Или просто нажать <b>Enter</b>, чтобы взять найденный IP сервера.
 
-<h3>2️⃣ OpenWrt: поставить Remote Hub на роутер</h3>
+<h3> OpenWrt: поставить Remote Hub на роутер</h3>
 
 ```sh
 wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" | sh
@@ -149,7 +149,7 @@ owrt-remote status
 
 <div align="center">
 
-<h2>🛰️ Схема работы</h2>
+<h2> Схема работы</h2>
 
 </div>
 
@@ -173,7 +173,7 @@ flowchart LR
 
 <div align="center">
 
-<h2>🖼️ Скриншоты интерфейса</h2>
+<h2> Скриншоты интерфейса</h2>
 
 <table>
 <tr>
@@ -241,11 +241,41 @@ flowchart LR
 
 ---
 
+---
+
 <div align="center">
 
-<h2>🎬 Видео-демо</h2>
+<h2> Обзор панели и настройка</h2>
 
-<b>Видео-демо</b>
+<b>Обзор панели и настройка</b><br>
+<sub>Открытие Hub с ПК: статус роутера, LuCI и SSH Web Terminal.</sub>
+
+<br><br>
+
+<a href="https://youtu.be/BCVIQgHkbYA?si=BDRAt2uyqRwz8A2Y" target="_blank">
+  <img src="https://img.youtube.com/vi/BCVIQgHkbYA/maxresdefault.jpg"
+       alt="OpenWrt Remote Hub Demo"
+       width="720">
+</a>
+
+<br><br>
+
+<a href="https://youtu.be/BCVIQgHkbYA?si=BDRAt2uyqRwz8A2Y">
+  <img alt="Watch on YouTube"
+       src="https://img.shields.io/badge/%20Watch%20Demo%20on-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white">
+</a>
+
+<br><br>
+
+</div>
+
+---
+
+<div align="center">
+
+<h2> Видео-демо</h2>
+
+<b>Видео дизайн обзор</b>
 <br>
 <sub>Открытие Hub с телефона: статус роутера, LuCI и SSH Web Terminal.</sub>
 
@@ -259,7 +289,7 @@ flowchart LR
 
 <div align="center">
 
-<h2>🎛️ Возможности</h2>
+<h2> Возможности</h2>
 
 <table>
 <tr>
@@ -267,35 +297,35 @@ flowchart LR
 <th align="center">Описание</th>
 </tr>
 <tr>
-<td align="center">🧭 <b>Router Cards</b></td>
+<td align="center"> <b>Router Cards</b></td>
 <td align="center">Карточки роутеров в Hub-панели</td>
 </tr>
 <tr>
-<td align="center">🟢 <b>Online / Offline</b></td>
+<td align="center"> <b>Online / Offline</b></td>
 <td align="center">Быстрая проверка состояния роутеров</td>
 </tr>
 <tr>
-<td align="center">🌐 <b>LuCI через VPS</b></td>
+<td align="center"> <b>LuCI через VPS</b></td>
 <td align="center">Доступ к LuCI без прямого проброса портов</td>
 </tr>
 <tr>
-<td align="center">💻 <b>SSH Web Terminal</b></td>
+<td align="center"> <b>SSH Web Terminal</b></td>
 <td align="center">SSH в браузере, удобно даже с телефона</td>
 </tr>
 <tr>
-<td align="center">🔁 <b>Xray Reverse</b></td>
+<td align="center"> <b>Xray Reverse</b></td>
 <td align="center">Роутер подключается к VPS сам</td>
 </tr>
 <tr>
-<td align="center">🔐 <b>HTTPS через nginx</b></td>
+<td align="center"> <b>HTTPS через nginx</b></td>
 <td align="center">TLS-точка входа на <code>443/tcp</code></td>
 </tr>
 <tr>
-<td align="center">🧯 <b>Firewall automation</b></td>
+<td align="center"> <b>Firewall automation</b></td>
 <td align="center">Скрипты помогают открыть нужные порты</td>
 </tr>
 <tr>
-<td align="center">🩺 <b>Doctor / Status</b></td>
+<td align="center"> <b>Doctor / Status</b></td>
 <td align="center">Команды диагностики на OpenWrt</td>
 </tr>
 </table>
@@ -306,12 +336,12 @@ flowchart LR
 
 <div align="center">
 
-<h2>📦 Подробная установка</h2>
+<h2> Подробная установка</h2>
 
 </div>
 
 <details>
-<summary align="center"><b>🖥️ Установка VPS подробно</b></summary>
+<summary align="center"><b> Установка VPS подробно</b></summary>
 
 <div align="center">
 
@@ -336,7 +366,7 @@ curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/
 </details>
 
 <details>
-<summary align="center"><b>🔐 HTTPS / SSL</b></summary>
+<summary align="center"><b> HTTPS / SSL</b></summary>
 
 <div align="center">
 
@@ -418,7 +448,7 @@ certbot ставит auto-renew<br>
 </details>
 
 <details>
-<summary align="center"><b>🔔 Уведомления и мини-лог VPS</b></summary>
+<summary align="center"><b> Уведомления и мини-лог VPS</b></summary>
 
 <div align="center">
 
@@ -444,7 +474,7 @@ certbot ставит auto-renew<br>
 </details>
 
 <details>
-<summary align="center"><b>✅ Проверка после установки</b></summary>
+<summary align="center"><b> Проверка после установки</b></summary>
 
 <div align="center">
 
@@ -490,12 +520,12 @@ owrt-remote heartbeat
 
 <div align="center">
 
-<h2>🧯 Частые проблемы</h2>
+<h2> Частые проблемы</h2>
 
 </div>
 
 <details>
-<summary align="center"><b>❌ Панель VPS не открывается</b></summary>
+<summary align="center"><b> Панель VPS не открывается</b></summary>
 
 <div align="center">
 
@@ -530,7 +560,7 @@ curl -sS http://127.0.0.1:8088/health
 </details>
 
 <details>
-<summary align="center"><b>🔌 Админка пишет <code>proxy error: [Errno 111] Connection refused</code></b></summary>
+<summary align="center"><b> Админка пишет <code>proxy error: [Errno 111] Connection refused</code></b></summary>
 
 <div align="center">
 
@@ -547,7 +577,7 @@ sudo ss -lntp | grep -E ':(18080|18090|19080|19090)\b'
 </details>
 
 <details>
-<summary align="center"><b>⌨️ SSH web-terminal просит пароль и молчит</b></summary>
+<summary align="center"><b> SSH web-terminal просит пароль и молчит</b></summary>
 
 <div align="center">
 
@@ -575,7 +605,7 @@ owrt-remote heartbeat
 </details>
 
 <details>
-<summary align="center"><b>📱 С мобильного интернета не открывается</b></summary>
+<summary align="center"><b> С мобильного интернета не открывается</b></summary>
 
 <div align="center">
 
@@ -605,12 +635,12 @@ sudo ss -lntp | grep -E ':(80|443|8088)'
 
 <div align="center">
 
-<h2>🗑️ Удаление</h2>
+<h2> Удаление</h2>
 
 </div>
 
 <details>
-<summary align="center"><b>🖥️ Удалить Hub с VPS полностью</b></summary>
+<summary align="center"><b> Удалить Hub с VPS полностью</b></summary>
 
 ```sh
 curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/uninstall-vps.sh?v=$(date +%s)" | sudo sh
@@ -653,7 +683,7 @@ curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/
 </details>
 
 <details>
-<summary align="center"><b>📡 Удалить агент с OpenWrt полностью</b></summary>
+<summary align="center"><b> Удалить агент с OpenWrt полностью</b></summary>
 
 ```sh
 wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/uninstall.sh?v=$(date +%s)" | PURGE=1 sh
@@ -690,7 +720,7 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 
 <div align="center">
 
-<h2>🌳 Дерево проекта</h2>
+<h2> Дерево проекта</h2>
 
 </div>
 
