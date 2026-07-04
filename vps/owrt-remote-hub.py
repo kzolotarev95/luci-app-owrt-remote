@@ -1766,8 +1766,10 @@ function formatMemory(value) {{
   const text = String(value || '');
   const match = text.match(/(\\d+)\\s*\\/\\s*(\\d+)\\s*kB/i);
   if (!match) return value || 'unknown';
-  const used = Math.round(Number(match[1]) / 1024);
-  const total = Math.round(Number(match[2]) / 1024);
+  const freeKb = Number(match[1]);
+  const totalKb = Number(match[2]);
+  const used = Math.max(0, Math.round((totalKb - freeKb) / 1024));
+  const total = Math.max(0, Math.round(totalKb / 1024));
   return used + ' / ' + total + ' МБ';
 }}
 
