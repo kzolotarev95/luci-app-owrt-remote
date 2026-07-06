@@ -99,6 +99,37 @@ web terminal
 
 <div align="center">
 
+---
+
+<div align="center">
+
+<h2> Сообщество</h2>
+
+Есть вопросы, идеи или нужна помощь с настройкой?
+
+Присоединяйтесь к чату пользователей **OpenWrt Remote Hub**, где можно:
+
+ задать вопрос по установке  
+ обсудить настройку VPS и OpenWrt  
+ сообщить об ошибке  
+ предложить новые функции  
+ поделиться своим опытом использования
+
+<br>
+
+<a href="https://t.me/+LZDsQJhUfcNhYWEy">
+  <img alt="Telegram Community"
+       src="https://img.shields.io/badge/Telegram-Community-229ED9?style=for-the-badge&logo=telegram&logoColor=white">
+</a>
+
+<br><br>
+
+<b> Чат и обсуждения проекта</b>
+
+</div>
+
+---
+
 <h2> Быстрый старт</h2>
 
 После установки в конце появится вход:
