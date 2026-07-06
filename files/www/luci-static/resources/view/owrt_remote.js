@@ -21,7 +21,13 @@ return view.extend({
 			]);
 		}
 
-		var url = '/cgi-bin/owrt-remote?key=' + encodeURIComponent(key);
+		var path = String((window.location && window.location.pathname) || ''),
+		    proxyPrefix = path.replace(/\/cgi-bin\/luci(?:\/.*)?$/, '');
+
+		if (proxyPrefix === path)
+			proxyPrefix = '';
+
+		var url = proxyPrefix + '/cgi-bin/owrt-remote?key=' + encodeURIComponent(key);
 
 		window.setTimeout(function() {
 			window.location.replace(url);
