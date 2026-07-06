@@ -61,6 +61,7 @@ CAPTCHA_TTL_SECONDS = 600
 NOTIFICATIONS_MAX = 220
 LUCI_ABSOLUTE_ROOTS = ("/ubus", "/cgi-bin/luci", "/luci-static")
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+VPS_TERMINAL_ID = "__vps__"
 SSH_HTTP_SESSIONS = {}
 SSH_HTTP_LOCK = threading.Lock()
 ROUTER_PROXY_LOCK = threading.Lock()
@@ -1511,6 +1512,14 @@ def current_router_cookie(router_id):
     return f"{ROUTER_COOKIE}={urllib.parse.quote(router_id)}; HttpOnly; SameSite=Lax; Path=/"
 
 
+def is_vps_terminal_id(router_id):
+    return router_id == VPS_TERMINAL_ID
+
+
+def vps_terminal_row():
+    return {"id": VPS_TERMINAL_ID, "name": "VPS"}
+
+
 def ssh_ws_token(secret, router_id):
     return hmac.new(
         secret.encode("utf-8"),
@@ -1666,6 +1675,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     </div>
     <div class="headerActions">
       <a class="badge nethavenTop" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">NetHaven VPN</a>
+      <a class="badge" href="/vps-terminal/" target="_blank" rel="noopener noreferrer">Терминал VPS</a>
       <button class="badge" id="xrayReload" type="button">Обновить Xray CFG</button>
       <button class="badge" id="xrayRestart" type="button">Рестарт Xray VPS</button>
       <button class="badge authToggle" id="authToggle" type="button">{safe_username}</button>
@@ -2961,6 +2971,14 @@ def ssh_terminal_html_v2(row, ws_token):
     ws_path = f"/ssh-ws/{quoted_id}?t={urllib.parse.quote(ws_token)}"
     check_path = f"/api/ssh/{quoted_id}/check?t={urllib.parse.quote(ws_token)}"
     session_path = f"/api/ssh/{quoted_id}/session?t={urllib.parse.quote(ws_token)}"
+    is_vps_terminal = is_vps_terminal_id(router_id)
+    title_prefix = "VPS" if is_vps_terminal else "SSH"
+    page_title = f"{title_prefix} {row['name'] or router_id}"
+    header_title = f"{title_prefix} · {row['name'] or router_id}"
+    connect_label = "VPS terminal" if is_vps_terminal else "SSH"
+    closed_label = "VPS terminal закрыт" if is_vps_terminal else "SSH соединение закрыто"
+    silent_label = "VPS terminal молчит больше 3 секунд" if is_vps_terminal else "SSH молчит больше 3 секунд"
+    force_http_only = is_vps_terminal
     page = r"""<!doctype html>
 <html lang="ru">
 <head>
@@ -3013,6 +3031,10 @@ body.mobile .mobileInput{display:grid;grid-template-columns:1fr 104px}body.mobil
 const WS_PATH = __WS_PATH_JSON__;
 const CHECK_PATH = __CHECK_PATH_JSON__;
 const SESSION_PATH = __SESSION_PATH_JSON__;
+const FORCE_HTTP_ONLY = __FORCE_HTTP_ONLY_JSON__;
+const CONNECT_LABEL = __CONNECT_LABEL_JSON__;
+const CLOSED_LABEL = __CLOSED_LABEL_JSON__;
+const SILENT_LABEL = __SILENT_LABEL_JSON__;
 const terminalEl = document.getElementById('terminal');
 const cmdInput = document.getElementById('cmdInput');
 const cmdSend = document.getElementById('cmdSend');
@@ -3044,14 +3066,14 @@ function handlePaste(ev){const text=(ev.clipboardData||window.clipboardData)?.ge
 async function sendCommandInput(){const value=cmdInput.value;if(!value)return;await sendData(normalizePaste(value)+'\r',true);cmdInput.value='';cmdInput.focus();setTimeout(pollHttpTerminal,120);}
 async function pasteIntoInput(){cmdInput.focus();try{const text=await navigator.clipboard.readText();if(!text)return;const start=cmdInput.selectionStart??cmdInput.value.length,end=cmdInput.selectionEnd??cmdInput.value.length;cmdInput.value=cmdInput.value.slice(0,start)+text+cmdInput.value.slice(end);const pos=start+text.length;cmdInput.setSelectionRange(pos,pos);}catch(e){cmdInput.placeholder='Зажми поле и выбери Вставить';}}
 async function pollHttpTerminal(){if(!httpSid)return;try{const res=await fetch('/api/ssh-session/'+encodeURIComponent(httpSid)+'/read',{cache:'no-store'});const data=await res.json();if(data.data)term.write(data.data);if(data.alive)httpPollTimer=setTimeout(pollHttpTerminal,650);else httpSid='';}catch(e){notice('HTTP-terminal: потеряна связь с Hub','31');httpSid='';}}
-async function startHttpTerminal(reason){if(terminalMode==='http'||httpSid)return;terminalMode='http';try{if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))ws.close();}catch(e){}notice(reason==='mobile'?'HTTP-terminal подключается...':reason+'. Включаю запасной HTTP-terminal...','36');try{const res=await fetch(appendQuery(SESSION_PATH,{cols:term.cols||80,rows:term.rows||24}),{cache:'no-store'});const data=await res.json();if(!res.ok||!data.ok){notice('HTTP-terminal не стартовал: '+(data.error||res.status),'31');return;}httpSid=data.sid;notice(isMobileTerminal?'HTTP-terminal подключен. Вводи через поле снизу или клавиатуру.':'HTTP-terminal подключен. Кликни в терминал, Ctrl+V вставляет.','32');sendResize();pollHttpTerminal();}catch(e){notice('HTTP-terminal не стартовал: '+e,'31');}}
+async function startHttpTerminal(reason){if(terminalMode==='http'||httpSid)return;terminalMode='http';try{if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))ws.close();}catch(e){}if(reason==='direct')notice('Подключаю HTTP-terminal...','36');else notice(reason==='mobile'?'HTTP-terminal подключается...':reason+'. Включаю запасной HTTP-terminal...','36');try{const res=await fetch(appendQuery(SESSION_PATH,{cols:term.cols||80,rows:term.rows||24}),{cache:'no-store'});const data=await res.json();if(!res.ok||!data.ok){notice('HTTP-terminal не стартовал: '+(data.error||res.status),'31');return;}httpSid=data.sid;notice(isMobileTerminal?'HTTP-terminal подключен. Вводи через поле снизу или клавиатуру.':'HTTP-terminal подключен. Кликни в терминал, Ctrl+V вставляет.','32');sendResize();pollHttpTerminal();}catch(e){notice('HTTP-terminal не стартовал: '+e,'31');}}
 async function explainTerminalError(source){if(diagnosticStarted)return;diagnosticStarted=true;try{const res=await fetch(CHECK_PATH,{cache:'no-store'});const data=await res.json();if(data.tcp_ok)await startHttpTerminal(source);else{notice('SSH-туннель на VPS не отвечает: '+(data.error||'порт закрыт'),'31');notice('В Hub нажми: Обновить Xray CFG, потом Рестарт Xray VPS, и проверь heartbeat роутера.','33');}}catch(e){notice('Не смог проверить SSH-туннель. Проверь firewall VPS и доступ к Hub.','31');}}
-function connect(){wsOpened=false;receivedTerminalData=false;diagnosticStarted=false;terminalMode='ws';httpSid='';inputQueue='';if(inputFlushTimer){clearTimeout(inputFlushTimer);inputFlushTimer=0;}if(term){term.reset();notice('Подключение к SSH...','36');}const proto=location.protocol==='https:'?'wss://':'ws://';ws=new WebSocket(proto+location.host+WS_PATH);ws.binaryType='arraybuffer';ws.onopen=()=>{wsOpened=true;sendResize();};ws.onmessage=async(ev)=>{if(terminalMode==='http')return;let text='';if(typeof ev.data==='string')text=ev.data;else if(ev.data instanceof Blob)text=await ev.data.text();else text=decoder.decode(ev.data);if(!receivedTerminalData)term.clear();receivedTerminalData=true;term.write(text);};ws.onerror=()=>explainTerminalError('ошибка web-terminal');ws.onclose=()=>{if(terminalMode==='http')return;if(wsOpened)notice('SSH соединение закрыто','33');else explainTerminalError('SSH соединение закрыто');};setTimeout(()=>{if(!receivedTerminalData&&!httpSid)startHttpTerminal('SSH молчит больше 3 секунд');},3000);}
+function connect(){wsOpened=false;receivedTerminalData=false;diagnosticStarted=false;terminalMode='ws';httpSid='';inputQueue='';if(inputFlushTimer){clearTimeout(inputFlushTimer);inputFlushTimer=0;}if(term){term.reset();notice('Подключение к '+CONNECT_LABEL+'...','36');}if(FORCE_HTTP_ONLY){startHttpTerminal('direct');return;}const proto=location.protocol==='https:'?'wss://':'ws://';ws=new WebSocket(proto+location.host+WS_PATH);ws.binaryType='arraybuffer';ws.onopen=()=>{wsOpened=true;sendResize();};ws.onmessage=async(ev)=>{if(terminalMode==='http')return;let text='';if(typeof ev.data==='string')text=ev.data;else if(ev.data instanceof Blob)text=await ev.data.text();else text=decoder.decode(ev.data);if(!receivedTerminalData)term.clear();receivedTerminalData=true;term.write(text);};ws.onerror=()=>explainTerminalError('ошибка web-terminal');ws.onclose=()=>{if(terminalMode==='http')return;if(wsOpened)notice(CLOSED_LABEL,'33');else explainTerminalError(CLOSED_LABEL);};setTimeout(()=>{if(!receivedTerminalData&&!httpSid)startHttpTerminal(SILENT_LABEL);},3000);}
 function initTerminal(){if(!window.Terminal){terminalEl.classList.remove('loading');terminalEl.textContent='xterm.js не загрузился. Проверь доступ браузера к cdn.jsdelivr.net.';return;}terminalEl.classList.remove('loading');terminalEl.textContent='';term=new Terminal({cursorBlink:!isMobileTerminal,convertEol:false,scrollback:isMobileTerminal?200:5000,scrollSensitivity:isMobileTerminal?8:1,fastScrollSensitivity:isMobileTerminal?14:5,smoothScrollDuration:0,fontFamily:'"Cascadia Mono","Consolas","Liberation Mono",monospace',fontSize:isMobileTerminal?12:14,lineHeight:1.14,theme:{background:'#0b0714',foreground:'#f7f2ff',cursor:'#fbbf24',selectionBackground:'#334155',black:'#0b0714',red:'#fb7185',green:'#86efac',yellow:'#fde68a',blue:'#93c5fd',magenta:'#c084fc',cyan:'#67e8f9',white:'#f7f2ff'}});if(window.FitAddon&&FitAddon.FitAddon){fitAddon=new FitAddon.FitAddon();term.loadAddon(fitAddon);}term.open(terminalEl);term.onData(sendData);term.onResize(sendResize);term.attachCustomKeyEventHandler((ev)=>{const key=String(ev.key||'').toLowerCase();if((ev.ctrlKey||ev.metaKey)&&key==='c'&&term.hasSelection&&term.hasSelection()){copySelection();return false;}return true;});terminalEl.addEventListener('click',()=>term.focus());fitTerminal(true);connect();setTimeout(()=>{fitTerminal(true);term.focus();},120);}
 document.addEventListener('paste',(ev)=>{if(isEditableTarget(ev.target))return;if(!terminalFocused())return;handlePaste(ev);});
 window.addEventListener('beforeunload',()=>{if(httpSid)navigator.sendBeacon('/api/ssh-session/'+encodeURIComponent(httpSid)+'/close');});
 let resizeTimer=0;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>fitTerminal(false),160);});
-copyBtn.addEventListener('click',copyTerminalAll);clearBtn.addEventListener('click',()=>term&&term.clear());reconnectBtn.addEventListener('click',()=>{try{if(ws)ws.close();}catch(e){}if(httpSid)navigator.sendBeacon('/api/ssh-session/'+encodeURIComponent(httpSid)+'/close');connect();});
+copyBtn.addEventListener('click',copyTerminalAll);clearBtn.addEventListener('click',()=>term&&term.clear());reconnectBtn.addEventListener('click',()=>{try{if(ws)ws.close();}catch(e){}if(httpSid)navigator.sendBeacon('/api/ssh-session/'+encodeURIComponent(httpSid)+'/close');httpSid='';connect();});
 cmdSend.addEventListener('click',sendCommandInput);cmdInput.addEventListener('keydown',(ev)=>{if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)){sendCommandInput();ev.preventDefault();}});
 window.addEventListener('load',initTerminal);
 </script>
@@ -3062,6 +3084,12 @@ window.addEventListener('load',initTerminal);
         .replace("__WS_PATH_JSON__", json.dumps(ws_path))
         .replace("__CHECK_PATH_JSON__", json.dumps(check_path))
         .replace("__SESSION_PATH_JSON__", json.dumps(session_path))
+        .replace("__FORCE_HTTP_ONLY_JSON__", json.dumps(force_http_only))
+        .replace("__CONNECT_LABEL_JSON__", json.dumps(connect_label))
+        .replace("__CLOSED_LABEL_JSON__", json.dumps(closed_label))
+        .replace("__SILENT_LABEL_JSON__", json.dumps(silent_label))
+        .replace(f"<title>SSH {safe_name}</title>", f"<title>{html.escape(page_title)}</title>")
+        .replace(f"<h1>SSH · {safe_name}</h1>", f"<h1>{html.escape(header_title)}</h1>")
     )
 
 
@@ -3393,6 +3421,13 @@ class Handler(BaseHTTPRequestHandler):
             [("Set-Cookie", current_router_cookie(router_id))],
         )
 
+    def vps_terminal_page(self):
+        if not self.require_admin():
+            return
+        row = vps_terminal_row()
+        ws_token = ssh_ws_token(self.app.session_token, row["id"])
+        self.send_bytes(200, ssh_terminal_html_v2(row, ws_token).encode("utf-8"), "text/html; charset=utf-8")
+
     def ssh_ws(self):
         try:
             self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
@@ -3403,17 +3438,18 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(403)
             self.end_headers()
             return
-        with self.app.conn() as conn:
-            row = get_router(conn, router_id)
-        if not row:
-            self.send_response(404)
-            self.end_headers()
-            return
-        port = int(row["ssh_entry_port"] or 0)
-        if port <= 0:
-            self.send_response(400)
-            self.end_headers()
-            return
+        if not is_vps_terminal_id(router_id):
+            with self.app.conn() as conn:
+                row = get_router(conn, router_id)
+            if not row:
+                self.send_response(404)
+                self.end_headers()
+                return
+            port = int(row["ssh_entry_port"] or 0)
+            if port <= 0:
+                self.send_response(400)
+                self.end_headers()
+                return
         key = self.headers.get("Sec-WebSocket-Key", "")
         if not key:
             self.send_response(400)
@@ -3425,6 +3461,9 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Sec-WebSocket-Accept", ws_accept_value(key))
         self.end_headers()
         self.close_connection = True
+        if is_vps_terminal_id(router_id):
+            self.run_vps_terminal_session()
+            return
         self.run_ssh_session(router_id, port)
 
     def ssh_check(self):
@@ -3433,6 +3472,9 @@ class Handler(BaseHTTPRequestHandler):
             router_id = router_id[:-6].rstrip("/")
         if not (self.admin_ok() or self.ssh_token_ok(router_id)):
             self.send_json(403, {"ok": False, "error": "not authorized", "tcp_ok": False})
+            return
+        if is_vps_terminal_id(router_id):
+            self.send_json(200, {"ok": True, "router_id": router_id, "tcp_ok": True, "mode": "local-shell"})
             return
         with self.app.conn() as conn:
             row = get_router(conn, router_id)
@@ -3472,6 +3514,34 @@ class Handler(BaseHTTPRequestHandler):
         ]
         return env, args
 
+    def vps_shell_args(self):
+        env = os.environ.copy()
+        env["TERM"] = "xterm-256color"
+        shell = env.get("SHELL", "")
+        if not shell:
+            shell = "/bin/bash" if Path("/bin/bash").exists() else "/bin/sh"
+        args = [shell]
+        if os.path.basename(shell) in {"bash", "sh", "ash", "dash", "zsh", "ksh"}:
+            args.append("-l")
+        return env, args
+
+    def spawn_terminal_pty(self, env, args, unavailable_message, open_message, exec_name):
+        try:
+            import pty
+        except Exception as exc:
+            raise RuntimeError(f"{unavailable_message}: {exc}")
+        try:
+            pid, fd = pty.fork()
+        except Exception as exc:
+            raise RuntimeError(f"{open_message}: {exc}")
+        if pid == 0:
+            try:
+                os.execvpe(args[0], args, env)
+            except Exception as exc:
+                print(f"{exec_name} start failed: {exc}", flush=True)
+                os._exit(127)
+        return pid, fd
+
     def ssh_http_reader(self, sid):
         session = SSH_HTTP_SESSIONS.get(sid)
         if not session:
@@ -3489,7 +3559,7 @@ class Handler(BaseHTTPRequestHandler):
                     data = os.read(fd, 4096)
                 except OSError as exc:
                     with session["lock"]:
-                        session["buffer"].append(f"\r\n[SSH read error: {exc}]\r\n")
+                        session["buffer"].append(f"\r\n[{session.get('label', 'Terminal')} read error: {exc}]\r\n")
                     break
                 if not data:
                     break
@@ -3499,7 +3569,7 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             with session["lock"]:
                 session["alive"] = False
-                session["buffer"].append("\r\n[SSH соединение закрыто]\r\n")
+                session["buffer"].append("\r\n[" + session.get("close_notice", "SSH соединение закрыто") + "]\r\n")
             try:
                 os.close(fd)
             except OSError:
@@ -3510,21 +3580,8 @@ class Handler(BaseHTTPRequestHandler):
                 pass
 
     def start_ssh_http_session(self, router_id, port):
-        try:
-            import pty
-        except Exception as exc:
-            raise RuntimeError(f"pty недоступен на VPS: {exc}")
-        try:
-            pid, fd = pty.fork()
-        except Exception as exc:
-            raise RuntimeError(f"не удалось открыть SSH pty: {exc}")
-        if pid == 0:
-            env, args = self.ssh_args(port)
-            try:
-                os.execvpe("ssh", args, env)
-            except Exception as exc:
-                print(f"ssh start failed: {exc}", flush=True)
-                os._exit(127)
+        env, args = self.ssh_args(port)
+        pid, fd = self.spawn_terminal_pty(env, args, "pty недоступен на VPS", "не удалось открыть SSH pty", "ssh")
         sid = secrets.token_urlsafe(24)
         session = {
             "id": sid,
@@ -3537,6 +3594,31 @@ class Handler(BaseHTTPRequestHandler):
             "created": now_ts(),
             "last_seen": now_ts(),
             "lock": threading.Lock(),
+            "label": "SSH",
+            "close_notice": "SSH соединение закрыто",
+        }
+        with SSH_HTTP_LOCK:
+            SSH_HTTP_SESSIONS[sid] = session
+        threading.Thread(target=self.ssh_http_reader, args=(sid,), daemon=True).start()
+        return session
+
+    def start_vps_http_session(self):
+        env, args = self.vps_shell_args()
+        pid, fd = self.spawn_terminal_pty(env, args, "pty недоступен на VPS", "не удалось открыть VPS pty", "vps-shell")
+        sid = secrets.token_urlsafe(24)
+        session = {
+            "id": sid,
+            "router_id": VPS_TERMINAL_ID,
+            "port": 0,
+            "pid": pid,
+            "fd": fd,
+            "buffer": [],
+            "alive": True,
+            "created": now_ts(),
+            "last_seen": now_ts(),
+            "lock": threading.Lock(),
+            "label": "VPS terminal",
+            "close_notice": "VPS terminal закрыт",
         }
         with SSH_HTTP_LOCK:
             SSH_HTTP_SESSIONS[sid] = session
@@ -3547,6 +3629,15 @@ class Handler(BaseHTTPRequestHandler):
         router_id = self.router_id_from_path("/api/ssh/")
         if not (self.admin_ok() or self.ssh_token_ok(router_id)):
             self.send_json(403, {"ok": False, "error": "not authorized"})
+            return
+        if is_vps_terminal_id(router_id):
+            try:
+                session = self.start_vps_http_session()
+                query = self.query()
+                set_pty_size(session["fd"], query.get("rows", ["24"])[0], query.get("cols", ["80"])[0])
+                self.send_json(200, {"ok": True, "sid": session["id"], "router_id": router_id, "mode": "local-shell"})
+            except Exception as exc:
+                self.send_json(500, {"ok": False, "error": str(exc)})
             return
         with self.app.conn() as conn:
             row = get_router(conn, router_id)
@@ -3657,28 +3748,13 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_json(404, {"ok": False, "error": "terminal action not found"})
 
-    def run_ssh_session(self, router_id, port):
-        try:
-            import pty
-        except Exception as exc:
-            ws_send_frame(self.connection, f"pty недоступен на VPS: {exc}\r\n")
-            return
-
+    def run_terminal_session(self, env, args, unavailable_message, open_message, exec_name, error_label):
         ensure_state()
         try:
-            pid, fd = pty.fork()
+            pid, fd = self.spawn_terminal_pty(env, args, unavailable_message, open_message, exec_name)
         except Exception as exc:
-            ws_send_frame(self.connection, f"не удалось открыть SSH pty: {exc}\r\n")
+            ws_send_frame(self.connection, f"{exc}\r\n")
             return
-
-        if pid == 0:
-            env, args = self.ssh_args(port)
-            try:
-                os.execvpe("ssh", args, env)
-            except Exception as exc:
-                print(f"ssh start failed: {exc}", flush=True)
-                os._exit(127)
-
         ws_send_frame(self.connection, "")
         try:
             while True:
@@ -3710,7 +3786,7 @@ class Handler(BaseHTTPRequestHandler):
                         os.write(fd, payload)
         except Exception as exc:
             try:
-                ws_send_frame(self.connection, f"\r\n[SSH error: {exc}]\r\n")
+                ws_send_frame(self.connection, f"\r\n[{error_label}: {exc}]\r\n")
             except Exception:
                 pass
         finally:
@@ -3726,6 +3802,14 @@ class Handler(BaseHTTPRequestHandler):
                 os.waitpid(pid, os.WNOHANG)
             except OSError:
                 pass
+
+    def run_ssh_session(self, router_id, port):
+        env, args = self.ssh_args(port)
+        self.run_terminal_session(env, args, "pty недоступен на VPS", "не удалось открыть SSH pty", "ssh", "SSH error")
+
+    def run_vps_terminal_session(self):
+        env, args = self.vps_shell_args()
+        self.run_terminal_session(env, args, "pty недоступен на VPS", "не удалось открыть VPS pty", "vps-shell", "VPS terminal error")
 
     def do_GET(self):
         path = self.parsed().path
@@ -3760,6 +3844,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/logout":
             revoke_hub_session(token=self.current_session_token())
             self.redirect("/login", [("Set-Cookie", self.clear_session_cookie())])
+            return
+        if path == "/vps-terminal":
+            self.redirect("/vps-terminal/")
+            return
+        if path == "/vps-terminal/":
+            self.vps_terminal_page()
             return
         if path.startswith("/api/ssh/") and path.endswith("/check"):
             self.ssh_check()
