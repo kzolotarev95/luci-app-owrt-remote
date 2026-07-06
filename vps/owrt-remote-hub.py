@@ -33,6 +33,7 @@ except Exception:
 
 
 APP_NAME = "OpenWrt Remote Hub"
+RAW_REPO_BASE = "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main"
 STATE_DIR = Path(os.environ.get("OWRT_REMOTE_STATE_DIR", "/var/lib/owrt-remote"))
 DB_PATH = Path(os.environ.get("OWRT_REMOTE_DB", str(STATE_DIR / "hub.db")))
 AUTH_FILE = STATE_DIR / "hub-auth.json"
@@ -1520,6 +1521,82 @@ def vps_terminal_row():
     return {"id": VPS_TERMINAL_ID, "name": "VPS"}
 
 
+def vps_terminal_commands(host):
+    host = (host or "").strip() or "YOUR_VPS_IP"
+    return [
+        {
+            "title": "Обновить Hub",
+            "note": "Свежий hub.py из main + restart сервиса",
+            "command": f'v=$(date +%s); curl -fsSL -o /opt/owrt-remote/owrt-remote-hub.py "{RAW_REPO_BASE}/vps/owrt-remote-hub.py?v=$v" && chmod +x /opt/owrt-remote/owrt-remote-hub.py && systemctl restart owrt-remote && systemctl status owrt-remote --no-pager -l',
+        },
+        {
+            "title": "Статус Hub",
+            "note": "Проверка сервиса owrt-remote",
+            "command": "systemctl status owrt-remote --no-pager -l",
+        },
+        {
+            "title": "Логи Hub",
+            "note": "Последние строки journald по Hub",
+            "command": "journalctl -u owrt-remote -n 80 --no-pager -l",
+        },
+        {
+            "title": "Проверка портов",
+            "note": "Слушают ли 80/443/8088/8443",
+            "command": "ss -lntp | grep -E ':(80|443|8088|8443)'",
+        },
+        {
+            "title": "Health Hub",
+            "note": "Локальная health-проверка Hub",
+            "command": "curl -sS http://127.0.0.1:8088/health",
+        },
+        {
+            "title": "Включить HTTPS",
+            "note": "Обновить https-конфиг из репо для текущего host",
+            "command": f'curl -fsSL "{RAW_REPO_BASE}/vps/enable-https.sh?v=$(date +%s)" | sh -s -- {host}',
+        },
+        {
+            "title": "Установить VPS заново",
+            "note": "install-vps.sh из репо",
+            "command": f'curl -fsSL "{RAW_REPO_BASE}/vps/install-vps.sh?v=$(date +%s)" | sh',
+        },
+    ]
+
+
+def vps_quick_commands_html(host):
+    cards = []
+    for item in vps_terminal_commands(host):
+        title = html.escape(item["title"])
+        note = html.escape(item["note"])
+        command = item["command"]
+        safe_cmd = html.escape(command, quote=True)
+        preview = html.escape(command)
+        cards.append(
+            f"""
+      <article class="cmdCard">
+        <div class="cmdHead">
+          <strong>{title}</strong>
+          <span>{note}</span>
+        </div>
+        <pre class="cmdBody">{preview}</pre>
+        <div class="cmdActions">
+          <button class="cmdBtn js-copy-cmd" type="button" data-cmd="{safe_cmd}">Копировать</button>
+          <button class="cmdBtn run js-run-cmd" type="button" data-cmd="{safe_cmd}">В терминал</button>
+        </div>
+      </article>""".strip()
+        )
+    joined = "\n".join(cards)
+    return f"""
+  <section class="quickPanel">
+    <div class="quickHead">
+      <h2>Быстрые команды</h2>
+      <p>Команды взяты из репозитория luci-app-owrt-remote. Можно копировать или сразу отправлять в VPS terminal.</p>
+    </div>
+    <div class="quickGrid">
+{joined}
+    </div>
+  </section>""".strip()
+
+
 def ssh_ws_token(secret, router_id):
     return hmac.new(
         secret.encode("utf-8"),
@@ -2533,6 +2610,7 @@ body{{min-height:100vh;margin:0;background-color:var(--bg);background-image:radi
     </div>
     <a class="btn" href="/">Назад в Hub</a>
   </div>
+__QUICK_COMMANDS_HTML__
   <section class="termBox">
     <div class="bar">
       <span class="badge"><i class="dot"></i>Terminal</span>
@@ -2964,7 +3042,7 @@ window.setTimeout(focusTerminal, 80);
 </html>"""
 
 
-def ssh_terminal_html_v2(row, ws_token):
+def ssh_terminal_html_v2(row, ws_token, quick_commands_html=""):
     router_id = row["id"]
     safe_name = html.escape(row["name"] or router_id, quote=True)
     quoted_id = urllib.parse.quote(router_id)
@@ -2973,12 +3051,15 @@ def ssh_terminal_html_v2(row, ws_token):
     session_path = f"/api/ssh/{quoted_id}/session?t={urllib.parse.quote(ws_token)}"
     is_vps_terminal = is_vps_terminal_id(router_id)
     title_prefix = "VPS" if is_vps_terminal else "SSH"
-    page_title = f"{title_prefix} {row['name'] or router_id}"
+    page_title = "VPS terminal" if is_vps_terminal else f"{title_prefix} {row['name'] or router_id}"
     header_title = f"{title_prefix} · {row['name'] or router_id}"
     connect_label = "VPS terminal" if is_vps_terminal else "SSH"
     closed_label = "VPS terminal закрыт" if is_vps_terminal else "SSH соединение закрыто"
     silent_label = "VPS terminal молчит больше 3 секунд" if is_vps_terminal else "SSH молчит больше 3 секунд"
     force_http_only = is_vps_terminal
+    ready_label = "VPS terminal запущен. Это root shell самого VPS. Команды ниже можно копировать или сразу отправлять в терминал." if is_vps_terminal else ""
+    if is_vps_terminal:
+        header_title = "VPS terminal"
     page = r"""<!doctype html>
 <html lang="ru">
 <head>
@@ -2991,18 +3072,19 @@ def ssh_terminal_html_v2(row, ws_token):
 <script defer src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 <style>
 :root{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.92);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.30);--green:#22c55e;--blue:#7c3aed;--cyan:#22d3ee;--grid:rgba(168,85,247,.13)}
-*{box-sizing:border-box}html,body{height:100%;margin:0;overflow:hidden}
-body{background-color:var(--bg);background-image:radial-gradient(circle at 16% 10%,rgba(168,85,247,.45),transparent 30%),radial-gradient(circle at 88% 16%,rgba(59,130,246,.28),transparent 32%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:14px}
-.wrap{width:100%;max-width:1180px;height:calc(100vh - 28px);margin:0 auto;display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0}
+*{box-sizing:border-box}html,body{min-height:100%;margin:0;overflow-x:hidden}
+body{min-height:100vh;overflow-y:auto;background-color:var(--bg);background-image:radial-gradient(circle at 16% 10%,rgba(168,85,247,.45),transparent 30%),radial-gradient(circle at 88% 16%,rgba(59,130,246,.28),transparent 32%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:14px}
+.wrap{width:100%;max-width:1180px;min-height:calc(100vh - 28px);margin:0 auto;display:flex;flex-direction:column;gap:10px;min-width:0}
 .top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex:0 0 auto;min-height:38px}.sshTitle{display:flex;align-items:center;gap:10px;min-width:0}
 h1{margin:0;font-size:18px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.btn,.badge,.toolBtn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid var(--line);border-radius:999px;padding:7px 12px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:850;font-size:13px;white-space:nowrap}.toolBtn{cursor:pointer;font:inherit}.toolBtn:hover,.btn:hover{border-color:rgba(34,211,238,.52);background:rgba(255,255,255,.12)}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green)}
-.termBox{width:100%;min-width:0;min-height:0;flex:1 1 auto;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05);flex:0 0 auto}.tools{display:flex;align-items:center;gap:7px;min-width:0;flex-wrap:wrap;justify-content:flex-end}
+.quickPanel{display:grid;gap:10px;padding:12px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.22);flex:0 0 auto}.quickHead h2{margin:0;font-size:16px}.quickHead p{margin:4px 0 0;color:var(--muted)}.quickGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cmdCard{display:grid;gap:8px;padding:10px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.05)}.cmdHead{display:grid;gap:2px}.cmdHead strong{font-size:13px}.cmdHead span{color:var(--muted);font-size:12px}.cmdBody{margin:0;padding:10px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.24);color:#ddd6fe;font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word;max-height:112px;overflow:auto}.cmdActions{display:flex;gap:8px;flex-wrap:wrap}.cmdBtn{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:7px 11px;background:rgba(255,255,255,.08);color:#f7f2ff;font-weight:850;cursor:pointer}.cmdBtn.run{background:linear-gradient(135deg,#7c3aed,#a855f7)}
+.termBox{width:100%;min-width:0;min-height:420px;flex:1 1 auto;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.38);overflow:hidden}.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 10px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.05);flex:0 0 auto}.tools{display:flex;align-items:center;gap:7px;min-width:0;flex-wrap:wrap;justify-content:flex-end}
 #terminal{flex:1 1 auto;min-height:0;min-width:0;background:#0b0714}#terminal.loading{display:flex;align-items:center;justify-content:center;color:var(--muted);font-weight:800}#terminal .xterm{height:100%;padding:10px}#terminal .xterm-viewport{background:transparent!important;scrollbar-width:thin;scrollbar-color:rgba(168,85,247,.72) rgba(255,255,255,.06);scroll-behavior:auto;overscroll-behavior:contain}body.mobile #terminal .xterm-viewport{-webkit-overflow-scrolling:touch;touch-action:pan-y;contain:content}#terminal .xterm-screen{height:100%}.xterm .xterm-viewport::-webkit-scrollbar{width:12px;height:12px}.xterm .xterm-viewport::-webkit-scrollbar-track{background:rgba(255,255,255,.06)}.xterm .xterm-viewport::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#7c3aed,#22d3ee);border-radius:999px;border:3px solid rgba(10,6,18,.96)}
 .mobileInput{display:none;gap:7px;padding:8px;border-top:1px solid var(--line);background:rgba(255,255,255,.045);flex:0 0 auto}.mobileInput textarea{flex:1;min-width:0;min-height:44px;max-height:96px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.76);color:var(--text);font:14px/1.25 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;outline:none}.mobileInput textarea:focus{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12)}.mobileInput button{border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;white-space:nowrap}
 body.mobile .mobileInput{display:grid;grid-template-columns:1fr 104px}body.mobile .mobileInput textarea{grid-column:auto}
-@supports(height:100svh){body{height:100svh}.wrap{height:calc(100svh - 28px)}}
-@media(max-width:680px),(pointer:coarse){body{padding:4px;background-attachment:scroll;background-image:linear-gradient(145deg,#07040f,#120a24 54%,#05030a)}.wrap{height:calc(100svh - 8px);max-width:none;gap:5px}.top{gap:6px;align-items:stretch;flex-direction:column}.sshTitle{min-height:28px}h1{font-size:15px}.btn{width:100%;padding:8px 10px}.bar{padding:5px;align-items:stretch;flex-direction:column}.badge{width:100%;padding:7px 10px}.tools{width:100%;display:grid;grid-template-columns:1fr 1fr 1fr}.toolBtn{padding:7px 8px;font-size:12px}.termBox{border-radius:6px;background:rgba(19,14,32,.96);box-shadow:none}#terminal .xterm{padding:5px}body.mobile #terminal .xterm-viewport{scrollbar-width:none}body.mobile .xterm .xterm-viewport::-webkit-scrollbar{display:none}.mobileInput{grid-template-columns:1fr 104px;padding:5px;gap:5px}.mobileInput textarea{font-size:15px;padding:10px}.mobileInput button{padding:10px 8px;font-size:12px}}
+@supports(height:100svh){body{min-height:100svh}.wrap{min-height:calc(100svh - 28px)}}
+@media(max-width:680px),(pointer:coarse){body{padding:4px;background-attachment:scroll;background-image:linear-gradient(145deg,#07040f,#120a24 54%,#05030a)}.wrap{height:auto;min-height:calc(100svh - 8px);max-width:none;gap:5px}.top{gap:6px;align-items:stretch;flex-direction:column}.sshTitle{min-height:28px}h1{font-size:15px}.btn{width:100%;padding:8px 10px}.quickGrid{grid-template-columns:1fr}.cmdActions{display:grid;grid-template-columns:1fr 1fr}.bar{padding:5px;align-items:stretch;flex-direction:column}.badge{width:100%;padding:7px 10px}.tools{width:100%;display:grid;grid-template-columns:1fr 1fr 1fr}.toolBtn{padding:7px 8px;font-size:12px}.termBox{border-radius:6px;background:rgba(19,14,32,.96);box-shadow:none;min-height:72svh}#terminal .xterm{padding:5px}body.mobile #terminal .xterm-viewport{scrollbar-width:none}body.mobile .xterm .xterm-viewport::-webkit-scrollbar{display:none}.mobileInput{grid-template-columns:1fr 104px;padding:5px;gap:5px}.mobileInput textarea{font-size:15px;padding:10px}.mobileInput button{padding:10px 8px;font-size:12px}}
 </style>
 </head>
 <body>
@@ -3011,6 +3093,7 @@ body.mobile .mobileInput{display:grid;grid-template-columns:1fr 104px}body.mobil
     <div class="sshTitle"><h1>SSH · __SAFE_NAME__</h1></div>
     <a class="btn" href="/">Назад в Hub</a>
   </div>
+  __QUICK_COMMANDS_HTML__
   <section class="termBox">
     <div class="bar">
       <span class="badge"><i class="dot"></i>Terminal</span>
@@ -3035,12 +3118,15 @@ const FORCE_HTTP_ONLY = __FORCE_HTTP_ONLY_JSON__;
 const CONNECT_LABEL = __CONNECT_LABEL_JSON__;
 const CLOSED_LABEL = __CLOSED_LABEL_JSON__;
 const SILENT_LABEL = __SILENT_LABEL_JSON__;
+const READY_LABEL = __READY_LABEL_JSON__;
 const terminalEl = document.getElementById('terminal');
 const cmdInput = document.getElementById('cmdInput');
 const cmdSend = document.getElementById('cmdSend');
 const copyBtn = document.getElementById('copyBtn');
 const clearBtn = document.getElementById('clearBtn');
 const reconnectBtn = document.getElementById('reconnectBtn');
+const quickCopyButtons = Array.from(document.querySelectorAll('.js-copy-cmd'));
+const quickRunButtons = Array.from(document.querySelectorAll('.js-run-cmd'));
 const isMobileTerminal = window.matchMedia('(max-width: 680px)').matches || /Android|iPhone|iPad|iPod|Mobile|Telegram/i.test(navigator.userAgent);
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -3066,7 +3152,7 @@ function handlePaste(ev){const text=(ev.clipboardData||window.clipboardData)?.ge
 async function sendCommandInput(){const value=cmdInput.value;if(!value)return;await sendData(normalizePaste(value)+'\r',true);cmdInput.value='';cmdInput.focus();setTimeout(pollHttpTerminal,120);}
 async function pasteIntoInput(){cmdInput.focus();try{const text=await navigator.clipboard.readText();if(!text)return;const start=cmdInput.selectionStart??cmdInput.value.length,end=cmdInput.selectionEnd??cmdInput.value.length;cmdInput.value=cmdInput.value.slice(0,start)+text+cmdInput.value.slice(end);const pos=start+text.length;cmdInput.setSelectionRange(pos,pos);}catch(e){cmdInput.placeholder='Зажми поле и выбери Вставить';}}
 async function pollHttpTerminal(){if(!httpSid)return;try{const res=await fetch('/api/ssh-session/'+encodeURIComponent(httpSid)+'/read',{cache:'no-store'});const data=await res.json();if(data.data)term.write(data.data);if(data.alive)httpPollTimer=setTimeout(pollHttpTerminal,650);else httpSid='';}catch(e){notice('HTTP-terminal: потеряна связь с Hub','31');httpSid='';}}
-async function startHttpTerminal(reason){if(terminalMode==='http'||httpSid)return;terminalMode='http';try{if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))ws.close();}catch(e){}if(reason==='direct')notice('Подключаю HTTP-terminal...','36');else notice(reason==='mobile'?'HTTP-terminal подключается...':reason+'. Включаю запасной HTTP-terminal...','36');try{const res=await fetch(appendQuery(SESSION_PATH,{cols:term.cols||80,rows:term.rows||24}),{cache:'no-store'});const data=await res.json();if(!res.ok||!data.ok){notice('HTTP-terminal не стартовал: '+(data.error||res.status),'31');return;}httpSid=data.sid;notice(isMobileTerminal?'HTTP-terminal подключен. Вводи через поле снизу или клавиатуру.':'HTTP-terminal подключен. Кликни в терминал, Ctrl+V вставляет.','32');sendResize();pollHttpTerminal();}catch(e){notice('HTTP-terminal не стартовал: '+e,'31');}}
+async function startHttpTerminal(reason){if(terminalMode==='http'||httpSid)return;terminalMode='http';try{if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))ws.close();}catch(e){}if(reason==='direct')notice('Подключаю HTTP-terminal...','36');else notice(reason==='mobile'?'HTTP-terminal подключается...':reason+'. Включаю запасной HTTP-terminal...','36');try{const res=await fetch(appendQuery(SESSION_PATH,{cols:term.cols||80,rows:term.rows||24}),{cache:'no-store'});const data=await res.json();if(!res.ok||!data.ok){notice('HTTP-terminal не стартовал: '+(data.error||res.status),'31');return;}httpSid=data.sid;notice(READY_LABEL || (isMobileTerminal?'HTTP-terminal подключен. Вводи через поле снизу или клавиатуру.':'HTTP-terminal подключен. Кликни в терминал, Ctrl+V вставляет.'),'32');sendResize();pollHttpTerminal();}catch(e){notice('HTTP-terminal не стартовал: '+e,'31');}}
 async function explainTerminalError(source){if(diagnosticStarted)return;diagnosticStarted=true;try{const res=await fetch(CHECK_PATH,{cache:'no-store'});const data=await res.json();if(data.tcp_ok)await startHttpTerminal(source);else{notice('SSH-туннель на VPS не отвечает: '+(data.error||'порт закрыт'),'31');notice('В Hub нажми: Обновить Xray CFG, потом Рестарт Xray VPS, и проверь heartbeat роутера.','33');}}catch(e){notice('Не смог проверить SSH-туннель. Проверь firewall VPS и доступ к Hub.','31');}}
 function connect(){wsOpened=false;receivedTerminalData=false;diagnosticStarted=false;terminalMode='ws';httpSid='';inputQueue='';if(inputFlushTimer){clearTimeout(inputFlushTimer);inputFlushTimer=0;}if(term){term.reset();notice('Подключение к '+CONNECT_LABEL+'...','36');}if(FORCE_HTTP_ONLY){startHttpTerminal('direct');return;}const proto=location.protocol==='https:'?'wss://':'ws://';ws=new WebSocket(proto+location.host+WS_PATH);ws.binaryType='arraybuffer';ws.onopen=()=>{wsOpened=true;sendResize();};ws.onmessage=async(ev)=>{if(terminalMode==='http')return;let text='';if(typeof ev.data==='string')text=ev.data;else if(ev.data instanceof Blob)text=await ev.data.text();else text=decoder.decode(ev.data);if(!receivedTerminalData)term.clear();receivedTerminalData=true;term.write(text);};ws.onerror=()=>explainTerminalError('ошибка web-terminal');ws.onclose=()=>{if(terminalMode==='http')return;if(wsOpened)notice(CLOSED_LABEL,'33');else explainTerminalError(CLOSED_LABEL);};setTimeout(()=>{if(!receivedTerminalData&&!httpSid)startHttpTerminal(SILENT_LABEL);},3000);}
 function initTerminal(){if(!window.Terminal){terminalEl.classList.remove('loading');terminalEl.textContent='xterm.js не загрузился. Проверь доступ браузера к cdn.jsdelivr.net.';return;}terminalEl.classList.remove('loading');terminalEl.textContent='';term=new Terminal({cursorBlink:!isMobileTerminal,convertEol:false,scrollback:isMobileTerminal?200:5000,scrollSensitivity:isMobileTerminal?8:1,fastScrollSensitivity:isMobileTerminal?14:5,smoothScrollDuration:0,fontFamily:'"Cascadia Mono","Consolas","Liberation Mono",monospace',fontSize:isMobileTerminal?12:14,lineHeight:1.14,theme:{background:'#0b0714',foreground:'#f7f2ff',cursor:'#fbbf24',selectionBackground:'#334155',black:'#0b0714',red:'#fb7185',green:'#86efac',yellow:'#fde68a',blue:'#93c5fd',magenta:'#c084fc',cyan:'#67e8f9',white:'#f7f2ff'}});if(window.FitAddon&&FitAddon.FitAddon){fitAddon=new FitAddon.FitAddon();term.loadAddon(fitAddon);}term.open(terminalEl);term.onData(sendData);term.onResize(sendResize);term.attachCustomKeyEventHandler((ev)=>{const key=String(ev.key||'').toLowerCase();if((ev.ctrlKey||ev.metaKey)&&key==='c'&&term.hasSelection&&term.hasSelection()){copySelection();return false;}return true;});terminalEl.addEventListener('click',()=>term.focus());fitTerminal(true);connect();setTimeout(()=>{fitTerminal(true);term.focus();},120);}
@@ -3075,6 +3161,11 @@ window.addEventListener('beforeunload',()=>{if(httpSid)navigator.sendBeacon('/ap
 let resizeTimer=0;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>fitTerminal(false),160);});
 copyBtn.addEventListener('click',copyTerminalAll);clearBtn.addEventListener('click',()=>term&&term.clear());reconnectBtn.addEventListener('click',()=>{try{if(ws)ws.close();}catch(e){}if(httpSid)navigator.sendBeacon('/api/ssh-session/'+encodeURIComponent(httpSid)+'/close');httpSid='';connect();});
 cmdSend.addEventListener('click',sendCommandInput);cmdInput.addEventListener('keydown',(ev)=>{if(ev.key==='Enter'&&(ev.ctrlKey||ev.metaKey)){sendCommandInput();ev.preventDefault();}});
+quickCopyButtons.forEach((btn)=>btn.addEventListener('click',()=>copyQuickCommand(btn)));
+quickRunButtons.forEach((btn)=>btn.addEventListener('click',()=>runQuickCommand(btn)));
+function quickCommandText(btn){return String(btn?.dataset?.cmd||'');}
+async function copyQuickCommand(btn){const text=quickCommandText(btn);if(!text)return;const ok=await copyText(text);if(ok)notice('Команда скопирована','32');}
+async function runQuickCommand(btn){const text=quickCommandText(btn);if(!text)return;term&&term.focus&&term.focus();await sendData(normalizePaste(text)+'\r',true);}
 window.addEventListener('load',initTerminal);
 </script>
 </body>
@@ -3088,6 +3179,8 @@ window.addEventListener('load',initTerminal);
         .replace("__CONNECT_LABEL_JSON__", json.dumps(connect_label))
         .replace("__CLOSED_LABEL_JSON__", json.dumps(closed_label))
         .replace("__SILENT_LABEL_JSON__", json.dumps(silent_label))
+        .replace("__READY_LABEL_JSON__", json.dumps(ready_label))
+        .replace("__QUICK_COMMANDS_HTML__", quick_commands_html)
         .replace(f"<title>SSH {safe_name}</title>", f"<title>{html.escape(page_title)}</title>")
         .replace(f"<h1>SSH · {safe_name}</h1>", f"<h1>{html.escape(header_title)}</h1>")
     )
@@ -3426,7 +3519,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         row = vps_terminal_row()
         ws_token = ssh_ws_token(self.app.session_token, row["id"])
-        self.send_bytes(200, ssh_terminal_html_v2(row, ws_token).encode("utf-8"), "text/html; charset=utf-8")
+        public_host = urllib.parse.urlsplit(self.app.public_url).hostname if self.app.public_url else ""
+        if not public_host:
+            public_host = self.headers.get("Host", "").split(":", 1)[0]
+        quick_commands_html = vps_quick_commands_html(public_host or "YOUR_VPS_IP")
+        self.send_bytes(200, ssh_terminal_html_v2(row, ws_token, quick_commands_html).encode("utf-8"), "text/html; charset=utf-8")
 
     def ssh_ws(self):
         try:
