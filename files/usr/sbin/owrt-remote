@@ -649,6 +649,191 @@ doctor() {
 	fi
 }
 
+# Override Xray bootstrap with boot-safe retry logic.
+fetch_file() {
+	local url dst
+	url="$1"
+	dst="$2"
+	rm -f "$dst"
+	if command -v curl >/dev/null 2>&1 && curl -fsSL "$url" -o "$dst"; then
+		return 0
+	fi
+	if command -v uclient-fetch >/dev/null 2>&1 && uclient-fetch -q -O "$dst" "$url"; then
+		return 0
+	fi
+	if command -v wget >/dev/null 2>&1 && wget -q -O "$dst" "$url"; then
+		return 0
+	fi
+	rm -f "$dst"
+	return 1
+}
+
+install_package() {
+	local pkg
+	pkg="$1"
+	if command -v opkg >/dev/null 2>&1; then
+		opkg update >/dev/null 2>&1 || return 1
+		opkg install "$pkg" >/dev/null 2>&1 || return 1
+		return 0
+	fi
+	if command -v apk >/dev/null 2>&1; then
+		apk -U add "$pkg" >/dev/null 2>&1 || return 1
+		return 0
+	fi
+	return 1
+}
+
+has_ca_certificates() {
+	[ -s /etc/ssl/cert.pem ] && return 0
+	[ -s /etc/ssl/certs/ca-certificates.crt ] && return 0
+	[ -d /etc/ssl/certs ] && ls /etc/ssl/certs/* >/dev/null 2>&1 && return 0
+	return 1
+}
+
+ensure_ca_certificates() {
+	has_ca_certificates && return 0
+	if command -v apk >/dev/null 2>&1; then
+		install_package ca-certificates >/dev/null 2>&1 || true
+	fi
+	if command -v opkg >/dev/null 2>&1; then
+		install_package ca-bundle >/dev/null 2>&1 || install_package ca-certificates >/dev/null 2>&1 || true
+	fi
+	has_ca_certificates
+}
+
+ensure_fetch_tool() {
+	command -v curl >/dev/null 2>&1 && return 0
+	command -v uclient-fetch >/dev/null 2>&1 && return 0
+	command -v wget >/dev/null 2>&1 && return 0
+	if command -v apk >/dev/null 2>&1; then
+		install_package curl >/dev/null 2>&1 || install_package wget >/dev/null 2>&1 || true
+	fi
+	if command -v opkg >/dev/null 2>&1; then
+		install_package curl >/dev/null 2>&1 || install_package wget-ssl >/dev/null 2>&1 || install_package wget >/dev/null 2>&1 || true
+	fi
+	command -v curl >/dev/null 2>&1 && return 0
+	command -v uclient-fetch >/dev/null 2>&1 && return 0
+	command -v wget >/dev/null 2>&1 && return 0
+	return 1
+}
+
+install_xray_tmp() {
+	local dir zip asset url version
+	dir="/tmp/owrt-xray"
+	zip="$dir/xray.zip"
+	asset="$(xray_release_asset)" || {
+		log "unknown Xray asset for $(uname -m 2>/dev/null)"
+		return 1
+	}
+	url="https://github.com/XTLS/Xray-core/releases/latest/download/$asset"
+
+	mkdir -p /var/lock /var/run "$dir"
+	if ! command -v unzip >/dev/null 2>&1; then
+		install_package unzip || {
+			log "cannot install unzip"
+			return 1
+		}
+	fi
+	ensure_ca_certificates || log "CA certificates not found, trying download anyway"
+	ensure_fetch_tool || {
+		log "need curl, uclient-fetch or wget to download Xray"
+		return 1
+	}
+
+	printf 'Skachivayu Xray: %s\n' "$asset"
+	rm -f "$zip" "$dir/xray"
+	fetch_file "$url" "$zip" || {
+		log "cannot download Xray: $url"
+		return 1
+	}
+	[ -s "$zip" ] || {
+		log "downloaded Xray archive is empty: $zip"
+		rm -f "$zip"
+		return 1
+	}
+	( cd "$dir" && unzip -o "$zip" xray >/dev/null ) || {
+		log "cannot unpack Xray"
+		rm -f "$zip" "$dir/xray"
+		return 1
+	}
+	chmod +x "$dir/xray"
+	version="$("$dir/xray" version 2>&1)" || {
+		log "downloaded Xray does not start"
+		rm -f "$dir/xray"
+		return 1
+	}
+	version="$(printf '%s\n' "$version" | sed -n '1p')"
+
+	uci set "$CONFIG.$SECTION.xray_bin=$dir/xray"
+	uci commit "$CONFIG"
+	printf 'OK: Xray installed in %s\n' "$dir/xray"
+	printf 'OK: %s\n' "$version"
+	printf 'OK: xray_bin saved in /etc/config/owrtremote\n'
+	return 0
+}
+
+ensure_xray_available() {
+	local configured candidate found
+	configured="$(uci_get xray_bin /usr/bin/xray)"
+	[ -x "$configured" ] && return 0
+
+	for candidate in /usr/bin/xray /usr/bin/xray-core /usr/local/bin/xray /opt/bin/xray /tmp/owrt-xray/xray /tmp/xray; do
+		if [ -x "$candidate" ]; then
+			found="$candidate"
+			break
+		fi
+	done
+
+	if [ -z "$found" ]; then
+		found="$(command -v xray 2>/dev/null || command -v xray-core 2>/dev/null || true)"
+	fi
+
+	if [ -n "$found" ] && [ -x "$found" ]; then
+		[ "$found" = "$configured" ] || {
+			uci set "$CONFIG.$SECTION.xray_bin=$found"
+			uci commit "$CONFIG"
+			log "Xray found: $found"
+		}
+		return 0
+	fi
+
+	log "Xray missing ($configured), reinstalling temporary Xray in /tmp..."
+	install_xray_tmp
+}
+
+ensure_xray_available_with_retry() {
+	local attempts delay try_num
+	attempts="${1:-18}"
+	delay="${2:-10}"
+	try_num=1
+	while [ "$try_num" -le "$attempts" ]; do
+		if ensure_xray_available; then
+			return 0
+		fi
+		[ "$try_num" -ge "$attempts" ] && break
+		log "Xray is not ready yet, retry in ${delay}s (${try_num}/${attempts})"
+		sleep "$delay"
+		try_num=$((try_num + 1))
+	done
+	return 1
+}
+
+run_xray() {
+	local enabled xray_bin xray_config
+	enabled="$(uci_get enabled 0)"
+	truthy "$enabled" || die "service disabled: set option enabled '1'"
+
+	ensure_xray_available_with_retry || die "cannot prepare Xray for tunnel"
+	xray_bin="$(xray_bin_path)"
+	xray_config="$(render_client_config)"
+	[ -x "$xray_bin" ] || die "xray not found or not executable: $xray_bin"
+
+	if "$xray_bin" help 2>/dev/null | grep -q 'run'; then
+		exec "$xray_bin" run -config "$xray_config"
+	fi
+	exec "$xray_bin" -config "$xray_config"
+}
+
 cmd="${1:-help}"
 shift || true
 
