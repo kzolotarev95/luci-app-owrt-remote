@@ -779,11 +779,45 @@ def web_manifest_json():
             "background_color": "#10081c",
             "theme_color": "#7c3aed",
             "description": "Удаленный доступ к OpenWrt через свой VPS",
-            "icons": [],
+            "icons": [
+                {
+                    "src": "/favicon.svg",
+                    "sizes": "any",
+                    "type": "image/svg+xml",
+                    "purpose": "any maskable",
+                }
+            ],
         },
         ensure_ascii=False,
         separators=(",", ":"),
     )
+
+
+def favicon_svg():
+    return """
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#120a24"/>
+      <stop offset="55%" stop-color="#28124a"/>
+      <stop offset="100%" stop-color="#07040f"/>
+    </linearGradient>
+    <linearGradient id="halo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#22d3ee"/>
+      <stop offset="55%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#f59e0b"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#bg)"/>
+  <rect x="5" y="5" width="54" height="54" rx="15" fill="none" stroke="#ffffff24"/>
+  <path d="M24 22c3-6 13-6 16 0" fill="none" stroke="#a5f3fc" stroke-linecap="round" stroke-width="3"/>
+  <path d="M20 18c6-11 18-11 24 0" fill="none" stroke="url(#halo)" stroke-linecap="round" stroke-width="3"/>
+  <rect x="16" y="25" width="32" height="18" rx="6" fill="none" stroke="#fbbf24" stroke-width="3"/>
+  <circle cx="26" cy="34" r="3" fill="#22c55e"/>
+  <circle cx="38" cy="34" r="3" fill="#22c55e"/>
+  <rect x="22" y="47" width="20" height="4" rx="2" fill="#7c3aed"/>
+</svg>
+""".strip() + "\n"
 
 
 def run_quiet(args, timeout=2.5):
@@ -1585,6 +1619,7 @@ def dashboard_html(routers, username, sessions=None, notifications=None):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#7c3aed">
 <title>{APP_NAME}</title>
@@ -2225,12 +2260,29 @@ function isStandalonePwa() {{
   return !!(window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
 }}
 
+function webPushSupportInfo() {{
+  const secure = !!window.isSecureContext;
+  const hasServiceWorker = 'serviceWorker' in navigator;
+  const hasPushManager = 'PushManager' in window;
+  const hasNotification = 'Notification' in window;
+  let reason = '';
+  if (!secure) reason = 'https';
+  else if (!hasServiceWorker) reason = 'serviceWorker';
+  else if (!hasPushManager) reason = 'pushManager';
+  else if (!hasNotification) reason = 'notification';
+  if (isIOSDevice() && !isStandalonePwa()) reason = 'ios-home-screen';
+  return {{secure, hasServiceWorker, hasPushManager, hasNotification, reason}};
+}}
+
 function webPushSupported() {{
-  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const support = webPushSupportInfo();
+  return support.secure && support.hasServiceWorker && support.hasPushManager && support.hasNotification;
 }}
 
 function notificationPermissionText() {{
+  const support = webPushSupportInfo();
   if (!webPushSupported()) {{
+    if (support.reason === 'https') return 'Push: нужен HTTPS';
     if (isIOSDevice()) return isStandalonePwa() ? 'Push недоступен' : 'iOS: добавь на экран';
     return 'Push недоступен';
   }}
@@ -2284,6 +2336,11 @@ async function enableNotifications() {{
     localStorage.setItem('owrtNotifyEnabled', '0');
     localStorage.setItem('owrtPushEnabled', '0');
     updateNotifyButton();
+    const support = webPushSupportInfo();
+    if (support.reason === 'https') {{
+      showRouterMsg('Web Push работает только по HTTPS. Сейчас Hub открыт по обычному HTTP, поэтому Chrome не даёт service worker и push-подписку.', false);
+      return;
+    }}
     const message = isIOSDevice()
       ? (isStandalonePwa()
         ? 'Этот iOS-браузер не дал Push API. Проверь iOS 16.4+, разрешения уведомлений для веб-приложений и открой Hub именно с экрана Домой.'
@@ -2437,6 +2494,7 @@ def ssh_terminal_html(row, ws_token):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>SSH {safe_name}</title>
 <style>
 :root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.92);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.28);--green:#22c55e;--blue:#7c3aed;--red:#fb7185;--grid:rgba(168,85,247,.13)}}
@@ -2908,6 +2966,7 @@ def ssh_terminal_html_v2(row, ws_token):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <title>SSH __SAFE_NAME__</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
@@ -3016,6 +3075,7 @@ def login_html(error=""):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#7c3aed">
 <title>OpenWrt Remote Hub</title>
@@ -3671,6 +3731,14 @@ class Handler(BaseHTTPRequestHandler):
         path = self.parsed().path
         if path == "/health":
             self.send_json(200, {"ok": True})
+            return
+        if path == "/favicon.svg":
+            self.send_bytes(200, favicon_svg().encode("utf-8"), "image/svg+xml; charset=utf-8")
+            return
+        if path == "/favicon.ico":
+            self.send_response(302)
+            self.send_header("Location", "/favicon.svg")
+            self.end_headers()
             return
         if path == "/sw.js":
             self.send_bytes(
