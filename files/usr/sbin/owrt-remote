@@ -267,14 +267,64 @@ fetch_file() {
 	die "для скачивания нужен wget или curl"
 }
 
+xray_arch() {
+	local arch
+	arch="$(uname -m 2>/dev/null || true)"
+
+	case "$arch" in
+		mips|mips64|mips64el|mips64le|mipsel|mipsle|'') ;;
+		*)
+			printf '%s\n' "$arch"
+			return
+			;;
+	esac
+
+	if command -v opkg >/dev/null 2>&1; then
+		arch="$(
+			opkg print-architecture 2>/dev/null | awk '
+				$1 == "arch" && $2 != "all" && $2 != "noarch" {
+					priority = $3 + 0
+					if (priority >= best_priority) {
+						best = $2
+						best_priority = priority
+					}
+				}
+				END {
+					if (best != "") {
+						print best
+					}
+				}
+			'
+		)"
+		[ -n "$arch" ] && {
+			printf '%s\n' "$arch"
+			return
+		}
+	fi
+
+	if command -v apk >/dev/null 2>&1; then
+		arch="$(apk --print-arch 2>/dev/null || true)"
+		[ -n "$arch" ] && {
+			printf '%s\n' "$arch"
+			return
+		}
+	fi
+
+	printf '%s\n' "$arch"
+}
+
 xray_release_asset() {
-	case "$(uname -m 2>/dev/null)" in
+	case "$(xray_arch)" in
 		aarch64|arm64) printf '%s\n' "Xray-linux-arm64-v8a.zip" ;;
 		armv7l|armv7*) printf '%s\n' "Xray-linux-arm32-v7a.zip" ;;
 		armv6l|armv6*) printf '%s\n' "Xray-linux-arm32-v6.zip" ;;
 		armv5l|armv5*) printf '%s\n' "Xray-linux-arm32-v5.zip" ;;
 		x86_64|amd64) printf '%s\n' "Xray-linux-64.zip" ;;
 		i386|i686) printf '%s\n' "Xray-linux-32.zip" ;;
+		mips64el|mips64le|mips64el_*|mips64le_*) printf '%s\n' "Xray-linux-mips64le.zip" ;;
+		mips64|mips64_*) printf '%s\n' "Xray-linux-mips64.zip" ;;
+		mipsel*|mipsle*) printf '%s\n' "Xray-linux-mips32le.zip" ;;
+		mips*) printf '%s\n' "Xray-linux-mips32.zip" ;;
 		*) return 1 ;;
 	esac
 }

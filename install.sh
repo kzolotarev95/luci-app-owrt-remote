@@ -134,6 +134,15 @@ package_manager() {
 	printf 'unknown'
 }
 
+install_xray_runtime() {
+	local remote_bin
+	[ "${ROOT%/}" = "" ] || return 0
+	remote_bin="$(target_path usr/sbin/owrt-remote)"
+	[ -x "$remote_bin" ] || die "missing $remote_bin after install"
+	info "Installing Xray to /tmp..."
+	"$remote_bin" install-xray-tmp || die "failed to install Xray to /tmp"
+}
+
 install_file "usr/sbin/owrt-remote" 0755
 install_file "etc/init.d/owrt-remote" 0755
 install_config
@@ -152,6 +161,8 @@ fi
 if [ -x "$(target_path etc/init.d/uhttpd)" ]; then
 	"$(target_path etc/init.d/uhttpd)" reload >/dev/null 2>&1 || "$(target_path etc/init.d/uhttpd)" restart >/dev/null 2>&1 || true
 fi
+
+install_xray_runtime
 
 key="$(make_key)"
 ip="$(router_ip)"
