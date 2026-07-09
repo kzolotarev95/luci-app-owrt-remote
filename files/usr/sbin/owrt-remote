@@ -238,7 +238,7 @@ xray_bin_path() {
 		printf '%s' "$configured"
 		return
 	fi
-	for candidate in /usr/bin/xray /usr/bin/xray-core /usr/local/bin/xray /opt/bin/xray /tmp/owrt-xray/xray /tmp/xray; do
+	for candidate in /usr/bin/xray /usr/bin/xray-core /usr/local/bin/xray /opt/bin/xray /tmp/owrt-xray/xray /tmp/owrt-xray/xray_softfloat /tmp/xray /tmp/xray_softfloat; do
 		if [ -x "$candidate" ]; then
 			printf '%s' "$candidate"
 			return
@@ -768,7 +768,7 @@ ensure_fetch_tool() {
 }
 
 install_xray_tmp() {
-	local dir zip asset url version
+	local dir zip asset url version entry candidates
 	dir="/tmp/owrt-xray"
 	zip="$dir/xray.zip"
 	asset="$(xray_release_asset)" || {
@@ -791,7 +791,7 @@ install_xray_tmp() {
 	}
 
 	printf 'Skachivayu Xray: %s\n' "$asset"
-	rm -f "$zip" "$dir/xray"
+	rm -f "$zip" "$dir/xray" "$dir/xray_softfloat"
 	fetch_file "$url" "$zip" || {
 		log "cannot download Xray: $url"
 		return 1
@@ -801,25 +801,35 @@ install_xray_tmp() {
 		rm -f "$zip"
 		return 1
 	}
-	( cd "$dir" && unzip -o "$zip" xray >/dev/null ) || {
-		log "cannot unpack Xray"
-		rm -f "$zip" "$dir/xray"
-		return 1
-	}
-	chmod +x "$dir/xray"
-	version="$("$dir/xray" version 2>&1)" || {
-		log "downloaded Xray does not start"
-		rm -f "$dir/xray"
-		return 1
-	}
-	version="$(printf '%s\n' "$version" | sed -n '1p')"
 
-	uci set "$CONFIG.$SECTION.xray_bin=$dir/xray"
-	uci commit "$CONFIG"
-	printf 'OK: Xray installed in %s\n' "$dir/xray"
-	printf 'OK: %s\n' "$version"
-	printf 'OK: xray_bin saved in /etc/config/owrtremote\n'
-	return 0
+	candidates="xray"
+	case "$(xray_arch)" in
+		mips*)
+			candidates="xray_softfloat xray"
+			;;
+	esac
+
+	for entry in $candidates; do
+		( cd "$dir" && unzip -o "$zip" "$entry" >/dev/null ) || continue
+		[ -s "$dir/$entry" ] || continue
+		chmod +x "$dir/$entry"
+		version="$("$dir/$entry" version 2>&1)" || {
+			rm -f "$dir/$entry"
+			continue
+		}
+		version="$(printf '%s\n' "$version" | sed -n '1p')"
+
+		uci set "$CONFIG.$SECTION.xray_bin=$dir/$entry"
+		uci commit "$CONFIG"
+		printf 'OK: Xray installed in %s\n' "$dir/$entry"
+		printf 'OK: %s\n' "$version"
+		printf 'OK: xray_bin saved in /etc/config/owrtremote\n'
+		return 0
+	done
+
+	log "downloaded Xray does not start"
+	rm -f "$dir/xray" "$dir/xray_softfloat"
+	return 1
 }
 
 ensure_xray_available() {
@@ -827,7 +837,7 @@ ensure_xray_available() {
 	configured="$(uci_get xray_bin /usr/bin/xray)"
 	[ -x "$configured" ] && return 0
 
-	for candidate in /usr/bin/xray /usr/bin/xray-core /usr/local/bin/xray /opt/bin/xray /tmp/owrt-xray/xray /tmp/xray; do
+	for candidate in /usr/bin/xray /usr/bin/xray-core /usr/local/bin/xray /opt/bin/xray /tmp/owrt-xray/xray /tmp/owrt-xray/xray_softfloat /tmp/xray /tmp/xray_softfloat; do
 		if [ -x "$candidate" ]; then
 			found="$candidate"
 			break
