@@ -360,7 +360,7 @@ form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr
           </a>
       </div>
       <div class="returnCard">
-        <a class="uiPill backBtn" href="/cgi-bin/luci/admin/services">Вернуться в службы OpenWrt</a>
+        <a class="uiPill backBtn" href="/cgi-bin/luci/">Вернуться в службы OpenWrt</a>
       </div>
     </div>
   </section>
