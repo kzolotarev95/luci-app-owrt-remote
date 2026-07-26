@@ -634,12 +634,49 @@ send_heartbeat() {
 	rm -f "$tmp"
 }
 
+heartbeat_mark_ok() {
+	rm -f "${TMPDIR:-/tmp}/owrt-remote-heartbeat.fail"
+}
+
+heartbeat_self_heal() {
+	local fail_file restart_file fails now last_restart threshold cooldown
+	fail_file="${TMPDIR:-/tmp}/owrt-remote-heartbeat.fail"
+	restart_file="${TMPDIR:-/tmp}/owrt-remote-heartbeat.restart"
+	threshold=3
+	cooldown=300
+	now="$(date +%s 2>/dev/null || echo 0)"
+	fails=0
+	last_restart=0
+
+	[ -f "$fail_file" ] && fails="$(cat "$fail_file" 2>/dev/null || echo 0)"
+	fails="$(safe_num "$fails" 0)"
+	fails=$((fails + 1))
+	printf '%s\n' "$fails" >"$fail_file"
+
+	[ "$fails" -lt "$threshold" ] && return 0
+	[ -f "$restart_file" ] && last_restart="$(cat "$restart_file" 2>/dev/null || echo 0)"
+	last_restart="$(safe_num "$last_restart" 0)"
+	[ $((now - last_restart)) -lt "$cooldown" ] && return 0
+
+	printf '%s\n' "$now" >"$restart_file"
+	rm -f "$fail_file"
+	log "heartbeat failed ${threshold} times in a row, restarting owrt-remote"
+	(
+		sleep 1
+		/etc/init.d/owrt-remote restart >/dev/null 2>&1
+	) &
+}
+
 heartbeat_loop() {
 	local interval
 	interval="$(safe_num "$(uci_get heartbeat_interval 30)" 30)"
 	[ "$interval" -lt 10 ] && interval=10
 	while :; do
-		send_heartbeat >/dev/null 2>&1 || true
+		if send_heartbeat >/dev/null 2>&1; then
+			heartbeat_mark_ok
+		else
+			heartbeat_self_heal
+		fi
 		sleep "$interval"
 	done
 }
