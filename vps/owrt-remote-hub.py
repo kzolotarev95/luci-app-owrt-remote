@@ -1923,7 +1923,7 @@ function render(list) {{
     const memory = formatMemory((r.status && r.status.memory) || 'unknown');
     const flash = (r.status && r.status.flash) || 'unknown';
     const temperature = (r.status && r.status.temperature) || 'unknown';
-    const access = r.public_url || r.access_url;
+    const access = r.access_url || r.public_url;
     const tags = [
       isMain ? 'главный' : 'node',
       r.entry_port ? 'entry ' + r.entry_port : '',
@@ -2004,7 +2004,7 @@ render = function(list) {{
     const memory = formatMemory((r.status && r.status.memory) || 'unknown');
     const flash = (r.status && r.status.flash) || 'unknown';
     const temperature = (r.status && r.status.temperature) || 'unknown';
-    const access = r.public_url || r.access_url;
+    const access = r.access_url || r.public_url;
     const tags = [
       isMain ? 'главный' : 'node',
       r.entry_port ? 'entry ' + r.entry_port : '',
