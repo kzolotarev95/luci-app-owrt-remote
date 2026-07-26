@@ -145,6 +145,7 @@ install_xray_runtime() {
 
 install_file "usr/sbin/owrt-remote" 0755
 install_file "etc/init.d/owrt-remote" 0755
+install_file "etc/hotplug.d/iface/99-owrt-remote" 0755
 install_config
 install_file "www/cgi-bin/owrt-remote" 0755
 install_file "usr/share/luci/menu.d/luci-app-owrt-remote.json" 0644
