@@ -4,6 +4,9 @@ PATH="/usr/sbin:/usr/bin:/sbin:/bin"
 TAG="owrt-remote"
 STATE_DIR="${TMPDIR:-/tmp}/owrt-remote-hotplug"
 STAMP_FILE="$STATE_DIR/wan.stamp"
+LAST_RESTART_FILE="$STATE_DIR/last-restart"
+QUIET_SECONDS=18
+RESTART_COOLDOWN=45
 
 [ "$ACTION" = "ifup" ] || [ "$ACTION" = "ifupdate" ] || [ "$ACTION" = "ifrestart" ] || exit 0
 
@@ -35,12 +38,22 @@ network_ready() {
 	route -n 2>/dev/null | awk '$4 ~ /G/ { found = 1 } END { exit found ? 0 : 1 }'
 }
 
+safe_num() {
+	case "$1" in
+		''|*[!0-9]*) printf '%s' "$2" ;;
+		*) printf '%s' "$1" ;;
+	esac
+}
+
 mkdir -p "$STATE_DIR"
 stamp="$(date +%s 2>/dev/null || echo 0)-$$-${ACTION:-event}-${INTERFACE:-iface}-${DEVICE:-dev}"
 printf '%s\n' "$stamp" >"$STAMP_FILE"
 
 (
 	i=0
+	sleep "$QUIET_SECONDS"
+	[ "$(cat "$STAMP_FILE" 2>/dev/null)" = "$stamp" ] || exit 0
+
 	while [ "$i" -lt 30 ]; do
 		[ "$(cat "$STAMP_FILE" 2>/dev/null)" = "$stamp" ] || exit 0
 		network_ready && break
@@ -49,9 +62,23 @@ printf '%s\n' "$stamp" >"$STAMP_FILE"
 	done
 
 	[ "$(cat "$STAMP_FILE" 2>/dev/null)" = "$stamp" ] || exit 0
-	sleep 3
+	sleep 2
+	[ "$(cat "$STAMP_FILE" 2>/dev/null)" = "$stamp" ] || exit 0
+
+	now="$(safe_num "$(date +%s 2>/dev/null || echo 0)" 0)"
+	last_restart="$(safe_num "$(cat "$LAST_RESTART_FILE" 2>/dev/null)" 0)"
+	if [ "$now" -gt 0 ] && [ $((now - last_restart)) -lt "$RESTART_COOLDOWN" ]; then
+		log "WAN event $ACTION on ${INTERFACE:-unknown}/${DEVICE:-unknown}, restart skipped by cooldown"
+		exit 0
+	fi
+	printf '%s\n' "$now" >"$LAST_RESTART_FILE"
+
 	log "WAN event $ACTION on ${INTERFACE:-unknown}/${DEVICE:-unknown}, restarting reverse tunnel"
-	/etc/init.d/owrt-remote restart >/dev/null 2>&1 || log "restart failed"
+	if /etc/init.d/owrt-remote restart >/dev/null 2>&1; then
+		/usr/sbin/owrt-remote heartbeat >/dev/null 2>&1 || true
+	else
+		log "restart failed"
+	fi
 ) &
 
 exit 0
