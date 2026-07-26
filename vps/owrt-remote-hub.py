@@ -45,6 +45,7 @@ VAPID_PRIVATE_KEY_FILE = STATE_DIR / "hub-vapid-private.pem"
 VAPID_PUBLIC_KEY_FILE = STATE_DIR / "hub-vapid-public.txt"
 BOOT_ID_FILE = STATE_DIR / "hub-boot.id"
 AGENT_TOKEN_FILE = STATE_DIR / "agent.token"
+XRAY_WAN_RECONNECT_FILE = STATE_DIR / "xray-wan-reconnect-restart.json"
 ACME_WEBROOT = STATE_DIR / "acme-webroot"
 ONLINE_AFTER_SECONDS = int(os.environ.get("OWRT_REMOTE_ONLINE_AFTER", "75"))
 DEFAULT_VLESS_PORT = int(os.environ.get("OWRT_REMOTE_VLESS_PORT", "8443"))
@@ -76,6 +77,16 @@ STATIC_CACHE_BYTES = 0
 
 def now_ts():
     return int(time.time())
+
+
+def atomic_write_text(path, text, mode=None):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    if mode is not None:
+        os.chmod(tmp, mode)
+    os.replace(tmp, path)
 
 
 def iso_time(ts):
@@ -1410,8 +1421,7 @@ def reload_vps_xray(db_path=DB_PATH):
         init_db(conn)
         rows = list_router_rows(conn)
     config = make_server_xray_config(rows)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(out, json.dumps(config, ensure_ascii=False, indent=2) + "\n", mode=0o600)
     try:
         os.chmod(out, 0o600)
     except OSError:
@@ -1444,6 +1454,30 @@ def restart_vps_xray():
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(f"systemctl restart {service} failed: {detail}")
     return {"service": service}
+
+
+def maybe_restart_vps_xray_after_wan_reconnect(router_id):
+    if str(os.environ.get("OWRT_REMOTE_RESTART_XRAY_ON_WAN_RECONNECT", "1")).lower() in {"0", "no", "false", "off"}:
+        return {"skipped": "disabled"}
+    cooldown = int(os.environ.get("OWRT_REMOTE_WAN_RECONNECT_XRAY_COOLDOWN", "90"))
+    now = now_ts()
+    last = 0
+    try:
+        data = json.loads(XRAY_WAN_RECONNECT_FILE.read_text(encoding="utf-8"))
+        last = int(data.get("ts") or 0)
+    except Exception:
+        pass
+    if now - last < cooldown:
+        return {"skipped": "cooldown", "remaining": cooldown - (now - last)}
+    result = restart_vps_xray()
+    XRAY_WAN_RECONNECT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(
+        XRAY_WAN_RECONNECT_FILE,
+        json.dumps({"ts": now, "router_id": router_id, "result": result}, ensure_ascii=False) + "\n",
+        mode=0o600,
+    )
+    result["reason"] = "wan-reconnect"
+    return result
 
 
 def make_openwrt_config(row, hub_url):
@@ -4082,7 +4116,14 @@ class Handler(BaseHTTPRequestHandler):
                 payload = self.read_payload()
                 with self.app.conn() as conn:
                     router = heartbeat(conn, payload)
-                self.send_json(200, {"ok": True, "router": router})
+                xray_restart = None
+                if payload.get("event") == "wan-reconnect":
+                    try:
+                        xray_restart = maybe_restart_vps_xray_after_wan_reconnect(router["id"])
+                    except Exception as exc:
+                        self.log_message("wan reconnect xray restart error: %s", exc)
+                        xray_restart = {"error": str(exc)}
+                self.send_json(200, {"ok": True, "router": router, "xray_restart": xray_restart})
             except Exception as exc:
                 self.log_message("heartbeat error: %s", exc)
                 self.send_json(400, {"ok": False, "error": str(exc)})

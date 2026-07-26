@@ -544,7 +544,8 @@ run_xray() {
 }
 
 heartbeat_json() {
-	local router_id router_name role public_url hub_url xray_state service_state ssh_state
+	local router_id router_name role public_url hub_url xray_state service_state ssh_state event
+	event="${1:-}"
 	router_id="$(safe_id "$(uci_get router_id main)")"
 	router_name="$(uci_get router_name "$router_id")"
 	role="$(uci_get role node)"
@@ -589,6 +590,7 @@ heartbeat_json() {
   "temperature": $(json_string "$(temperature_text)"),
   "xray": $(json_string "$xray_state"),
   "ssh": $(json_string "$ssh_state"),
+  "event": $(json_string "$event"),
   "service": $(json_string "$service_state")
 }
 EOF
@@ -625,7 +627,8 @@ post_json() {
 }
 
 send_heartbeat() {
-	local hub_url token endpoint tmp
+	local hub_url token endpoint tmp event
+	event="${1:-}"
 	hub_url="$(uci_get hub_url '')"
 	token="$(uci_get hub_token '')"
 	[ -n "$hub_url" ] || die "hub_url пустой"
@@ -633,7 +636,7 @@ send_heartbeat() {
 
 	endpoint="${hub_url%/}/api/heartbeat"
 	tmp="${TMPDIR:-/tmp}/owrt-remote-heartbeat.$$"
-	heartbeat_json >"$tmp"
+	heartbeat_json "$event" >"$tmp"
 	post_json "$endpoint" "$token" "$tmp"
 	rm -f "$tmp"
 }
@@ -961,7 +964,7 @@ case "$cmd" in
 		run_xray
 		;;
 	heartbeat)
-		send_heartbeat
+		send_heartbeat "$@"
 		;;
 	heartbeat-loop)
 		heartbeat_loop

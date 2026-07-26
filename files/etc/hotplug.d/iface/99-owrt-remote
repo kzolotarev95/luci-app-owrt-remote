@@ -75,7 +75,7 @@ printf '%s\n' "$stamp" >"$STAMP_FILE"
 
 	log "WAN event $ACTION on ${INTERFACE:-unknown}/${DEVICE:-unknown}, restarting reverse tunnel"
 	if /etc/init.d/owrt-remote restart >/dev/null 2>&1; then
-		/usr/sbin/owrt-remote heartbeat >/dev/null 2>&1 || true
+		/usr/sbin/owrt-remote heartbeat wan-reconnect >/dev/null 2>&1 || true
 	else
 		log "restart failed"
 	fi
