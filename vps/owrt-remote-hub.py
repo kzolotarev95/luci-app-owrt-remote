@@ -1082,6 +1082,16 @@ def get_router_by_any_port(conn, port, exclude_id=""):
     ).fetchone()
 
 
+def normalize_internal_ssh_port(ssh_port, entry_port=0, ssh_entry_port=0):
+    try:
+        port = int(ssh_port or 22)
+    except (TypeError, ValueError):
+        return 22
+    if port <= 0 or port in {int(entry_port or 0), int(ssh_entry_port or 0)}:
+        return 22
+    return port
+
+
 def list_router_rows(conn):
     return conn.execute(
         """
@@ -1317,6 +1327,11 @@ def upsert_router(conn, values):
         "ssh_port": keep_int("ssh_port", 22),
         "updated_at": ts,
     }
+    payload["ssh_port"] = normalize_internal_ssh_port(
+        payload["ssh_port"],
+        payload["entry_port"],
+        payload["ssh_entry_port"],
+    )
     if current:
         conn.execute(
             """
@@ -1372,6 +1387,13 @@ def heartbeat(conn, payload):
     router_id = clean_router_id(payload.get("id"))
     row = get_router(conn, router_id)
     ts = now_ts()
+    if row:
+        entry_port = int(row["entry_port"] or 0)
+        ssh_entry_port = int(row["ssh_entry_port"] or 0)
+    else:
+        entry_port = int(payload.get("entry_port") or 0) if str(payload.get("entry_port", "")).isdigit() else 0
+        ssh_entry_port = 0
+    ssh_port = normalize_internal_ssh_port(payload.get("ssh_port") or 22, entry_port, ssh_entry_port)
     if not row:
         row = upsert_router(
             conn,
@@ -1384,9 +1406,11 @@ def heartbeat(conn, payload):
                 "admin_host": payload.get("admin_host") or "127.0.0.1",
                 "admin_port": payload.get("admin_port") or 80,
                 "ssh_host": payload.get("ssh_host") or "127.0.0.1",
-                "ssh_port": payload.get("ssh_port") or 22,
+                "ssh_port": ssh_port,
             },
         )
+        ssh_entry_port = int(row["ssh_entry_port"] or 0)
+        ssh_port = normalize_internal_ssh_port(payload.get("ssh_port") or 22, int(row["entry_port"] or 0), ssh_entry_port)
     conn.execute(
         """
         update routers set
@@ -1409,7 +1433,7 @@ def heartbeat(conn, payload):
             payload.get("admin_host") or "",
             int(payload["admin_port"]) if str(payload.get("admin_port", "")).isdigit() else None,
             payload.get("ssh_host") or "",
-            int(payload["ssh_port"]) if str(payload.get("ssh_port", "")).isdigit() else None,
+            ssh_port,
             ts,
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
             ts,
