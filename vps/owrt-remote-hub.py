@@ -1633,9 +1633,28 @@ def restart_vps_xray():
     return {"service": service}
 
 
+def active_ssh_http_sessions(router_id=None):
+    with SSH_HTTP_LOCK:
+        sessions = list(SSH_HTTP_SESSIONS.values())
+    count = 0
+    for session in sessions:
+        if is_vps_terminal_id(session.get("router_id")):
+            continue
+        if router_id and str(session.get("router_id") or "") != str(router_id):
+            continue
+        with session.get("lock", threading.Lock()):
+            alive = bool(session.get("alive"))
+        if alive:
+            count += 1
+    return count
+
+
 def maybe_restart_vps_xray_after_wan_reconnect(router_id):
     if str(os.environ.get("OWRT_REMOTE_RESTART_XRAY_ON_WAN_RECONNECT", "1")).lower() in {"0", "no", "false", "off"}:
         return {"skipped": "disabled"}
+    active_sessions = active_ssh_http_sessions(router_id)
+    if active_sessions:
+        return {"skipped": "active-ssh-terminal", "active_sessions": active_sessions}
     cooldown = int(os.environ.get("OWRT_REMOTE_WAN_RECONNECT_XRAY_COOLDOWN", "90"))
     now = now_ts()
     last = 0
