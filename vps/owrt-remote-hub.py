@@ -18,6 +18,8 @@ import sqlite3
 import struct
 import subprocess
 import sys
+import tarfile
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -73,6 +75,19 @@ NOTIFICATIONS_LOCK = threading.Lock()
 PUSH_LOCK = threading.Lock()
 STATIC_CACHE = {}
 STATIC_CACHE_BYTES = 0
+BACKUP_VERSION = 1
+BACKUP_STATE_FILES = (
+    AUTH_FILE,
+    SESSION_TOKEN_FILE,
+    SESSIONS_FILE,
+    NOTIFICATIONS_FILE,
+    PUSH_SUBSCRIPTIONS_FILE,
+    VAPID_PRIVATE_KEY_FILE,
+    VAPID_PUBLIC_KEY_FILE,
+    BOOT_ID_FILE,
+    AGENT_TOKEN_FILE,
+    XRAY_WAN_RECONNECT_FILE,
+)
 
 
 def now_ts():
@@ -1096,6 +1111,165 @@ def row_to_router(row):
     return data
 
 
+def backup_filename():
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+    return f"owrt-remote-hub-backup-{stamp}.tar.gz"
+
+
+def copy_sqlite_backup(src_path, dst_path):
+    src_path = Path(src_path)
+    dst_path = Path(dst_path)
+    src_path.parent.mkdir(parents=True, exist_ok=True)
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
+    if not src_path.exists():
+        conn = connect(src_path)
+        try:
+            init_db(conn)
+        finally:
+            conn.close()
+    source = sqlite3.connect(str(src_path))
+    dest = sqlite3.connect(str(dst_path))
+    try:
+        source.backup(dest)
+    finally:
+        dest.close()
+        source.close()
+
+
+def write_private_bytes(path, data, mode=0o600):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    tmp.write_bytes(data)
+    try:
+        os.chmod(tmp, mode)
+    except OSError:
+        pass
+    os.replace(tmp, path)
+
+
+def create_hub_backup(out_path, db_path=DB_PATH):
+    ensure_state()
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="owrt-hub-backup-") as tmp_name:
+        tmp_dir = Path(tmp_name)
+        state_dir = tmp_dir / "state"
+        state_dir.mkdir(parents=True, exist_ok=True)
+        db_copy = state_dir / "hub.db"
+        copy_sqlite_backup(db_path, db_copy)
+        files = ["state/hub.db"]
+        for path in BACKUP_STATE_FILES:
+            path = Path(path)
+            if not path.exists() or not path.is_file():
+                continue
+            arcname = f"state/{path.name}"
+            (state_dir / path.name).write_bytes(path.read_bytes())
+            files.append(arcname)
+        manifest = {
+            "app": APP_NAME,
+            "version": BACKUP_VERSION,
+            "created_at": iso_time(now_ts()),
+            "hostname": socket.gethostname(),
+            "state_dir": str(STATE_DIR),
+            "db_path": str(db_path),
+            "files": files,
+        }
+        (tmp_dir / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        tmp_archive = out_path.with_name(f".{out_path.name}.{os.getpid()}.tmp")
+        with tarfile.open(tmp_archive, "w:gz") as tar:
+            tar.add(tmp_dir / "manifest.json", arcname="manifest.json")
+            for item in state_dir.iterdir():
+                if item.is_file():
+                    tar.add(item, arcname=f"state/{item.name}")
+        try:
+            os.chmod(tmp_archive, 0o600)
+        except OSError:
+            pass
+        os.replace(tmp_archive, out_path)
+    return {"path": str(out_path), "filename": out_path.name, "files": files}
+
+
+def safe_tar_member_name(name):
+    value = str(name or "").replace("\\", "/")
+    if not value or value.startswith("/") or ":" in value:
+        return False
+    parts = value.split("/")
+    return all(part and part not in {".", ".."} for part in parts)
+
+
+def extract_hub_backup(archive_path, tmp_dir):
+    with tarfile.open(archive_path, "r:gz") as tar:
+        members = tar.getmembers()
+        for member in members:
+            if not safe_tar_member_name(member.name):
+                raise ValueError(f"unsafe backup member: {member.name}")
+            if not (member.isfile() or member.isdir()):
+                raise ValueError(f"unsupported backup member: {member.name}")
+        tar.extractall(tmp_dir, members)
+
+
+def restore_hub_backup(archive_path, db_path=DB_PATH, vps_host="", public_url=""):
+    ensure_state()
+    archive_path = Path(archive_path)
+    restored_files = []
+    warnings = []
+    with tempfile.TemporaryDirectory(prefix="owrt-hub-restore-") as tmp_name:
+        tmp_dir = Path(tmp_name)
+        extract_hub_backup(archive_path, tmp_dir)
+        manifest_path = tmp_dir / "manifest.json"
+        if not manifest_path.exists():
+            raise ValueError("backup manifest.json not found")
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if int(manifest.get("version") or 0) > BACKUP_VERSION:
+            raise ValueError(f"backup version {manifest.get('version')} is newer than this Hub")
+        state_dir = tmp_dir / "state"
+        db_src = state_dir / "hub.db"
+        if not db_src.exists():
+            raise ValueError("backup has no state/hub.db")
+        db_path = Path(db_path)
+        if db_path.exists():
+            old = db_path.with_name(f"{db_path.name}.before-restore-{now_ts()}")
+            write_private_bytes(old, db_path.read_bytes())
+            warnings.append(f"old DB copy saved: {old}")
+        write_private_bytes(db_path, db_src.read_bytes())
+        restored_files.append(str(db_path))
+        for target in BACKUP_STATE_FILES:
+            src = state_dir / Path(target).name
+            if not src.exists():
+                continue
+            write_private_bytes(target, src.read_bytes())
+            restored_files.append(str(target))
+    rewritten = {}
+    conn = connect(db_path)
+    try:
+        init_db(conn)
+        if vps_host:
+            conn.execute("update routers set vps_host = ?, updated_at = ?", (str(vps_host).strip(), now_ts()))
+            rewritten["vps_host"] = str(vps_host).strip()
+        if public_url:
+            conn.execute("update routers set public_url = ?, updated_at = ?", (str(public_url).strip(), now_ts()))
+            rewritten["public_url"] = str(public_url).strip()
+        conn.commit()
+    finally:
+        conn.close()
+    xray = None
+    try:
+        xray = reload_vps_xray(db_path)
+    except Exception as exc:
+        warnings.append(f"xray reload skipped: {exc}")
+    if os.environ.get("OWRT_REMOTE_AGENT_TOKEN"):
+        warnings.append("OWRT_REMOTE_AGENT_TOKEN is set in environment, restored agent.token file may be ignored")
+    return {
+        "manifest": manifest,
+        "restored_files": restored_files,
+        "rewritten": rewritten,
+        "xray": xray,
+        "warnings": warnings,
+        "restart_required": True,
+    }
+
+
 def upsert_router(conn, values):
     router_id = clean_router_id(values.get("id"))
     current = get_router(conn, router_id)
@@ -1417,9 +1591,12 @@ def make_router_xray_config(row):
 def reload_vps_xray(db_path=DB_PATH):
     out = Path(os.environ.get("OWRT_REMOTE_XRAY_CONFIG", "/etc/xray/owrt-remote.json"))
     service = os.environ.get("OWRT_REMOTE_XRAY_SERVICE", "owrt-remote-xray")
-    with connect(db_path) as conn:
+    conn = connect(db_path)
+    try:
         init_db(conn)
         rows = list_router_rows(conn)
+    finally:
+        conn.close()
     config = make_server_xray_config(rows)
     atomic_write_text(out, json.dumps(config, ensure_ascii=False, indent=2) + "\n", mode=0o600)
     try:
@@ -1776,6 +1953,7 @@ h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{positi
 .authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:5;width:min(520px,calc(100vw - 44px));padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px)}}.authMenu[hidden]{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr 1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
 .sessionBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.sessionHead{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}}.sessionHead h3{{margin:0;font-size:15px}}.sessionList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.sessionRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.sessionTitle{{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-weight:900}}.sessionMeta{{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.sessionCurrent{{border:1px solid rgba(34,197,94,.38);border-radius:999px;padding:2px 7px;color:#bbf7d0;background:rgba(34,197,94,.13);font-size:11px}}.sessionBtn{{padding:7px 9px;font-size:12px;border-radius:999px}}.sessionEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}
 .notifyBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.notifyActions{{display:flex;gap:7px;align-items:center;justify-content:flex-end;flex-wrap:wrap}}.notifyHint{{margin:-4px 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.notifyList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.notifyRow{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.notifyTitle{{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:950}}.notifyTitle span:first-child{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.notifyTime{{color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}}.notifyBody{{margin-top:4px;color:#ddd6fe;font-size:12px;line-height:1.35;word-break:break-word}}.notifyDetails{{margin:7px 0 0;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;max-height:92px;overflow:auto}}.notifyRow.warn{{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.08)}}.notifyRow.bad{{border-color:rgba(251,113,133,.38);background:rgba(251,113,133,.09)}}.notifyBtn.on{{border-color:rgba(34,197,94,.36);background:rgba(34,197,94,.15);color:#bbf7d0}}
+.backupBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.backupGrid{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}.backupGrid .wide{{grid-column:1/-1}}.backupGrid input[type=file]{{padding:8px;background:rgba(8,5,18,.72);border:1px solid var(--line);border-radius:8px;color:#ddd6fe;min-width:0}}.backupHint{{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.backupCmds{{display:grid;gap:8px;margin-top:10px}}.backupCmd{{border:1px solid rgba(255,255,255,.10);border-radius:8px;background:rgba(0,0,0,.18);padding:9px}}.backupCmd strong{{display:block;margin-bottom:5px;color:#f7f2ff;font-size:12px}}.backupCmd pre{{margin:0;white-space:pre-wrap;word-break:break-word;color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace}}.backupMsg{{margin-top:9px;color:#bbf7d0;font-size:12px;font-weight:800;line-height:1.35}}.backupMsg.bad{{color:#fecdd3}}
 input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:rgba(8,5,18,.72);color:var(--text)}}button,.btn{{border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:10px 13px;background:rgba(255,255,255,.10);color:#f7f2ff;font-weight:850;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}.authToggle{{border-radius:999px;padding:8px 14px;background:rgba(255,255,255,.08);color:#f3e8ff}}button.primary,.btn.primary{{background:var(--blue);color:#fff;box-shadow:0 10px 22px rgba(124,58,237,.22)}}button.bad,.btn.bad{{background:rgba(251,113,133,.16);color:#fecdd3}}.btn.good{{background:rgba(34,197,94,.16);color:#bbf7d0}}.btn.disabled{{opacity:.45;cursor:not-allowed}}
 .summary{{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}}.miniStat{{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.07);padding:8px 12px;color:#ddd6fe;font-weight:800;font-size:13px;line-height:1;white-space:nowrap}}
 .routerStats{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:0 0 12px}}.statCard{{position:relative;min-height:78px;overflow:hidden;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:linear-gradient(180deg,rgba(255,255,255,.085),rgba(255,255,255,.045)),var(--panel);box-shadow:0 14px 34px rgba(0,0,0,.18);text-align:center}}.statCard::before{{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--cyan)}}.statCard span{{display:block;color:var(--muted);font-size:11px;font-weight:850;text-transform:uppercase;letter-spacing:.04em}}.statCard strong{{display:block;margin-top:5px;font-size:28px;line-height:1;color:#f7f2ff}}.statCard em{{display:block;margin-top:2px;color:#c4b5fd;font-style:normal;font-size:11px}}.statCard.online::before{{background:var(--green)}}.statCard.online strong{{color:#bbf7d0}}.statCard.offline::before{{background:var(--red)}}.statCard.offline strong{{color:#fecdd3}}.statCard.total::before{{background:var(--cyan)}}.statCard.total strong{{color:#a5f3fc}}
@@ -1841,6 +2019,43 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
           </div>
           <div class="notifyHint">Web Push для входов в панель, смены IP и запуска VPS/Hub. На iOS включай из приложения Hub с экрана Домой.</div>
           <div id="notifyList" class="notifyList"></div>
+        </div>
+        <div class="backupBox">
+          <div class="sessionHead">
+            <h3>Backup VPS</h3>
+            <a class="sessionBtn btn good" id="backupDownload" href="/api/backup/download">Скачать</a>
+          </div>
+          <div class="backupHint">Архив переносит БД роутеров, логин, токены Hub/агента, push-ключи и уведомления. Для переезда на другой IP укажи новый VPS host/Public URL перед восстановлением.</div>
+          <div class="backupCmds">
+            <div class="backupCmd">
+              <strong>1. Сделать backup на старой VPS</strong>
+              <pre>/opt/owrt-remote/owrt-remote-hub.py backup --out /root/owrt-hub-backup.tar.gz</pre>
+            </div>
+            <div class="backupCmd">
+              <strong>2. Поднять Hub на новой VPS</strong>
+              <pre>curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sh</pre>
+            </div>
+            <div class="backupCmd">
+              <strong>3. Перенести архив на новую VPS</strong>
+              <pre>scp /root/owrt-hub-backup.tar.gz root@NEW_IP:/root/owrt-hub-backup.tar.gz</pre>
+            </div>
+            <div class="backupCmd">
+              <strong>4. Восстановить на новой VPS с новым IP/domain</strong>
+              <pre>/opt/owrt-remote/owrt-remote-hub.py restore --file /root/owrt-hub-backup.tar.gz --vps-host NEW_IP_OR_DOMAIN --public-url https://NEW_DOMAIN</pre>
+            </div>
+            <div class="backupCmd">
+              <strong>5. Применить после restore</strong>
+              <pre>systemctl restart owrt-remote
+systemctl restart owrt-remote-xray</pre>
+            </div>
+          </div>
+          <div class="backupGrid">
+            <input class="wide" id="backupFile" type="file" accept=".gz,.tgz,.tar.gz,application/gzip,application/x-gzip">
+            <input id="backupVpsHost" placeholder="Новый VPS host/IP">
+            <input id="backupPublicUrl" placeholder="Новый Public URL">
+            <button class="primary wide" id="backupRestore" type="button">Восстановить из backup</button>
+          </div>
+          <div id="backupMsg" class="backupMsg" hidden></div>
         </div>
       </div>
     </div>
@@ -2361,6 +2576,11 @@ const revokeOtherSessions = document.getElementById('revokeOtherSessions');
 const notifyList = document.getElementById('notifyList');
 const notifyEnable = document.getElementById('notifyEnable');
 const notifyClear = document.getElementById('notifyClear');
+const backupFile = document.getElementById('backupFile');
+const backupVpsHost = document.getElementById('backupVpsHost');
+const backupPublicUrl = document.getElementById('backupPublicUrl');
+const backupRestore = document.getElementById('backupRestore');
+const backupMsg = document.getElementById('backupMsg');
 let authHideTimer;
 function showAuthMenu() {{
   clearTimeout(authHideTimer);
@@ -2615,6 +2835,56 @@ async function loadNotifications({{initial = false}} = {{}}) {{
   localStorage.setItem('owrtLastNotificationTs', String(lastNotificationTs));
   renderNotifications(window.HUB_NOTIFICATIONS);
 }}
+
+function bytesToBase64(bytes) {{
+  let binary = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {{
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }}
+  return btoa(binary);
+}}
+
+function setBackupMsg(text, bad = false) {{
+  backupMsg.hidden = false;
+  backupMsg.className = 'backupMsg' + (bad ? ' bad' : '');
+  backupMsg.textContent = text;
+}}
+
+backupRestore.addEventListener('click', async () => {{
+  const file = backupFile.files && backupFile.files[0];
+  if (!file) {{
+    setBackupMsg('Выбери backup-архив .tar.gz', true);
+    return;
+  }}
+  if (!confirm('Восстановить Hub из backup? Текущая БД будет заменена, старая копия сохранится рядом с hub.db.')) return;
+  backupRestore.disabled = true;
+  setBackupMsg('Читаю архив и восстанавливаю Hub...');
+  try {{
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const res = await fetch('/api/backup/restore', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{
+        filename: file.name,
+        archive_b64: bytesToBase64(bytes),
+        vps_host: backupVpsHost.value.trim(),
+        public_url: backupPublicUrl.value.trim()
+      }})
+    }});
+    const data = await res.json().catch(() => ({{}}));
+    if (!res.ok || !data.ok) throw new Error(data.error || res.status);
+    const rewritten = data.rewritten || {{}};
+    const changed = Object.keys(rewritten).length ? ' Переписано: ' + Object.entries(rewritten).map(([k, v]) => `${{k}}=${{v}}`).join(', ') + '.' : '';
+    const warn = Array.isArray(data.warnings) && data.warnings.length ? ' Предупреждения: ' + data.warnings.join('; ') : '';
+    setBackupMsg('Backup восстановлен.' + changed + ' Перезапусти owrt-remote на VPS и Xray, затем проверь роутеры.' + warn);
+    await loadRouters();
+  }} catch (e) {{
+    setBackupMsg('Restore не удался: ' + (e.message || e), true);
+  }} finally {{
+    backupRestore.disabled = false;
+  }}
+}});
 
 notifyEnable.addEventListener('click', enableNotifications);
 notifyClear.addEventListener('click', async () => {{
@@ -4027,6 +4297,53 @@ class Handler(BaseHTTPRequestHandler):
         env, args = self.vps_shell_args()
         self.run_terminal_session(env, args, "pty недоступен на VPS", "не удалось открыть VPS pty", "vps-shell", "VPS terminal error")
 
+    def backup_download(self):
+        with tempfile.TemporaryDirectory(prefix="owrt-hub-download-") as tmp_name:
+            filename = backup_filename()
+            archive = Path(tmp_name) / filename
+            create_hub_backup(archive, self.app.db_path)
+            body = archive.read_bytes()
+        self.send_bytes(
+            200,
+            body,
+            "application/gzip",
+            [("Content-Disposition", f'attachment; filename="{filename}"')],
+        )
+
+    def backup_restore(self):
+        try:
+            payload = self.read_payload()
+            archive_b64 = str(payload.get("archive_b64") or "")
+            if not archive_b64:
+                self.send_json(400, {"ok": False, "error": "archive_b64 is empty"})
+                return
+            if len(archive_b64) > 80 * 1024 * 1024:
+                self.send_json(413, {"ok": False, "error": "backup archive is too large"})
+                return
+            raw = base64.b64decode(archive_b64.encode("ascii"), validate=True)
+            with tempfile.TemporaryDirectory(prefix="owrt-hub-upload-") as tmp_name:
+                archive = Path(tmp_name) / "restore.tar.gz"
+                archive.write_bytes(raw)
+                result = restore_hub_backup(
+                    archive,
+                    self.app.db_path,
+                    payload.get("vps_host", ""),
+                    payload.get("public_url", ""),
+                )
+            self.app.session_token = session_token()
+            self.app.agent_token = agent_token()
+            add_notification(
+                "backup-restore",
+                "Hub backup восстановлен",
+                "Состояние Hub восстановлено из резервной копии. Перезапусти owrt-remote на VPS для чистого применения.",
+                "warn",
+                result.get("warnings", []),
+                {"rewritten": result.get("rewritten", {})},
+            )
+            self.send_json(200, {"ok": True, **result})
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+
     def do_GET(self):
         path = self.parsed().path
         if path == "/health":
@@ -4124,6 +4441,9 @@ class Handler(BaseHTTPRequestHandler):
             with self.app.conn() as conn:
                 routers = [row_to_router(r) for r in list_router_rows(conn)]
             self.send_json(200, {"routers": routers})
+            return
+        if path == "/api/backup/download":
+            self.backup_download()
             return
         if path == "/api/sessions":
             self.send_json(200, {"sessions": list_hub_sessions(self.current_session_token())})
@@ -4224,6 +4544,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/notifications/clear":
             clear_notifications()
             self.send_json(200, {"ok": True})
+            return
+        if path == "/api/backup/restore":
+            self.backup_restore()
             return
         if path == "/api/push/subscribe":
             try:
@@ -4910,6 +5233,18 @@ def cmd_print_openwrt(args):
     print(make_openwrt_config(row, hub_url), end="")
 
 
+def cmd_backup(args):
+    out = Path(args.out) if args.out else STATE_DIR / backup_filename()
+    result = create_hub_backup(out, args.db)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
+def cmd_restore(args):
+    result = restore_hub_backup(args.file, args.db, args.vps_host, args.public_url)
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    print("Restart Hub after restore: systemctl restart owrt-remote")
+
+
 def parse_extra_ports(value):
     ports = []
     for item in str(value or "").replace(";", ",").split(","):
@@ -5063,6 +5398,16 @@ def parser():
     ow.add_argument("--vps-host", default="127.0.0.1")
     ow.add_argument("--port", type=int, default=8088)
     ow.set_defaults(func=cmd_print_openwrt)
+
+    backup = sub.add_parser("backup", help="create Hub backup archive")
+    backup.add_argument("--out", default="", help="output .tar.gz path")
+    backup.set_defaults(func=cmd_backup)
+
+    restore = sub.add_parser("restore", help="restore Hub backup archive")
+    restore.add_argument("--file", required=True, help="backup .tar.gz path")
+    restore.add_argument("--vps-host", default="", help="rewrite routers to new VPS host/IP")
+    restore.add_argument("--public-url", default="", help="rewrite routers to new public Hub URL")
+    restore.set_defaults(func=cmd_restore)
 
     serve = sub.add_parser("serve", help="run web dashboard")
     serve.add_argument("--host", default=os.environ.get("OWRT_REMOTE_BIND", "0.0.0.0"))
