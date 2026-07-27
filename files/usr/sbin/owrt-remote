@@ -231,6 +231,25 @@ ssh_running() {
 	ps_all | grep '[d]ropbear' >/dev/null 2>&1
 }
 
+active_ssh_session() {
+	local port hex file
+	port="$(safe_num "$(uci_get ssh_port 22)" 22)"
+	hex="$(printf '%04X' "$port" 2>/dev/null || printf '0016')"
+	for file in /proc/net/tcp /proc/net/tcp6; do
+		[ -r "$file" ] || continue
+		awk -v port="$hex" '
+			NR > 1 {
+				split($2, local_addr, ":")
+				if (local_addr[2] == port && $4 == "01") {
+					found = 1
+				}
+			}
+			END { exit found ? 0 : 1 }
+		' "$file" 2>/dev/null && return 0
+	done
+	return 1
+}
+
 xray_bin_path() {
 	local configured candidate
 	configured="$(uci_get xray_bin /usr/bin/xray)"
@@ -661,6 +680,10 @@ heartbeat_self_heal() {
 	printf '%s\n' "$fails" >"$fail_file"
 
 	[ "$fails" -lt "$threshold" ] && return 0
+	if active_ssh_session; then
+		log "heartbeat failed ${threshold} times, restart postponed because SSH session is active"
+		return 0
+	fi
 	[ -f "$restart_file" ] && last_restart="$(cat "$restart_file" 2>/dev/null || echo 0)"
 	last_restart="$(safe_num "$last_restart" 0)"
 	[ $((now - last_restart)) -lt "$cooldown" ] && return 0

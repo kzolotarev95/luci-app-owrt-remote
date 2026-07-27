@@ -45,6 +45,37 @@ safe_num() {
 	esac
 }
 
+uci_get() {
+	local key default value
+	key="$1"
+	default="$2"
+	value="$(uci -q get "owrtremote.main.$key" 2>/dev/null || true)"
+	[ -n "$value" ] && {
+		printf '%s' "$value"
+		return
+	}
+	printf '%s' "$default"
+}
+
+active_ssh_session() {
+	local port hex file
+	port="$(safe_num "$(uci_get ssh_port 22)" 22)"
+	hex="$(printf '%04X' "$port" 2>/dev/null || printf '0016')"
+	for file in /proc/net/tcp /proc/net/tcp6; do
+		[ -r "$file" ] || continue
+		awk -v port="$hex" '
+			NR > 1 {
+				split($2, local_addr, ":")
+				if (local_addr[2] == port && $4 == "01") {
+					found = 1
+				}
+			}
+			END { exit found ? 0 : 1 }
+		' "$file" 2>/dev/null && return 0
+	done
+	return 1
+}
+
 mkdir -p "$STATE_DIR"
 stamp="$(date +%s 2>/dev/null || echo 0)-$$-${ACTION:-event}-${INTERFACE:-iface}-${DEVICE:-dev}"
 printf '%s\n' "$stamp" >"$STAMP_FILE"
@@ -71,8 +102,13 @@ printf '%s\n' "$stamp" >"$STAMP_FILE"
 		log "WAN event $ACTION on ${INTERFACE:-unknown}/${DEVICE:-unknown}, restart skipped by cooldown"
 		exit 0
 	fi
-	printf '%s\n' "$now" >"$LAST_RESTART_FILE"
 
+	if active_ssh_session; then
+		log "WAN event $ACTION on ${INTERFACE:-unknown}/${DEVICE:-unknown}, restart postponed because SSH session is active"
+		exit 0
+	fi
+
+	printf '%s\n' "$now" >"$LAST_RESTART_FILE"
 	log "WAN event $ACTION on ${INTERFACE:-unknown}/${DEVICE:-unknown}, restarting reverse tunnel"
 	if /etc/init.d/owrt-remote restart >/dev/null 2>&1; then
 		/usr/sbin/owrt-remote heartbeat wan-reconnect >/dev/null 2>&1 || true
