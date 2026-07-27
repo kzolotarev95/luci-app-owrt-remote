@@ -1719,6 +1719,26 @@ def set_pty_size(fd, rows, cols):
         return False
 
 
+def write_pty_all(fd, data, timeout=10.0, chunk_size=1024):
+    if isinstance(data, str):
+        data = data.encode("utf-8", errors="replace")
+    view = memoryview(data or b"")
+    total = 0
+    deadline = time.monotonic() + timeout
+    while total < len(view):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("terminal input write timed out")
+        _, writable, _ = select.select([], [fd], [], min(1.0, remaining))
+        if fd not in writable:
+            continue
+        written = os.write(fd, view[total : total + chunk_size])
+        if written <= 0:
+            raise OSError("terminal input write returned 0 bytes")
+        total += written
+    return total
+
+
 def parse_resize_payload(payload):
     try:
         message = json.loads(payload.decode("utf-8", errors="ignore"))
@@ -3144,8 +3164,8 @@ def ssh_terminal_html_v2(row, ws_token, quick_commands_html=""):
     connect_label = "VPS terminal" if is_vps_terminal else "SSH"
     closed_label = "VPS terminal закрыт" if is_vps_terminal else "SSH соединение закрыто"
     silent_label = "VPS terminal молчит больше 3 секунд" if is_vps_terminal else "SSH молчит больше 3 секунд"
-    force_http_only = is_vps_terminal
     ready_label = "VPS terminal запущен. Это root shell самого VPS. Команды ниже можно копировать или сразу отправлять в терминал." if is_vps_terminal else ""
+    force_http_only = str(os.environ.get("OWRT_REMOTE_TERMINAL_WS", "")).lower() not in {"1", "yes", "true", "on"}
     if is_vps_terminal:
         header_title = "VPS terminal"
     page = r"""<!doctype html>
@@ -3203,6 +3223,7 @@ const WS_PATH = __WS_PATH_JSON__;
 const CHECK_PATH = __CHECK_PATH_JSON__;
 const SESSION_PATH = __SESSION_PATH_JSON__;
 const ROUTER_ID = __ROUTER_ID_JSON__;
+const IS_VPS_TERMINAL = __IS_VPS_TERMINAL_JSON__;
 const FORCE_HTTP_ONLY = __FORCE_HTTP_ONLY_JSON__;
 const CONNECT_LABEL = __CONNECT_LABEL_JSON__;
 const CLOSED_LABEL = __CLOSED_LABEL_JSON__;
@@ -3220,7 +3241,7 @@ const isMobileTerminal = window.matchMedia('(max-width: 680px)').matches || /And
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 let ws, term, fitAddon, httpSid = '', httpPollTimer = 0, terminalMode = 'ws';
-let wsOpened = false, receivedTerminalData = false, diagnosticStarted = false;
+let wsOpened = false, receivedTerminalData = false, diagnosticStarted = false, httpPollFailures = 0;
 let inputQueue = '', inputFlushTimer = 0;
 const SSH_PASSWORD_KEY = 'owrtRemote:sshPassword:' + ROUTER_ID;
 let passwordPromptActive = false, passwordBuffer = '', autoPasswordUsed = false;
@@ -3229,9 +3250,9 @@ function appendQuery(url, params){const sep=url.indexOf('?')===-1?'?':'&';return
 function normalizePaste(text){return String(text||'').replace(/\r\n/g,'\r').replace(/\n/g,'\r');}
 function notice(text,color='36'){if(term)term.write(`\r\n\x1b[${color}m${text}\x1b[0m\r\n`);}
 function savedSshPassword(){try{return localStorage.getItem(SSH_PASSWORD_KEY)||'';}catch(e){return '';}}
-function saveSshPassword(value){if(FORCE_HTTP_ONLY||!value)return;try{localStorage.setItem(SSH_PASSWORD_KEY,value);}catch(e){}}
+function saveSshPassword(value){if(IS_VPS_TERMINAL||!value)return;try{localStorage.setItem(SSH_PASSWORD_KEY,value);}catch(e){}}
 function isSshPasswordPrompt(text){return /(?:password:|пароль:)/i.test(String(text||''));}
-function maybeAutoSendPassword(text){if(FORCE_HTTP_ONLY||!isSshPasswordPrompt(text))return;passwordPromptActive=true;passwordBuffer='';const saved=savedSshPassword();if(saved&&!autoPasswordUsed){autoPasswordUsed=true;passwordPromptActive=false;setTimeout(()=>sendData(saved+'\r',true),120);}}
+function maybeAutoSendPassword(text){if(IS_VPS_TERMINAL||!isSshPasswordPrompt(text))return;passwordPromptActive=true;passwordBuffer='';const saved=savedSshPassword();if(saved&&!autoPasswordUsed){autoPasswordUsed=true;passwordPromptActive=false;setTimeout(()=>sendData(saved+'\r',true),120);}}
 function trackPasswordInput(text){if(!passwordPromptActive)return;for(const ch of String(text||'')){if(ch==='\r'||ch==='\n'){if(passwordBuffer)saveSshPassword(passwordBuffer);passwordPromptActive=false;passwordBuffer='';return;}if(ch==='\b'||ch==='\x7f'){passwordBuffer=passwordBuffer.slice(0,-1);continue;}if(ch>=' ')passwordBuffer+=ch;}}
 function isEditableTarget(target){const tag=String((target&&target.tagName)||'').toLowerCase();return tag==='input'||tag==='textarea'||tag==='select'||(target&&target.isContentEditable);}
 function terminalFocused(){const active=document.activeElement;return terminalEl.contains(active)||active===document.body;}
@@ -3247,10 +3268,10 @@ async function copyTerminalAll(){return copyText(terminalBufferText());}
 function handlePaste(ev){const text=(ev.clipboardData||window.clipboardData)?.getData('text')||'';if(!text)return;sendData(normalizePaste(text),true);ev.preventDefault();ev.stopPropagation();}
 async function sendCommandInput(){const value=cmdInput.value;if(!value)return;await sendData(normalizePaste(value)+'\r',true);cmdInput.value='';cmdInput.focus();setTimeout(pollHttpTerminal,120);}
 async function pasteIntoInput(){cmdInput.focus();try{const text=await navigator.clipboard.readText();if(!text)return;const start=cmdInput.selectionStart??cmdInput.value.length,end=cmdInput.selectionEnd??cmdInput.value.length;cmdInput.value=cmdInput.value.slice(0,start)+text+cmdInput.value.slice(end);const pos=start+text.length;cmdInput.setSelectionRange(pos,pos);}catch(e){cmdInput.placeholder='Зажми поле и выбери Вставить';}}
-async function pollHttpTerminal(){if(!httpSid)return;try{const res=await fetch('/api/ssh-session/'+encodeURIComponent(httpSid)+'/read',{cache:'no-store'});const data=await res.json();if(data.data){term.write(data.data);maybeAutoSendPassword(data.data);}if(data.alive)httpPollTimer=setTimeout(pollHttpTerminal,650);else httpSid='';}catch(e){notice('HTTP-terminal: потеряна связь с Hub','31');httpSid='';}}
+async function pollHttpTerminal(){if(!httpSid)return;try{const res=await fetch('/api/ssh-session/'+encodeURIComponent(httpSid)+'/read',{cache:'no-store'});const data=await res.json();httpPollFailures=0;if(data.data){term.write(data.data);maybeAutoSendPassword(data.data);}if(data.alive)httpPollTimer=setTimeout(pollHttpTerminal,650);else httpSid='';}catch(e){httpPollFailures+=1;if(httpPollFailures===1)notice('HTTP-terminal: временно потеряна связь с Hub, пробую дальше...','33');if(httpSid)httpPollTimer=setTimeout(pollHttpTerminal,Math.min(5000,650*httpPollFailures));}}
 async function startHttpTerminal(reason){if(terminalMode==='http'||httpSid)return;terminalMode='http';try{if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))ws.close();}catch(e){}if(reason==='direct')notice('Подключаю HTTP-terminal...','36');else notice(reason==='mobile'?'HTTP-terminal подключается...':reason+'. Включаю запасной HTTP-terminal...','36');try{const res=await fetch(appendQuery(SESSION_PATH,{cols:term.cols||80,rows:term.rows||24}),{cache:'no-store'});const data=await res.json();if(!res.ok||!data.ok){notice('HTTP-terminal не стартовал: '+(data.error||res.status),'31');return;}httpSid=data.sid;notice(READY_LABEL || (isMobileTerminal?'HTTP-terminal подключен. Вводи через поле снизу или клавиатуру.':'HTTP-terminal подключен. Кликни в терминал, Ctrl+V вставляет.'),'32');sendResize();pollHttpTerminal();}catch(e){notice('HTTP-terminal не стартовал: '+e,'31');}}
 async function explainTerminalError(source){if(diagnosticStarted)return;diagnosticStarted=true;try{const res=await fetch(CHECK_PATH,{cache:'no-store'});const data=await res.json();if(data.tcp_ok)await startHttpTerminal(source);else{notice('SSH-туннель на VPS не отвечает: '+(data.error||'порт закрыт'),'31');notice('В Hub нажми: Обновить Xray CFG, потом Рестарт Xray VPS, и проверь heartbeat роутера.','33');}}catch(e){notice('Не смог проверить SSH-туннель. Проверь firewall VPS и доступ к Hub.','31');}}
-function connect(){wsOpened=false;receivedTerminalData=false;diagnosticStarted=false;terminalMode='ws';httpSid='';inputQueue='';passwordPromptActive=false;passwordBuffer='';autoPasswordUsed=false;if(inputFlushTimer){clearTimeout(inputFlushTimer);inputFlushTimer=0;}if(term){term.reset();notice('Подключение к '+CONNECT_LABEL+'...','36');}if(FORCE_HTTP_ONLY){startHttpTerminal('direct');return;}const proto=location.protocol==='https:'?'wss://':'ws://';ws=new WebSocket(proto+location.host+WS_PATH);ws.binaryType='arraybuffer';ws.onopen=()=>{wsOpened=true;sendResize();};ws.onmessage=async(ev)=>{if(terminalMode==='http')return;let text='';if(typeof ev.data==='string')text=ev.data;else if(ev.data instanceof Blob)text=await ev.data.text();else text=decoder.decode(ev.data);if(!receivedTerminalData)term.clear();receivedTerminalData=true;term.write(text);maybeAutoSendPassword(text);};ws.onerror=()=>explainTerminalError('ошибка web-terminal');ws.onclose=()=>{if(terminalMode==='http')return;if(wsOpened)notice(CLOSED_LABEL,'33');else explainTerminalError(CLOSED_LABEL);};setTimeout(()=>{if(!receivedTerminalData&&!httpSid)startHttpTerminal(SILENT_LABEL);},3000);}
+function connect(){wsOpened=false;receivedTerminalData=false;diagnosticStarted=false;httpPollFailures=0;terminalMode='ws';httpSid='';inputQueue='';passwordPromptActive=false;passwordBuffer='';autoPasswordUsed=false;if(inputFlushTimer){clearTimeout(inputFlushTimer);inputFlushTimer=0;}if(term){term.reset();notice('Подключение к '+CONNECT_LABEL+'...','36');}if(FORCE_HTTP_ONLY||isMobileTerminal){startHttpTerminal(FORCE_HTTP_ONLY?'direct':'mobile');return;}const proto=location.protocol==='https:'?'wss://':'ws://';ws=new WebSocket(proto+location.host+WS_PATH);ws.binaryType='arraybuffer';ws.onopen=()=>{wsOpened=true;sendResize();};ws.onmessage=async(ev)=>{if(terminalMode==='http')return;let text='';if(typeof ev.data==='string')text=ev.data;else if(ev.data instanceof Blob)text=await ev.data.text();else text=decoder.decode(ev.data);if(!receivedTerminalData)term.clear();receivedTerminalData=true;term.write(text);maybeAutoSendPassword(text);};ws.onerror=()=>explainTerminalError('ошибка web-terminal');ws.onclose=()=>{if(terminalMode==='http')return;if(wsOpened)notice(CLOSED_LABEL,'33');else explainTerminalError(CLOSED_LABEL);};setTimeout(()=>{if(!receivedTerminalData&&!httpSid)startHttpTerminal(SILENT_LABEL);},3000);}
 function initTerminal(){if(!window.Terminal){terminalEl.classList.remove('loading');terminalEl.textContent='xterm.js не загрузился. Проверь доступ браузера к cdn.jsdelivr.net.';return;}terminalEl.classList.remove('loading');terminalEl.textContent='';term=new Terminal({cursorBlink:!isMobileTerminal,convertEol:false,scrollback:isMobileTerminal?200:5000,scrollSensitivity:isMobileTerminal?8:1,fastScrollSensitivity:isMobileTerminal?14:5,smoothScrollDuration:0,fontFamily:'"Cascadia Mono","Consolas","Liberation Mono",monospace',fontSize:isMobileTerminal?12:14,lineHeight:1.14,theme:{background:'#0b0714',foreground:'#f7f2ff',cursor:'#fbbf24',selectionBackground:'#334155',black:'#0b0714',red:'#fb7185',green:'#86efac',yellow:'#fde68a',blue:'#93c5fd',magenta:'#c084fc',cyan:'#67e8f9',white:'#f7f2ff'}});if(window.FitAddon&&FitAddon.FitAddon){fitAddon=new FitAddon.FitAddon();term.loadAddon(fitAddon);}term.open(terminalEl);term.onData(sendData);term.onResize(sendResize);term.attachCustomKeyEventHandler((ev)=>{const key=String(ev.key||'').toLowerCase();if((ev.ctrlKey||ev.metaKey)&&key==='c'&&term.hasSelection&&term.hasSelection()){copySelection();return false;}return true;});terminalEl.addEventListener('click',()=>term.focus());fitTerminal(true);connect();setTimeout(()=>{fitTerminal(true);term.focus();},120);}
 document.addEventListener('paste',(ev)=>{if(isEditableTarget(ev.target))return;if(!terminalFocused())return;handlePaste(ev);});
 window.addEventListener('beforeunload',()=>{if(httpSid)navigator.sendBeacon('/api/ssh-session/'+encodeURIComponent(httpSid)+'/close');});
@@ -3272,6 +3293,7 @@ window.addEventListener('load',initTerminal);
         .replace("__CHECK_PATH_JSON__", json.dumps(check_path))
         .replace("__SESSION_PATH_JSON__", json.dumps(session_path))
         .replace("__ROUTER_ID_JSON__", json.dumps(router_id))
+        .replace("__IS_VPS_TERMINAL_JSON__", json.dumps(is_vps_terminal))
         .replace("__FORCE_HTTP_ONLY_JSON__", json.dumps(force_http_only))
         .replace("__CONNECT_LABEL_JSON__", json.dumps(connect_label))
         .replace("__CLOSED_LABEL_JSON__", json.dumps(closed_label))
@@ -3881,7 +3903,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(409, {"ok": False, "error": "terminal session closed"})
             return
         try:
-            os.write(fd, data.encode("utf-8", errors="replace"))
+            write_pty_all(fd, data)
             self.send_json(200, {"ok": True})
         except Exception as exc:
             self.send_json(500, {"ok": False, "error": str(exc)})
@@ -3977,7 +3999,7 @@ class Handler(BaseHTTPRequestHandler):
                             set_pty_size(fd, resize[0], resize[1])
                             continue
                     if opcode in (1, 2) and payload:
-                        os.write(fd, payload)
+                        write_pty_all(fd, payload)
         except Exception as exc:
             try:
                 ws_send_frame(self.connection, f"\r\n[{error_label}: {exc}]\r\n")
