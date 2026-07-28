@@ -2005,10 +2005,10 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 @keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}.routerMark{{position:relative;display:grid;place-items:center;width:52px;height:52px;border-radius:8px;background:rgba(255,255,255,.08);overflow:hidden;box-shadow:0 0 24px rgba(34,211,238,.12)}}.routerMark::before{{content:"";position:absolute;inset:-45%;background:conic-gradient(from 0deg,transparent,rgba(34,211,238,.72),rgba(168,85,247,.62),rgba(251,191,36,.52),transparent);animation:routerHalo 5.8s linear infinite}}.routerMark::after{{content:"";position:absolute;inset:2px;border-radius:7px;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.05)),rgba(19,14,32,.95);border:1px solid rgba(255,255,255,.16)}}.routerIcon{{position:relative;z-index:1;width:30px;height:20px;border:2px solid #fbbf24;border-radius:6px;box-shadow:0 0 18px rgba(251,191,36,.24)}}.routerIcon::before,.routerIcon::after{{content:"";position:absolute;top:-10px;width:10px;height:10px;border-top:2px solid #a5f3fc}}.routerIcon::before{{left:1px;transform:rotate(-34deg)}}.routerIcon::after{{right:1px;transform:rotate(34deg)}}.routerIcon span{{position:absolute;left:5px;right:5px;bottom:4px;display:flex;justify-content:space-between}}.routerIcon span::before,.routerIcon span::after{{content:"";width:4px;height:4px;border-radius:50%;background:#22c55e;box-shadow:0 0 10px #22c55e;animation:statusPulse 1.8s ease-in-out infinite}}.card.off .routerIcon span::before,.card.off .routerIcon span::after{{background:#fb7185;box-shadow:0 0 10px #fb7185}}@keyframes routerHalo{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.mobilePanelToggle,.routerFormToggle{{display:none;width:100%;margin:14px 0 10px;border-radius:999px}}.routerFormWrap{{display:block}}.headerActions[hidden],.routerStats[hidden],.routerFormWrap[hidden]{{display:none!important}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
-.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong{{color:#fecdd3}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagSubtle{{margin-top:6px;color:var(--muted);font-size:12px;line-height:1.45}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong{{color:#fecdd3}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 .brandPanel{{display:grid;grid-template-columns:repeat(2,minmax(0,132px));gap:8px}}.brandPanel .appBanner{{grid-column:1/-1;width:100%;min-width:0}}.brandPanel .links{{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:0}}.brandPanel .links a{{width:100%;min-width:0}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.routerMark{{margin:0 auto}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:100%;min-height:34px;margin-top:10px;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar,.authGrid{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{align-self:flex-start;flex-wrap:wrap;padding-top:0;justify-content:flex-start}}}}
-@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:44px;padding:6px 5px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{margin-top:2px;font-size:18px}}.statCard em{{display:none}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.name{{font-size:12px;max-width:92%}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35;background:linear-gradient(180deg,rgba(62,46,87,.96),rgba(35,27,52,.96))}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
+@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:44px;padding:6px 5px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{margin-top:2px;font-size:18px}}.statCard em{{display:none}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.name{{font-size:12px;max-width:92%}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
 @media(max-width:680px){{.brandPanel{{display:none}}.top{{padding:6px 0 8px;gap:8px}}.mobilePanelToggle,.routerFormToggle,.actionToggle{{width:100%;min-height:38px;margin:7px 0;padding:9px 12px;border-radius:999px;font-size:12px;line-height:1}}#hubMenuToggle{{margin-top:0}}.actionToggle{{display:inline-flex}}.card .actions.mobileCollapsed:not(.open),.card .routerMark{{display:none}}.cardTop{{gap:0}}}}
 @media(max-width:680px){{.headerActions .badge,.headerActions .btn{{width:100%;min-width:0;max-width:none}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
@@ -2121,25 +2121,6 @@ systemctl restart owrt-remote-xray</pre>
   <button class="mobilePanelToggle primary" id="routerStatsToggle" type="button" hidden>Открыть статистику</button>
   <section id="routerStats" class="routerStats" aria-label="Статистика роутеров"></section>
   <section id="cards" class="cards"></section>
-  <section id="diagnosticPanel" class="diagnosticPanel" hidden>
-    <div class="diagnosticTop">
-      <div>
-        <h2 id="diagnosticTitle">Диагностика</h2>
-        <p id="diagnosticLead" class="diagnosticLead">Выбери роутер и опиши, что работает, что сломано и что уже пробовал.</p>
-      </div>
-      <button class="btn" id="diagnosticClose" type="button">Скрыть</button>
-    </div>
-    <div class="diagnosticGrid">
-      <label>Что работает<textarea id="diagnosticWorks" placeholder="Например: роутер онлайн, SSH открывается, Wi‑Fi есть."></textarea></label>
-      <label>Какие проблемы<textarea id="diagnosticProblems" placeholder="Например: нет интернета, Xray не стартует, панель красная."></textarea></label>
-      <label>Что уже пробовал<textarea id="diagnosticTried" placeholder="Например: перезапускал Xray, проверял heartbeat, менял конфиг."></textarea></label>
-    </div>
-    <div class="diagnosticActions">
-      <button class="primary" id="diagnosticBuild" type="button">Запустить диагностику</button>
-    </div>
-    <div id="diagnosticSummary" class="diagSummary" hidden></div>
-    <div id="diagnosticBlocks" class="diagBlocks"></div>
-  </section>
 </main>
 <script>
 window.ROUTERS = {routers_json};
@@ -2156,19 +2137,7 @@ const routerFormWrap = document.getElementById('routerFormWrap');
 const routerForm = document.getElementById('routerForm');
 const routerFormToggle = document.getElementById('routerFormToggle');
 const routerMsg = document.getElementById('routerMsg');
-const diagnosticPanel = document.getElementById('diagnosticPanel');
-const diagnosticTitle = document.getElementById('diagnosticTitle');
-const diagnosticLead = document.getElementById('diagnosticLead');
-const diagnosticClose = document.getElementById('diagnosticClose');
-const diagnosticWorks = document.getElementById('diagnosticWorks');
-const diagnosticProblems = document.getElementById('diagnosticProblems');
-const diagnosticTried = document.getElementById('diagnosticTried');
-const diagnosticBuild = document.getElementById('diagnosticBuild');
-const diagnosticSummary = document.getElementById('diagnosticSummary');
-const diagnosticBlocks = document.getElementById('diagnosticBlocks');
 const expandedActionPanels = new Set();
-const diagnosticDrafts = new Map();
-let activeDiagnosticRouterId = '';
 
 function actionPanelId(routerId) {{
   return 'router-actions-' + String(routerId || '');
@@ -2189,413 +2158,6 @@ function syncActionToggleStates(root = cards) {{
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     toggle.textContent = open ? 'Скрыть кнопки' : 'Открыть кнопки';
   }});
-}}
-
-function getDiagnosticDraft(routerId) {{
-  return diagnosticDrafts.get(String(routerId || '')) || {{works: '', problems: '', tried: ''}};
-}}
-
-function setDiagnosticDraft(routerId, patch) {{
-  const key = String(routerId || '');
-  const current = getDiagnosticDraft(key);
-  diagnosticDrafts.set(key, Object.assign({{}}, current, patch));
-}}
-
-function selectedRouter(routerId) {{
-  return (window.ROUTERS || []).find(r => String(r.id) === String(routerId || ''));
-}}
-
-function numericMetric(value) {{
-  const first = String(value || '').match(/-?\\d+(?:\\.\\d+)?/);
-  return first ? Number(first[0]) : Number.NaN;
-}}
-
-function memoryUsagePercent(value) {{
-  const text = String(value || '');
-  const usedPercent = Number(text.match(/(\\d+(?:\\.\\d+)?)\\s*%\\s*used/i)?.[1]);
-  if (Number.isFinite(usedPercent)) return usedPercent;
-  const match = text.match(/(\\d+)\\s*\\/\\s*(\\d+)\\s*kB/i);
-  if (!match) return Number.NaN;
-  const freeKb = Number(match[1]);
-  const totalKb = Number(match[2]);
-  if (!Number.isFinite(freeKb) || !Number.isFinite(totalKb) || totalKb <= 0) return Number.NaN;
-  return Math.max(0, Math.min(100, 100 - freeKb * 100 / totalKb));
-}}
-
-function pushUnique(list, item) {{
-  if (item && !list.includes(item)) list.push(item);
-}}
-
-function diagnoseRouter(router, worksText, problemsText, triedText) {{
-  const checks = [];
-  const suggestions = [];
-  let severity = 'good';
-  const online = Boolean(router && router.online);
-  const xray = String(router?.status?.xray || '').toLowerCase();
-  const ssh = String(router?.status?.ssh || '').toLowerCase();
-  const load1 = numericMetric(router?.status?.load);
-  const temp = numericMetric(router?.status?.temperature);
-  const memory = memoryUsagePercent(router?.status?.memory);
-  const flash = String(router?.status?.flash || '');
-  const lastSeenMs = router?.last_seen_iso ? Date.parse(router.last_seen_iso) : Number.NaN;
-  const ageSec = Number.isFinite(lastSeenMs) ? Math.max(0, Math.floor((Date.now() - lastSeenMs) / 1000)) : Number.NaN;
-  const bump = (next) => {{
-    if (next === 'bad') severity = 'bad';
-    else if (next === 'warn' && severity === 'good') severity = 'warn';
-  }};
-  const addCheck = (state, title, text) => {{
-    checks.push({{state, title, text}});
-    bump(state);
-  }};
-
-  if (online) {{
-    addCheck('good', 'Связь', 'Heartbeat живой, роутер отвечает.');
-    if (Number.isFinite(ageSec) && ageSec > 180) {{
-      addCheck('warn', 'Свежесть heartbeat', 'Связь есть, но давно не обновлялась.');
-      pushUnique(suggestions, 'Проверь задержки сети и перезапусти heartbeat на роутере.');
-    }}
-  }} else {{
-    addCheck('bad', 'Связь', 'Роутер сейчас оффлайн.');
-    pushUnique(suggestions, 'Проверь питание, WAN, VPN и heartbeat на роутере.');
-  }}
-
-  if (xray === 'running' || xray === 'enabled') {{
-    addCheck('good', 'Xray', 'Сервис Xray выглядит живым.');
-  }} else if (xray === 'unknown') {{
-    addCheck('warn', 'Xray', 'Статус Xray пока неизвестен.');
-  }} else {{
-    addCheck('bad', 'Xray', 'Xray не выглядит запущенным.');
-    pushUnique(suggestions, 'Нажми "Обновить Xray CFG" и затем "Рестарт Xray VPS".');
-  }}
-
-  if (ssh === 'running' && Number(router?.ssh_entry_port || 0) > 0) {{
-    addCheck('good', 'SSH', 'SSH-порт доступен.');
-  }} else if (ssh === 'unknown') {{
-    addCheck('warn', 'SSH', 'Статус SSH неизвестен.');
-  }} else {{
-    addCheck('bad', 'SSH', 'SSH сейчас не готов.');
-    pushUnique(suggestions, 'Проверь ssh_entry_port, sshd и firewall для SSH.');
-  }}
-
-  if (Number.isFinite(load1)) {{
-    if (load1 >= 3) {{
-      addCheck('bad', 'Нагрузка', 'Нагрузка высокая.');
-      pushUnique(suggestions, 'Проверь тяжелые процессы и перезагрузи лишние сервисы.');
-    }} else if (load1 >= 1.5) {{
-      addCheck('warn', 'Нагрузка', 'Нагрузка выше обычной.');
-      pushUnique(suggestions, 'Проверь фоновые задачи и состояние CPU.');
-    }} else {{
-      addCheck('good', 'Нагрузка', 'Нагрузка в норме.');
-    }}
-  }}
-
-  if (Number.isFinite(temp)) {{
-    if (temp >= 75) {{
-      addCheck('bad', 'Температура', 'Роутер перегревается.');
-      pushUnique(suggestions, 'Проверь охлаждение, питание и поток воздуха.');
-    }} else if (temp >= 60) {{
-      addCheck('warn', 'Температура', 'Температура уже высокая.');
-      pushUnique(suggestions, 'Проверь охлаждение и не ставь роутер в закрытое место.');
-    }} else {{
-      addCheck('good', 'Температура', 'Температура в норме.');
-    }}
-  }}
-
-  if (Number.isFinite(memory)) {{
-    if (memory >= 85) {{
-      addCheck('bad', 'Память', 'Память почти забита.');
-      pushUnique(suggestions, 'Освободи RAM или перезапусти тяжёлые сервисы.');
-    }} else if (memory >= 70) {{
-      addCheck('warn', 'Память', 'Память уже сильно занята.');
-      pushUnique(suggestions, 'Проверь фоновые процессы и логи.');
-    }} else {{
-      addCheck('good', 'Память', 'Памяти хватает.');
-    }}
-  }}
-
-  if (String(flash).trim()) {{
-    const flashState = flashClass(flash);
-    if (flashState === 'flash-bad') {{
-      addCheck('bad', 'Flash', 'Flash почти заполнен.');
-      pushUnique(suggestions, 'Почисти flash и уменьши размер логов.');
-    }} else if (flashState === 'flash-warn') {{
-      addCheck('warn', 'Flash', 'Flash уже близко к пределу.');
-      pushUnique(suggestions, 'Проверь, что можно удалить или перенести.');
-    }} else {{
-      addCheck('good', 'Flash', 'Flash в норме.');
-    }}
-  }}
-
-  const allText = [worksText, problemsText, triedText].join(' ').toLowerCase();
-  if (/нет.*интернет|интернет.*нет|сайты|падать|обрыв|offline/.test(allText)) {{
-    pushUnique(suggestions, 'Проверь WAN, Xray и heartbeat.');
-  }}
-  if (/xray|json|конфиг|config|туннел|vpn|proxy/.test(allText)) {{
-    pushUnique(suggestions, 'Перепроверь Xray CFG и перезапусти Xray VPS.');
-  }}
-  if (/ssh|терминал|shell|pty/.test(allText)) {{
-    pushUnique(suggestions, 'Проверь SSH-порт, sshd и правила firewall.');
-  }}
-  if (/температур|перегрев|горяч/.test(allText)) {{
-    pushUnique(suggestions, 'Дай роутеру остыть и проверь охлаждение.');
-  }}
-  if (/ram|memory|oom|памят/.test(allText)) {{
-    pushUnique(suggestions, 'Снизь нагрузку и перезапусти тяжелые сервисы.');
-  }}
-  if (/flash|storage|место|диск/.test(allText)) {{
-    pushUnique(suggestions, 'Освободи место и почисти лишние файлы.');
-  }}
-
-  if (worksText) addCheck('good', 'Что работает', worksText);
-  if (problemsText) addCheck('bad', 'Что не работает', problemsText);
-  if (triedText) addCheck('warn', 'Что уже пробовал', triedText);
-
-  if (!worksText && !problemsText && !triedText) {{
-    pushUnique(suggestions, 'Опиши симптомы в полях выше, и диагностика станет точнее.');
-  }}
-
-  const summaryText = severity === 'bad'
-    ? 'Есть ошибки. Красные пункты надо исправить.'
-    : severity === 'warn'
-      ? 'Есть предупреждения. Основные службы живы, но есть риск.'
-      : 'Все хорошо. Критичных проблем не видно.';
-  const summaryClass = severity;
-  const blocks = checks.map(item => `<div class="diagBlock ${{item.state}}"><strong>${{escapeHtml(item.title)}}</strong><div>${{escapeHtml(item.text)}}</div></div>`).join('');
-  const suggestionBlock = suggestions.length
-    ? `<div class="diagBlock ${{severity === 'bad' ? 'bad' : 'warn'}}"><strong>Что делать</strong><ol class="diagList">${{suggestions.map(step => `<li>${{escapeHtml(step)}}</li>`).join('')}}</ol></div>`
-    : `<div class="diagBlock good"><strong>Что делать</strong><div>Сейчас всё выглядит нормально.</div></div>`;
-  return {{summaryClass, summaryText, blocks: blocks + suggestionBlock}};
-}}
-
-function renderDiagnosticPanel(router) {{
-  if (!diagnosticPanel || !router) return;
-  const draft = getDiagnosticDraft(router.id);
-  const report = diagnoseRouter(router, draft.works, draft.problems, draft.tried);
-  diagnosticTitle.textContent = 'Диагностика: ' + (router.name || router.id || 'роутер');
-  diagnosticLead.textContent = 'Router ID: ' + (router.id || '-') + ' · ' + (router.online ? 'онлайн' : 'оффлайн') + ' · ' + (router.status?.release || 'waiting heartbeat');
-  diagnosticSummary.hidden = false;
-  diagnosticSummary.className = 'diagSummary ' + report.summaryClass;
-  diagnosticSummary.textContent = report.summaryText;
-  diagnosticBlocks.innerHTML = report.blocks;
-}}
-
-function openDiagnosticPanel(routerId) {{
-  const router = selectedRouter(routerId);
-  if (!router) return;
-  activeDiagnosticRouterId = String(router.id || '');
-  const draft = getDiagnosticDraft(activeDiagnosticRouterId);
-  diagnosticPanel.hidden = false;
-  diagnosticWorks.value = draft.works || '';
-  diagnosticProblems.value = draft.problems || '';
-  diagnosticTried.value = draft.tried || '';
-  renderDiagnosticPanel(router);
-  diagnosticPanel.scrollIntoView({{behavior: 'smooth', block: 'start'}});
-}}
-
-function closeDiagnosticPanel() {{
-  diagnosticPanel.hidden = true;
-}}
-
-function refreshDiagnosticPanel() {{
-  if (!activeDiagnosticRouterId || diagnosticPanel.hidden) return;
-  const router = selectedRouter(activeDiagnosticRouterId);
-  if (!router) return;
-  renderDiagnosticPanel(router);
-}}
-
-function getDiagnosticDraft(routerId) {{
-  return diagnosticDrafts.get(String(routerId || '')) || {{works: '', problems: '', tried: '', ran: false}};
-}}
-
-function diagnoseRouter(router, worksText, problemsText, triedText) {{
-  const checks = [];
-  const primarySuggestions = [];
-  const secondarySuggestions = [];
-  let severity = 'good';
-  const online = Boolean(router && router.online);
-  const xray = String(router?.status?.xray || '').toLowerCase();
-  const ssh = String(router?.status?.ssh || '').toLowerCase();
-  const load1 = numericMetric(router?.status?.load);
-  const temp = numericMetric(router?.status?.temperature);
-  const memory = memoryUsagePercent(router?.status?.memory);
-  const flash = String(router?.status?.flash || '');
-  const works = String(worksText || '').trim();
-  const problems = String(problemsText || '').trim();
-  const tried = String(triedText || '').trim();
-  const problemText = problems.toLowerCase();
-  const allText = [works, problems, tried].join(' ').toLowerCase();
-  const hasExplicitProblem = Boolean(problems);
-  const lastSeenMs = router?.last_seen_iso ? Date.parse(router.last_seen_iso) : Number.NaN;
-  const ageSec = Number.isFinite(lastSeenMs) ? Math.max(0, Math.floor((Date.now() - lastSeenMs) / 1000)) : Number.NaN;
-  const bump = (next) => {{
-    if (next === 'bad') severity = 'bad';
-    else if (next === 'warn' && severity === 'good') severity = 'warn';
-  }};
-  const addCheck = (state, title, text) => {{
-    checks.push({{state, title, text}});
-    bump(state);
-  }};
-  const addPrimary = (text) => pushUnique(primarySuggestions, text);
-  const addSecondary = (text) => pushUnique(secondarySuggestions, text);
-  const hasProxyReset = /proxy error|connection reset by peer|reset by peer|broken pipe|econnreset|errno\\s*104/.test(problemText);
-  const hasProxyRefused = /connection refused|refused|bad gateway|502|504|gateway/.test(problemText);
-  const hasTimeout = /timeout|timed out|висит|долго|не отвечает|время ожидания/.test(problemText);
-  const hasInternetIssue = /нет.*интернет|интернет.*нет|не откры|сайты|обрыв|offline|wan|dns/.test(problemText);
-  const hasXrayIssue = /xray|json|конфиг|config|vpn|proxy|туннел/.test(problemText);
-  const hasSshIssue = /ssh|терминал|shell|pty/.test(problemText);
-  const hasHeatIssue = /температ|перегрев|горяч/.test(problemText);
-  const hasMemoryIssue = /ram|memory|oom|памят/.test(problemText);
-  const hasFlashIssue = /flash|storage|место|диск/.test(problemText);
-
-  if (online) {{
-    addCheck('good', 'Связь', 'Heartbeat живой, роутер отвечает.');
-    if (Number.isFinite(ageSec) && ageSec > 180) {{
-      addCheck('warn', 'Свежесть heartbeat', 'Связь есть, но heartbeat давно не обновлялся.');
-      addPrimary('Проверь heartbeat на роутере: похоже, канал до Hub периодически зависает или обрывается.');
-    }}
-  }} else {{
-    addCheck('bad', 'Связь', 'Роутер сейчас оффлайн.');
-    addPrimary('Проверь питание, WAN, VPN и heartbeat на роутере: пока он оффлайн, панель не сможет нормально работать.');
-  }}
-
-  if (xray === 'running' || xray === 'enabled') {{
-    addCheck('good', 'Xray', 'Сервис Xray выглядит живым.');
-  }} else if (xray === 'unknown') {{
-    addCheck('warn', 'Xray', 'Статус Xray пока неизвестен.');
-  }} else {{
-    addCheck('bad', 'Xray', 'Xray не выглядит запущенным.');
-    addPrimary('Нажми "Обновить Xray CFG", затем "Рестарт Xray VPS" и проверь, поднялся ли туннель заново.');
-  }}
-
-  if (ssh === 'running' && Number(router?.ssh_entry_port || 0) > 0) {{
-    addCheck('good', 'SSH', 'SSH-порт доступен.');
-  }} else if (ssh === 'unknown') {{
-    addCheck('warn', 'SSH', 'Статус SSH неизвестен.');
-  }} else {{
-    addCheck('bad', 'SSH', 'SSH сейчас не готов.');
-    addPrimary('Проверь `ssh_entry_port`, `sshd` и firewall: без SSH будет трудно понять, что именно рвёт соединение.');
-  }}
-
-  if (Number.isFinite(load1)) {{
-    if (load1 >= 3) {{
-      addCheck('bad', 'Нагрузка', 'Нагрузка высокая.');
-      addSecondary('Проверь тяжёлые процессы и лишние сервисы: перегрузка CPU может рвать туннель и прокси.');
-    }} else if (load1 >= 1.5) {{
-      addCheck('warn', 'Нагрузка', 'Нагрузка выше обычной.');
-      if (!hasExplicitProblem) addSecondary('Проверь фоновые задачи и состояние CPU.');
-    }} else {{
-      addCheck('good', 'Нагрузка', 'Нагрузка в норме.');
-    }}
-  }}
-
-  if (Number.isFinite(temp)) {{
-    if (temp >= 75) {{
-      addCheck('bad', 'Температура', 'Роутер перегревается.');
-      if (hasHeatIssue || !hasExplicitProblem) addPrimary('Проверь охлаждение, питание и поток воздуха: перегрев уже критический.');
-      else addSecondary('Температура слишком высокая, это тоже может влиять на стабильность панели.');
-    }} else if (temp >= 60) {{
-      addCheck('warn', 'Температура', 'Температура уже повышенная.');
-      if (hasHeatIssue && hasExplicitProblem) addPrimary('Проверь охлаждение и не ставь роутер в закрытое место.');
-    }} else {{
-      addCheck('good', 'Температура', 'Температура в норме.');
-    }}
-  }}
-
-  if (Number.isFinite(memory)) {{
-    if (memory >= 85) {{
-      addCheck('bad', 'Память', 'Память почти забита.');
-      addSecondary('Освободи RAM или перезапусти тяжёлые сервисы: нехватка памяти часто ломает прокси и туннели.');
-    }} else if (memory >= 70) {{
-      addCheck('warn', 'Память', 'Память уже заметно занята.');
-      if (hasMemoryIssue || !hasExplicitProblem) addSecondary('Проверь фоновые процессы и логи.');
-    }} else {{
-      addCheck('good', 'Память', 'Памяти хватает.');
-    }}
-  }}
-
-  if (String(flash).trim()) {{
-    const flashState = flashClass(flash);
-    if (flashState === 'flash-bad') {{
-      addCheck('bad', 'Flash', 'Flash почти заполнен.');
-      addSecondary('Почисти flash и уменьши размер логов.');
-    }} else if (flashState === 'flash-warn') {{
-      addCheck('warn', 'Flash', 'Flash уже близко к пределу.');
-      if (hasFlashIssue || !hasExplicitProblem) addSecondary('Проверь, что можно удалить или перенести.');
-    }} else {{
-      addCheck('good', 'Flash', 'Flash в норме.');
-    }}
-  }}
-
-  if (hasProxyReset) {{
-    addCheck('bad', 'Проблема из описания', 'Похоже на сброс уже установленного соединения между Hub, VPS и роутером.');
-    addPrimary('Проверь heartbeat и обратный туннель на роутере: `Connection reset by peer` обычно значит, что соединение поднялось и тут же оборвалось.');
-    addPrimary('На VPS посмотри логи Hub и Xray в момент ошибки: нужно понять, кто именно сбрасывает соединение первым.');
-    if (xray === 'running' || xray === 'enabled') {{
-      addPrimary('Если Xray уже `running`, проверь входной порт роутера и firewall на VPS: сброс может быть уже после туннеля.');
-    }}
-  }}
-  if (hasProxyRefused) {{
-    addCheck('bad', 'Проблема из описания', 'Похоже, нужный порт или сервис на пути до панели не принимает соединение.');
-    addPrimary('Проверь, слушает ли нужный порт на VPS и совпадает ли он с конфигом роутера.');
-    addPrimary('Сверь `entry_port`, правила firewall и то, что нужный сервис реально запущен.');
-  }}
-  if (hasTimeout) {{
-    addCheck('warn', 'Проблема из описания', 'Есть признаки таймаута или подвисания канала.');
-    addPrimary('Проверь качество канала между роутером и VPS: таймауты часто идут от нестабильного WAN или зависшего туннеля.');
-  }}
-  if (hasInternetIssue) addPrimary('Проверь WAN, DNS, Xray и heartbeat: при такой симптоматике проблема чаще всего в канале до VPS или в туннеле.');
-  if (hasXrayIssue && !hasProxyReset) addPrimary('Перепроверь Xray CFG и перезапусти Xray VPS, затем посмотри, восстановился ли доступ к панели.');
-  if (hasSshIssue) addPrimary('Проверь SSH-порт, `sshd` и правила firewall.');
-  if (hasHeatIssue) addPrimary('Дай роутеру остыть и проверь охлаждение.');
-  if (hasMemoryIssue) addPrimary('Снизь нагрузку и перезапусти тяжёлые сервисы.');
-  if (hasFlashIssue) addPrimary('Освободи место и почисти лишние файлы.');
-
-  if (works) addCheck('good', 'Что работает', works);
-  if (problems) addCheck('bad', 'Какие проблемы', problems);
-  if (tried) addCheck('warn', 'Что уже пробовал', tried);
-
-  if (!works && !problems && !tried) {{
-    addPrimary('Опиши симптомы в полях выше, и диагностика станет точнее.');
-  }}
-
-  const summaryText = severity === 'bad'
-    ? (hasExplicitProblem ? 'Нашел проблему по состоянию панели и твоему описанию. Начни с блока "Что проверить сейчас".' : 'Есть ошибки. Красные пункты надо исправить.')
-    : severity === 'warn'
-      ? 'Есть предупреждения. Основные службы живы, но есть риск по стабильности.'
-      : 'Все хорошо. Критичных проблем сейчас не видно.';
-  const summaryClass = severity;
-  const blocks = checks.map(item => `<div class="diagBlock ${{item.state}}"><strong>${{escapeHtml(item.title)}}</strong><div>${{escapeHtml(item.text)}}</div></div>`).join('');
-  const mergedSecondary = secondarySuggestions.filter(item => !primarySuggestions.includes(item));
-  const subtleHtml = mergedSecondary.length
-    ? `<div class="diagSubtle">Дополнительно: ${{escapeHtml(mergedSecondary.join(' '))}}</div>`
-    : '';
-  const suggestionListHtml = primarySuggestions.length
-    ? `<ol class="diagList">${{primarySuggestions.map(step => `<li>${{escapeHtml(step)}}</li>`).join('')}}</ol>`
-    : '';
-  const suggestionBlock = primarySuggestions.length || mergedSecondary.length
-    ? `<div class="diagBlock ${{severity === 'bad' ? 'bad' : 'warn'}}"><strong>Что проверить сейчас</strong>${{suggestionListHtml}}${{subtleHtml}}</div>`
-    : `<div class="diagBlock good"><strong>Что проверить сейчас</strong><div>Сейчас всё выглядит нормально.</div></div>`;
-  return {{summaryClass, summaryText, blocks: blocks + suggestionBlock}};
-}}
-
-function renderDiagnosticPanel(router) {{
-  if (!diagnosticPanel || !router) return;
-  const draft = getDiagnosticDraft(router.id);
-  diagnosticTitle.textContent = 'Диагностика: ' + (router.name || router.id || 'роутер');
-  diagnosticLead.textContent = 'Router ID: ' + (router.id || '-') + ' · ' + (router.online ? 'онлайн' : 'оффлайн') + ' · ' + (router.status?.release || 'waiting heartbeat');
-  diagnosticBuild.textContent = draft.ran ? 'Обновить диагностику' : 'Запустить диагностику';
-  if (!draft.ran) {{
-    diagnosticSummary.hidden = true;
-    diagnosticSummary.className = 'diagSummary';
-    diagnosticSummary.textContent = '';
-    diagnosticBlocks.innerHTML = '';
-    return;
-  }}
-  const report = diagnoseRouter(router, draft.works, draft.problems, draft.tried);
-  diagnosticSummary.hidden = false;
-  diagnosticSummary.className = 'diagSummary ' + report.summaryClass;
-  diagnosticSummary.textContent = report.summaryText;
-  diagnosticBlocks.innerHTML = report.blocks;
 }}
 
 function ago(iso) {{
@@ -2754,7 +2316,6 @@ function render(list) {{
         ${{sshButton}}
         <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
         <a class="btn" href="${{escapeAttr(r.xray_client_url)}}">Client JSON</a>
-        <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
         <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
       </div>
@@ -2851,7 +2412,6 @@ render = function(list) {{
         ${{sshButton}}
         <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
         <a class="btn" href="${{escapeAttr(r.xray_client_url)}}">Client JSON</a>
-        <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
         <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
     </article>`;
@@ -3013,7 +2573,6 @@ async function loadRouters() {{
     window.ROUTERS = data.routers;
     render(window.ROUTERS);
     fillRouterForm(false);
-    refreshDiagnosticPanel();
   }}
 }}
 
@@ -3074,42 +2633,11 @@ cards.addEventListener('click', async (ev) => {{
     ev.target.textContent = open ? 'Скрыть кнопки' : 'Открыть кнопки';
     return;
   }}
-  const diagnoseId = ev.target?.dataset?.diagnose;
-  if (diagnoseId) {{
-    openDiagnosticPanel(diagnoseId);
-    return;
-  }}
   const id = ev.target?.dataset?.delete;
   if (!id) return;
   if (!confirm('Удалить роутер ' + id + '?')) return;
   const res = await fetch('/api/router/' + encodeURIComponent(id) + '/delete', {{method: 'POST'}});
   if (res.ok) await loadRouters();
-}});
-
-diagnosticClose.addEventListener('click', closeDiagnosticPanel);
-diagnosticBuild.addEventListener('click', () => {{
-  if (!activeDiagnosticRouterId) return;
-  const router = selectedRouter(activeDiagnosticRouterId);
-  if (!router) return;
-  setDiagnosticDraft(activeDiagnosticRouterId, {{
-    works: diagnosticWorks.value,
-    problems: diagnosticProblems.value,
-    tried: diagnosticTried.value,
-    ran: true
-  }});
-  renderDiagnosticPanel(router);
-}});
-[diagnosticWorks, diagnosticProblems, diagnosticTried].forEach((field) => {{
-  field.addEventListener('input', () => {{
-    if (!activeDiagnosticRouterId) return;
-    setDiagnosticDraft(activeDiagnosticRouterId, {{
-      works: diagnosticWorks.value,
-      problems: diagnosticProblems.value,
-      tried: diagnosticTried.value,
-      ran: false
-    }});
-    refreshDiagnosticPanel();
-  }});
 }});
 
 if (typeof mobileCardsMq.addEventListener === 'function') {{
