@@ -2906,14 +2906,6 @@ function render(list) {{
     const flashDisplay = formatFlash(flash);
     const temperature = (r.status && r.status.temperature) || 'unknown';
     const access = r.access_url || r.public_url;
-    const tags = [
-      isMain ? 'главный' : 'node',
-      r.entry_port ? 'entry ' + r.entry_port : '',
-      r.ssh_entry_port ? 'ssh ' + r.ssh_entry_port : '',
-      r.reverse_tag || '',
-      (r.admin_host || '127.0.0.1') + ':' + (r.admin_port || 80)
-    ].filter(Boolean).slice(0, 5);
-    const tagHtml = tags.map(t => `<span class="tag">${{escapeHtml(t)}}</span>`).join('');
     const adminButton = online
       ? `<a class="btn" href="${{escapeAttr(access)}}">Админка</a>`
       : `<span class="btn disabled">Админка</span>`;
@@ -2941,9 +2933,7 @@ function render(list) {{
       </div>
       <div class="name">${{escapeHtml(r.name)}}</div>
       <button class="mobileToggle" type="button" data-card-toggle="${{escapeAttr(detailsId)}}" aria-expanded="${{collapseCards ? 'false' : 'true'}}">${{collapseCards ? 'Открыть' : 'Скрыть'}}</button>
-      <div class="metaLine">ID: ${{escapeHtml(r.id)}} · роль: ${{escapeHtml(role)}}</div>
       <div class="cardBody" id="${{escapeAttr(detailsId)}}"${{collapseCards ? ' hidden' : ''}}>
-      <div class="tagRow">${{tagHtml}}</div>
       <div class="metrics">
         ${{metricHtml}}
       </div>
@@ -3028,14 +3018,6 @@ render = function(list) {{
     const flashDisplay = formatFlash(flash);
     const temperature = (r.status && r.status.temperature) || 'unknown';
     const access = r.access_url || r.public_url;
-    const tags = [
-      isMain ? 'главный' : 'node',
-      r.entry_port ? 'entry ' + r.entry_port : '',
-      r.ssh_entry_port ? 'ssh ' + r.ssh_entry_port : '',
-      r.reverse_tag || '',
-      (r.admin_host || '127.0.0.1') + ':' + (r.admin_port || 80)
-    ].filter(Boolean).slice(0, 5);
-    const tagHtml = tags.map(t => `<span class="tag">${{escapeHtml(t)}}</span>`).join('');
     const adminButton = online
       ? `<a class="btn" href="${{escapeAttr(access)}}">Админка</a>`
       : `<span class="btn disabled">Админка</span>`;
@@ -3062,8 +3044,6 @@ render = function(list) {{
         <div class="status ${{stateClass}}"><i></i>${{stateText}}</div>
       </div>
       <div class="name">${{escapeHtml(r.name)}}</div>
-      <div class="metaLine">ID: ${{escapeHtml(r.id)}} · роль: ${{escapeHtml(role)}}</div>
-      <div class="tagRow">${{tagHtml}}</div>
       <div class="metrics">
         ${{metricHtml}}
       </div>
