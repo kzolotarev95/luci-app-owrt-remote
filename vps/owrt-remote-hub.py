@@ -2005,10 +2005,10 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 @keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}.routerMark{{position:relative;display:grid;place-items:center;width:52px;height:52px;border-radius:8px;background:rgba(255,255,255,.08);overflow:hidden;box-shadow:0 0 24px rgba(34,211,238,.12)}}.routerMark::before{{content:"";position:absolute;inset:-45%;background:conic-gradient(from 0deg,transparent,rgba(34,211,238,.72),rgba(168,85,247,.62),rgba(251,191,36,.52),transparent);animation:routerHalo 5.8s linear infinite}}.routerMark::after{{content:"";position:absolute;inset:2px;border-radius:7px;background:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.05)),rgba(19,14,32,.95);border:1px solid rgba(255,255,255,.16)}}.routerIcon{{position:relative;z-index:1;width:30px;height:20px;border:2px solid #fbbf24;border-radius:6px;box-shadow:0 0 18px rgba(251,191,36,.24)}}.routerIcon::before,.routerIcon::after{{content:"";position:absolute;top:-10px;width:10px;height:10px;border-top:2px solid #a5f3fc}}.routerIcon::before{{left:1px;transform:rotate(-34deg)}}.routerIcon::after{{right:1px;transform:rotate(34deg)}}.routerIcon span{{position:absolute;left:5px;right:5px;bottom:4px;display:flex;justify-content:space-between}}.routerIcon span::before,.routerIcon span::after{{content:"";width:4px;height:4px;border-radius:50%;background:#22c55e;box-shadow:0 0 10px #22c55e;animation:statusPulse 1.8s ease-in-out infinite}}.card.off .routerIcon span::before,.card.off .routerIcon span::after{{background:#fb7185;box-shadow:0 0 10px #fb7185}}@keyframes routerHalo{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.mobilePanelToggle,.routerFormToggle{{display:none;width:100%;margin:14px 0 10px;border-radius:999px}}.routerFormWrap{{display:block}}.headerActions[hidden],.routerStats[hidden],.routerFormWrap[hidden]{{display:none!important}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
-.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong{{color:#fecdd3}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong{{color:#fecdd3}}.metric span{{display:block;color:var(--muted);font-size:11px}}.metric strong{{display:block;margin-top:2px;font-size:14px;word-break:break-word}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 .brandPanel{{display:grid;grid-template-columns:repeat(2,minmax(0,132px));gap:8px}}.brandPanel .appBanner{{grid-column:1/-1;width:100%;min-width:0}}.brandPanel .links{{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:0}}.brandPanel .links a{{width:100%;min-width:0}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.routerMark{{margin:0 auto}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:100%;min-height:34px;margin-top:10px;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar,.authGrid{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 2}}.top{{flex-direction:column}}.headerActions{{align-self:flex-start;flex-wrap:wrap;padding-top:0;justify-content:flex-start}}}}
-@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:44px;padding:6px 5px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{margin-top:2px;font-size:18px}}.statCard em{{display:none}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.name{{font-size:12px;max-width:92%}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
+@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:44px;padding:6px 5px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{margin-top:2px;font-size:18px}}.statCard em{{display:none}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.name{{font-size:12px;max-width:92%}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
 @media(max-width:680px){{.brandPanel{{display:none}}.top{{padding:6px 0 8px;gap:8px}}.mobilePanelToggle,.routerFormToggle,.actionToggle{{width:100%;min-height:38px;margin:7px 0;padding:9px 12px;border-radius:999px;font-size:12px;line-height:1}}#hubMenuToggle{{margin-top:0}}.actionToggle{{display:inline-flex}}.card .actions.mobileCollapsed:not(.open),.card .routerMark{{display:none}}.cardTop{{gap:0}}}}
 @media(max-width:680px){{.headerActions .badge,.headerActions .btn{{width:100%;min-width:0;max-width:none}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
@@ -2121,6 +2121,25 @@ systemctl restart owrt-remote-xray</pre>
   <button class="mobilePanelToggle primary" id="routerStatsToggle" type="button" hidden>Открыть статистику</button>
   <section id="routerStats" class="routerStats" aria-label="Статистика роутеров"></section>
   <section id="cards" class="cards"></section>
+  <section id="diagnosticPanel" class="diagnosticPanel" hidden>
+    <div class="diagnosticTop">
+      <div>
+        <h2 id="diagnosticTitle">Диагностика</h2>
+        <p id="diagnosticLead" class="diagnosticLead">Выбери роутер и напиши проблему своими словами. Можно свободно: 502, пустая панель, не работает Xray, не открывается терминал.</p>
+      </div>
+      <button class="btn" id="diagnosticClose" type="button">Скрыть</button>
+    </div>
+    <div class="diagnosticGrid">
+      <label>Что работает<textarea id="diagnosticWorks" placeholder="Например: роутер онлайн, SSH открывается, Wi-Fi есть."></textarea></label>
+      <label>Какие проблемы<textarea id="diagnosticProblems" placeholder="Пиши как есть: 502 Bad Gateway, пустые карточки, терминал не открывается, Xray не стартует, нет интернета."></textarea></label>
+      <label>Что уже пробовал<textarea id="diagnosticTried" placeholder="Например: обновлял страницу, перезапускал Xray, проверял heartbeat, заново вставлял OpenWrt config."></textarea></label>
+    </div>
+    <div class="diagnosticActions">
+      <button class="primary" id="diagnosticBuild" type="button">Запустить диагностику</button>
+    </div>
+    <div id="diagnosticSummary" class="diagSummary" hidden></div>
+    <div id="diagnosticBlocks" class="diagBlocks"></div>
+  </section>
 </main>
 <script>
 window.ROUTERS = {routers_json};
@@ -2137,7 +2156,24 @@ const routerFormWrap = document.getElementById('routerFormWrap');
 const routerForm = document.getElementById('routerForm');
 const routerFormToggle = document.getElementById('routerFormToggle');
 const routerMsg = document.getElementById('routerMsg');
+const routerIdInput = routerForm && routerForm.elements ? routerForm.elements.namedItem('id') : null;
+const routerNameInput = routerForm && routerForm.elements ? routerForm.elements.namedItem('name') : null;
+const routerRoleInput = routerForm && routerForm.elements ? routerForm.elements.namedItem('role') : null;
+const routerEntryPortInput = routerForm && routerForm.elements ? routerForm.elements.namedItem('entry_port') : null;
+const routerVpsHostInput = routerForm && routerForm.elements ? routerForm.elements.namedItem('vps_host') : null;
+const diagnosticPanel = document.getElementById('diagnosticPanel');
+const diagnosticTitle = document.getElementById('diagnosticTitle');
+const diagnosticLead = document.getElementById('diagnosticLead');
+const diagnosticClose = document.getElementById('diagnosticClose');
+const diagnosticWorks = document.getElementById('diagnosticWorks');
+const diagnosticProblems = document.getElementById('diagnosticProblems');
+const diagnosticTried = document.getElementById('diagnosticTried');
+const diagnosticBuild = document.getElementById('diagnosticBuild');
+const diagnosticSummary = document.getElementById('diagnosticSummary');
+const diagnosticBlocks = document.getElementById('diagnosticBlocks');
 const expandedActionPanels = new Set();
+const diagnosticDrafts = new Map();
+let activeDiagnosticRouterId = '';
 
 function actionPanelId(routerId) {{
   return 'router-actions-' + String(routerId || '');
@@ -2159,6 +2195,584 @@ function syncActionToggleStates(root = cards) {{
     toggle.textContent = open ? 'Скрыть кнопки' : 'Открыть кнопки';
   }});
 }}
+
+function getDiagnosticDraft(routerId) {{
+  const key = String(routerId || '');
+  if (!diagnosticDrafts.has(key)) {{
+    diagnosticDrafts.set(key, {{works: '', problems: '', tried: ''}});
+  }}
+  return diagnosticDrafts.get(key);
+}}
+
+function setDiagnosticDraft(routerId, patch) {{
+  const key = String(routerId || '');
+  const next = Object.assign({{}}, getDiagnosticDraft(key), patch || {{}});
+  diagnosticDrafts.set(key, next);
+  return next;
+}}
+
+function selectedRouter(routerId = activeDiagnosticRouterId) {{
+  const key = String(routerId || '');
+  return (window.ROUTERS || []).find((router) => String(router.id || '') === key) || null;
+}}
+
+function numericMetric(value) {{
+  const match = String(value ?? '').replace(',', '.').match(/-?\\d+(?:\\.\\d+)?/);
+  return match ? Number(match[0]) : NaN;
+}}
+
+function memoryUsagePercent(value) {{
+  const text = String(value || '');
+  const matchKb = text.match(/(\\d+)\\s*\\/\\s*(\\d+)\\s*kB/i);
+  if (matchKb) {{
+    const freeKb = Number(matchKb[1]);
+    const totalKb = Number(matchKb[2]);
+    if (Number.isFinite(freeKb) && Number.isFinite(totalKb) && totalKb > 0) {{
+      return Math.max(0, Math.min(100, (totalKb - freeKb) * 100 / totalKb));
+    }}
+  }}
+  const numbers = text.match(/\\d+(?:\\.\\d+)?/g) || [];
+  if (numbers.length >= 2) {{
+    const used = Number(numbers[0]);
+    const total = Number(numbers[1]);
+    if (Number.isFinite(used) && Number.isFinite(total) && total > 0) {{
+      return Math.max(0, Math.min(100, used * 100 / total));
+    }}
+  }}
+  return NaN;
+}}
+
+function flashUsagePercent(value) {{
+  const text = String(value || '');
+  const explicit = text.match(/(\\d+(?:\\.\\d+)?)\\s*%\\s*used/i);
+  if (explicit) return Number(explicit[1]);
+  const numbers = text.match(/\\d+(?:\\.\\d+)?/g) || [];
+  if (numbers.length >= 2) {{
+    const free = Number(numbers[0]);
+    const total = Number(numbers[1]);
+    if (Number.isFinite(free) && Number.isFinite(total) && total > 0) {{
+      return Math.max(0, Math.min(100, 100 - free * 100 / total));
+    }}
+  }}
+  return NaN;
+}}
+
+function pushUnique(items, text) {{
+  if (!text) return;
+  if (!items.includes(text)) items.push(text);
+}}
+
+function containsAny(text, values) {{
+  return values.some((value) => text.includes(value));
+}}
+
+function normalizeDiagnosticText(value) {{
+  const allowed = 'abcdefghijklmnopqrstuvwxyzабвгдежзийклмнопрстуфхцчшщъыьэюя0123456789%./:-';
+  let text = String(value || '').toLowerCase().split('ё').join('е');
+  let cleaned = '';
+  for (const ch of text) {{
+    const code = ch.charCodeAt(0);
+    if (code === 13 || code === 10 || code === 9) {{
+      cleaned += ' ';
+    }} else if (allowed.includes(ch)) {{
+      cleaned += ch;
+    }} else {{
+      cleaned += ' ';
+    }}
+  }}
+  return cleaned.split(' ').filter(Boolean).join(' ').trim();
+}}
+
+function keywordScore(text, keywords) {{
+  let score = 0;
+  keywords.forEach((keyword) => {{
+    const sample = normalizeDiagnosticText(keyword);
+    if (!sample) return;
+    if (text.includes(sample)) score += sample.length >= 7 ? 2 : 1;
+  }});
+  return score;
+}}
+
+function isPanelRelatedDiagnosticText(text) {{
+  const sample = String(text || '');
+  const relatedTerms = [
+    'панел', 'хаб', 'hub', 'роут', 'router', 'openwrt', 'xray', 'ssh', 'dropbear',
+    'vps', 'nginx', 'wan', 'heartbeat', 'интернет', 'терминал', 'web terminal',
+    'web-terminal', 'shell', 'console', 'pty', 'socket', 'туннел', 'vpn', 'vless',
+    'reality', 'homeproxy', 'passwall', 'nekobox', 'конфиг', 'config', 'cfg',
+    'кнопк', 'карточ', 'статус', 'status', 'метрик', 'температур', 'памят',
+    'flash', 'ram', 'cpu', 'логи', 'logread', 'journalctl', 'systemctl', 'ping',
+    'порт', 'port', 'доступ', 'подключ', 'авторизац', 'api', 'json', 'fetch',
+    'network', 'console', 'devtools', 'браузер', 'страниц', 'экран', '502',
+    '403', '404', '500', 'timeout', 'offline', 'online', 'heartbeat', 'drop',
+    'restart', 'reload', 'обнов', 'завис', 'не работ', 'не открыва', 'не груз'
+  ];
+  const hits = relatedTerms.reduce((count, term) => count + (sample.includes(term) ? 1 : 0), 0);
+  return hits >= 1;
+}}
+
+function numberedLines(items) {{
+  return items.filter(Boolean).map((item, index) => (index + 1) + '. ' + item).join('\\n');
+}}
+
+function looksLikeShellCommand(text) {{
+  const sample = String(text || '').trim();
+  if (!sample) return false;
+  if (/^(LuCI|DevTools)\s*:/i.test(sample)) return false;
+  return /^(?:\/etc\/init\.d\/|systemctl|journalctl|ss|scp|cp|chmod|logread|pgrep|ping|grep|curl|wget|cat|tail|head|ps|ip|uci|ubus|opkg|service|netstat|sh|ash|bash|python|node|nginx|xray)\b/i.test(sample)
+    || sample.includes(' | ')
+    || sample.includes(' --');
+}}
+
+function renderDiagnosticBody(body) {{
+  return String(body || '').split('\\n').map((rawLine) => {{
+    const line = rawLine.trim();
+    if (!line) return '';
+    const numbered = line.match(/^(\\d+\\.)\\s+(.*)$/);
+    const prefix = numbered ? numbered[1] : '';
+    const content = numbered ? numbered[2] : line;
+    const withLabel = content.match(/^(.*?:)\\s+(.+)$/);
+    if (withLabel && looksLikeShellCommand(withLabel[2])) {{
+      return `<div class="diagCmdLine">
+        <div class="diagCmdLabel">${{escapeHtml(prefix ? prefix + ' ' + withLabel[1] : withLabel[1])}}</div>
+        <div class="diagCmdRow">
+          <pre class="diagCode">${{escapeHtml(withLabel[2])}}</pre>
+          <button type="button" class="diagCopyBtn" data-copy="${{escapeAttr(withLabel[2])}}" title="Копировать команду" aria-label="Копировать команду">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="9" y="9" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"></rect>
+              <rect x="5" y="5" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"></rect>
+            </svg>
+            <span>Copy</span>
+          </button>
+        </div>
+      </div>`;
+    }}
+    if (looksLikeShellCommand(content)) {{
+      return `<div class="diagCmdLine">
+        ${{prefix ? `<div class="diagCmdLabel">${{escapeHtml(prefix)}}</div>` : ''}}
+        <div class="diagCmdRow">
+          <pre class="diagCode">${{escapeHtml(content)}}</pre>
+          <button type="button" class="diagCopyBtn" data-copy="${{escapeAttr(content)}}" title="Копировать команду" aria-label="Копировать команду">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <rect x="9" y="9" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"></rect>
+              <rect x="5" y="5" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="2"></rect>
+            </svg>
+            <span>Copy</span>
+          </button>
+        </div>
+      </div>`;
+    }}
+    return `<div class="diagTextLine">${{escapeHtml(line)}}</div>`;
+  }}).join('');
+}}
+
+async function copyDiagnosticCommand(btn) {{
+  const text = String(btn && btn.dataset && btn.dataset.copy || '');
+  if (!text) return;
+  let ok = false;
+  try {{
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  }} catch (err) {{
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', 'readonly');
+    area.style.position = 'fixed';
+    area.style.left = '-1000px';
+    document.body.appendChild(area);
+    area.select();
+    try {{
+      ok = document.execCommand('copy');
+    }} catch (copyErr) {{}}
+    area.remove();
+  }}
+  if (!ok) return;
+  btn.classList.add('copied');
+  btn.title = 'Скопировано';
+  btn.setAttribute('aria-label', 'Скопировано');
+  clearTimeout(Number(btn.dataset.copyTimer || 0));
+  btn.dataset.copyTimer = String(setTimeout(() => {{
+    btn.classList.remove('copied');
+    btn.title = 'Копировать команду';
+    btn.setAttribute('aria-label', 'Копировать команду');
+    delete btn.dataset.copyTimer;
+  }}, 1200));
+}}
+
+function genericPanelAdvice(router) {{
+  const entryPort = Number(router && router.entry_port || 0);
+  const sshEntryPort = Number(router && router.ssh_entry_port || 0);
+  return numberedLines([
+    'Обнови страницу через Ctrl+F5. Если карточек нет, сразу проверь в браузере запрос /api/routers и Console.',
+    'На VPS выполни: systemctl status owrt-remote nginx --no-pager -l',
+    'Что должно быть: у owrt-remote и nginx статус Active: active (running). Если failed, inactive или exit-code, значит сервис не запущен нормально и хаб сам не поднимется.',
+    'Если панель пустая или есть 502, открой лог: journalctl -u owrt-remote -n 50 --no-pager -l',
+    'Что должно быть: без Traceback и без повторяющихся error. Если есть Traceback, permission denied, 502 или address already in use, значит хаб падает при запуске или порт уже занят.',
+    entryPort ? ('Если проблема в Xray, проверь порт ' + entryPort + ' на VPS: ss -lntp | grep ' + entryPort) : 'Если проблема в Xray, проверь на VPS, что нужный входной порт реально слушается через ss -lntp.',
+    entryPort ? ('Что должно быть: строка LISTEN на порту ' + entryPort + '. Если вывод пустой, значит Xray на VPS не слушает этот порт.') : 'Что должно быть: в выводе ss должен быть нужный входной порт. Если вывода нет, значит Xray не открыл нужный порт.',
+    sshEntryPort ? ('Если проблема в SSH, проверь внешний порт ' + sshEntryPort + ' и перезапусти dropbear на роутере: /etc/init.d/dropbear restart') : 'Если проблема в SSH, перезапусти dropbear на роутере: /etc/init.d/dropbear restart'
+  ]);
+}}
+
+function detailedPanelFallback(router) {{
+  const entryPort = Number(router && router.entry_port || 0);
+  const sshEntryPort = Number(router && router.ssh_entry_port || 0);
+  return [
+    {{
+      level: 'warn',
+      title: 'Если проблема в самой панели хаба',
+      body: numberedLines([
+        'Сделай Ctrl+F5, чтобы браузер не держал старый JS и старый HTML.',
+        'Если панель открывается пустой или с ошибкой, на VPS выполни: systemctl status owrt-remote nginx --no-pager -l',
+        'Что должно быть: у owrt-remote и nginx статус Active: active (running). Если нет, значит сама панель или nginx сейчас не работают нормально.',
+        'Открой лог панели: journalctl -u owrt-remote -n 50 --no-pager -l',
+        'Что должно быть: без Traceback, permission denied и address already in use. Если такие строки есть, проблема уже внутри backend панели.'
+      ])
+    }},
+    {{
+      level: 'warn',
+      title: 'Если проблема в карточке роутера, статусе или heartbeat',
+      body: numberedLines([
+        'Проверь, что роутер реально online и у WAN есть IP адрес в LuCI: Network -> Interfaces -> WAN.',
+        'На роутере выполни: ping -c 4 1.1.1.1',
+        'Что должно быть: 4 received и packet loss 0%. Если нет, роутер не сможет отправлять heartbeat и карточка будет offline или пустой.',
+        'Если карточка не обновляется, заново открой OpenWrt config и вставь команды на роутер целиком.',
+        'Если пропал только один роутер, сверь router id, entry port, SSH port и время последнего heartbeat.'
+      ])
+    }},
+    {{
+      level: 'warn',
+      title: 'Если проблема в web-terminal или SSH',
+      body: numberedLines([
+        'Проверь, что dropbear включен: LuCI -> System -> Startup -> dropbear.',
+        'На роутере выполни: /etc/init.d/dropbear restart',
+        'Что должно быть: команда проходит без failed и SSH снова отвечает.',
+        sshEntryPort ? ('На VPS проверь внешний SSH порт: ss -lntp | grep ' + sshEntryPort) : 'Проверь, что в карточке хаба вообще указан внешний SSH порт.',
+        sshEntryPort ? ('Что должно быть: строка LISTEN на порту ' + sshEntryPort + '. Если пусто, внешний SSH туннель сейчас не поднят.') : 'Что должно быть: в карточке должен быть указан внешний SSH порт, иначе web-terminal не откроется.'
+      ])
+    }},
+    {{
+      level: 'warn',
+      title: 'Если проблема в Xray, конфиге или VPS части',
+      body: numberedLines([
+        'На роутере проверь службу Xray через LuCI: Services -> HomeProxy / PassWall / Nekobox.',
+        'На роутере выполни: pgrep -fa xray',
+        'Что должно быть: хотя бы одна строка с процессом xray. Если пусто, Xray на роутере не запущен.',
+        entryPort ? ('На VPS проверь входной порт Xray: ss -lntp | grep ' + entryPort) : 'На VPS проверь, что Xray слушает нужный входной порт через ss -lntp.',
+        entryPort ? ('Что должно быть: строка LISTEN на порту ' + entryPort + '. Если пусто, VPS Xray не слушает нужный порт.') : 'Что должно быть: в выводе ss должен быть нужный порт Xray.',
+        'Если после обновления конфига ничего не меняется, нажми Обновить Xray CFG и затем Рестарт Xray VPS.'
+      ])
+    }}
+  ];
+}}
+
+function diagnosticGuides(router) {{
+  const entryPort = Number(router && router.entry_port || 0);
+  const sshEntryPort = Number(router && router.ssh_entry_port || 0);
+  return [
+    {{
+      level: 'bad',
+      title: 'SSH закрыт, web-terminal не открывается или доступ зависает',
+      keywords: ['ssh', 'dropbear', '22 порт', '22port', 'терминал', 'web terminal', 'web-terminal', 'консоль', 'подключение ssh', 'не подключается', 'туннель ssh', 'webssh', 'shell', 'pty', 'socket', 'подвис терминал', 'не открывается терминал'],
+      body: numberedLines([
+        'LuCI: System -> Startup -> dropbear. Если выключен, нажми Enable и Start.',
+        'Команда на роутере: /etc/init.d/dropbear restart',
+        'Что должно быть: команда завершается без ошибки и SSH снова отвечает. Если видишь failed, not found или permission denied, значит dropbear не запускается нормально.',
+        'Лог на роутере: logread -e dropbear',
+        'Что должно быть: строки про запуск dropbear и порт 22 или внешний порт. Если есть bind, address already in use, refused или failed, значит SSH не может открыть порт или падает при старте.',
+        sshEntryPort ? ('Проверь с VPS, слушается ли внешний SSH порт ' + sshEntryPort + ': ss -lntp | grep ' + sshEntryPort) : 'Проверь, что в карточке хаба вообще заполнен внешний SSH порт.',
+        sshEntryPort ? ('Что должно быть: строка LISTEN на порту ' + sshEntryPort + '. Если пусто, значит внешний SSH порт на VPS сейчас не слушается.') : 'Что должно быть: в карточке хаба должен быть указан внешний SSH порт.',
+        'Если web-terminal пустой, сделай Ctrl+F5 и открой его заново после перезапуска dropbear.'
+      ])
+    }},
+    {{
+      level: 'bad',
+      title: 'Xray на роутере или VPS работает неправильно',
+      keywords: ['xray', 'reality', 'vless', 'proxy', 'homeproxy', 'passwall', 'nekobox', 'туннель', 'vpn не работает', 'vps xray', 'не поднимается xray', 'не работает прокси', 'маршрут', 'конфиг xray'],
+      body: numberedLines([
+        'Нажми OpenWrt config и заново вставь команды на роутер целиком.',
+        'LuCI: Services -> HomeProxy / PassWall / Nekobox. Служба должна быть в статусе Running.',
+        'Команда на роутере: logread -e xray',
+        'Что должно быть: строки запуска Xray без failed и panic. Если есть invalid, failed, not found, rejected или no such file, значит Xray не стартует из-за битого конфига или отсутствующего файла.',
+        'Команда на роутере: pgrep -fa xray',
+        'Что должно быть: хотя бы одна строка с процессом xray. Если вывод пустой, значит Xray на роутере сейчас не запущен.',
+        entryPort ? ('Проверь, что нужный порт ' + entryPort + ' слушается: ss -lntp | grep ' + entryPort) : 'Проверь, что Xray слушает тот же порт, который выдал хаб.',
+        entryPort ? ('Что должно быть: строка LISTEN на порту ' + entryPort + '. Если пусто, значит Xray не открыл этот порт или запущен с другим конфигом.') : 'Что должно быть: в выводе ss должен быть тот же порт, который выдал хаб.',
+        'На VPS нажми Обновить Xray CFG, потом Рестарт Xray VPS.',
+        'Если не помогло, открой лог на VPS: journalctl -u xray -n 50 --no-pager -l'
+        ,'Что должно быть: строки started, listening или без красных ошибок. Если есть failed, rejected, bind, invalid или tls, значит VPS Xray не поднялся или не может принять соединения.'
+      ])
+    }},
+    {{
+      level: 'warn',
+      title: 'Роутер не выходит в интернет, offline или не отправляет heartbeat',
+      keywords: ['нет интернета', 'интернет', 'wan', 'dns', 'offline', 'heartbeat', 'timeout', 'connection reset', 'router offline', 'не в сети', 'не онлайн', 'wan не поднимается', 'pppoe', 'dhcp', 'нет связи', 'обрыв интернета'],
+      body: numberedLines([
+        'LuCI: Network -> Interfaces -> WAN. У WAN должен быть IP адрес.',
+        'Если IP пустой, нажми Restart у WAN.',
+        'Команда на роутере: ping -c 4 1.1.1.1',
+        'Что должно быть: 4 received и packet loss 0%. Если network unreachable, bad address или 100% packet loss, значит у роутера нет нормального выхода в интернет.',
+        'Команда на роутере: logread | tail -n 50',
+        'Что должно быть: последние строки без бесконечных ошибок netifd, wan, ppp, xray. Если есть timeout, failed, error, denied или restart loop, значит WAN, heartbeat или Xray зациклились на ошибке.',
+        'Если интернет вернулся, подожди 20-30 секунд и обнови страницу хаба.'
+      ])
+    }},
+    {{
+      level: 'warn',
+      title: 'Панель хаба открывается с ошибкой, 502 или пустым экраном',
+      keywords: ['502', 'bad gateway', '403', '404', 'панель', 'хаб не открывается', 'не открывается панель', 'пустой экран', 'белый экран', 'ничего не показывает', 'кнопки не работают', 'страница пустая', 'backend', 'frontend', 'api', 'json', 'fetch', 'console', 'devtools', 'браузерная ошибка'],
+      body: numberedLines([
+        'Обнови страницу через Ctrl+F5.',
+        'На VPS проверь сервисы: systemctl status owrt-remote nginx --no-pager -l',
+        'Что должно быть: у обоих сервисов Active: active (running). Если нет, значит один из сервисов не поднялся и панель не сможет работать нормально.',
+        'Если есть 502 или пустой экран, открой лог: journalctl -u owrt-remote -n 50 --no-pager -l',
+        'Что должно быть: без Traceback и без падения Python. Если есть Traceback, 502, permission denied или address already in use, значит backend хаба падает или упирается в права/порт.',
+        'Если шапка есть, а карточек нет, в браузере проверь DevTools -> Network -> /api/routers и DevTools -> Console.',
+        'Если менялся файл хаба, после правки снова сделай Ctrl+F5.'
+      ])
+    }},
+    {{
+      level: 'warn',
+      title: 'Карточка роутера пустая, роутер пропал или не появляется в списке',
+      keywords: ['карточка пустая', 'пустые карточки', 'роутер пропал', 'не видно роутер', 'не появляется роутер', 'пустой список', 'нет карточек', 'карточки пропали', 'нет статуса', 'нет метрик', 'heartbeat пропал', 'не обновляется карточка'],
+      body: numberedLines([
+        'Проверь, что router id не пустой и роутер реально добавлен в хаб.',
+        'На роутере проверь интернет: ping -c 4 1.1.1.1',
+        'Что должно быть: 4 received и packet loss 0%. Если интернет не ходит, значит роутер не сможет отправить heartbeat и не появится в хабе.',
+        'Открой OpenWrt config и заново вставь команды на роутер.',
+        'Если карточек нет вообще, в браузере проверь запрос /api/routers и Console.',
+        'Если не виден только один роутер, сверь router id, entry port и SSH port.'
+      ])
+    }},
+    {{
+      level: 'warn',
+      title: 'OpenWrt config, кнопки панели или обновление конфига работают не так',
+      keywords: ['openwrt config', 'конфиг', 'cfg', 'команды', 'добавить роутер', 'не сохраняется', 'не обновляется', 'обновить xray cfg', 'кнопка', 'не нажимается', 'не срабатывает', 'копировать команду', 'модалка', 'popup', 'не открывается окно', 'быстрые команды'],
+      body: numberedLines([
+        'Сделай Ctrl+F5, чтобы убрать старый JS из браузера.',
+        'Если проблема в OpenWrt config, скопируй команды заново и вставь их целиком.',
+        'После замены конфига нажми Обновить Xray CFG и Рестарт Xray VPS.',
+        'Если кнопка нажимается, но ничего не происходит, в браузере проверь DevTools -> Network и Console.',
+        'Если запрос падает, проверь лог на VPS: journalctl -u owrt-remote -n 50 --no-pager -l'
+        ,'Что должно быть: запросы без 500 и без Traceback. Если видишь 4xx/5xx или ошибку в Console, значит проблема уже в самом хабе, API или фронтенде браузера.'
+      ])
+    }},
+    {{
+      level: 'warn',
+      title: 'Роутер перегрет, забита память или закончилось место',
+      keywords: ['температура', 'горячий', 'греется', 'перегрев', 'память', 'ram', 'flash', 'место', 'storage', 'cpu', 'тормозит', 'виснет'],
+      body: numberedLines([
+        'Посмотри метрики температуры, RAM и flash прямо в карточке роутера.',
+        'Если температура высокая, убери роутер из закрытого места, проверь питание и охлаждение.',
+        'Если память RAM почти забита, выключи лишние службы и перезапусти Xray только после этого.',
+        'Если flash почти закончилось, удали старые логи и ненужные пакеты, иначе новые конфиги и статусы могут не сохраняться.',
+        'После разгрузки роутера снова обнови heartbeat и запусти диагностику повторно.'
+      ])
+    }}
+  ];
+}}
+
+function noviceProblemDetails(problemText, router) {{
+  const text = normalizeDiagnosticText(problemText);
+  const matches = diagnosticGuides(router)
+    .map((guide) => ({{guide, score: keywordScore(text, guide.keywords || [])}}))
+    .filter((item) => item.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 3)
+    .map((item) => ({{
+      level: item.guide.level || 'warn',
+      title: item.guide.title || 'Диагностика',
+      body: item.guide.body || ''
+    }}));
+  if (matches.length) return matches;
+  if (!text) return [];
+  if (!isPanelRelatedDiagnosticText(text)) {{
+    return [{{
+      level: 'bad',
+      title: 'Вопрос не распознан',
+      body: 'Введи вопрос, связанный с панелью, роутером, SSH, Xray, интернетом или кнопками хаба.\\nПример: не открывается web-terminal, роутер offline, Xray не запущен, кнопка OpenWrt config не работает.'
+    }}];
+  }}
+  return [
+    {{
+      level: 'warn',
+      title: 'Куда смотреть дальше',
+      body: genericPanelAdvice(router)
+    }},
+    ...detailedPanelFallback(router)
+  ];
+}}
+
+function diagnoseRouter(router, draft) {{
+  const works = [];
+  const problems = [];
+  const checks = [];
+  const blocks = [];
+  const online = Boolean(router && router.online);
+  const xray = String(router && router.status && router.status.xray || 'unknown').toLowerCase();
+  const ssh = String(router && router.status && router.status.ssh || 'unknown').toLowerCase();
+  const tempValue = numericMetric(router && router.status && router.status.temperature);
+  const memoryPercent = memoryUsagePercent(router && router.status && router.status.memory);
+  const flashPercent = flashUsagePercent(router && router.status && router.status.flash);
+  const allProblemText = [draft.problems, draft.tried].filter(Boolean).join(' ').toLowerCase();
+
+  if (online) pushUnique(works, 'Роутер выходит на связь с хабом.');
+  else pushUnique(problems, 'Хаб не видит роутер онлайн. Обычно это значит, что нет интернета, не уходит heartbeat или роутер выключен.');
+
+  if (xray === 'running') pushUnique(works, 'Xray на роутере запущен.');
+  else if (xray === 'enabled') pushUnique(checks, 'Xray включен, но нет подтверждения, что он реально запущен. Стоит сделать перезапуск службы.');
+  else pushUnique(problems, 'Xray не запущен или роутер не прислал его статус.');
+
+  if (ssh === 'running' && Number(router && router.ssh_entry_port || 0) > 0) {{
+    pushUnique(works, 'SSH доступ должен идти через внешний порт ' + router.ssh_entry_port + '.');
+  }} else if (Number(router && router.ssh_entry_port || 0) > 0) {{
+    pushUnique(problems, 'SSH не подтвержден. Проверь службу dropbear и внешний порт ' + router.ssh_entry_port + '.');
+  }} else {{
+    pushUnique(problems, 'Для SSH не задан внешний порт. Без него удаленная проверка не откроется.');
+  }}
+
+  if (Number.isFinite(tempValue) && tempValue >= 75) {{
+    pushUnique(problems, 'Температура высокая: ' + tempValue + 'C. Роутер может тупить, зависать или резать скорость.');
+  }} else if (Number.isFinite(tempValue) && tempValue >= 60) {{
+    pushUnique(checks, 'Температура уже повышена: ' + tempValue + 'C. Лучше проверить охлаждение.');
+  }}
+
+  if (Number.isFinite(memoryPercent) && memoryPercent >= 90) {{
+    pushUnique(problems, 'Память почти забита: ' + Math.round(memoryPercent) + '%. Из-за этого Xray и другие службы могут падать.');
+  }} else if (Number.isFinite(memoryPercent) && memoryPercent >= 75) {{
+    pushUnique(checks, 'Память загружена примерно на ' + Math.round(memoryPercent) + '%. Если есть подвисания, начни проверку с лишних служб.');
+  }}
+
+  if (Number.isFinite(flashPercent) && flashPercent >= 85) {{
+    pushUnique(problems, 'Память flash почти закончилась: ' + Math.round(flashPercent) + '% занято. Новые конфиги и логи могут не сохраняться.');
+  }} else if (Number.isFinite(flashPercent) && flashPercent >= 70) {{
+    pushUnique(checks, 'Flash уже заполнен примерно на ' + Math.round(flashPercent) + '%. Стоит удалить старые логи и ненужные пакеты.');
+  }}
+
+  if (draft.works) {{
+    blocks.push({{
+      level: 'good',
+      title: 'Что работает по твоим словам',
+      body: draft.works
+    }});
+  }}
+
+  if (works.length && (problems.length || checks.length || draft.problems || draft.tried)) {{
+    blocks.push({{
+      level: 'good',
+      title: 'Что уже подтверждено',
+      body: works.map((item, index) => `${{index + 1}}. ${{item}}`).join('\\n')
+    }});
+  }}
+
+  if (draft.problems) {{
+    blocks.push({{
+      level: 'bad',
+      title: 'Какие проблемы ты указал',
+      body: draft.problems
+    }});
+  }}
+
+  if (problems.length) {{
+    blocks.push({{
+      level: 'bad',
+      title: 'Что уже видно по данным роутера',
+      body: problems.map((item, index) => `${{index + 1}}. ${{item}}`).join('\\n')
+    }});
+  }}
+
+  if (draft.problems || problems.length) {{
+    noviceProblemDetails(allProblemText || problems.join(' ').toLowerCase(), router).forEach((item) => blocks.push(item));
+  }}
+
+  if (checks.length) {{
+    blocks.push({{
+      level: 'warn',
+      title: 'Что проверить сейчас',
+      body: checks.map((item, index) => `${{index + 1}}. ${{item}}`).join('\\n')
+    }});
+  }}
+
+  if (draft.tried) {{
+    blocks.push({{
+      level: 'warn',
+      title: 'Что ты уже пробовал',
+      body: draft.tried
+    }});
+  }}
+
+  let level = 'good';
+  let summary = '';
+  if (problems.length) {{
+    level = 'bad';
+    summary = 'Нашлось проблем: ' + problems.length + '. Сначала смотри блок с проблемами, потом выполняй команды ниже.';
+  }} else if (draft.problems) {{
+    level = 'warn';
+    summary = 'По описанию есть проблема. Ниже дал конкретные шаги и команды.';
+  }}
+
+  return {{level, summary, blocks}};
+}}
+
+function renderDiagnosticPanel(routerId = activeDiagnosticRouterId) {{
+  const router = selectedRouter(routerId);
+  if (!router) {{
+    activeDiagnosticRouterId = '';
+    diagnosticPanel.hidden = true;
+    diagnosticSummary.hidden = true;
+    diagnosticBlocks.innerHTML = '';
+    return;
+  }}
+  activeDiagnosticRouterId = String(router.id || '');
+  const draft = getDiagnosticDraft(activeDiagnosticRouterId);
+  diagnosticTitle.textContent = 'Диагностика: ' + (router.name || router.id);
+  diagnosticLead.textContent = 'Роутер: ' + router.id + '. Опиши проблему простыми словами, потом нажми "Запустить диагностику".';
+  diagnosticWorks.value = draft.works || '';
+  diagnosticProblems.value = draft.problems || '';
+  diagnosticTried.value = draft.tried || '';
+  const report = diagnoseRouter(router, draft);
+  diagnosticSummary.hidden = !report.summary;
+  diagnosticSummary.className = 'diagSummary ' + report.level;
+  diagnosticSummary.textContent = report.summary || '';
+  diagnosticBlocks.innerHTML = report.blocks.map((block) => `
+    <article class="diagBlock ${{escapeAttr(block.level || 'warn')}}">
+      <strong>${{escapeHtml(block.title || 'Диагностика')}}</strong>
+      <div class="diagBody">${{renderDiagnosticBody(block.body || '')}}</div>
+    </article>
+  `).join('');
+}}
+
+function openDiagnosticPanel(routerId) {{
+  const fallbackRouter = (window.ROUTERS || [])[0] || null;
+  const router = selectedRouter(routerId) || (fallbackRouter ? selectedRouter(fallbackRouter.id) : null);
+  if (!router) return;
+  activeDiagnosticRouterId = String(router.id || '');
+  diagnosticPanel.hidden = false;
+  renderDiagnosticPanel(activeDiagnosticRouterId);
+  diagnosticPanel.scrollIntoView({{behavior: 'smooth', block: 'start'}});
+}}
+
+function closeDiagnosticPanel() {{
+  diagnosticPanel.hidden = true;
+}}
+
+function refreshDiagnosticPanel() {{
+  if (!activeDiagnosticRouterId) return;
+  if (!selectedRouter(activeDiagnosticRouterId)) {{
+    activeDiagnosticRouterId = '';
+    diagnosticPanel.hidden = true;
+    diagnosticSummary.hidden = true;
+    diagnosticBlocks.innerHTML = '';
+    return;
+  }}
+  renderDiagnosticPanel(activeDiagnosticRouterId);
+}}
+
+diagnosticBlocks.addEventListener('click', (event) => {{
+  const button = event.target.closest('.diagCopyBtn');
+  if (!button) return;
+  copyDiagnosticCommand(button);
+}});
 
 function ago(iso) {{
   if (!iso) return 'never';
@@ -2316,6 +2930,7 @@ function render(list) {{
         ${{sshButton}}
         <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
         <a class="btn" href="${{escapeAttr(r.xray_client_url)}}">Client JSON</a>
+        <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
         <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
       </div>
@@ -2412,6 +3027,7 @@ render = function(list) {{
         ${{sshButton}}
         <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
         <a class="btn" href="${{escapeAttr(r.xray_client_url)}}">Client JSON</a>
+        <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
         <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
     </article>`;
@@ -2503,11 +3119,11 @@ function initRouterFormToggle() {{
 function fillRouterForm(force = false) {{
   const list = window.ROUTERS || [];
   const id = nextRouterId(list);
-  if (force || !routerForm.id.value) routerForm.id.value = id;
-  if (force || !routerForm.name.value) routerForm.name.value = defaultRouterName(routerForm.id.value || id);
-  if (force || !routerForm.entry_port.value) routerForm.entry_port.value = String(nextEntryPort(list));
-  if (force || !routerForm.vps_host.value) routerForm.vps_host.value = defaultVpsHost(list);
-  if (force || !routerForm.role.value) routerForm.role.value = id === 'main' ? 'main' : 'node';
+  if (routerIdInput && (force || !routerIdInput.value)) routerIdInput.value = id;
+  if (routerNameInput && (force || !routerNameInput.value)) routerNameInput.value = defaultRouterName((routerIdInput && routerIdInput.value) || id);
+  if (routerEntryPortInput && (force || !routerEntryPortInput.value)) routerEntryPortInput.value = String(nextEntryPort(list));
+  if (routerVpsHostInput && (force || !routerVpsHostInput.value)) routerVpsHostInput.value = defaultVpsHost(list);
+  if (routerRoleInput && (force || !routerRoleInput.value)) routerRoleInput.value = id === 'main' ? 'main' : 'node';
 }}
 
 function showRouterMsg(text, bad = false) {{
@@ -2516,13 +3132,39 @@ function showRouterMsg(text, bad = false) {{
   routerMsg.textContent = text;
 }}
 
-routerForm.id.addEventListener('input', () => {{
-  if (!routerForm.name.dataset.touched) {{
-    routerForm.name.value = defaultRouterName(routerForm.id.value.trim());
-  }}
+if (routerIdInput) {{
+  routerIdInput.addEventListener('input', () => {{
+    if (routerNameInput && !routerNameInput.dataset.touched) {{
+      routerNameInput.value = defaultRouterName(routerIdInput.value.trim());
+    }}
+  }});
+}}
+if (routerNameInput) {{
+  routerNameInput.addEventListener('input', () => {{
+    routerNameInput.dataset.touched = '1';
+  }});
+}}
+diagnosticClose.addEventListener('click', closeDiagnosticPanel);
+diagnosticWorks.addEventListener('input', () => {{
+  if (!activeDiagnosticRouterId) return;
+  setDiagnosticDraft(activeDiagnosticRouterId, {{works: diagnosticWorks.value}});
 }});
-routerForm.name.addEventListener('input', () => {{
-  routerForm.name.dataset.touched = '1';
+diagnosticProblems.addEventListener('input', () => {{
+  if (!activeDiagnosticRouterId) return;
+  setDiagnosticDraft(activeDiagnosticRouterId, {{problems: diagnosticProblems.value}});
+}});
+diagnosticTried.addEventListener('input', () => {{
+  if (!activeDiagnosticRouterId) return;
+  setDiagnosticDraft(activeDiagnosticRouterId, {{tried: diagnosticTried.value}});
+}});
+diagnosticBuild.addEventListener('click', () => {{
+  if (!activeDiagnosticRouterId) return;
+  setDiagnosticDraft(activeDiagnosticRouterId, {{
+    works: diagnosticWorks.value,
+    problems: diagnosticProblems.value,
+    tried: diagnosticTried.value
+  }});
+  renderDiagnosticPanel(activeDiagnosticRouterId);
 }});
 if (routerFormToggle) {{
   routerFormToggle.addEventListener('click', () => {{
@@ -2573,6 +3215,7 @@ async function loadRouters() {{
     window.ROUTERS = data.routers;
     render(window.ROUTERS);
     fillRouterForm(false);
+    refreshDiagnosticPanel();
   }}
 }}
 
@@ -2592,18 +3235,18 @@ routerForm.addEventListener('submit', async (ev) => {{
   }}
   if (duplicatePort) {{
     showRouterMsg(`Порт ${{entryPort}} уже занят роутером "${{duplicatePort.id}}". Поставь следующий свободный порт.`, true);
-    routerForm.entry_port.value = String(nextEntryPort(window.ROUTERS || []));
+    if (routerEntryPortInput) routerEntryPortInput.value = String(nextEntryPort(window.ROUTERS || []));
     return;
   }}
   if (duplicateSshPort) {{
     showRouterMsg(`SSH-порт ${{sshEntryPort}} уже занят роутером "${{duplicateSshPort.id}}". Поставь другой entry port.`, true);
-    routerForm.entry_port.value = String(nextEntryPort(window.ROUTERS || []));
+    if (routerEntryPortInput) routerEntryPortInput.value = String(nextEntryPort(window.ROUTERS || []));
     return;
   }}
   const res = await fetch('/api/router', {{method: 'POST', body}});
   if (res.ok) {{
     ev.currentTarget.reset();
-    routerForm.name.dataset.touched = '';
+    if (routerNameInput) routerNameInput.dataset.touched = '';
     await loadRouters();
     fillRouterForm(true);
     showRouterMsg('Роутер добавлен. Теперь открой OpenWrt config в его карточке и вставь команды на роутер.');
@@ -2631,6 +3274,11 @@ cards.addEventListener('click', async (ev) => {{
     else expandedActionPanels.delete(actionsToggleId);
     ev.target.setAttribute('aria-expanded', open ? 'true' : 'false');
     ev.target.textContent = open ? 'Скрыть кнопки' : 'Открыть кнопки';
+    return;
+  }}
+  const diagnoseId = ev.target?.dataset?.diagnose;
+  if (diagnoseId) {{
+    openDiagnosticPanel(diagnoseId);
     return;
   }}
   const id = ev.target?.dataset?.delete;
@@ -3605,7 +4253,7 @@ let passwordPromptActive = false, passwordBuffer = '', autoPasswordUsed = false;
 document.body.classList.toggle('mobile', isMobileTerminal);
 function appendQuery(url, params){const sep=url.indexOf('?')===-1?'?':'&';return url+sep+new URLSearchParams(params).toString();}
 function normalizePaste(text){return String(text||'').replace(/\r\n/g,'\r').replace(/\n/g,'\r');}
-function notice(text,color='36'){if(term)term.write(`\r\n\x1b[${color}m${text}\x1b[0m\r\n`);}
+function notice(text,color='36'){if(term)term.write('\r\n\x1b[' + color + 'm' + text + '\x1b[0m\r\n');}
 function savedSshPassword(){try{return localStorage.getItem(SSH_PASSWORD_KEY)||'';}catch(e){return '';}}
 function saveSshPassword(value){if(IS_VPS_TERMINAL||!value)return;try{localStorage.setItem(SSH_PASSWORD_KEY,value);}catch(e){}}
 function isSshPasswordPrompt(text){return /(?:password:|пароль:)/i.test(String(text||''));}
