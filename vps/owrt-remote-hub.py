@@ -2657,7 +2657,7 @@ function diagnoseRouter(router, draft) {{
     }});
   }}
 
-  if (works.length && (problems.length || checks.length || draft.problems || draft.tried)) {{
+  if (works.length) {{
     blocks.push({{
       level: 'good',
       title: 'Что уже подтверждено',
@@ -2709,6 +2709,12 @@ function diagnoseRouter(router, draft) {{
   }} else if (draft.problems) {{
     level = 'warn';
     summary = 'По описанию есть проблема. Ниже дал конкретные шаги и команды.';
+  }} else if (checks.length) {{
+    level = 'warn';
+    summary = 'Критичных проблем по данным роутера не видно, но есть моменты, которые стоит проверить.';
+  }} else if (works.length) {{
+    level = 'good';
+    summary = 'По данным роутера явных проблем не видно. Ниже показал, что уже подтверждено.';
   }}
 
   return {{level, summary, blocks}};
