@@ -2858,6 +2858,21 @@ function formatMemory(value) {{
   return used + ' / ' + total + ' МБ';
 }}
 
+function formatFlash(value) {{
+  const text = String(value || '');
+  const match = text.match(/(\\d+(?:\\.\\d+)?)\\s*([KMGTP]?B)\\s*free\\s*\\/\\s*(\\d+(?:\\.\\d+)?)\\s*([KMGTP]?B)/i);
+  if (!match) return value || 'unknown';
+  const free = Number(match[1]);
+  const freeUnit = String(match[2] || 'MB').toUpperCase();
+  const total = Number(match[3]);
+  const totalUnit = String(match[4] || freeUnit).toUpperCase();
+  if (!Number.isFinite(free) || !Number.isFinite(total) || total <= 0) return value || 'unknown';
+  const used = Math.max(0, total - free);
+  const ruUnit = (unit) => unit.replace('KB', 'КБ').replace('MB', 'МБ').replace('GB', 'ГБ').replace('TB', 'ТБ').replace('PB', 'ПБ');
+  const show = (num) => Math.abs(num - Math.round(num)) < 0.05 ? String(Math.round(num)) : num.toFixed(1);
+  return show(free) + ' ' + ruUnit(freeUnit) + ' свободно / ' + show(used) + ' ' + ruUnit(totalUnit) + ' занято';
+}}
+
 function formatLoad(value) {{
   const parts = String(value || '').match(/\\d+(?:\\.\\d+)?/g) || [];
   if (parts.length >= 3) {{
@@ -2886,6 +2901,7 @@ function render(list) {{
     const load = formatLoad((r.status && r.status.load) || 'unknown');
     const memory = formatMemory((r.status && r.status.memory) || 'unknown');
     const flash = (r.status && r.status.flash) || 'unknown';
+    const flashDisplay = formatFlash(flash);
     const temperature = (r.status && r.status.temperature) || 'unknown';
     const access = r.access_url || r.public_url;
     const tags = [
@@ -2912,8 +2928,8 @@ function render(list) {{
       metric('SSH', statusRu(ssh)),
       metric('В сети уже', uptime),
       metric('Был на связи', ago(r.last_seen_iso)),
-      metric('RAM', memory),
-      metric('Flash', flash, flashClass(flash)),
+      metric('Оперативная память', memory),
+      metric('Память Flash', flashDisplay, flashClass(flash)),
       metric('Температура', temperature, tempClass(temperature)),
       metric('Нагрузка', load, 'span2')
     ].join('');
@@ -2985,6 +3001,7 @@ render = function(list) {{
     const load = formatLoad((r.status && r.status.load) || 'unknown');
     const memory = formatMemory((r.status && r.status.memory) || 'unknown');
     const flash = (r.status && r.status.flash) || 'unknown';
+    const flashDisplay = formatFlash(flash);
     const temperature = (r.status && r.status.temperature) || 'unknown';
     const access = r.access_url || r.public_url;
     const tags = [
@@ -3011,8 +3028,8 @@ render = function(list) {{
       metric('SSH', statusRu(ssh)),
       metric('В сети уже', uptime),
       metric('Был на связи', ago(r.last_seen_iso)),
-      metric('RAM', memory),
-      metric('Flash', flash, flashClass(flash)),
+      metric('Оперативная память', memory),
+      metric('Память Flash', flashDisplay, flashClass(flash)),
       metric('Температура', temperature, tempClass(temperature)),
       metric('Нагрузка', load, 'span2')
     ].join('');
