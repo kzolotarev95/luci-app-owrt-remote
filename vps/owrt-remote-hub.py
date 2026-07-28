@@ -2137,6 +2137,28 @@ const routerFormWrap = document.getElementById('routerFormWrap');
 const routerForm = document.getElementById('routerForm');
 const routerFormToggle = document.getElementById('routerFormToggle');
 const routerMsg = document.getElementById('routerMsg');
+const expandedActionPanels = new Set();
+
+function actionPanelId(routerId) {{
+  return 'router-actions-' + String(routerId || '');
+}}
+
+function syncExpandedActionPanels(list) {{
+  const validIds = new Set((Array.isArray(list) ? list : []).map(r => actionPanelId(r.id)));
+  for (const id of Array.from(expandedActionPanels)) {{
+    if (!validIds.has(id)) expandedActionPanels.delete(id);
+  }}
+}}
+
+function syncActionToggleStates(root = cards) {{
+  const toggles = root.querySelectorAll('[data-actions-toggle]');
+  toggles.forEach((toggle) => {{
+    const actionBox = document.getElementById(toggle.dataset.actionsToggle || '');
+    const open = Boolean(actionBox && actionBox.classList.contains('open'));
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.textContent = open ? 'Скрыть кнопки' : 'Открыть кнопки';
+  }});
+}}
 
 function ago(iso) {{
   if (!iso) return 'never';
@@ -2225,6 +2247,7 @@ function formatLoad(value) {{
 }}
 
 function render(list) {{
+  syncExpandedActionPanels(list);
   if (!list.length) {{
     cards.innerHTML = '<div class="empty">Пока нет роутеров. Добавь первый, например <b>main</b>.</div>';
     return;
@@ -2260,6 +2283,8 @@ function render(list) {{
     const sshButton = sshReady
       ? `<a class="btn" href="${{escapeAttr(r.ssh_url || ('/ssh/' + encodeURIComponent(r.id) + '/'))}}" target="_blank" rel="noopener noreferrer">SSH</a>`
       : `<span class="btn disabled">SSH</span>`;
+    const actionsId = actionPanelId(r.id);
+    const actionsOpen = expandedActionPanels.has(actionsId);
     const metricHtml = [
       metric('Модель', model, 'span2'),
       metric('Система', release),
@@ -2286,7 +2311,7 @@ function render(list) {{
         ${{metricHtml}}
       </div>
       <button class="actionToggle primary" type="button" data-actions-toggle="router-actions-${{escapeAttr(r.id)}}" aria-expanded="false">Открыть кнопки</button>
-      <div class="actions mobileCollapsed" id="router-actions-${{escapeAttr(r.id)}}">
+      <div class="actions mobileCollapsed${{actionsOpen ? ' open' : ''}}" id="${{escapeAttr(actionsId)}}">
         ${{adminButton}}
         ${{sshButton}}
         <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
@@ -2296,6 +2321,7 @@ function render(list) {{
       </div>
     </article>`;
   }}).join('');
+  syncActionToggleStates();
 }}
 
 function escapeHtml(s) {{
@@ -2319,6 +2345,7 @@ function renderRouterStats(list) {{
 
 render = function(list) {{
   renderRouterStats(list);
+  syncExpandedActionPanels(list);
   if (!list.length) {{
     cards.innerHTML = '<div class="empty">Пока нет роутеров. Добавь первый, например <b>main</b>.</div>';
     return;
@@ -2354,6 +2381,8 @@ render = function(list) {{
     const sshButton = sshReady
       ? `<a class="btn" href="${{escapeAttr(r.ssh_url || ('/ssh/' + encodeURIComponent(r.id) + '/'))}}" target="_blank" rel="noopener noreferrer">SSH</a>`
       : `<span class="btn disabled">SSH</span>`;
+    const actionsId = actionPanelId(r.id);
+    const actionsOpen = expandedActionPanels.has(actionsId);
     const metricHtml = [
       metric('Модель', model, 'span2'),
       metric('Система', release),
@@ -2378,7 +2407,7 @@ render = function(list) {{
         ${{metricHtml}}
       </div>
       <button class="actionToggle primary" type="button" data-actions-toggle="router-actions-${{escapeAttr(r.id)}}" aria-expanded="false">Открыть кнопки</button>
-      <div class="actions mobileCollapsed" id="router-actions-${{escapeAttr(r.id)}}">
+      <div class="actions mobileCollapsed${{actionsOpen ? ' open' : ''}}" id="${{escapeAttr(actionsId)}}">
         ${{adminButton}}
         ${{sshButton}}
         <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
@@ -2387,6 +2416,7 @@ render = function(list) {{
       </div>
     </article>`;
   }}).join('');
+  syncActionToggleStates();
 }};
 
 function nextEntryPort(list) {{
@@ -2596,8 +2626,9 @@ cards.addEventListener('click', async (ev) => {{
   if (actionsToggleId) {{
     const actionBox = document.getElementById(actionsToggleId);
     if (!actionBox) return;
-    actionBox.classList.toggle('open');
-    const open = actionBox.classList.contains('open');
+    const open = actionBox.classList.toggle('open');
+    if (open) expandedActionPanels.add(actionsToggleId);
+    else expandedActionPanels.delete(actionsToggleId);
     ev.target.setAttribute('aria-expanded', open ? 'true' : 'false');
     ev.target.textContent = open ? 'Скрыть кнопки' : 'Открыть кнопки';
     return;
