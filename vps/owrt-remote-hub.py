@@ -2005,7 +2005,8 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 @keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.name{{margin:12px 0 0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.mobilePanelToggle,.routerFormToggle{{display:none;width:100%;margin:14px 0 10px;border-radius:999px}}.routerFormWrap{{display:block}}[hidden],.headerActions[hidden],.routerStats[hidden],.routerFormWrap[hidden]{{display:none!important}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
-.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong{{color:#fecdd3}}.metric span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.metric.metric-flash strong{{color:#f3e8ff}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong,.metric.memory-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong,.metric.memory-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong,.metric.memory-bad strong{{color:#fecdd3}}.metric>span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+.metric.memory-ok strong,.metric.flash-ok strong,.metric.memory-warn strong,.metric.flash-warn strong,.metric.memory-bad strong,.metric.flash-bad strong{{color:#f3e8ff}}.metric.memory-ok .metric-accent,.metric.flash-ok .metric-accent{{color:#bbf7d0}}.metric.memory-warn .metric-accent,.metric.flash-warn .metric-accent{{color:#fde68a}}.metric.memory-bad .metric-accent,.metric.flash-bad .metric-accent{{color:#fecdd3}}.metric-line{{display:block}}.metric-accent{{font-weight:900}}
 .brandPanel{{display:grid;grid-template-columns:repeat(2,minmax(0,132px));gap:8px}}.brandPanel .appBanner{{grid-column:1/-1;width:100%;min-width:0}}.brandPanel .links{{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:0}}.brandPanel .links a{{width:100%;min-width:0}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:100%;min-height:34px;margin-top:10px;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar,.authGrid{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 1}}.top{{flex-direction:column}}.headerActions{{align-self:flex-start;flex-wrap:wrap;padding-top:0;justify-content:flex-start}}}}
 @media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.name{{font-size:12px;max-width:92%}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
@@ -2806,6 +2807,10 @@ function metric(label, value, cls = '') {{
   return `<div class="metric ${{cls}}"><span>${{escapeHtml(label)}}</span><strong>${{escapeHtml(value || 'unknown')}}</strong></div>`;
 }}
 
+function metricHtml(label, valueHtml, cls = '') {{
+  return `<div class="metric ${{cls}}"><span>${{escapeHtml(label)}}</span><strong>${{valueHtml || escapeHtml('unknown')}}</strong></div>`;
+}}
+
 function tempClass(value) {{
   const n = Number(String(value || '').replace(',', '.').match(/-?\\d+(\\.\\d+)?/)?.[0]);
   if (!Number.isFinite(n)) return '';
@@ -2814,19 +2819,16 @@ function tempClass(value) {{
   return 'temp-ok';
 }}
 
+function memoryClass(value) {{
+  const used = memoryUsagePercent(value);
+  if (!Number.isFinite(used)) return '';
+  if (used >= 90) return 'memory-bad';
+  if (used >= 75) return 'memory-warn';
+  return 'memory-ok';
+}}
+
 function flashClass(value) {{
-  const text = String(value || '');
-  let used = Number(text.match(/(\\d+(?:\\.\\d+)?)\\s*%\\s*used/i)?.[1]);
-  if (!Number.isFinite(used)) {{
-    const nums = text.match(/\\d+(?:\\.\\d+)?/g) || [];
-    if (nums.length >= 2) {{
-      const free = Number(nums[0]);
-      const total = Number(nums[1]);
-      if (Number.isFinite(free) && Number.isFinite(total) && total > 0) {{
-        used = Math.max(0, Math.min(100, 100 - free * 100 / total));
-      }}
-    }}
-  }}
+  const used = flashUsagePercent(value);
   if (!Number.isFinite(used)) return '';
   if (used >= 85) return 'flash-bad';
   if (used >= 70) return 'flash-warn';
@@ -2875,6 +2877,51 @@ function formatFlash(value) {{
   return 'Свободно: ' + show(free) + ' ' + ruUnit(freeUnit) + '\\nЗанято: ' + show(used) + ' ' + ruUnit(totalUnit) + '\\nВсего: ' + show(total) + ' ' + ruUnit(totalUnit);
 }}
 
+function formatMetricBreakdownHtml(freeLabel, freeValue, usedText, totalText) {{
+  return [
+    `<span class="metric-line">${{escapeHtml(freeLabel)}} <span class="metric-accent">${{escapeHtml(freeValue)}}</span></span>`,
+    `<span class="metric-line">${{escapeHtml(usedText)}}</span>`,
+    `<span class="metric-line">${{escapeHtml(totalText)}}</span>`
+  ].join('');
+}}
+
+function formatMemoryHtml(value) {{
+  const text = String(value || '');
+  const match = text.match(/(\\d+)\\s*\\/\\s*(\\d+)\\s*kB/i);
+  if (!match) return escapeHtml(value || 'unknown');
+  const freeKb = Number(match[1]);
+  const totalKb = Number(match[2]);
+  const free = Math.max(0, Math.round(freeKb / 1024));
+  const used = Math.max(0, Math.round((totalKb - freeKb) / 1024));
+  const total = Math.max(0, Math.round(totalKb / 1024));
+  return formatMetricBreakdownHtml(
+    'Свободно:',
+    free + ' МБ',
+    'Занято: ' + used + ' МБ',
+    'Всего: ' + total + ' МБ'
+  );
+}}
+
+function formatFlashHtml(value) {{
+  const text = String(value || '');
+  const match = text.match(/(\\d+(?:\\.\\d+)?)\\s*([KMGTP]?B)\\s*free\\s*\\/\\s*(\\d+(?:\\.\\d+)?)\\s*([KMGTP]?B)/i);
+  if (!match) return escapeHtml(value || 'unknown');
+  const free = Number(match[1]);
+  const freeUnit = String(match[2] || 'MB').toUpperCase();
+  const total = Number(match[3]);
+  const totalUnit = String(match[4] || freeUnit).toUpperCase();
+  if (!Number.isFinite(free) || !Number.isFinite(total) || total <= 0) return escapeHtml(value || 'unknown');
+  const used = Math.max(0, total - free);
+  const ruUnit = (unit) => unit.replace('KB', 'КБ').replace('MB', 'МБ').replace('GB', 'ГБ').replace('TB', 'ТБ').replace('PB', 'ПБ');
+  const show = (num) => Math.abs(num - Math.round(num)) < 0.05 ? String(Math.round(num)) : num.toFixed(1);
+  return formatMetricBreakdownHtml(
+    'Свободно:',
+    show(free) + ' ' + ruUnit(freeUnit),
+    'Занято: ' + show(used) + ' ' + ruUnit(totalUnit),
+    'Всего: ' + show(total) + ' ' + ruUnit(totalUnit)
+  );
+}}
+
 function formatLoad(value) {{
   const parts = String(value || '').match(/\\d+(?:\\.\\d+)?/g) || [];
   if (parts.length >= 3) {{
@@ -2915,15 +2962,15 @@ function render(list) {{
       : `<span class="btn disabled">SSH</span>`;
     const actionsId = actionPanelId(r.id);
     const actionsOpen = expandedActionPanels.has(actionsId);
-    const metricHtml = [
+    const metricsHtml = [
       metric('Модель', model, 'span2'),
       metric('Система', release),
       metric('Xray', statusRu(xray)),
       metric('SSH', statusRu(ssh)),
       metric('В сети уже', uptime),
       metric('Был на связи', ago(r.last_seen_iso)),
-      metric('Оперативная память', memory, 'metric-compact'),
-      metric('Память Flash', flashDisplay, flashClass(flash) + ' metric-compact metric-flash'),
+      metricHtml('Оперативная память', formatMemoryHtml((r.status && r.status.memory) || 'unknown'), memoryClass((r.status && r.status.memory) || 'unknown') + ' metric-compact'),
+      metricHtml('Память Flash', formatFlashHtml(flash), flashClass(flash) + ' metric-compact metric-flash'),
       metric('Температура', temperature, tempClass(temperature)),
       metric('Нагрузка', load, 'span2')
     ].join('');
@@ -2935,7 +2982,7 @@ function render(list) {{
       <button class="mobileToggle" type="button" data-card-toggle="${{escapeAttr(detailsId)}}" aria-expanded="${{collapseCards ? 'false' : 'true'}}">${{collapseCards ? 'Открыть' : 'Скрыть'}}</button>
       <div class="cardBody" id="${{escapeAttr(detailsId)}}"${{collapseCards ? ' hidden' : ''}}>
       <div class="metrics">
-        ${{metricHtml}}
+        ${{metricsHtml}}
       </div>
       <button class="actionToggle primary" type="button" data-actions-toggle="router-actions-${{escapeAttr(r.id)}}" aria-expanded="false">Открыть кнопки</button>
       <div class="actions mobileCollapsed${{actionsOpen ? ' open' : ''}}" id="${{escapeAttr(actionsId)}}">
@@ -3027,15 +3074,15 @@ render = function(list) {{
       : `<span class="btn disabled">SSH</span>`;
     const actionsId = actionPanelId(r.id);
     const actionsOpen = expandedActionPanels.has(actionsId);
-    const metricHtml = [
+    const metricsHtml = [
       metric('Модель', model, 'span2'),
       metric('Система', release),
       metric('Xray', statusRu(xray)),
       metric('SSH', statusRu(ssh)),
       metric('В сети уже', uptime),
       metric('Был на связи', ago(r.last_seen_iso)),
-      metric('Оперативная память', memory, 'metric-compact'),
-      metric('Память Flash', flashDisplay, flashClass(flash) + ' metric-compact metric-flash'),
+      metricHtml('Оперативная память', formatMemoryHtml((r.status && r.status.memory) || 'unknown'), memoryClass((r.status && r.status.memory) || 'unknown') + ' metric-compact'),
+      metricHtml('Память Flash', formatFlashHtml(flash), flashClass(flash) + ' metric-compact metric-flash'),
       metric('Температура', temperature, tempClass(temperature)),
       metric('Нагрузка', load, 'span2')
     ].join('');
@@ -3045,7 +3092,7 @@ render = function(list) {{
       </div>
       <div class="name">${{escapeHtml(r.name)}}</div>
       <div class="metrics">
-        ${{metricHtml}}
+        ${{metricsHtml}}
       </div>
       <button class="actionToggle primary" type="button" data-actions-toggle="router-actions-${{escapeAttr(r.id)}}" aria-expanded="false">Открыть кнопки</button>
       <div class="actions mobileCollapsed${{actionsOpen ? ' open' : ''}}" id="${{escapeAttr(actionsId)}}">
