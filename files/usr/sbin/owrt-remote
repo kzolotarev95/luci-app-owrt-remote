@@ -134,17 +134,60 @@ memory_text() {
 
 flash_text() {
 	local mount text
-	for mount in /overlay /; do
+	text="$(
+		df -kP 2>/dev/null | awk '
+			function mb(k) {
+				if (k == "" || k == 0) return "0 MB"
+				return sprintf("%.1f MB", k / 1024)
+			}
+			NR == 1 { next }
+			{
+				mount = $NF
+				total = $(NF-4)
+				avail = $(NF-2)
+				pct = $(NF-1)
+				gsub(/%/, "", pct)
+				if (total !~ /^[0-9]+$/ || avail !~ /^[0-9]+$/ || pct !~ /^[0-9]+$/) next
+
+				score = 0
+				if (mount == "/overlay" || mount == "/rom/overlay") score = 400
+				else if (mount == "/") score = 300
+				else if ($1 == "overlayfs:/overlay") score = 250
+				else if (mount ~ /^\/overlay(\/|$)/) score = 200
+				if (score <= best_score) next
+
+				best_score = score
+				best_total = total
+				best_avail = avail
+				best_pct = pct
+			}
+			END {
+				if (best_score > 0) {
+					printf "%s free / %s (%s%% used)", mb(best_avail), mb(best_total), best_pct
+				}
+			}
+		'
+	)"
+	if [ -n "$text" ]; then
+		printf '%s' "$text"
+		return
+	fi
+	for mount in /overlay /rom/overlay /; do
 		text="$(
-			df -k "$mount" 2>/dev/null | awk '
+			df -kP "$mount" 2>/dev/null | awk '
 				function mb(k) {
 					if (k == "" || k == 0) return "0 MB"
 					return sprintf("%.1f MB", k / 1024)
 				}
-				END {
-					if (NF >= 5) {
-						total=$(NF-4); avail=$(NF-2); pct=$(NF-1)
-						printf "%s free / %s (%s used)", mb(avail), mb(total), pct
+				NR == 1 { next }
+				NF >= 5 {
+					total = $(NF-4)
+					avail = $(NF-2)
+					pct = $(NF-1)
+					gsub(/%/, "", pct)
+					if (total ~ /^[0-9]+$/ && avail ~ /^[0-9]+$/ && pct ~ /^[0-9]+$/) {
+						printf "%s free / %s (%s%% used)", mb(avail), mb(total), pct
+						exit
 					}
 				}
 			'
