@@ -2850,13 +2850,24 @@ function metricHtml(label, valueHtml, cls = '') {{
 
 function formatTemperatureHtml(value) {{
   const raw = String(value || '').trim();
+  const text = raw.toLowerCase();
   const match = raw.replace(',', '.').match(/-?\\d+(\\.\\d+)?/);
   if (match) return escapeHtml(raw);
-  return 'Недоступно<span class="metric-note">внешний датчик отсутствует</span>';
+  if (!raw || text === 'unknown') return escapeHtml(metricPlaceholder(value));
+  if (/(sensor|thermal|temp).*?(absent|missing|not found|unavailable)|absent.*sensor|no sensor/i.test(raw)) {{
+    return 'Недоступно<span class="metric-note">внешний датчик отсутствует</span>';
+  }}
+  return escapeHtml(metricPlaceholder(value));
 }}
 
 function tempClass(value) {{
-  const n = Number(String(value || '').replace(',', '.').match(/-?\\d+(\\.\\d+)?/)?.[0]);
+  const raw = String(value || '').trim();
+  const text = raw.toLowerCase();
+  const n = Number(raw.replace(',', '.').match(/-?\\d+(\\.\\d+)?/)?.[0]);
+  if (!raw || text === 'unknown') return 'metric-compact';
+  if (/(sensor|thermal|temp).*?(absent|missing|not found|unavailable)|absent.*sensor|no sensor/i.test(raw)) {{
+    return 'temp-unavailable metric-compact';
+  }}
   if (!Number.isFinite(n)) return 'temp-unavailable metric-compact';
   if (n >= 75) return 'temp-bad';
   if (n >= 60) return 'temp-warn';
