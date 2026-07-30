@@ -2274,6 +2274,7 @@ function memoryUsagePercent(value) {{
 
 function flashUsagePercent(value) {{
   const text = String(value || '');
+  if (/mounted\s+used/i.test(text)) return NaN;
   const explicit = text.match(/(\\d+(?:\\.\\d+)?)\\s*%\\s*used/i);
   if (explicit) return Number(explicit[1]);
   const numbers = text.match(/\\d+(?:\\.\\d+)?/g) || [];
@@ -2285,6 +2286,21 @@ function flashUsagePercent(value) {{
     }}
   }}
   return NaN;
+}}
+
+function flashMetricLooksBroken(value) {{
+  const text = String(value || '').trim();
+  if (!text) return false;
+  if (/mounted\s+used/i.test(text)) return true;
+  return /^0(?:\\.0+)?\\s*[KMGTP]?B\\s*free\\s*\\/\\s*0(?:\\.0+)?\\s*[KMGTP]?B/i.test(text);
+}}
+
+function flashValueForRouter(router) {{
+  const raw = String(router && router.status && router.status.flash || '').trim();
+  const text = raw.toLowerCase();
+  if (raw && text !== 'unknown' && !flashMetricLooksBroken(raw)) return raw;
+  if (router && router.online && flashMetricLooksBroken(raw)) return 'system flash unavailable';
+  return raw || 'unknown';
 }}
 
 function pushUnique(items, text) {{
@@ -2934,6 +2950,9 @@ function formatMemory(value) {{
 
 function formatFlash(value) {{
   const text = String(value || '');
+  if (/system flash unavailable/i.test(text) || flashMetricLooksBroken(text)) {{
+    return 'Системная flash недоступна';
+  }}
   const match = text.match(/(\\d+(?:\\.\\d+)?)\\s*([KMGTP]?B)\\s*free\\s*\\/\\s*(\\d+(?:\\.\\d+)?)\\s*([KMGTP]?B)/i);
   if (!match) return metricPlaceholder(value);
   const free = Number(match[1]);
@@ -2974,6 +2993,9 @@ function formatMemoryHtml(value) {{
 
 function formatFlashHtml(value) {{
   const text = String(value || '');
+  if (/system flash unavailable/i.test(text) || flashMetricLooksBroken(text)) {{
+    return 'Недоступно<span class="metric-note">подключенный диск не считается системной flash</span>';
+  }}
   const match = text.match(/(\\d+(?:\\.\\d+)?)\\s*([KMGTP]?B)\\s*free\\s*\\/\\s*(\\d+(?:\\.\\d+)?)\\s*([KMGTP]?B)/i);
   if (!match) return escapeHtml(metricPlaceholder(value));
   const free = Number(match[1]);
@@ -3019,7 +3041,7 @@ function render(list) {{
     const uptime = r.status && r.status.uptime ? duration(r.status.uptime) : 'unknown';
     const load = formatLoad(metricPlaceholder((r.status && r.status.load) || 'unknown'));
     const memory = formatMemory((r.status && r.status.memory) || 'unknown');
-    const flash = (r.status && r.status.flash) || 'unknown';
+    const flash = flashValueForRouter(r);
     const flashDisplay = formatFlash(flash);
     const temperature = temperatureValueForRouter(r);
     const access = r.access_url || r.public_url;
@@ -3042,7 +3064,7 @@ function render(list) {{
       metric('В сети уже', uptime),
       metric('Был на связи', ago(r.last_seen_iso)),
       metricHtml('Оперативная память', formatMemoryHtml((r.status && r.status.memory) || 'unknown'), memoryClass((r.status && r.status.memory) || 'unknown') + ' metric-compact'),
-      metricHtml('Память Flash', formatFlashHtml(flash), flashClass(flash) + ' metric-compact metric-flash'),
+      metricHtml('Системная Flash', formatFlashHtml(flash), flashClass(flash) + ' metric-compact metric-flash'),
       metricHtml('Температура', formatTemperatureHtml(temperature), tempClass(temperature)),
       metric('Нагрузка', load, 'span2')
     ].join('');
@@ -3137,7 +3159,7 @@ render = function(list) {{
     const uptime = r.status && r.status.uptime ? duration(r.status.uptime) : 'unknown';
     const load = formatLoad(metricPlaceholder((r.status && r.status.load) || 'unknown'));
     const memory = formatMemory((r.status && r.status.memory) || 'unknown');
-    const flash = (r.status && r.status.flash) || 'unknown';
+    const flash = flashValueForRouter(r);
     const flashDisplay = formatFlash(flash);
     const temperature = temperatureValueForRouter(r);
     const access = r.access_url || r.public_url;
@@ -3160,7 +3182,7 @@ render = function(list) {{
       metric('В сети уже', uptime),
       metric('Был на связи', ago(r.last_seen_iso)),
       metricHtml('Оперативная память', formatMemoryHtml((r.status && r.status.memory) || 'unknown'), memoryClass((r.status && r.status.memory) || 'unknown') + ' metric-compact'),
-      metricHtml('Память Flash', formatFlashHtml(flash), flashClass(flash) + ' metric-compact metric-flash'),
+      metricHtml('Системная Flash', formatFlashHtml(flash), flashClass(flash) + ' metric-compact metric-flash'),
       metricHtml('Температура', formatTemperatureHtml(temperature), tempClass(temperature)),
       metric('Нагрузка', load, 'span2')
     ].join('');
