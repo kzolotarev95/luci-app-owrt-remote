@@ -2874,6 +2874,21 @@ function tempClass(value) {{
   return 'temp-ok';
 }}
 
+function routerMissingTemperatureSensor(router) {{
+  const model = String(router && router.status && (router.status.model || router.status.board) || '').toLowerCase();
+  const board = String(router && router.status && router.status.board || '').toLowerCase();
+  const sample = (model + ' ' + board).trim();
+  return /xiaomi.*mi router 3g|mi router 3g|mir3g|xiaomi,mi-router-3g|xiaomi mir3g/.test(sample);
+}}
+
+function temperatureValueForRouter(router) {{
+  const raw = String(router && router.status && router.status.temperature || '').trim();
+  const text = raw.toLowerCase();
+  if (raw && text !== 'unknown') return raw;
+  if (router && router.online && routerMissingTemperatureSensor(router)) return 'external sensor absent';
+  return raw || 'unknown';
+}}
+
 function memoryClass(value) {{
   const used = memoryUsagePercent(value);
   if (!Number.isFinite(used)) return '';
@@ -3006,7 +3021,7 @@ function render(list) {{
     const memory = formatMemory((r.status && r.status.memory) || 'unknown');
     const flash = (r.status && r.status.flash) || 'unknown';
     const flashDisplay = formatFlash(flash);
-    const temperature = (r.status && r.status.temperature) || 'unknown';
+    const temperature = temperatureValueForRouter(r);
     const access = r.access_url || r.public_url;
     const adminButton = online
       ? `<a class="btn" href="${{escapeAttr(access)}}">Админка</a>`
@@ -3124,7 +3139,7 @@ render = function(list) {{
     const memory = formatMemory((r.status && r.status.memory) || 'unknown');
     const flash = (r.status && r.status.flash) || 'unknown';
     const flashDisplay = formatFlash(flash);
-    const temperature = (r.status && r.status.temperature) || 'unknown';
+    const temperature = temperatureValueForRouter(r);
     const access = r.access_url || r.public_url;
     const adminButton = online
       ? `<a class="btn" href="${{escapeAttr(access)}}">Админка</a>`
