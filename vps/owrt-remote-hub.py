@@ -1037,12 +1037,14 @@ def init_db(conn):
             ssh_port integer not null default 22,
             created_at integer not null,
             updated_at integer not null,
+            deleted_at integer not null default 0,
             last_seen integer,
             status_json text not null default '{}'
         )
         """
     )
     ensure_column(conn, "routers", "custom_name", "text not null default ''")
+    ensure_column(conn, "routers", "deleted_at", "integer not null default 0")
     ensure_column(conn, "routers", "ssh_entry_port", "integer not null default 0")
     ensure_column(conn, "routers", "ssh_vless_uuid", "text not null default ''")
     ensure_column(conn, "routers", "ssh_reverse_tag", "text not null default ''")
@@ -1076,16 +1078,32 @@ def get_router(conn, router_id):
     return conn.execute("select * from routers where id = ?", (router_id,)).fetchone()
 
 
+def router_deleted(row):
+    if not row:
+        return False
+    try:
+        return int(row["deleted_at"] or 0) > 0
+    except (IndexError, KeyError, TypeError, ValueError):
+        return False
+
+
+def get_active_router(conn, router_id):
+    row = get_router(conn, router_id)
+    if router_deleted(row):
+        return None
+    return row
+
+
 def get_router_by_entry_port(conn, entry_port, exclude_id=""):
     return conn.execute(
-        "select * from routers where (entry_port = ? or ssh_entry_port = ?) and id != ?",
+        "select * from routers where coalesce(deleted_at, 0) = 0 and (entry_port = ? or ssh_entry_port = ?) and id != ?",
         (int(entry_port), int(entry_port), exclude_id),
     ).fetchone()
 
 
 def get_router_by_any_port(conn, port, exclude_id=""):
     return conn.execute(
-        "select * from routers where (entry_port = ? or ssh_entry_port = ?) and id != ?",
+        "select * from routers where coalesce(deleted_at, 0) = 0 and (entry_port = ? or ssh_entry_port = ?) and id != ?",
         (int(port), int(port), exclude_id),
     ).fetchone()
 
@@ -1104,6 +1122,7 @@ def list_router_rows(conn):
     return conn.execute(
         """
         select * from routers
+        where coalesce(deleted_at, 0) = 0
         order by case role when 'main' then 0 else 1 end, lower(id)
         """
     ).fetchall()
@@ -1337,6 +1356,7 @@ def upsert_router(conn, values):
         "ssh_host": keep_str("ssh_host", "127.0.0.1"),
         "ssh_port": keep_int("ssh_port", 22),
         "updated_at": ts,
+        "deleted_at": 0,
     }
     payload["ssh_port"] = normalize_internal_ssh_port(
         payload["ssh_port"],
@@ -1365,6 +1385,7 @@ def upsert_router(conn, values):
                 ssh_reverse_tag = :ssh_reverse_tag,
                 ssh_host = :ssh_host,
                 ssh_port = :ssh_port,
+                deleted_at = :deleted_at,
                 updated_at = :updated_at
             where id = :id
             """,
@@ -1379,13 +1400,13 @@ def upsert_router(conn, values):
                 vless_encryption, vless_decryption, vless_flow, reverse_tag,
                 public_url, admin_host, admin_port, ssh_entry_port, ssh_vless_uuid,
                 ssh_reverse_tag, ssh_host, ssh_port,
-                created_at, updated_at
+                created_at, updated_at, deleted_at
             ) values (
                 :id, :name, :role, :entry_port, :vps_host, :vless_port, :vless_uuid,
                 :vless_encryption, :vless_decryption, :vless_flow, :reverse_tag,
                 :public_url, :admin_host, :admin_port, :ssh_entry_port, :ssh_vless_uuid,
                 :ssh_reverse_tag, :ssh_host, :ssh_port,
-                :created_at, :updated_at
+                :created_at, :updated_at, :deleted_at
             )
             """,
             payload,
@@ -1398,6 +1419,11 @@ def heartbeat(conn, payload):
     router_id = clean_router_id(payload.get("id"))
     row = get_router(conn, router_id)
     ts = now_ts()
+    status_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    was_deleted = router_deleted(row)
+    old_entry_port = int(row["entry_port"] or 0) if row else 0
+    old_ssh_entry_port = int(row["ssh_entry_port"] or 0) if row else 0
+    created_with_xray_ports = False
     if row:
         entry_port = int(row["entry_port"] or 0)
         ssh_entry_port = int(row["ssh_entry_port"] or 0)
@@ -1420,6 +1446,7 @@ def heartbeat(conn, payload):
                 "ssh_port": ssh_port,
             },
         )
+        created_with_xray_ports = bool(int(row["entry_port"] or 0) or int(row["ssh_entry_port"] or 0))
         ssh_entry_port = int(row["ssh_entry_port"] or 0)
         ssh_port = normalize_internal_ssh_port(payload.get("ssh_port") or 22, int(row["entry_port"] or 0), ssh_entry_port)
     conn.execute(
@@ -1437,7 +1464,8 @@ def heartbeat(conn, payload):
             ssh_port = coalesce(?, ssh_port),
             last_seen = ?,
             status_json = ?,
-            updated_at = ?
+            updated_at = ?,
+            deleted_at = 0
         where id = ?
         """,
         (
@@ -1449,13 +1477,25 @@ def heartbeat(conn, payload):
             payload.get("ssh_host") or "",
             ssh_port,
             ts,
-            json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+            status_json,
             ts,
             router_id,
         ),
     )
     conn.commit()
-    return row_to_router(get_router(conn, router_id))
+    router = row_to_router(get_router(conn, router_id))
+    entry_now = int(router.get("entry_port") or 0)
+    ssh_entry_now = int(router.get("ssh_entry_port") or 0)
+    router["_xray_reload_required"] = bool(
+        (entry_now or ssh_entry_now)
+        and (
+            was_deleted
+            or created_with_xray_ports
+            or old_entry_port != entry_now
+            or old_ssh_entry_port != ssh_entry_now
+        )
+    )
+    return router
 
 
 def rename_router(conn, router_id, name):
@@ -2017,9 +2057,9 @@ def dashboard_html(routers, username, sessions=None, notifications=None):
 body::before{{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none;background:conic-gradient(from 0deg at 50% 50%,rgba(168,85,247,.05),rgba(236,72,153,.34),rgba(59,130,246,.22),rgba(245,158,11,.13),rgba(168,85,247,.05));filter:blur(54px);opacity:.7;animation:auraSpin 38s linear infinite}}
 @keyframes bgFlow{{0%{{background-position:0% 0%,100% 0%,50% 100%,0 0,0 0,0 0}}50%{{background-position:28% 18%,62% 26%,38% 82%,0 0,15px 24px,24px 15px}}100%{{background-position:48% 28%,42% 42%,74% 62%,0 0,30px 0,0 30px}}}}
 @keyframes auraSpin{{from{{transform:rotate(0deg) scale(1)}}to{{transform:rotate(360deg) scale(1.08)}}}}
-.wrap{{position:relative;z-index:1;max-width:1220px;margin:0 auto;padding:22px}}.top{{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;border-bottom:1px solid var(--line);padding:20px 0 18px}}
+.wrap{{position:relative;z-index:1;max-width:1220px;margin:0 auto;padding:22px}}.top{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:20px 0 18px}}
 .brand{{display:flex;align-items:center;gap:14px}}
-h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10);overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px}}.links{{margin-top:8px;flex-wrap:wrap}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{position:relative;align-self:flex-end;justify-content:flex-end;align-content:flex-end;flex-wrap:nowrap;padding-top:42px;max-width:none}}.headerActions .badge,.headerActions .btn{{width:142px;min-width:142px;max-width:142px;min-height:36px;border-radius:999px;padding:8px 10px;white-space:nowrap;font-size:12px}}.badge{{background:rgba(255,255,255,.08);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.nethavenTop{{border-color:rgba(34,211,238,.46);background:linear-gradient(110deg,rgba(14,165,233,.20),rgba(168,85,247,.22),rgba(34,197,94,.14));color:#ecfeff;box-shadow:0 10px 24px rgba(14,165,233,.14),inset 0 1px 0 rgba(255,255,255,.10)}}.nethavenTop::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite;pointer-events:none}}.authToggle{{cursor:pointer}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
+h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10);overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px}}.links{{margin-top:8px;flex-wrap:wrap}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{position:relative;align-self:flex-end;justify-content:flex-end;align-content:flex-end;flex:1 1 auto;min-width:0;flex-wrap:nowrap;gap:6px;padding-top:42px;max-width:none}}.headerActions .badge,.headerActions .btn{{min-height:36px;min-width:132px;padding:8px 12px;border-radius:999px;font-weight:800;font-size:13px;line-height:1;white-space:nowrap}}.headerActions .btn[href="/logout"]{{margin-left:0}}.badge{{background:rgba(255,255,255,.08);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.nethavenTop{{border-color:rgba(34,211,238,.46);background:linear-gradient(110deg,rgba(14,165,233,.20),rgba(168,85,247,.22),rgba(34,197,94,.14));color:#ecfeff;box-shadow:0 10px 24px rgba(14,165,233,.14),inset 0 1px 0 rgba(255,255,255,.10)}}.nethavenTop::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite;pointer-events:none}}.authToggle{{cursor:pointer}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
  .toolbar{{display:grid;grid-template-columns:1fr 1fr 110px 110px 150px auto;gap:10px;margin:18px 0;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px)}}.toolbar input,.toolbar select{{background:rgba(255,255,255,.08);border-color:var(--line);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}}.toolbar input::placeholder{{color:#b9adc9}}
 .authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:60;width:min(640px,calc(100vw - 44px));max-height:min(820px,calc(100svh - 120px));overflow:auto;padding:16px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px);scrollbar-width:thin}}.authMenu[hidden]{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
 .sessionBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.sessionHead{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}}.sessionHead h3{{margin:0;font-size:15px}}.sessionList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.sessionRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.sessionTitle{{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-weight:900}}.sessionMeta{{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.sessionCurrent{{border:1px solid rgba(34,197,94,.38);border-radius:999px;padding:2px 7px;color:#bbf7d0;background:rgba(34,197,94,.13);font-size:11px}}.sessionBtn{{padding:7px 9px;font-size:12px;border-radius:999px}}.sessionEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}
@@ -2035,10 +2075,10 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.nameRow{{display:inline-flex;align-items:center;justify-content:center;gap:8px;max-width:100%;margin-top:12px;vertical-align:top}}.nameRow::before{{content:"";display:block;flex:0 0 28px;width:28px;height:28px}}.name{{margin:0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}}.nameEditBtn{{position:static;display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;padding:0;border:1px solid rgba(251,191,36,.38);border-radius:999px;background:rgba(251,191,36,.12);color:#fde68a;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);cursor:pointer;opacity:.5;transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,opacity .15s ease}}.nameEditBtn:hover,.nameEditBtn:focus-visible{{opacity:1;border-color:rgba(34,211,238,.55);background:rgba(34,211,238,.14);color:#cffafe}}.nameEditBtn:active{{transform:scale(.96)}}.nameEditBtn svg{{width:13px;height:13px;display:block}}.mobilePanelToggle,.routerFormToggle{{display:none;width:100%;margin:14px 0 10px;border-radius:999px}}.routerFormWrap{{display:block}}[hidden],.headerActions[hidden],.routerStats[hidden],.routerFormWrap[hidden]{{display:none!important}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
 .metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong,.metric.memory-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong,.metric.memory-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong,.metric.memory-bad strong{{color:#fecdd3}}.metric>span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.metric.temp-unavailable strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal;color:#f3e8ff}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 .metric.memory-ok strong,.metric.flash-ok strong,.metric.memory-warn strong,.metric.flash-warn strong,.metric.memory-bad strong,.metric.flash-bad strong{{color:#f3e8ff}}.metric.memory-ok .metric-accent,.metric.flash-ok .metric-accent{{color:#bbf7d0}}.metric.memory-warn .metric-accent,.metric.flash-warn .metric-accent{{color:#fde68a}}.metric.memory-bad .metric-accent,.metric.flash-bad .metric-accent{{color:#fecdd3}}.metric-line{{display:block}}.metric-accent{{font-weight:inherit}}
-.brandPanel{{display:grid;grid-template-columns:repeat(2,minmax(0,132px));gap:8px}}.brandPanel .appBanner{{grid-column:1/-1;width:100%;min-width:0}}.brandPanel .links{{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:0}}.brandPanel .links a{{width:100%;min-width:0}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:220px;min-height:34px;margin:0;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
-@media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 1}}.top{{flex-direction:column}}.headerActions{{align-self:flex-start;flex-wrap:wrap;padding-top:0;justify-content:flex-start}}}}
-@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
-@media(max-width:680px){{.brandPanel{{display:none}}.top{{padding:6px 0 8px;gap:8px}}.mobilePanelToggle,.routerFormToggle,.actionToggle{{width:100%;min-height:38px;margin:7px 0;padding:9px 12px;border-radius:999px;font-size:12px;line-height:1}}#hubMenuToggle{{margin-top:0}}.actionToggle{{display:inline-flex}}body.preload-mobile-panels .headerActions,body.preload-mobile-panels .routerFormWrap,body.preload-mobile-panels .routerStats{{display:none!important}}.card .actions.mobileCollapsed:not(.open){{display:none}}.cardTop{{gap:0}}}}
+.brandPanel{{display:grid;grid-template-columns:132px 132px 168px;gap:8px;width:448px;max-width:100%}}.brandPanel .appBanner{{grid-column:1/span 2;width:100%;min-width:0}}.brandPanel .links{{grid-column:1/-1;display:grid;grid-template-columns:132px 132px 168px;gap:8px;margin-top:0}}.brandPanel .links a{{width:100%;min-width:0}}.routerSearchDock{{position:relative;display:block;grid-column:3;grid-row:1;align-self:start;width:168px;max-width:100%}}.mobileSearchDock{{display:none;width:100%;position:relative}}.routerSearchToggle{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;width:100%;padding:8px 14px;border:1px solid rgba(34,211,238,.30);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.12),rgba(124,58,237,.22),rgba(236,72,153,.12));color:#f3e8ff;font-size:13px;font-weight:800;line-height:1;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10)}}.routerSearchToggle[data-active="true"],.routerSearchToggle[aria-expanded="true"]{{border-color:rgba(34,211,238,.52);box-shadow:0 14px 30px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12)}}.routerSearchToggleIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:55;width:min(296px,calc(100vw - 24px))}}.routerSearchPanel[hidden]{{display:none!important}}.routerSearchCard{{display:grid;grid-template-rows:auto auto auto;align-content:start;gap:8px;width:100%;min-height:82px;padding:12px;border:1px solid rgba(34,211,238,.26);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.045)),rgba(19,14,32,.96);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}}.routerSearchHead{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.routerSearchTitle{{display:block;color:#f3e8ff;font-size:12px;font-weight:900;line-height:1.1}}.routerSearchClear{{min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.24);border-radius:999px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:11px;font-weight:850;cursor:pointer}}.routerSearchClear[disabled]{{opacity:.42;cursor:not-allowed}}.routerSearchField{{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.26);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.08),rgba(124,58,237,.14),rgba(236,72,153,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.routerSearchField:focus-within{{border-color:rgba(34,211,238,.54);box-shadow:0 0 0 3px rgba(34,211,238,.10),inset 0 1px 0 rgba(255,255,255,.08)}}.routerSearchField input{{width:100%;padding:0;border:0;background:transparent;color:#f7f2ff;box-shadow:none;outline:none;font-size:13px;font-weight:700}}.routerSearchField input::placeholder{{color:#b9adc9}}.routerSearchIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchMeta{{min-height:14px;color:#c4b5fd;font-size:11px;font-weight:800;line-height:1.2}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:220px;min-height:34px;margin:0;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
+@media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 1}}.top{{flex-direction:column}}.brandPanel{{width:448px}}.headerActions{{align-self:flex-start;flex-wrap:wrap;padding-top:0;justify-content:flex-start}}}}
+@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.routerSearchToggle{{width:100%}}.routerSearchPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
+@media(max-width:680px){{.brandPanel{{display:none}}.top{{padding:6px 0 8px;gap:8px}}.mobileSearchDock{{display:block;margin:0 0 2px}}.mobilePanelToggle,.routerFormToggle,.actionToggle{{width:100%;min-height:38px;margin:7px 0;padding:9px 12px;border-radius:999px;font-size:12px;line-height:1}}#hubMenuToggle{{margin-top:0}}.actionToggle{{display:inline-flex}}body.preload-mobile-panels .headerActions,body.preload-mobile-panels .routerFormWrap,body.preload-mobile-panels .routerStats{{display:none!important}}.card .actions.mobileCollapsed:not(.open){{display:none}}.cardTop{{gap:0}}}}
 @media(max-width:680px){{.headerActions .badge,.headerActions .btn{{width:100%;min-width:0;max-width:none}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
 @media(max-width:680px){{.brandPanel{{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}}.brandPanel .appBanner{{width:100%}}.summary{{justify-content:center}}}}
@@ -2050,15 +2090,53 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <div class="brand">
       <div class="brandPanel">
         <h1 class="appBanner"><span>OpenWrt Remote Hub</span></h1>
+        <div class="routerSearchDock" id="routerSearchDock">
+          <button class="routerSearchToggle" id="routerSearchToggle" type="button" aria-expanded="false" aria-controls="routerSearchPanel" data-active="false">
+            <span class="routerSearchToggleIcon" aria-hidden="true">⌕</span>
+            <span>Поиск роутеров</span>
+          </button>
+          <section class="routerSearchPanel" id="routerSearchPanel" aria-label="Поиск роутеров" hidden>
+            <div class="routerSearchCard">
+              <div class="routerSearchHead">
+                <strong class="routerSearchTitle">Поиск по роутерам</strong>
+                <button class="routerSearchClear" id="routerSearchClear" type="button" disabled>Очистить</button>
+              </div>
+              <label class="routerSearchField" for="routerSearchInput">
+                <span class="routerSearchIcon" aria-hidden="true">⌕</span>
+                <input id="routerSearchInput" type="search" placeholder="Имя или router id" autocomplete="off" spellcheck="false">
+              </label>
+              <div class="routerSearchMeta" id="routerSearchMeta">Всего роутеров: 0</div>
+            </div>
+          </section>
+        </div>
         <div class="links">
           <a href="https://t.me/kzolotarev95" target="_blank" rel="noopener noreferrer">Telegram</a>
           <a href="https://github.com/kzolotarev95" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a class="nethavenTop" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">NetHaven VPN</a>
         </div>
       </div>
     </div>
+    <div class="mobileSearchDock" id="mobileRouterSearchDock">
+      <button class="routerSearchToggle mobilePanelToggle primary" id="mobileRouterSearchToggle" type="button" aria-expanded="false" aria-controls="mobileRouterSearchPanel" data-active="false">
+        <span class="routerSearchToggleIcon" aria-hidden="true">⌕</span>
+        <span>Поиск роутеров</span>
+      </button>
+      <section class="routerSearchPanel" id="mobileRouterSearchPanel" aria-label="Поиск роутеров" hidden>
+        <div class="routerSearchCard">
+          <div class="routerSearchHead">
+            <strong class="routerSearchTitle">Поиск по роутерам</strong>
+            <button class="routerSearchClear" id="mobileRouterSearchClear" type="button" disabled>Очистить</button>
+          </div>
+          <label class="routerSearchField" for="mobileRouterSearchInput">
+            <span class="routerSearchIcon" aria-hidden="true">⌕</span>
+            <input id="mobileRouterSearchInput" type="search" placeholder="Имя или router id" autocomplete="off" spellcheck="false">
+          </label>
+          <div class="routerSearchMeta" id="mobileRouterSearchMeta">Всего роутеров: 0</div>
+        </div>
+      </section>
+    </div>
     <button class="mobilePanelToggle primary" id="hubMenuToggle" type="button" hidden>Открыть меню хаба</button>
     <div class="headerActions">
-      <a class="badge nethavenTop" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">NetHaven VPN</a>
       <a class="badge" href="/vps-terminal/" target="_blank" rel="noopener noreferrer">Терминал VPS</a>
       <button class="badge" id="xrayReload" type="button">Обновить Xray CFG</button>
       <button class="badge" id="xrayRestart" type="button">Рестарт Xray VPS</button>
@@ -2185,6 +2263,18 @@ const routerFormWrap = document.getElementById('routerFormWrap');
 const routerForm = document.getElementById('routerForm');
 const routerFormToggle = document.getElementById('routerFormToggle');
 const routerMsg = document.getElementById('routerMsg');
+const routerSearchDock = document.getElementById('routerSearchDock');
+const routerSearchToggle = document.getElementById('routerSearchToggle');
+const routerSearchPanel = document.getElementById('routerSearchPanel');
+const routerSearchInput = document.getElementById('routerSearchInput');
+const routerSearchClear = document.getElementById('routerSearchClear');
+const routerSearchMeta = document.getElementById('routerSearchMeta');
+const mobileRouterSearchDock = document.getElementById('mobileRouterSearchDock');
+const mobileRouterSearchToggle = document.getElementById('mobileRouterSearchToggle');
+const mobileRouterSearchPanel = document.getElementById('mobileRouterSearchPanel');
+const mobileRouterSearchInput = document.getElementById('mobileRouterSearchInput');
+const mobileRouterSearchClear = document.getElementById('mobileRouterSearchClear');
+const mobileRouterSearchMeta = document.getElementById('mobileRouterSearchMeta');
 const routerIdInput = routerForm && routerForm.elements ? routerForm.elements.namedItem('id') : null;
 const routerNameInput = routerForm && routerForm.elements ? routerForm.elements.namedItem('name') : null;
 const routerRoleInput = routerForm && routerForm.elements ? routerForm.elements.namedItem('role') : null;
@@ -2204,6 +2294,15 @@ const expandedActionPanels = new Set();
 const diagnosticDrafts = new Map();
 let activeDiagnosticRouterId = '';
 let offlineStatsExpanded = false;
+let routerSearchQuery = '';
+let lastRouterSearchTrigger = null;
+
+const routerSearchToggles = [routerSearchToggle, mobileRouterSearchToggle].filter(Boolean);
+const routerSearchPanels = [routerSearchPanel, mobileRouterSearchPanel].filter(Boolean);
+const routerSearchInputs = [routerSearchInput, mobileRouterSearchInput].filter(Boolean);
+const routerSearchClears = [routerSearchClear, mobileRouterSearchClear].filter(Boolean);
+const routerSearchMetas = [routerSearchMeta, mobileRouterSearchMeta].filter(Boolean);
+const routerSearchDocks = [routerSearchDock, mobileRouterSearchDock].filter(Boolean);
 
 function actionPanelId(routerId) {{
   return 'router-actions-' + String(routerId || '');
@@ -2222,7 +2321,7 @@ function syncActionToggleStates(root = cards) {{
     const actionBox = document.getElementById(toggle.dataset.actionsToggle || '');
     const open = Boolean(actionBox && actionBox.classList.contains('open'));
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
-    toggle.textContent = open ? 'Скрыть кнопки' : 'Открыть кнопки';
+    toggle.textContent = open ? 'Скрыть действия' : 'Открыть действия';
   }});
 }}
 
@@ -2244,6 +2343,77 @@ function setDiagnosticDraft(routerId, patch) {{
 function selectedRouter(routerId = activeDiagnosticRouterId) {{
   const key = String(routerId || '');
   return (window.ROUTERS || []).find((router) => String(router.id || '') === key) || null;
+}}
+
+function normalizeRouterSearch(value) {{
+  return String(value || '').toLowerCase().trim().replace(/\s+/g, ' ');
+}}
+
+function syncRouterSearchToggleState() {{
+  const active = routerSearchQuery.trim() ? 'true' : 'false';
+  routerSearchToggles.forEach((toggle) => {{
+    toggle.dataset.active = active;
+  }});
+}}
+
+function syncRouterSearchInputs() {{
+  routerSearchInputs.forEach((input) => {{
+    if (input.value !== routerSearchQuery) input.value = routerSearchQuery;
+  }});
+}}
+
+function syncRouterSearchClears() {{
+  const disabled = !routerSearchQuery.trim();
+  routerSearchClears.forEach((button) => {{
+    button.disabled = disabled;
+  }});
+}}
+
+function setRouterSearchOpen(next, options = {{}}) {{
+  if (!routerSearchPanels.length || !routerSearchToggles.length) return;
+  const open = Boolean(next);
+  routerSearchPanels.forEach((panel) => {{
+    panel.hidden = !open;
+  }});
+  routerSearchToggles.forEach((toggle) => {{
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }});
+  syncRouterSearchToggleState();
+  if (open && options.focusInput !== false) {{
+    const preferredInput = options.preferredInput && routerSearchInputs.includes(options.preferredInput)
+      ? options.preferredInput
+      : (lastRouterSearchTrigger === mobileRouterSearchToggle ? mobileRouterSearchInput : routerSearchInput) || routerSearchInputs[0];
+    if (preferredInput) {{
+      window.requestAnimationFrame(() => preferredInput.focus());
+    }}
+  }}
+}}
+
+function routerMatchesSearch(router, query) {{
+  if (!query) return true;
+  const sample = normalizeRouterSearch([
+    router && router.name,
+    router && router.id,
+    router && router.status && router.status.model,
+    router && router.status && router.status.board
+  ].filter(Boolean).join(' '));
+  return sample.includes(query);
+}}
+
+function filteredRouters(list = window.ROUTERS || []) {{
+  const query = normalizeRouterSearch(routerSearchQuery);
+  if (!query) return list;
+  return list.filter((router) => routerMatchesSearch(router, query));
+}}
+
+function updateRouterSearchMeta(total, visible) {{
+  if (!routerSearchMetas.length) return;
+  const text = !routerSearchQuery.trim()
+    ? `Всего роутеров: ${{total}}`
+    : (visible ? `Найдено: ${{visible}} из ${{total}}` : 'Ничего не найдено');
+  routerSearchMetas.forEach((meta) => {{
+    meta.textContent = text;
+  }});
 }}
 
 function numericMetric(value) {{
@@ -3078,7 +3248,7 @@ function render(list) {{
       <div class="metrics">
         ${{metricsHtml}}
       </div>
-      <button class="actionToggle primary" type="button" data-actions-toggle="router-actions-${{escapeAttr(r.id)}}" aria-expanded="false">Открыть кнопки</button>
+      <button class="actionToggle primary" type="button" data-actions-toggle="${{escapeAttr(actionsId)}}" aria-expanded="${{actionsOpen ? 'true' : 'false'}}">${{actionsOpen ? 'Скрыть действия' : 'Открыть действия'}}</button>
       <div class="actions mobileCollapsed${{actionsOpen ? ' open' : ''}}" id="${{escapeAttr(actionsId)}}">
         ${{adminButton}}
         ${{sshButton}}
@@ -3140,7 +3310,6 @@ function renderRouterStats(list) {{
 }}
 
 render = function(list) {{
-  renderRouterStats(list);
   syncExpandedActionPanels(list);
   if (!list.length) {{
     cards.innerHTML = '<div class="empty">Пока нет роутеров. Добавь первый, например <b>main</b>.</div>';
@@ -3194,7 +3363,7 @@ render = function(list) {{
       <div class="metrics">
         ${{metricsHtml}}
       </div>
-      <button class="actionToggle primary" type="button" data-actions-toggle="router-actions-${{escapeAttr(r.id)}}" aria-expanded="false">Открыть кнопки</button>
+      <button class="actionToggle primary" type="button" data-actions-toggle="${{escapeAttr(actionsId)}}" aria-expanded="${{actionsOpen ? 'true' : 'false'}}">${{actionsOpen ? 'Скрыть действия' : 'Открыть действия'}}</button>
       <div class="actions mobileCollapsed${{actionsOpen ? ' open' : ''}}" id="${{escapeAttr(actionsId)}}">
         ${{adminButton}}
         ${{sshButton}}
@@ -3207,6 +3376,20 @@ render = function(list) {{
   }}).join('');
   syncActionToggleStates();
 }};
+
+function renderRouterView() {{
+  const allRouters = window.ROUTERS || [];
+  const visibleRouters = filteredRouters(allRouters);
+  renderRouterStats(allRouters);
+  updateRouterSearchMeta(allRouters.length, visibleRouters.length);
+  if (!visibleRouters.length) {{
+    cards.innerHTML = routerSearchQuery.trim()
+      ? '<div class="empty">По этому запросу роутеры не найдены. Попробуй имя, router id или часть модели.</div>'
+      : '<div class="empty">Пока нет роутеров. Добавь первый, например <b>main</b>.</div>';
+    return;
+  }}
+  render(visibleRouters);
+}}
 
 function nextEntryPort(list) {{
   const used = new Set();
@@ -3317,6 +3500,52 @@ if (routerNameInput) {{
     routerNameInput.dataset.touched = '1';
   }});
 }}
+routerSearchInputs.forEach((input) => {{
+  input.addEventListener('input', () => {{
+    routerSearchQuery = input.value || '';
+    syncRouterSearchInputs();
+    syncRouterSearchClears();
+    syncRouterSearchToggleState();
+    renderRouterView();
+  }});
+}});
+routerSearchClears.forEach((button) => {{
+  button.addEventListener('click', () => {{
+    routerSearchQuery = '';
+    syncRouterSearchInputs();
+    syncRouterSearchClears();
+    syncRouterSearchToggleState();
+    renderRouterView();
+    const focusTarget = button === mobileRouterSearchClear ? mobileRouterSearchInput : routerSearchInput;
+    if (focusTarget) focusTarget.focus();
+  }});
+}});
+routerSearchToggles.forEach((toggle) => {{
+  toggle.addEventListener('click', (ev) => {{
+    ev.stopPropagation();
+    lastRouterSearchTrigger = toggle;
+    const panel = toggle === mobileRouterSearchToggle ? mobileRouterSearchPanel : routerSearchPanel;
+    const input = toggle === mobileRouterSearchToggle ? mobileRouterSearchInput : routerSearchInput;
+    setRouterSearchOpen(panel ? panel.hidden : true, {{preferredInput: input}});
+  }});
+}});
+routerSearchPanels.forEach((panel) => {{
+  panel.addEventListener('click', (ev) => ev.stopPropagation());
+}});
+document.addEventListener('click', (ev) => {{
+  if (!routerSearchPanels.length || routerSearchPanels.every((panel) => panel.hidden)) return;
+  if (routerSearchDocks.some((dock) => dock && dock.contains(ev.target))) return;
+  setRouterSearchOpen(false, {{focusInput: false}});
+}});
+document.addEventListener('keydown', (ev) => {{
+  if (ev.key !== 'Escape' || !routerSearchPanels.length || routerSearchPanels.every((panel) => panel.hidden)) return;
+  setRouterSearchOpen(false, {{focusInput: false}});
+  if (lastRouterSearchTrigger) {{
+    lastRouterSearchTrigger.focus();
+  }} else if (routerSearchToggle) {{
+    routerSearchToggle.focus();
+  }}
+}});
 diagnosticClose.addEventListener('click', closeDiagnosticPanel);
 diagnosticWorks.addEventListener('input', () => {{
   if (!activeDiagnosticRouterId) return;
@@ -3387,7 +3616,7 @@ async function loadRouters() {{
   if (res.ok) {{
     const data = await res.json();
     window.ROUTERS = data.routers;
-    render(window.ROUTERS);
+    renderRouterView();
     fillRouterForm(false);
     refreshDiagnosticPanel();
   }}
@@ -3456,7 +3685,7 @@ cards.addEventListener('click', async (ev) => {{
     if (open) expandedActionPanels.add(actionsToggleId);
     else expandedActionPanels.delete(actionsToggleId);
     ev.target.setAttribute('aria-expanded', open ? 'true' : 'false');
-    ev.target.textContent = open ? 'Скрыть кнопки' : 'Открыть кнопки';
+    ev.target.textContent = open ? 'Скрыть действия' : 'Открыть действия';
     return;
   }}
   const renameId = ev.target.closest('[data-rename]')?.dataset?.rename;
@@ -3496,9 +3725,9 @@ cards.addEventListener('click', async (ev) => {{
 }});
 
 if (typeof mobileCardsMq.addEventListener === 'function') {{
-  mobileCardsMq.addEventListener('change', () => render(window.ROUTERS || []));
+  mobileCardsMq.addEventListener('change', () => renderRouterView());
 }} else if (typeof mobileCardsMq.addListener === 'function') {{
-  mobileCardsMq.addListener(() => render(window.ROUTERS || []));
+  mobileCardsMq.addListener(() => renderRouterView());
 }}
 function updateMobileChromeToggles() {{
   updateRouterFormToggle();
@@ -3895,7 +4124,8 @@ document.getElementById('authForm').addEventListener('submit', async (ev) => {{
 renderSessions(window.HUB_SESSIONS);
 renderNotifications(window.HUB_NOTIFICATIONS);
 updateNotifyButton();
-render(window.ROUTERS);
+syncRouterSearchToggleState();
+renderRouterView();
 fillRouterForm(true);
 setInterval(loadRouters, 5000);
 setInterval(loadNotifications, 9000);
@@ -4858,7 +5088,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         router_id = self.router_id_from_path("/ssh/")
         with self.app.conn() as conn:
-            row = get_router(conn, router_id)
+            row = get_active_router(conn, router_id)
         if not row:
             self.send_text(404, "router not found")
             return
@@ -4896,7 +5126,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not is_vps_terminal_id(router_id):
             with self.app.conn() as conn:
-                row = get_router(conn, router_id)
+                row = get_active_router(conn, router_id)
             if not row:
                 self.send_response(404)
                 self.end_headers()
@@ -4933,7 +5163,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, {"ok": True, "router_id": router_id, "tcp_ok": True, "mode": "local-shell"})
             return
         with self.app.conn() as conn:
-            row = get_router(conn, router_id)
+            row = get_active_router(conn, router_id)
         if not row:
             self.send_json(404, {"ok": False, "error": "router not found", "tcp_ok": False})
             return
@@ -5096,7 +5326,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(500, {"ok": False, "error": str(exc)})
             return
         with self.app.conn() as conn:
-            row = get_router(conn, router_id)
+            row = get_active_router(conn, router_id)
         if not row:
             self.send_json(404, {"ok": False, "error": "router not found"})
             return
@@ -5467,6 +5697,13 @@ class Handler(BaseHTTPRequestHandler):
                 payload = self.read_payload()
                 with self.app.conn() as conn:
                     router = heartbeat(conn, payload)
+                xray_reload = None
+                if router and router.pop("_xray_reload_required", False):
+                    try:
+                        xray_reload = reload_vps_xray(self.app.db_path)
+                    except Exception as exc:
+                        self.log_message("heartbeat xray reload error: %s", exc)
+                        xray_reload = {"error": str(exc)}
                 xray_restart = None
                 if payload.get("event") == "wan-reconnect":
                     try:
@@ -5474,7 +5711,15 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception as exc:
                         self.log_message("wan reconnect xray restart error: %s", exc)
                         xray_restart = {"error": str(exc)}
-                self.send_json(200, {"ok": True, "router": router, "xray_restart": xray_restart})
+                self.send_json(
+                    200,
+                    {
+                        "ok": True,
+                        "router": router,
+                        "xray_reload": xray_reload,
+                        "xray_restart": xray_restart,
+                    },
+                )
             except Exception as exc:
                 self.log_message("heartbeat error: %s", exc)
                 self.send_json(400, {"ok": False, "error": str(exc)})
@@ -5575,7 +5820,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_text(400, "entry_port должен быть больше 0")
                     return
                 with self.app.conn() as conn:
-                    if get_router(conn, router_id):
+                    existing = get_router(conn, router_id)
+                    if existing and not router_deleted(existing):
                         self.send_text(
                             409,
                             f"Router ID '{router_id}' уже есть. Для второго роутера укажи новый ID, например node-2 или main123.",
@@ -5614,10 +5860,25 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/api/router/") and path.endswith("/delete"):
             router_id = urllib.parse.unquote(path.split("/")[3])
+            deleted = False
+            xray_result = None
+            warnings = []
             with self.app.conn() as conn:
-                conn.execute("delete from routers where id = ?", (router_id,))
-                conn.commit()
-            self.send_json(200, {"ok": True})
+                row = get_router(conn, router_id)
+                if row and not router_deleted(row):
+                    ts = now_ts()
+                    conn.execute(
+                        "update routers set deleted_at = ?, updated_at = ? where id = ?",
+                        (ts, ts, router_id),
+                    )
+                    conn.commit()
+                    deleted = True
+            if deleted:
+                try:
+                    xray_result = reload_vps_xray(self.app.db_path)
+                except Exception as exc:
+                    warnings.append(f"xray reload skipped: {exc}")
+            self.send_json(200, {"ok": True, "deleted": deleted, "xray": xray_result, "warnings": warnings})
             return
         self.send_text(404, "not found")
 
@@ -5629,7 +5890,7 @@ class Handler(BaseHTTPRequestHandler):
         _, router_id, asset = parts
         router_id = urllib.parse.unquote(router_id)
         with self.app.conn() as conn:
-            row = get_router(conn, router_id)
+            row = get_active_router(conn, router_id)
         if not row:
             self.send_text(404, "router not found")
             return
@@ -5652,7 +5913,7 @@ class Handler(BaseHTTPRequestHandler):
         router_id = urllib.parse.unquote(parts[2])
         rest = "/" + parts[3] if len(parts) == 4 else "/"
         with self.app.conn() as conn:
-            row = get_router(conn, router_id)
+            row = get_active_router(conn, router_id)
         if not row:
             self.send_text(404, "router not found")
             return
