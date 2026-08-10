@@ -2513,7 +2513,7 @@ function renderWolPanelRich(router) {{
       <h3 class="wolTitle">Wake-on-LAN</h3>
     </div>
     <div class="wolControls">
-      <label class="wolField wolDeviceField">
+      <div class="wolField wolDeviceField">
         <span>Устройство</span>
         <button class="wolPickerToggle" type="button" data-wol-picker-toggle="${{escapeAttr(router.id)}}" aria-expanded="${{state.pickerOpen ? 'true' : 'false'}}"${{state.loading || state.waking ? ' disabled' : ''}}>
           <span class="wolPickerValue">
@@ -2523,7 +2523,7 @@ function renderWolPanelRich(router) {{
           <span class="wolPickerChevron">${{state.pickerOpen ? '&#9650;' : '&#9660;'}}</span>
         </button>
         ${{state.pickerOpen ? `<div class="wolPickerList">${{deviceList}}</div>` : ''}}
-      </label>
+      </div>
       <label class="wolField">
         <span>SSH пароль</span>
         <input type="password" data-wol-password="${{escapeAttr(router.id)}}" value="${{escapeAttr(state.sshPassword || '')}}" placeholder="Если SSH по паролю"${{state.loading || state.waking ? ' disabled' : ''}}>
@@ -3993,22 +3993,25 @@ cards.addEventListener('click', async (ev) => {{
     }}
     return;
   }}
-  const wolPickerToggle = ev.target.closest('[data-wol-picker-toggle]')?.dataset?.wolPickerToggle;
-  if (wolPickerToggle) {{
-    const state = getWolState(wolPickerToggle);
-    const pickerOpen = !state.pickerOpen;
-    setWolState(wolPickerToggle, {{pickerOpen}});
-    renderRouterView();
-    if (!pickerOpen) flushDeferredRouterRender();
-    return;
-  }}
   const wolPickButton = ev.target.closest('[data-wol-pick]');
   if (wolPickButton) {{
+    ev.preventDefault();
+    ev.stopPropagation();
     const routerId = wolPickButton.dataset.wolPick;
     const mac = wolPickButton.dataset.wolMac || '';
     setWolState(routerId, {{selectedMac: mac, pickerOpen: false, error: '', message: ''}});
     renderRouterView();
     flushDeferredRouterRender();
+    return;
+  }}
+  const wolPickerToggle = ev.target.closest('[data-wol-picker-toggle]')?.dataset?.wolPickerToggle;
+  if (wolPickerToggle) {{
+    ev.preventDefault();
+    const state = getWolState(wolPickerToggle);
+    const pickerOpen = !state.pickerOpen;
+    setWolState(wolPickerToggle, {{pickerOpen}});
+    renderRouterView();
+    if (!pickerOpen) flushDeferredRouterRender();
     return;
   }}
   const wolRefreshId = ev.target?.dataset?.wolRefresh;
