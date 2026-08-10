@@ -2293,6 +2293,7 @@ const diagnosticBlocks = document.getElementById('diagnosticBlocks');
 const expandedActionPanels = new Set();
 const diagnosticDrafts = new Map();
 const wolStateByRouter = new Map();
+let pendingRouterRender = false;
 let activeDiagnosticRouterId = '';
 let offlineStatsExpanded = false;
 let routerSearchQuery = '';
@@ -2396,6 +2397,18 @@ function setWolState(routerId, patch) {{
   }}
   wolStateByRouter.set(key, next);
   return next;
+}}
+
+function activeWolSelect() {{
+  const element = document.activeElement;
+  if (!element || !element.matches) return null;
+  return element.matches('[data-wol-select]') ? element : null;
+}}
+
+function flushDeferredRouterRender() {{
+  if (!pendingRouterRender) return;
+  pendingRouterRender = false;
+  renderRouterView();
 }}
 
 function selectedRouter(routerId = activeDiagnosticRouterId) {{
@@ -3829,7 +3842,8 @@ async function loadRouters() {{
   if (res.ok) {{
     const data = await res.json();
     window.ROUTERS = data.routers;
-    renderRouterView();
+    if (activeWolSelect()) pendingRouterRender = true;
+    else renderRouterView();
     fillRouterForm(false);
     refreshDiagnosticPanel();
   }}
@@ -3884,6 +3898,7 @@ cards.addEventListener('change', (ev) => {{
   const routerId = ev.target?.dataset?.wolSelect;
   if (!routerId) return;
   setWolState(routerId, {{selectedMac: ev.target.value || '', error: '', message: ''}});
+  renderRouterView();
 }});
 
 cards.addEventListener('input', (ev) => {{
@@ -3892,6 +3907,14 @@ cards.addEventListener('input', (ev) => {{
   const value = ev.target.value || '';
   saveWolPassword(routerId, value);
   setWolState(routerId, {{sshPassword: value, error: '', message: ''}});
+}});
+
+cards.addEventListener('focusout', (ev) => {{
+  if (!ev.target?.matches?.('[data-wol-select]')) return;
+  window.setTimeout(() => {{
+    if (activeWolSelect()) return;
+    flushDeferredRouterRender();
+  }}, 0);
 }});
 
 cards.addEventListener('click', async (ev) => {{
