@@ -2411,13 +2411,13 @@ function hasOpenWolPicker() {{
   return false;
 }}
 
-function activeWolPasswordField() {{
+function activeWolInteractiveField() {{
   const active = document.activeElement;
-  return active && typeof active.matches === 'function' && active.matches('[data-wol-password]') ? active : null;
+  return active && typeof active.matches === 'function' && active.matches('[data-wol-password],[data-wol-select]') ? active : null;
 }}
 
 function shouldDeferRouterRender() {{
-  return hasOpenWolPicker() || Boolean(activeWolPasswordField());
+  return hasOpenWolPicker() || Boolean(activeWolInteractiveField());
 }}
 
 function clearPendingWolBlurFlush() {{
@@ -4023,12 +4023,12 @@ cards.addEventListener('change', (ev) => {{
 }});
 
 cards.addEventListener('focusin', (ev) => {{
-  if (!ev.target?.matches?.('[data-wol-password]')) return;
+  if (!ev.target?.matches?.('[data-wol-password],[data-wol-select]')) return;
   clearPendingWolBlurFlush();
 }});
 
 cards.addEventListener('focusout', (ev) => {{
-  if (!ev.target?.matches?.('[data-wol-password]')) return;
+  if (!ev.target?.matches?.('[data-wol-password],[data-wol-select]')) return;
   scheduleWolBlurFlush();
 }});
 
