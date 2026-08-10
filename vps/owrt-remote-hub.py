@@ -2580,6 +2580,10 @@ function renderWolPanelRich(router) {{
   </div>`;
 }}
 
+function renderWolPanelResponsive(router) {{
+  return mobileLayoutMq.matches ? renderWolPanel(router) : renderWolPanelRich(router);
+}}
+
 function normalizeRouterSearch(value) {{
   return String(value || '').toLowerCase().trim().replace(/\s+/g, ' ');
 }}
@@ -3498,7 +3502,7 @@ function render(list) {{
         <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
         <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
-      ${{wolReady ? renderWolPanelRich(r) : ''}}
+      ${{wolReady ? renderWolPanelResponsive(r) : ''}}
       </div>
     </article>`;
   }}).join('');
@@ -3620,7 +3624,7 @@ render = function(list) {{
         <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
         <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
-      ${{wolReady ? renderWolPanelRich(r) : ''}}
+      ${{wolReady ? renderWolPanelResponsive(r) : ''}}
     </article>`;
   }}).join('');
   syncActionToggleStates();
@@ -4005,6 +4009,17 @@ cards.addEventListener('input', (ev) => {{
   saveWolPassword(routerId, value);
   const state = getWolState(routerId);
   wolStateByRouter.set(String(routerId), Object.assign({{}}, state, {{sshPassword: value, error: '', message: ''}}));
+}});
+
+cards.addEventListener('change', (ev) => {{
+  const routerId = ev.target?.dataset?.wolSelect;
+  if (!routerId) return;
+  ev.stopPropagation();
+  clearPendingWolBlurFlush();
+  const mac = String(ev.target.value || '');
+  setWolState(routerId, {{selectedMac: mac, pickerOpen: false, error: '', message: ''}});
+  renderRouterView();
+  flushDeferredRouterRender();
 }});
 
 cards.addEventListener('focusin', (ev) => {{
