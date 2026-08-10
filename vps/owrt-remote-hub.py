@@ -2073,11 +2073,11 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 @keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.nameRow{{display:inline-flex;align-items:center;justify-content:center;gap:8px;max-width:100%;margin-top:12px;vertical-align:top}}.nameRow::before{{content:"";display:block;flex:0 0 28px;width:28px;height:28px}}.name{{margin:0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}}.nameEditBtn{{position:static;display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;padding:0;border:1px solid rgba(251,191,36,.38);border-radius:999px;background:rgba(251,191,36,.12);color:#fde68a;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);cursor:pointer;opacity:.5;transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,opacity .15s ease}}.nameEditBtn:hover,.nameEditBtn:focus-visible{{opacity:1;border-color:rgba(34,211,238,.55);background:rgba(34,211,238,.14);color:#cffafe}}.nameEditBtn:active{{transform:scale(.96)}}.nameEditBtn svg{{width:13px;height:13px;display:block}}.mobilePanelToggle,.routerFormToggle{{display:none;width:100%;margin:14px 0 10px;border-radius:999px}}.routerFormWrap{{display:block}}[hidden],.headerActions[hidden],.routerStats[hidden],.routerFormWrap[hidden]{{display:none!important}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
-.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong,.metric.memory-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong,.metric.memory-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong,.metric.memory-bad strong{{color:#fecdd3}}.metric>span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.metric.temp-unavailable strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal;color:#f3e8ff}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong,.metric.memory-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong,.metric.memory-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong,.metric.memory-bad strong{{color:#fecdd3}}.metric>span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.metric.temp-unavailable strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal;color:#f3e8ff}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.wolPanel{{display:grid;gap:10px;margin-top:12px;padding:12px;border:1px solid rgba(34,211,238,.20);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),rgba(18,14,30,.82);text-align:left}}.wolPanel[hidden]{{display:none!important}}.wolHeader{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.wolTitle{{margin:0;color:#f3e8ff;font-size:13px;font-weight:900}}.wolMeta{{min-height:16px;color:#c4b5fd;font-size:12px;line-height:1.35}}.wolMeta.bad{{color:#fecdd3}}.wolControls{{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:end}}.wolField{{display:grid;gap:6px;min-width:0;color:#ddd6fe;font-size:11px;font-weight:850}}.wolField select{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField select:focus{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolControls .btn,.wolControls button{{min-height:38px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 .metric.memory-ok strong,.metric.flash-ok strong,.metric.memory-warn strong,.metric.flash-warn strong,.metric.memory-bad strong,.metric.flash-bad strong{{color:#f3e8ff}}.metric.memory-ok .metric-accent,.metric.flash-ok .metric-accent{{color:#bbf7d0}}.metric.memory-warn .metric-accent,.metric.flash-warn .metric-accent{{color:#fde68a}}.metric.memory-bad .metric-accent,.metric.flash-bad .metric-accent{{color:#fecdd3}}.metric-line{{display:block}}.metric-accent{{font-weight:inherit}}
 .brandPanel{{display:grid;grid-template-columns:132px 132px 168px;gap:8px;width:448px;max-width:100%}}.brandPanel .appBanner{{grid-column:1/span 2;width:100%;min-width:0}}.brandPanel .links{{grid-column:1/-1;display:grid;grid-template-columns:132px 132px 168px;gap:8px;margin-top:0}}.brandPanel .links a{{width:100%;min-width:0}}.routerSearchDock{{position:relative;display:block;grid-column:3;grid-row:1;align-self:start;width:168px;max-width:100%}}.mobileSearchDock{{display:none;width:100%;position:relative}}.routerSearchToggle{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;width:100%;padding:8px 14px;border:1px solid rgba(34,211,238,.30);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.12),rgba(124,58,237,.22),rgba(236,72,153,.12));color:#f3e8ff;font-size:13px;font-weight:800;line-height:1;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10)}}.routerSearchToggle[data-active="true"],.routerSearchToggle[aria-expanded="true"]{{border-color:rgba(34,211,238,.52);box-shadow:0 14px 30px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12)}}.routerSearchToggleIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:55;width:min(296px,calc(100vw - 24px))}}.routerSearchPanel[hidden]{{display:none!important}}.routerSearchCard{{display:grid;grid-template-rows:auto auto auto;align-content:start;gap:8px;width:100%;min-height:82px;padding:12px;border:1px solid rgba(34,211,238,.26);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.045)),rgba(19,14,32,.96);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}}.routerSearchHead{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.routerSearchTitle{{display:block;color:#f3e8ff;font-size:12px;font-weight:900;line-height:1.1}}.routerSearchClear{{min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.24);border-radius:999px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:11px;font-weight:850;cursor:pointer}}.routerSearchClear[disabled]{{opacity:.42;cursor:not-allowed}}.routerSearchField{{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.26);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.08),rgba(124,58,237,.14),rgba(236,72,153,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.routerSearchField:focus-within{{border-color:rgba(34,211,238,.54);box-shadow:0 0 0 3px rgba(34,211,238,.10),inset 0 1px 0 rgba(255,255,255,.08)}}.routerSearchField input{{width:100%;padding:0;border:0;background:transparent;color:#f7f2ff;box-shadow:none;outline:none;font-size:13px;font-weight:700}}.routerSearchField input::placeholder{{color:#b9adc9}}.routerSearchIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchMeta{{min-height:14px;color:#c4b5fd;font-size:11px;font-weight:800;line-height:1.2}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:220px;min-height:34px;margin:0;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 1}}.top{{flex-direction:column}}.brandPanel{{width:448px}}.headerActions{{align-self:flex-start;flex-wrap:wrap;padding-top:0;justify-content:flex-start}}}}
-@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.routerSearchToggle{{width:100%}}.routerSearchPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}}}
+@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.routerSearchToggle{{width:100%}}.routerSearchPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}.wolControls{{grid-template-columns:1fr}}.wolField span,.wolMeta{{text-align:center}}.wolControls .btn,.wolControls button{{width:100%}}}}
 @media(max-width:680px){{.brandPanel{{display:none}}.top{{padding:6px 0 8px;gap:8px}}.mobileSearchDock{{display:block;margin:0 0 2px}}.mobilePanelToggle,.routerFormToggle,.actionToggle{{width:100%;min-height:38px;margin:7px 0;padding:9px 12px;border-radius:999px;font-size:12px;line-height:1}}#hubMenuToggle{{margin-top:0}}.actionToggle{{display:inline-flex}}body.preload-mobile-panels .headerActions,body.preload-mobile-panels .routerFormWrap,body.preload-mobile-panels .routerStats{{display:none!important}}.card .actions.mobileCollapsed:not(.open){{display:none}}.cardTop{{gap:0}}}}
 @media(max-width:680px){{.headerActions .badge,.headerActions .btn{{width:100%;min-width:0;max-width:none}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
@@ -2292,6 +2292,7 @@ const diagnosticSummary = document.getElementById('diagnosticSummary');
 const diagnosticBlocks = document.getElementById('diagnosticBlocks');
 const expandedActionPanels = new Set();
 const diagnosticDrafts = new Map();
+const wolStateByRouter = new Map();
 let activeDiagnosticRouterId = '';
 let offlineStatsExpanded = false;
 let routerSearchQuery = '';
@@ -2306,6 +2307,10 @@ const routerSearchDocks = [routerSearchDock, mobileRouterSearchDock].filter(Bool
 
 function actionPanelId(routerId) {{
   return 'router-actions-' + String(routerId || '');
+}}
+
+function wolPanelId(routerId) {{
+  return 'router-wol-' + String(routerId || '');
 }}
 
 function syncExpandedActionPanels(list) {{
@@ -2340,9 +2345,99 @@ function setDiagnosticDraft(routerId, patch) {{
   return next;
 }}
 
+function getWolState(routerId) {{
+  const key = String(routerId || '');
+  if (!wolStateByRouter.has(key)) {{
+    wolStateByRouter.set(key, {{
+      open: false,
+      loaded: false,
+      loading: false,
+      waking: false,
+      error: '',
+      message: '',
+      selectedMac: '',
+      devices: []
+    }});
+  }}
+  return wolStateByRouter.get(key);
+}}
+
+function setWolState(routerId, patch) {{
+  const key = String(routerId || '');
+  const current = getWolState(key);
+  const next = Object.assign({{}}, current, patch || {{}});
+  const devices = Array.isArray(next.devices) ? next.devices : [];
+  if (devices.length) {{
+    const selectedExists = devices.some((item) => String(item.mac || '') === String(next.selectedMac || ''));
+    if (!selectedExists) next.selectedMac = String(devices[0].mac || '');
+  }} else {{
+    next.selectedMac = '';
+  }}
+  wolStateByRouter.set(key, next);
+  return next;
+}}
+
 function selectedRouter(routerId = activeDiagnosticRouterId) {{
   const key = String(routerId || '');
   return (window.ROUTERS || []).find((router) => String(router.id || '') === key) || null;
+}}
+
+function routerSupportsWol(router) {{
+  const status = router && router.status ? router.status : {{}};
+  return Boolean(router && router.online && String(status.ssh || '') === 'running' && Number(router.ssh_entry_port || 0) > 0);
+}}
+
+function wolOptionLabel(device) {{
+  if (!device) return '';
+  const parts = [];
+  if (device.name) parts.push(device.name);
+  if (device.ip) parts.push(device.ip);
+  parts.push(device.mac || '');
+  return parts.filter(Boolean).join(' | ');
+}}
+
+function wolMetaText(state) {{
+  if (!state) return '';
+  if (state.loading) return 'Собираю список устройств с роутера...';
+  if (state.waking) return 'Отправляю Wake-on-LAN пакет...';
+  if (state.error) return state.error;
+  if (state.message) return state.message;
+  const count = Array.isArray(state.devices) ? state.devices.length : 0;
+  if (state.loaded && !count) return 'Устройства не найдены. Проверь DHCP leases или ARP на роутере.';
+  if (count) return `Найдено устройств: ${{count}}`;
+  return 'Открой список устройств для пробуждения.';
+}}
+
+function renderWolPanel(router) {{
+  const state = getWolState(router.id);
+  const panelId = wolPanelId(router.id);
+  const devices = Array.isArray(state.devices) ? state.devices : [];
+  const options = devices.length
+    ? devices.map((device) => {{
+        const selected = String(device.mac || '') === String(state.selectedMac || '') ? ' selected' : '';
+        const meta = [device.iface, device.source].filter(Boolean).join(' | ');
+        const label = meta ? `${{wolOptionLabel(device)}} (${{meta}})` : wolOptionLabel(device);
+        return `<option value="${{escapeAttr(device.mac || '')}}" data-iface="${{escapeAttr(device.iface || '')}}"${{selected}}>${{escapeHtml(label)}}</option>`;
+      }}).join('')
+    : '<option value="">Устройств пока нет</option>';
+  const wakeDisabled = state.loading || state.waking || !devices.length || !state.selectedMac;
+  const metaClass = state.error ? 'wolMeta bad' : 'wolMeta';
+  return `<div class="wolPanel" id="${{escapeAttr(panelId)}}"${{state.open ? '' : ' hidden'}}>
+    <div class="wolHeader">
+      <h3 class="wolTitle">Wake-on-LAN</h3>
+    </div>
+    <div class="wolControls">
+      <label class="wolField">
+        <span>Устройство</span>
+        <select data-wol-select="${{escapeAttr(router.id)}}"${{state.loading || state.waking ? ' disabled' : ''}}>
+          ${{options}}
+        </select>
+      </label>
+      <button class="btn" type="button" data-wol-refresh="${{escapeAttr(router.id)}}"${{state.loading || state.waking ? ' disabled' : ''}}>Обновить</button>
+      <button class="btn primary" type="button" data-wol-send="${{escapeAttr(router.id)}}"${{wakeDisabled ? ' disabled' : ''}}>Разбудить</button>
+    </div>
+    <div class="${{metaClass}}">${{escapeHtml(wolMetaText(state))}}</div>
+  </div>`;
 }}
 
 function normalizeRouterSearch(value) {{
@@ -3222,6 +3317,11 @@ function render(list) {{
     const sshButton = sshReady
       ? `<a class="btn" href="${{escapeAttr(r.ssh_url || ('/ssh/' + encodeURIComponent(r.id) + '/'))}}" target="_blank" rel="noopener noreferrer">SSH</a>`
       : `<span class="btn disabled">SSH</span>`;
+    const wolReady = routerSupportsWol(r);
+    const wolState = getWolState(r.id);
+    const wolButton = wolReady
+      ? `<button class="btn" data-wol-toggle="${{escapeAttr(r.id)}}" type="button">${{wolState.open ? 'Скрыть Wake-on-LAN' : 'Wake-on-LAN'}}</button>`
+      : `<span class="btn disabled">Wake-on-LAN</span>`;
     const renameLabel = 'Переименовать ' + (r.name || r.id || 'роутер');
     const renameButton = `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`;
     const actionsId = actionPanelId(r.id);
@@ -3252,11 +3352,13 @@ function render(list) {{
       <div class="actions mobileCollapsed${{actionsOpen ? ' open' : ''}}" id="${{escapeAttr(actionsId)}}">
         ${{adminButton}}
         ${{sshButton}}
+        ${{wolButton}}
         <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
         <a class="btn" href="${{escapeAttr(r.xray_client_url)}}">Client JSON</a>
         <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
         <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
+      ${{wolReady ? renderWolPanel(r) : ''}}
       </div>
     </article>`;
   }}).join('');
@@ -3339,6 +3441,11 @@ render = function(list) {{
     const sshButton = sshReady
       ? `<a class="btn" href="${{escapeAttr(r.ssh_url || ('/ssh/' + encodeURIComponent(r.id) + '/'))}}" target="_blank" rel="noopener noreferrer">SSH</a>`
       : `<span class="btn disabled">SSH</span>`;
+    const wolReady = routerSupportsWol(r);
+    const wolState = getWolState(r.id);
+    const wolButton = wolReady
+      ? `<button class="btn" data-wol-toggle="${{escapeAttr(r.id)}}" type="button">${{wolState.open ? 'Скрыть Wake-on-LAN' : 'Wake-on-LAN'}}</button>`
+      : `<span class="btn disabled">Wake-on-LAN</span>`;
     const renameLabel = 'Переименовать ' + (r.name || r.id || 'роутер');
     const renameButton = `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`;
     const actionsId = actionPanelId(r.id);
@@ -3367,11 +3474,13 @@ render = function(list) {{
       <div class="actions mobileCollapsed${{actionsOpen ? ' open' : ''}}" id="${{escapeAttr(actionsId)}}">
         ${{adminButton}}
         ${{sshButton}}
+        ${{wolButton}}
         <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
         <a class="btn" href="${{escapeAttr(r.xray_client_url)}}">Client JSON</a>
         <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
         <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
+      ${{wolReady ? renderWolPanel(r) : ''}}
     </article>`;
   }}).join('');
   syncActionToggleStates();
@@ -3389,6 +3498,78 @@ function renderRouterView() {{
     return;
   }}
   render(visibleRouters);
+}}
+
+async function loadWolDevices(routerId, force = false) {{
+  const key = String(routerId || '');
+  const router = selectedRouter(key);
+  if (!router) return;
+  const state = getWolState(key);
+  if (state.loading || (state.loaded && !force)) return;
+  setWolState(key, {{loading: true, error: '', message: ''}});
+  renderRouterView();
+  try {{
+    const res = await fetch('/api/router/' + encodeURIComponent(key) + '/wol/devices', {{cache: 'no-store'}});
+    const data = await res.json().catch(() => ({{ok: false, error: 'bad json', devices: []}}));
+    if (!res.ok || !data.ok) {{
+      throw new Error(data.error || 'Не удалось получить список устройств');
+    }}
+    const devices = Array.isArray(data.devices) ? data.devices : [];
+    setWolState(key, {{
+      loaded: true,
+      loading: false,
+      devices,
+      error: '',
+      message: devices.length ? `Список обновлен: ${{devices.length}} устройств.` : 'Список обновлен, но устройства не найдены.'
+    }});
+  }} catch (err) {{
+    setWolState(key, {{
+      loaded: false,
+      loading: false,
+      devices: [],
+      error: err && err.message ? err.message : 'Не удалось получить список устройств'
+    }});
+  }}
+  renderRouterView();
+}}
+
+async function wakeSelectedDevice(routerId) {{
+  const key = String(routerId || '');
+  const state = getWolState(key);
+  const selected = (Array.isArray(state.devices) ? state.devices : []).find((device) => String(device.mac || '') === String(state.selectedMac || ''));
+  if (!selected) {{
+    setWolState(key, {{error: 'Сначала выбери устройство из списка.', message: ''}});
+    renderRouterView();
+    return;
+  }}
+  setWolState(key, {{waking: true, error: '', message: ''}});
+  renderRouterView();
+  try {{
+    const res = await fetch('/api/router/' + encodeURIComponent(key) + '/wol', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{
+        mac: selected.mac || '',
+        iface: selected.iface || ''
+      }})
+    }});
+    const data = await res.json().catch(() => ({{ok: false, error: 'bad json'}}));
+    if (!res.ok || !data.ok) {{
+      throw new Error(data.error || 'Не удалось отправить Wake-on-LAN пакет');
+    }}
+    const label = selected.name || selected.ip || selected.mac || 'устройство';
+    setWolState(key, {{
+      waking: false,
+      error: '',
+      message: `Magic packet отправлен: ${{label}}.`
+    }});
+  }} catch (err) {{
+    setWolState(key, {{
+      waking: false,
+      error: err && err.message ? err.message : 'Не удалось отправить Wake-on-LAN пакет'
+    }});
+  }}
+  renderRouterView();
 }}
 
 function nextEntryPort(list) {{
@@ -3667,6 +3848,12 @@ routerStats.addEventListener('click', (ev) => {{
   renderRouterStats(window.ROUTERS || []);
 }});
 
+cards.addEventListener('change', (ev) => {{
+  const routerId = ev.target?.dataset?.wolSelect;
+  if (!routerId) return;
+  setWolState(routerId, {{selectedMac: ev.target.value || '', error: '', message: ''}});
+}});
+
 cards.addEventListener('click', async (ev) => {{
   const toggleId = ev.target?.dataset?.cardToggle;
   if (toggleId) {{
@@ -3686,6 +3873,27 @@ cards.addEventListener('click', async (ev) => {{
     else expandedActionPanels.delete(actionsToggleId);
     ev.target.setAttribute('aria-expanded', open ? 'true' : 'false');
     ev.target.textContent = open ? 'Скрыть действия' : 'Открыть действия';
+    return;
+  }}
+  const wolToggleId = ev.target?.dataset?.wolToggle;
+  if (wolToggleId) {{
+    const state = getWolState(wolToggleId);
+    const open = !state.open;
+    setWolState(wolToggleId, {{open, error: '', message: open ? state.message : ''}});
+    renderRouterView();
+    if (open) {{
+      await loadWolDevices(wolToggleId, false);
+    }}
+    return;
+  }}
+  const wolRefreshId = ev.target?.dataset?.wolRefresh;
+  if (wolRefreshId) {{
+    await loadWolDevices(wolRefreshId, true);
+    return;
+  }}
+  const wolSendId = ev.target?.dataset?.wolSend;
+  if (wolSendId) {{
+    await wakeSelectedDevice(wolSendId);
     return;
   }}
   const renameId = ev.target.closest('[data-rename]')?.dataset?.rename;
@@ -5200,6 +5408,187 @@ class Handler(BaseHTTPRequestHandler):
         ]
         return env, args
 
+    def ssh_exec_args(self, port):
+        env = os.environ.copy()
+        env.setdefault("LC_ALL", "C.UTF-8")
+        args = [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "GlobalKnownHostsFile=/dev/null",
+            "-o",
+            "LogLevel=ERROR",
+            "-o",
+            "ConnectTimeout=8",
+            "-p",
+            str(port),
+            "root@127.0.0.1",
+        ]
+        return env, args
+
+    def normalize_wol_mac(self, value):
+        mac = str(value or "").strip().upper().replace("-", ":")
+        if not mac:
+            return ""
+        compact = re.sub(r"[^0-9A-F]", "", mac)
+        if len(compact) == 12:
+            mac = ":".join(compact[idx : idx + 2] for idx in range(0, 12, 2))
+        if not re.fullmatch(r"(?:[0-9A-F]{2}:){5}[0-9A-F]{2}", mac):
+            return ""
+        if mac == "00:00:00:00:00:00":
+            return ""
+        return mac
+
+    def run_router_ssh_script(self, row, script, script_args=None, timeout=15):
+        port = int(row["ssh_entry_port"] or 0) if row else 0
+        if port <= 0:
+            raise RuntimeError("router has no ssh_entry_port")
+        env, args = self.ssh_exec_args(port)
+        argv = args + ["sh", "-s", "--"] + [str(item) for item in (script_args or [])]
+        try:
+            result = subprocess.run(
+                argv,
+                input=str(script),
+                text=True,
+                capture_output=True,
+                timeout=float(timeout),
+                env=env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"ssh command timeout after {int(timeout)}s") from exc
+        if result.returncode != 0:
+            message = (result.stderr or result.stdout or "").strip()
+            raise RuntimeError(message or f"ssh command exited with code {result.returncode}")
+        return result.stdout
+
+    def discover_router_wol_devices(self, row):
+        script = r"""
+set -eu
+tmp="${TMPDIR:-/tmp}/owrt-wol.$$.txt"
+cleanup() {
+  rm -f "$tmp"
+}
+trap cleanup EXIT INT TERM
+: >"$tmp"
+
+if [ -f /tmp/dhcp.leases ]; then
+  while read -r lease_ts mac ip host client_id; do
+    [ -n "${mac:-}" ] || continue
+    [ "${mac:-}" = "*" ] && continue
+    [ "${host:-}" = "*" ] && host=""
+    printf '%s\t%s\t%s\t%s\t%s\n' "$mac" "${ip:-}" "${host:-}" "" "dhcp" >>"$tmp"
+  done </tmp/dhcp.leases
+fi
+
+if command -v ip >/dev/null 2>&1; then
+  ip neigh show 2>/dev/null | awk '
+    BEGIN { OFS="\t" }
+    {
+      ip="";
+      dev="";
+      mac="";
+      if (NF >= 1) ip=$1;
+      for (i = 1; i <= NF; i++) {
+        if ($i == "dev" && i < NF) dev=$(i + 1);
+        if ($i == "lladdr" && i < NF) mac=$(i + 1);
+      }
+      if (mac != "") print mac, ip, "", dev, "ip-neigh";
+    }
+  ' >>"$tmp"
+fi
+
+if [ -r /proc/net/arp ]; then
+  awk 'NR > 1 && $4 != "" && $4 != "00:00:00:00:00:00" {
+    printf "%s\t%s\t\t%s\tarp\n", $4, $1, $6
+  }' /proc/net/arp >>"$tmp"
+fi
+
+cat "$tmp"
+"""
+        raw = self.run_router_ssh_script(row, script, timeout=18)
+        devices = {}
+        for line in raw.splitlines():
+            if not line.strip():
+                continue
+            parts = [part.strip() for part in line.split("\t")]
+            while len(parts) < 5:
+                parts.append("")
+            mac = self.normalize_wol_mac(parts[0])
+            if not mac:
+                continue
+            ip_addr = parts[1]
+            name = parts[2]
+            iface = parts[3]
+            source = parts[4] or "unknown"
+            entry = devices.get(mac)
+            if entry is None:
+                entry = {"mac": mac, "ip": "", "name": "", "iface": "", "sources": []}
+                devices[mac] = entry
+            if ip_addr and not entry["ip"]:
+                entry["ip"] = ip_addr
+            if name and not entry["name"]:
+                entry["name"] = name
+            if iface and not entry["iface"]:
+                entry["iface"] = iface
+            if source and source not in entry["sources"]:
+                entry["sources"].append(source)
+        ordered = sorted(
+            devices.values(),
+            key=lambda item: (
+                str(item.get("name") or "").lower(),
+                str(item.get("ip") or ""),
+                str(item.get("mac") or ""),
+            ),
+        )
+        for item in ordered:
+            label_parts = []
+            if item.get("name"):
+                label_parts.append(item["name"])
+            if item.get("ip"):
+                label_parts.append(item["ip"])
+            label_parts.append(item["mac"])
+            item["label"] = " | ".join(part for part in label_parts if part)
+            item["source"] = ", ".join(item.pop("sources", []))
+        return ordered
+
+    def send_router_wol_packet(self, row, mac, iface=""):
+        clean_mac = self.normalize_wol_mac(mac)
+        if not clean_mac:
+            raise RuntimeError("invalid MAC address")
+        script = r"""
+set -eu
+mac="$1"
+iface="${2:-}"
+if command -v etherwake >/dev/null 2>&1; then
+  if [ -n "$iface" ]; then
+    etherwake -i "$iface" "$mac"
+  else
+    etherwake "$mac"
+  fi
+  echo "Wake packet sent via etherwake"
+  exit 0
+fi
+if command -v wakeonlan >/dev/null 2>&1; then
+  wakeonlan "$mac"
+  echo "Wake packet sent via wakeonlan"
+  exit 0
+fi
+if command -v wol >/dev/null 2>&1; then
+  wol "$mac"
+  echo "Wake packet sent via wol"
+  exit 0
+fi
+echo "No WOL tool found on router. Install etherwake, wakeonlan or wol." >&2
+exit 127
+"""
+        output = self.run_router_ssh_script(row, script, [clean_mac, str(iface or "")], timeout=12)
+        return {"mac": clean_mac, "iface": str(iface or ""), "output": output.strip() or "Wake packet sent"}
+
     def vps_shell_args(self):
         env = os.environ.copy()
         env["TERM"] = "xterm-256color"
@@ -5670,6 +6059,23 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.send_json(200, {"ok": True, "publicKey": public_key})
             return
+        if path.startswith("/api/router/") and path.endswith("/wol/devices"):
+            parts = path.strip("/").split("/")
+            if len(parts) != 5 or parts[0] != "api" or parts[1] != "router" or parts[3] != "wol" or parts[4] != "devices":
+                self.send_text(404, "not found")
+                return
+            router_id = urllib.parse.unquote(parts[2])
+            with self.app.conn() as conn:
+                row = get_active_router(conn, router_id)
+            if not row:
+                self.send_json(404, {"ok": False, "error": "router not found"})
+                return
+            try:
+                devices = self.discover_router_wol_devices(row)
+                self.send_json(200, {"ok": True, "router_id": router_id, "devices": devices})
+            except Exception as exc:
+                self.send_json(400, {"ok": False, "error": str(exc), "router_id": router_id, "devices": []})
+            return
         if path.startswith("/router/"):
             self.router_asset(path)
             return
@@ -5847,6 +6253,24 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(200, {"ok": True, "router": router})
             except Exception as exc:
                 self.send_text(400, str(exc))
+            return
+        if path.startswith("/api/router/") and path.endswith("/wol"):
+            parts = path.strip("/").split("/")
+            if len(parts) != 4 or parts[0] != "api" or parts[1] != "router" or parts[3] != "wol":
+                self.send_text(404, "not found")
+                return
+            router_id = urllib.parse.unquote(parts[2])
+            try:
+                payload = self.read_payload()
+                with self.app.conn() as conn:
+                    row = get_active_router(conn, router_id)
+                if not row:
+                    self.send_json(404, {"ok": False, "error": "router not found"})
+                    return
+                result = self.send_router_wol_packet(row, payload.get("mac"), payload.get("iface", ""))
+                self.send_json(200, {"ok": True, "router_id": router_id, **result})
+            except Exception as exc:
+                self.send_json(400, {"ok": False, "error": str(exc), "router_id": router_id})
             return
         if path.startswith("/api/router/") and path.endswith("/rename"):
             try:
