@@ -2477,10 +2477,10 @@ function renderWolPanel(router) {{
       </label>
       <label class="wolField">
         <span>SSH пароль</span>
-        <input type="password" data-wol-password="${{escapeAttr(router.id)}}" value="${{escapeAttr(state.sshPassword || '')}}" placeholder="Если SSH по паролю"${{state.loading || state.waking ? ' disabled' : ''}}>
+        <input type="password" data-wol-password="${{escapeAttr(router.id)}}" value="${{escapeAttr(state.sshPassword || '')}}" placeholder="Если SSH по паролю" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="done"${{state.loading || state.waking ? ' disabled' : ''}}>
       </label>
       <button class="btn" type="button" data-wol-refresh="${{escapeAttr(router.id)}}"${{state.loading || state.waking ? ' disabled' : ''}}>Обновить</button>
-      <button class="btn primary" type="button" data-wol-send="${{escapeAttr(router.id)}}"${{state.loading || state.waking || !devices.length ? ' disabled' : ''}}>Разбудить</button>
+      <button class="btn primary" type="button" data-wol-send="${{escapeAttr(router.id)}}"${{wakeDisabled ? ' disabled' : ''}}>Разбудить</button>
     </div>
     <div class="${{metaClass}}">${{escapeHtml(wolMetaText(state))}}</div>
   </div>`;
@@ -2526,10 +2526,10 @@ function renderWolPanelRich(router) {{
       </div>
       <label class="wolField">
         <span>SSH пароль</span>
-        <input type="password" data-wol-password="${{escapeAttr(router.id)}}" value="${{escapeAttr(state.sshPassword || '')}}" placeholder="Если SSH по паролю"${{state.loading || state.waking ? ' disabled' : ''}}>
+        <input type="password" data-wol-password="${{escapeAttr(router.id)}}" value="${{escapeAttr(state.sshPassword || '')}}" placeholder="Если SSH по паролю" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="done"${{state.loading || state.waking ? ' disabled' : ''}}>
       </label>
       <button class="btn" type="button" data-wol-refresh="${{escapeAttr(router.id)}}"${{state.loading || state.waking ? ' disabled' : ''}}>Обновить</button>
-      <button class="btn primary" type="button" data-wol-send="${{escapeAttr(router.id)}}"${{state.loading || state.waking || !devices.length ? ' disabled' : ''}}>Разбудить</button>
+      <button class="btn primary" type="button" data-wol-send="${{escapeAttr(router.id)}}"${{wakeDisabled ? ' disabled' : ''}}>Разбудить</button>
     </div>
     <div class="${{metaClass}}">${{escapeHtml(wolMetaText(state))}}</div>
   </div>`;
@@ -3956,11 +3956,18 @@ cards.addEventListener('input', (ev) => {{
   const routerId = ev.target?.dataset?.wolPassword;
   if (!routerId) return;
   const value = ev.target.value || '';
+  ev.stopPropagation();
   saveWolPassword(routerId, value);
-  setWolState(routerId, {{sshPassword: value, error: '', message: ''}});
+  const state = getWolState(routerId);
+  wolStateByRouter.set(String(routerId), Object.assign({{}}, state, {{sshPassword: value, error: '', message: ''}}));
 }});
 
 cards.addEventListener('click', async (ev) => {{
+  const wolPasswordField = ev.target.closest('[data-wol-password]');
+  if (wolPasswordField) {{
+    ev.stopPropagation();
+    return;
+  }}
   const toggleId = ev.target?.dataset?.cardToggle;
   if (toggleId) {{
     const body = document.getElementById(toggleId);
@@ -5736,6 +5743,70 @@ cat "$tmp"
             item["source"] = ", ".join(item.pop("sources", []))
         return ordered
 
+    def ensure_router_wol_support(self, row, ssh_password=""):
+        script = r"""
+set -eu
+
+has_wol_tool() {
+  command -v etherwake >/dev/null 2>&1 || command -v wakeonlan >/dev/null 2>&1 || command -v wol >/dev/null 2>&1
+}
+
+install_pkg() {
+  pkg="$1"
+  case "$PKG_MANAGER" in
+    opkg)
+      opkg install "$pkg" >/dev/null 2>&1
+      ;;
+    apk)
+      apk add "$pkg" >/dev/null 2>&1
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+if has_wol_tool; then
+  echo "WOL tool already present on router"
+  exit 0
+fi
+
+PKG_MANAGER=""
+if command -v apk >/dev/null 2>&1; then
+  PKG_MANAGER="apk"
+elif command -v opkg >/dev/null 2>&1; then
+  PKG_MANAGER="opkg"
+fi
+
+[ -n "$PKG_MANAGER" ] || {
+  echo "No package manager found to install WOL support." >&2
+  exit 1
+}
+
+case "$PKG_MANAGER" in
+  opkg)
+    opkg update >/dev/null 2>&1 || true
+    ;;
+  apk)
+    apk update >/dev/null 2>&1 || true
+    ;;
+esac
+
+install_pkg luci-app-wol || true
+install_pkg etherwake || true
+install_pkg wakeonlan || true
+install_pkg wol || true
+
+if has_wol_tool; then
+  echo "WOL support installed via $PKG_MANAGER"
+  exit 0
+fi
+
+echo "WOL package installation finished, but no etherwake/wakeonlan/wol command is available." >&2
+exit 1
+"""
+        return self.run_router_ssh_script(row, script, timeout=75, ssh_password=ssh_password).strip()
+
     def send_router_wol_packet(self, row, mac, iface="", ssh_password=""):
         clean_mac = self.normalize_wol_mac(mac)
         if not clean_mac:
@@ -5766,13 +5837,27 @@ fi
 echo "No WOL tool found on router. Install etherwake, wakeonlan or wol." >&2
 exit 127
 """
-        output = self.run_router_ssh_script(
-            row,
-            script,
-            [clean_mac, str(iface or "")],
-            timeout=12,
-            ssh_password=ssh_password,
-        )
+        try:
+            output = self.run_router_ssh_script(
+                row,
+                script,
+                [clean_mac, str(iface or "")],
+                timeout=12,
+                ssh_password=ssh_password,
+            )
+        except RuntimeError as exc:
+            if "No WOL tool found on router" not in str(exc):
+                raise
+            install_output = self.ensure_router_wol_support(row, ssh_password=ssh_password)
+            output = self.run_router_ssh_script(
+                row,
+                script,
+                [clean_mac, str(iface or "")],
+                timeout=18,
+                ssh_password=ssh_password,
+            )
+            if install_output:
+                output = (install_output + "\n" + output).strip()
         return {"mac": clean_mac, "iface": str(iface or ""), "output": output.strip() or "Wake packet sent"}
 
     def vps_shell_args(self):

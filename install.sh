@@ -12,6 +12,10 @@ info() {
 	printf '%s\n' "$*"
 }
 
+warn() {
+	printf 'WARN: %s\n' "$*" >&2
+}
+
 die() {
 	printf 'ERROR: %s\n' "$*" >&2
 	exit 1
@@ -134,6 +138,73 @@ package_manager() {
 	printf 'unknown'
 }
 
+package_installed() {
+	local pkg manager
+	pkg="$1"
+	manager="$(package_manager)"
+	case "$manager" in
+		opkg)
+			opkg list-installed "$pkg" 2>/dev/null | grep -Fq "$pkg"
+			;;
+		apk)
+			apk info -e "$pkg" >/dev/null 2>&1
+			;;
+		*)
+			return 1
+			;;
+	esac
+}
+
+install_packages() {
+	local manager
+	manager="$(package_manager)"
+	case "$manager" in
+		opkg)
+			opkg update >/dev/null 2>&1 || warn "не удалось обновить список opkg, пробую ставить пакеты как есть"
+			opkg install "$@"
+			;;
+		apk)
+			apk update >/dev/null 2>&1 || warn "не удалось обновить список apk, пробую ставить пакеты как есть"
+			apk add "$@"
+			;;
+		*)
+			return 1
+			;;
+	esac
+}
+
+ensure_wol_support() {
+	local need manager tool_pkg candidate
+	[ "${ROOT%/}" = "" ] || return 0
+	manager="$(package_manager)"
+	[ "$manager" != "unknown" ] || {
+		warn "не найден пакетный менеджер для установки WOL-пакетов"
+		return 0
+	}
+	need=""
+	if ! package_installed "luci-app-wol"; then
+		need="$need luci-app-wol"
+	fi
+	if ! command -v etherwake >/dev/null 2>&1 && ! command -v wakeonlan >/dev/null 2>&1 && ! command -v wol >/dev/null 2>&1; then
+		tool_pkg="etherwake"
+		for candidate in etherwake wakeonlan wol; do
+			if package_installed "$candidate"; then
+				tool_pkg=""
+				break
+			fi
+		done
+		if [ -n "${tool_pkg:-}" ]; then
+			need="$need $tool_pkg"
+		fi
+	fi
+	need="${need# }"
+	[ -n "$need" ] || return 0
+	info "Устанавливаю поддержку Wake-on-LAN: $need"
+	if ! install_packages $need; then
+		warn "не удалось установить WOL-пакеты автоматически: $need"
+	fi
+}
+
 install_xray_runtime() {
 	local remote_bin
 	[ "${ROOT%/}" = "" ] || return 0
@@ -151,6 +222,8 @@ install_file "www/cgi-bin/owrt-remote" 0755
 install_file "usr/share/luci/menu.d/luci-app-owrt-remote.json" 0644
 install_file "usr/share/rpcd/acl.d/luci-app-owrt-remote.json" 0644
 install_file "www/luci-static/resources/view/owrt_remote.js" 0644
+
+ensure_wol_support
 
 rm -f "$(target_path usr/lib/lua/luci/controller/owrt_remote.lua)" 2>/dev/null || true
 rm -rf "$(target_path tmp/luci-indexcache)" "$(target_path tmp/luci-modulecache)" "$(target_path tmp/luci-indexcache.)"* "$(target_path tmp/luci-modulecache.)"* 2>/dev/null || true
