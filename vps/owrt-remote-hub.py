@@ -2073,7 +2073,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 @keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.nameRow{{display:inline-flex;align-items:center;justify-content:center;gap:8px;max-width:100%;margin-top:12px;vertical-align:top}}.nameRow::before{{content:"";display:block;flex:0 0 28px;width:28px;height:28px}}.name{{margin:0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}}.nameEditBtn{{position:static;display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;padding:0;border:1px solid rgba(251,191,36,.38);border-radius:999px;background:rgba(251,191,36,.12);color:#fde68a;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);cursor:pointer;opacity:.5;transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,opacity .15s ease}}.nameEditBtn:hover,.nameEditBtn:focus-visible{{opacity:1;border-color:rgba(34,211,238,.55);background:rgba(34,211,238,.14);color:#cffafe}}.nameEditBtn:active{{transform:scale(.96)}}.nameEditBtn svg{{width:13px;height:13px;display:block}}.mobilePanelToggle,.routerFormToggle{{display:none;width:100%;margin:14px 0 10px;border-radius:999px}}.routerFormWrap{{display:block}}[hidden],.headerActions[hidden],.routerStats[hidden],.routerFormWrap[hidden]{{display:none!important}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
-.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong,.metric.memory-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong,.metric.memory-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong,.metric.memory-bad strong{{color:#fecdd3}}.metric>span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.metric.temp-unavailable strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal;color:#f3e8ff}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.wolPanel{{display:grid;gap:10px;margin-top:12px;padding:12px;border:1px solid rgba(34,211,238,.20);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),rgba(18,14,30,.82);text-align:left}}.wolPanel[hidden]{{display:none!important}}.wolHeader{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.wolTitle{{margin:0;color:#f3e8ff;font-size:13px;font-weight:900}}.wolMeta{{min-height:16px;color:#c4b5fd;font-size:12px;line-height:1.35}}.wolMeta.bad{{color:#fecdd3}}.wolControls{{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:end}}.wolField{{display:grid;gap:6px;min-width:0;color:#ddd6fe;font-size:11px;font-weight:850}}.wolField select{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField select:focus{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolControls .btn,.wolControls button{{min-height:38px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong,.metric.memory-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong,.metric.memory-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong,.metric.memory-bad strong{{color:#fecdd3}}.metric>span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.metric.temp-unavailable strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal;color:#f3e8ff}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.wolPanel{{display:grid;gap:10px;margin-top:12px;padding:12px;border:1px solid rgba(34,211,238,.20);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),rgba(18,14,30,.82);text-align:left}}.wolPanel[hidden]{{display:none!important}}.wolHeader{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.wolTitle{{margin:0;color:#f3e8ff;font-size:13px;font-weight:900}}.wolMeta{{min-height:16px;color:#c4b5fd;font-size:12px;line-height:1.35}}.wolMeta.bad{{color:#fecdd3}}.wolControls{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.95fr) auto auto;gap:8px;align-items:end}}.wolField{{display:grid;gap:6px;min-width:0;color:#ddd6fe;font-size:11px;font-weight:850}}.wolField select,.wolField input{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField select:focus,.wolField input:focus{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolField input::placeholder{{color:rgba(221,214,254,.52)}}.wolControls .btn,.wolControls button{{min-height:38px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 .metric.memory-ok strong,.metric.flash-ok strong,.metric.memory-warn strong,.metric.flash-warn strong,.metric.memory-bad strong,.metric.flash-bad strong{{color:#f3e8ff}}.metric.memory-ok .metric-accent,.metric.flash-ok .metric-accent{{color:#bbf7d0}}.metric.memory-warn .metric-accent,.metric.flash-warn .metric-accent{{color:#fde68a}}.metric.memory-bad .metric-accent,.metric.flash-bad .metric-accent{{color:#fecdd3}}.metric-line{{display:block}}.metric-accent{{font-weight:inherit}}
 .brandPanel{{display:grid;grid-template-columns:132px 132px 168px;gap:8px;width:448px;max-width:100%}}.brandPanel .appBanner{{grid-column:1/span 2;width:100%;min-width:0}}.brandPanel .links{{grid-column:1/-1;display:grid;grid-template-columns:132px 132px 168px;gap:8px;margin-top:0}}.brandPanel .links a{{width:100%;min-width:0}}.routerSearchDock{{position:relative;display:block;grid-column:3;grid-row:1;align-self:start;width:168px;max-width:100%}}.mobileSearchDock{{display:none;width:100%;position:relative}}.routerSearchToggle{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;width:100%;padding:8px 14px;border:1px solid rgba(34,211,238,.30);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.12),rgba(124,58,237,.22),rgba(236,72,153,.12));color:#f3e8ff;font-size:13px;font-weight:800;line-height:1;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10)}}.routerSearchToggle[data-active="true"],.routerSearchToggle[aria-expanded="true"]{{border-color:rgba(34,211,238,.52);box-shadow:0 14px 30px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12)}}.routerSearchToggleIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:55;width:min(296px,calc(100vw - 24px))}}.routerSearchPanel[hidden]{{display:none!important}}.routerSearchCard{{display:grid;grid-template-rows:auto auto auto;align-content:start;gap:8px;width:100%;min-height:82px;padding:12px;border:1px solid rgba(34,211,238,.26);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.045)),rgba(19,14,32,.96);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}}.routerSearchHead{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.routerSearchTitle{{display:block;color:#f3e8ff;font-size:12px;font-weight:900;line-height:1.1}}.routerSearchClear{{min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.24);border-radius:999px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:11px;font-weight:850;cursor:pointer}}.routerSearchClear[disabled]{{opacity:.42;cursor:not-allowed}}.routerSearchField{{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.26);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.08),rgba(124,58,237,.14),rgba(236,72,153,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.routerSearchField:focus-within{{border-color:rgba(34,211,238,.54);box-shadow:0 0 0 3px rgba(34,211,238,.10),inset 0 1px 0 rgba(255,255,255,.08)}}.routerSearchField input{{width:100%;padding:0;border:0;background:transparent;color:#f7f2ff;box-shadow:none;outline:none;font-size:13px;font-weight:700}}.routerSearchField input::placeholder{{color:#b9adc9}}.routerSearchIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchMeta{{min-height:14px;color:#c4b5fd;font-size:11px;font-weight:800;line-height:1.2}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:220px;min-height:34px;margin:0;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 1}}.top{{flex-direction:column}}.brandPanel{{width:448px}}.headerActions{{align-self:flex-start;flex-wrap:wrap;padding-top:0;justify-content:flex-start}}}}
@@ -2313,6 +2313,26 @@ function wolPanelId(routerId) {{
   return 'router-wol-' + String(routerId || '');
 }}
 
+function wolPasswordKey(routerId) {{
+  return 'owrtRemote:sshPassword:' + String(routerId || '');
+}}
+
+function loadWolPassword(routerId) {{
+  try {{
+    return localStorage.getItem(wolPasswordKey(routerId)) || '';
+  }} catch (e) {{
+    return '';
+  }}
+}}
+
+function saveWolPassword(routerId, value) {{
+  try {{
+    const text = String(value || '');
+    if (text) localStorage.setItem(wolPasswordKey(routerId), text);
+    else localStorage.removeItem(wolPasswordKey(routerId));
+  }} catch (e) {{}}
+}}
+
 function syncExpandedActionPanels(list) {{
   const validIds = new Set((Array.isArray(list) ? list : []).map(r => actionPanelId(r.id)));
   for (const id of Array.from(expandedActionPanels)) {{
@@ -2355,6 +2375,7 @@ function getWolState(routerId) {{
       waking: false,
       error: '',
       message: '',
+      sshPassword: loadWolPassword(key),
       selectedMac: '',
       devices: []
     }});
@@ -2432,6 +2453,10 @@ function renderWolPanel(router) {{
         <select data-wol-select="${{escapeAttr(router.id)}}"${{state.loading || state.waking ? ' disabled' : ''}}>
           ${{options}}
         </select>
+      </label>
+      <label class="wolField">
+        <span>SSH пароль</span>
+        <input type="password" data-wol-password="${{escapeAttr(router.id)}}" value="${{escapeAttr(state.sshPassword || '')}}" placeholder="Если SSH по паролю"${{state.loading || state.waking ? ' disabled' : ''}}>
       </label>
       <button class="btn" type="button" data-wol-refresh="${{escapeAttr(router.id)}}"${{state.loading || state.waking ? ' disabled' : ''}}>Обновить</button>
       <button class="btn primary" type="button" data-wol-send="${{escapeAttr(router.id)}}"${{wakeDisabled ? ' disabled' : ''}}>Разбудить</button>
@@ -3509,7 +3534,13 @@ async function loadWolDevices(routerId, force = false) {{
   setWolState(key, {{loading: true, error: '', message: ''}});
   renderRouterView();
   try {{
-    const res = await fetch('/api/router/' + encodeURIComponent(key) + '/wol/devices', {{cache: 'no-store'}});
+    const res = await fetch('/api/router/' + encodeURIComponent(key) + '/wol/devices', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{
+        ssh_password: state.sshPassword || ''
+      }})
+    }});
     const data = await res.json().catch(() => ({{ok: false, error: 'bad json', devices: []}}));
     if (!res.ok || !data.ok) {{
       throw new Error(data.error || 'Не удалось получить список устройств');
@@ -3550,7 +3581,8 @@ async function wakeSelectedDevice(routerId) {{
       headers: {{'Content-Type': 'application/json'}},
       body: JSON.stringify({{
         mac: selected.mac || '',
-        iface: selected.iface || ''
+        iface: selected.iface || '',
+        ssh_password: state.sshPassword || ''
       }})
     }});
     const data = await res.json().catch(() => ({{ok: false, error: 'bad json'}}));
@@ -3852,6 +3884,14 @@ cards.addEventListener('change', (ev) => {{
   const routerId = ev.target?.dataset?.wolSelect;
   if (!routerId) return;
   setWolState(routerId, {{selectedMac: ev.target.value || '', error: '', message: ''}});
+}});
+
+cards.addEventListener('input', (ev) => {{
+  const routerId = ev.target?.dataset?.wolPassword;
+  if (!routerId) return;
+  const value = ev.target.value || '';
+  saveWolPassword(routerId, value);
+  setWolState(routerId, {{sshPassword: value, error: '', message: ''}});
 }});
 
 cards.addEventListener('click', async (ev) => {{
@@ -5408,13 +5448,11 @@ class Handler(BaseHTTPRequestHandler):
         ]
         return env, args
 
-    def ssh_exec_args(self, port):
+    def ssh_exec_args(self, port, allow_password=False):
         env = os.environ.copy()
         env.setdefault("LC_ALL", "C.UTF-8")
         args = [
             "ssh",
-            "-o",
-            "BatchMode=yes",
             "-o",
             "StrictHostKeyChecking=no",
             "-o",
@@ -5425,11 +5463,37 @@ class Handler(BaseHTTPRequestHandler):
             "LogLevel=ERROR",
             "-o",
             "ConnectTimeout=8",
+            "-o",
+            "NumberOfPasswordPrompts=1",
             "-p",
             str(port),
             "root@127.0.0.1",
         ]
+        if allow_password:
+            args[1:1] = [
+                "-o",
+                "PreferredAuthentications=publickey,password,keyboard-interactive",
+            ]
+        else:
+            args[1:1] = ["-o", "BatchMode=yes"]
         return env, args
+
+    def prepare_ssh_askpass(self, env, ssh_password):
+        password = str(ssh_password or "")
+        if not password:
+            return None
+        askpass_dir = Path(tempfile.mkdtemp(prefix="owrt-askpass-"))
+        askpass_script = askpass_dir / "askpass.sh"
+        askpass_script.write_text(
+            "#!/bin/sh\nprintf '%s\\n' \"$OWRT_REMOTE_SSH_PASSWORD\"\n",
+            encoding="utf-8",
+        )
+        os.chmod(askpass_script, 0o700)
+        env["SSH_ASKPASS"] = str(askpass_script)
+        env["SSH_ASKPASS_REQUIRE"] = "force"
+        env["DISPLAY"] = env.get("DISPLAY") or "owrt-remote:0"
+        env["OWRT_REMOTE_SSH_PASSWORD"] = password
+        return askpass_dir
 
     def normalize_wol_mac(self, value):
         mac = str(value or "").strip().upper().replace("-", ":")
@@ -5444,11 +5508,13 @@ class Handler(BaseHTTPRequestHandler):
             return ""
         return mac
 
-    def run_router_ssh_script(self, row, script, script_args=None, timeout=15):
+    def run_router_ssh_script(self, row, script, script_args=None, timeout=15, ssh_password=""):
         port = int(row["ssh_entry_port"] or 0) if row else 0
         if port <= 0:
             raise RuntimeError("router has no ssh_entry_port")
-        env, args = self.ssh_exec_args(port)
+        password = str(ssh_password or "")
+        env, args = self.ssh_exec_args(port, allow_password=bool(password))
+        askpass_dir = self.prepare_ssh_askpass(env, password)
         argv = args + ["sh", "-s", "--"] + [str(item) for item in (script_args or [])]
         try:
             result = subprocess.run(
@@ -5458,15 +5524,24 @@ class Handler(BaseHTTPRequestHandler):
                 capture_output=True,
                 timeout=float(timeout),
                 env=env,
+                start_new_session=bool(password),
             )
         except subprocess.TimeoutExpired as exc:
             raise RuntimeError(f"ssh command timeout after {int(timeout)}s") from exc
+        finally:
+            if askpass_dir:
+                try:
+                    for child in askpass_dir.iterdir():
+                        child.unlink(missing_ok=True)
+                    askpass_dir.rmdir()
+                except OSError:
+                    pass
         if result.returncode != 0:
             message = (result.stderr or result.stdout or "").strip()
             raise RuntimeError(message or f"ssh command exited with code {result.returncode}")
         return result.stdout
 
-    def discover_router_wol_devices(self, row):
+    def discover_router_wol_devices(self, row, ssh_password=""):
         script = r"""
 set -eu
 tmp="${TMPDIR:-/tmp}/owrt-wol.$$.txt"
@@ -5483,6 +5558,23 @@ if [ -f /tmp/dhcp.leases ]; then
     [ "${host:-}" = "*" ] && host=""
     printf '%s\t%s\t%s\t%s\t%s\n' "$mac" "${ip:-}" "${host:-}" "" "dhcp" >>"$tmp"
   done </tmp/dhcp.leases
+fi
+
+if command -v uci >/dev/null 2>&1; then
+  uci -q show dhcp | sed -n "s/^\(dhcp\.[^=]*\)=host$/\1/p" | while IFS= read -r section; do
+    [ -n "$section" ] || continue
+    mac_list="$(uci -q get "$section.mac" 2>/dev/null || true)"
+    ip_static="$(uci -q get "$section.ip" 2>/dev/null || true)"
+    host_static="$(uci -q get "$section.name" 2>/dev/null || true)"
+    [ -n "$mac_list" ] || continue
+    old_ifs="$IFS"
+    IFS=', '
+    for mac_item in $mac_list; do
+      [ -n "$mac_item" ] || continue
+      printf '%s\t%s\t%s\t%s\t%s\n' "$mac_item" "${ip_static:-}" "${host_static:-}" "" "static-dhcp" >>"$tmp"
+    done
+    IFS="$old_ifs"
+  done
 fi
 
 if command -v ip >/dev/null 2>&1; then
@@ -5510,7 +5602,7 @@ fi
 
 cat "$tmp"
 """
-        raw = self.run_router_ssh_script(row, script, timeout=18)
+        raw = self.run_router_ssh_script(row, script, timeout=18, ssh_password=ssh_password)
         devices = {}
         for line in raw.splitlines():
             if not line.strip():
@@ -5556,7 +5648,7 @@ cat "$tmp"
             item["source"] = ", ".join(item.pop("sources", []))
         return ordered
 
-    def send_router_wol_packet(self, row, mac, iface=""):
+    def send_router_wol_packet(self, row, mac, iface="", ssh_password=""):
         clean_mac = self.normalize_wol_mac(mac)
         if not clean_mac:
             raise RuntimeError("invalid MAC address")
@@ -5586,7 +5678,13 @@ fi
 echo "No WOL tool found on router. Install etherwake, wakeonlan or wol." >&2
 exit 127
 """
-        output = self.run_router_ssh_script(row, script, [clean_mac, str(iface or "")], timeout=12)
+        output = self.run_router_ssh_script(
+            row,
+            script,
+            [clean_mac, str(iface or "")],
+            timeout=12,
+            ssh_password=ssh_password,
+        )
         return {"mac": clean_mac, "iface": str(iface or ""), "output": output.strip() or "Wake packet sent"}
 
     def vps_shell_args(self):
@@ -6254,6 +6352,24 @@ exit 127
             except Exception as exc:
                 self.send_text(400, str(exc))
             return
+        if path.startswith("/api/router/") and path.endswith("/wol/devices"):
+            parts = path.strip("/").split("/")
+            if len(parts) != 5 or parts[0] != "api" or parts[1] != "router" or parts[3] != "wol" or parts[4] != "devices":
+                self.send_text(404, "not found")
+                return
+            router_id = urllib.parse.unquote(parts[2])
+            try:
+                payload = self.read_payload()
+                with self.app.conn() as conn:
+                    row = get_active_router(conn, router_id)
+                if not row:
+                    self.send_json(404, {"ok": False, "error": "router not found"})
+                    return
+                devices = self.discover_router_wol_devices(row, payload.get("ssh_password", ""))
+                self.send_json(200, {"ok": True, "router_id": router_id, "devices": devices})
+            except Exception as exc:
+                self.send_json(400, {"ok": False, "error": str(exc), "router_id": router_id, "devices": []})
+            return
         if path.startswith("/api/router/") and path.endswith("/wol"):
             parts = path.strip("/").split("/")
             if len(parts) != 4 or parts[0] != "api" or parts[1] != "router" or parts[3] != "wol":
@@ -6267,7 +6383,12 @@ exit 127
                 if not row:
                     self.send_json(404, {"ok": False, "error": "router not found"})
                     return
-                result = self.send_router_wol_packet(row, payload.get("mac"), payload.get("iface", ""))
+                result = self.send_router_wol_packet(
+                    row,
+                    payload.get("mac"),
+                    payload.get("iface", ""),
+                    payload.get("ssh_password", ""),
+                )
                 self.send_json(200, {"ok": True, "router_id": router_id, **result})
             except Exception as exc:
                 self.send_json(400, {"ok": False, "error": str(exc), "router_id": router_id})
