@@ -337,7 +337,14 @@ def short_user_agent(value):
     return value
 
 
-def client_label(user_agent):
+def normalize_client_hint(value):
+    hint = str(value or "").strip().lower()
+    if hint in {"hub", "pwa", "standalone", "ios-home-screen", "home-screen"}:
+        return "hub"
+    return ""
+
+
+def client_label(user_agent, client_hint=""):
     ua = (user_agent or "").lower()
     if "iphone" in ua or "ipad" in ua:
         device = "iPhone/iPad"
@@ -351,6 +358,8 @@ def client_label(user_agent):
         device = "Linux"
     else:
         device = "Устройство"
+    if normalize_client_hint(client_hint) == "hub":
+        return f"{device} · Hub"
     if "telegram" in ua:
         browser = "Telegram"
     elif "edg/" in ua:
@@ -396,11 +405,11 @@ def verify_hub_session(token, touch=True, ip="", user_agent=""):
     ts = now_ts()
     current_ip = str(ip or "").strip()
     current_user_agent = short_user_agent(user_agent or "")
-    current_client = client_label(user_agent or "")
     for session in sessions:
         if secrets.compare_digest(session.get("token_hash", ""), wanted):
             result = session
             if touch:
+                current_client = client_label(user_agent or "", session.get("client_hint", ""))
                 old_ip = str(session.get("ip") or "").strip()
                 if current_ip and old_ip and current_ip != old_ip:
                     known_ips = [str(item).strip() for item in session.get("known_ips", []) if str(item).strip()]
@@ -431,9 +440,9 @@ def verify_hub_session(token, touch=True, ip="", user_agent=""):
                     changed = True
                 old_user_agent = str(session.get("user_agent") or "").strip()
                 if current_user_agent and old_user_agent and current_user_agent != old_user_agent:
-                    old_client = session.get("client") or client_label(old_user_agent)
+                    old_client = session.get("client") or client_label(old_user_agent, session.get("client_hint", ""))
                     session["user_agent"] = current_user_agent
-                    session["client"] = current_client or client_label(current_user_agent)
+                    session["client"] = current_client or client_label(current_user_agent, session.get("client_hint", ""))
                     add_notification(
                         "session-client",
                         "Новое устройство в активной сессии",
@@ -451,6 +460,34 @@ def verify_hub_session(token, touch=True, ip="", user_agent=""):
                 elif changed:
                     session["expires_at"] = ts + SESSION_TTL_SECONDS
             break
+    if changed:
+        save_sessions(sessions)
+    return result
+
+
+def update_hub_session_client_hint(token, client_hint):
+    token = str(token or "").strip()
+    client_hint = normalize_client_hint(client_hint)
+    if not token or not client_hint:
+        return None
+    wanted = session_hash(token)
+    sessions = load_sessions()
+    changed = False
+    result = None
+    ts = now_ts()
+    for session in sessions:
+        if not secrets.compare_digest(session.get("token_hash", ""), wanted):
+            continue
+        result = session
+        old_hint = normalize_client_hint(session.get("client_hint", ""))
+        if old_hint == client_hint:
+            break
+        session["client_hint"] = client_hint
+        session["client"] = client_label(session.get("user_agent", ""), client_hint)
+        session["last_seen"] = ts
+        session["expires_at"] = ts + SESSION_TTL_SECONDS
+        changed = True
+        break
     if changed:
         save_sessions(sessions)
     return result
@@ -660,6 +697,7 @@ def save_push_subscriptions(items):
     for item in items:
         endpoint = str(item.get("endpoint") or "").strip()
         keys = item.get("keys") if isinstance(item.get("keys"), dict) else {}
+        client_hint = normalize_client_hint(item.get("client_hint", ""))
         if not endpoint or endpoint in seen:
             continue
         seen.add(endpoint)
@@ -672,6 +710,7 @@ def save_push_subscriptions(items):
                     "auth": str(keys.get("auth") or ""),
                 },
                 "client": str(item.get("client") or "браузер")[:120],
+                "client_hint": client_hint,
                 "ip": str(item.get("ip") or "")[:80],
                 "user_agent": str(item.get("user_agent") or "")[:260],
                 "created_at": int(item.get("created_at") or now_ts()),
@@ -715,6 +754,21 @@ def web_push_ready():
     return webpush is not None and WebPushException is not None and bool(vapid_public_key())
 
 
+def web_push_apple_endpoint(subscription):
+    endpoint = str((subscription or {}).get("endpoint") or "").lower()
+    return "push.apple.com" in endpoint
+
+
+def vapid_subject(subscription=None):
+    configured = str(os.environ.get("OWRT_REMOTE_VAPID_SUB", "")).strip()
+    if configured:
+        return configured
+    public_url = str(os.environ.get("OWRT_REMOTE_PUBLIC_URL", "")).strip().rstrip("/")
+    if public_url.lower().startswith("https://"):
+        return public_url
+    return "mailto:admin@localhost"
+
+
 def save_push_subscription(subscription, username="", ip="", user_agent=""):
     if not isinstance(subscription, dict):
         raise ValueError("subscription must be object")
@@ -722,6 +776,7 @@ def save_push_subscription(subscription, username="", ip="", user_agent=""):
     keys = subscription.get("keys") if isinstance(subscription.get("keys"), dict) else {}
     p256dh = str(keys.get("p256dh") or "").strip()
     auth = str(keys.get("auth") or "").strip()
+    client_hint = normalize_client_hint(subscription.get("client_hint", ""))
     if not endpoint or not p256dh or not auth:
         raise ValueError("bad push subscription")
     ts = now_ts()
@@ -729,7 +784,8 @@ def save_push_subscription(subscription, username="", ip="", user_agent=""):
         "id": hashlib.sha256(endpoint.encode("utf-8")).hexdigest()[:16],
         "endpoint": endpoint,
         "keys": {"p256dh": p256dh, "auth": auth},
-        "client": client_label(user_agent),
+        "client": client_label(user_agent, client_hint),
+        "client_hint": client_hint,
         "ip": ip or "",
         "user_agent": short_user_agent(user_agent),
         "username": username or current_username(),
@@ -778,7 +834,7 @@ def send_web_push(subscription, payload):
             },
             data=json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
             vapid_private_key=str(VAPID_PRIVATE_KEY_FILE),
-            vapid_claims={"sub": os.environ.get("OWRT_REMOTE_VAPID_SUB", "mailto:admin@localhost")},
+            vapid_claims={"sub": vapid_subject(subscription)},
             timeout=10,
             ttl=86400,
         )
@@ -786,12 +842,22 @@ def send_web_push(subscription, payload):
     except Exception as exc:
         response = getattr(exc, "response", None)
         status_code = getattr(response, "status_code", None)
+        detail = ""
+        try:
+            detail = str(getattr(response, "text", "") or "").strip()
+        except Exception:
+            detail = ""
+        if not detail:
+            detail = " ".join(str(exc).split())
+        detail = detail[:160]
         if status_code in (404, 410):
             return "gone"
+        if detail:
+            return f"error:{status_code or exc.__class__.__name__}:{detail}"
         return f"error:{status_code or exc.__class__.__name__}"
 
 
-def push_result_message(result):
+def push_result_message(result, subscription=None):
     if result == "ok":
         return ""
     if result == "unavailable":
@@ -799,7 +865,14 @@ def push_result_message(result):
     if result == "gone":
         return "Подписка браузера устарела. Включи push заново на этом устройстве."
     if str(result).startswith("error:"):
-        code = str(result).split(":", 1)[1] or "unknown"
+        parts = str(result).split(":", 2)
+        code = parts[1] if len(parts) > 1 and parts[1] else "unknown"
+        detail = parts[2] if len(parts) > 2 else ""
+        detail_lower = detail.lower()
+        if web_push_apple_endpoint(subscription) and (
+            "badjwttoken" in detail_lower or vapid_subject(subscription) == "mailto:admin@localhost"
+        ):
+            return "iPhone/iPad push упёрся в VAPID subject на VPS. Включи HTTPS через enable-https.sh или задай OWRT_REMOTE_PUBLIC_URL=https://твой-домен (или OWRT_REMOTE_VAPID_SUB)."
         return f"VPS не смог отправить тестовый Web Push ({code}). Проверь HTTPS, DNS и install-vps.sh."
     return "VPS не смог подтвердить доставку Web Push."
 
@@ -4517,6 +4590,25 @@ function updateNotifyButton() {{
   notifyEnable.classList.toggle('on', Notification.permission === 'granted' && (localStorage.getItem('owrtNotifyEnabled') === '1' || localStorage.getItem('owrtPushEnabled') === '1'));
 }}
 
+function currentClientHint() {{
+  return isStandalonePwa() ? 'hub' : '';
+}}
+
+async function reportClientHint() {{
+  const hint = currentClientHint();
+  if (!hint) return;
+  try {{
+    if (sessionStorage.getItem('owrtClientHintSent') === hint) return;
+    const res = await fetch('/api/session/client-hint', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{client_hint: hint}})
+    }});
+    const data = await res.json().catch(() => ({{}}));
+    if (res.ok && data.ok) sessionStorage.setItem('owrtClientHintSent', hint);
+  }} catch (e) {{}}
+}}
+
 function urlBase64ToUint8Array(value) {{
   const padding = '='.repeat((4 - value.length % 4) % 4);
   const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -4544,7 +4636,7 @@ async function registerPushSubscription() {{
   const res = await fetch('/api/push/subscribe', {{
     method: 'POST',
     headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify(subscription)
+    body: JSON.stringify({{...(subscription.toJSON ? subscription.toJSON() : subscription), client_hint: currentClientHint()}})
   }});
   const data = await res.json().catch(() => ({{}}));
   if (!res.ok || !data.ok) throw new Error(data.error || 'Не смог сохранить push-подписку');
@@ -4811,6 +4903,7 @@ document.getElementById('authForm').addEventListener('submit', async (ev) => {{
 
 renderSessions(window.HUB_SESSIONS);
 renderNotifications(window.HUB_NOTIFICATIONS);
+reportClientHint();
 updateNotifyButton();
 syncRouterSearchToggleState();
 renderRouterView();
@@ -6827,6 +6920,14 @@ exit 127
         if path == "/api/auth":
             self.update_auth()
             return
+        if path == "/api/session/client-hint":
+            payload = self.read_payload()
+            session = update_hub_session_client_hint(self.current_session_token(), payload.get("client_hint", ""))
+            if not session:
+                self.send_json(400, {"ok": False, "error": "session not found"})
+                return
+            self.send_json(200, {"ok": True, "client": session.get("client", ""), "hint": normalize_client_hint(payload.get("client_hint", ""))})
+            return
         if path == "/api/session/revoke":
             payload = self.read_payload()
             session_id = payload.get("id", "")
@@ -6878,7 +6979,7 @@ exit 127
                 if result == "gone":
                     remove_push_subscription(subscription.get("endpoint", ""))
                 if result != "ok":
-                    self.send_json(503, {"ok": False, "error": push_result_message(result), "delivery": result, "subscription": {"id": subscription.get("id"), "client": subscription.get("client")}})
+                    self.send_json(503, {"ok": False, "error": push_result_message(result, subscription), "delivery": result, "subscription": {"id": subscription.get("id"), "client": subscription.get("client")}})
                     return
                 self.send_json(200, {"ok": True, "delivery": result, "subscription": {"id": subscription.get("id"), "client": subscription.get("client")}})
             except Exception as exc:
