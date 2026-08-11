@@ -791,6 +791,19 @@ def send_web_push(subscription, payload):
         return f"error:{status_code or exc.__class__.__name__}"
 
 
+def push_result_message(result):
+    if result == "ok":
+        return ""
+    if result == "unavailable":
+        return "На VPS не готов Web Push. Запусти свежий install-vps.sh и проверь HTTPS."
+    if result == "gone":
+        return "Подписка браузера устарела. Включи push заново на этом устройстве."
+    if str(result).startswith("error:"):
+        code = str(result).split(":", 1)[1] or "unknown"
+        return f"VPS не смог отправить тестовый Web Push ({code}). Проверь HTTPS, DNS и install-vps.sh."
+    return "VPS не смог подтвердить доставку Web Push."
+
+
 def queue_web_push_payload(payload, subscriptions=None):
     if subscriptions is None:
         subscriptions = load_push_subscriptions()
@@ -4454,7 +4467,7 @@ function webPushSupportInfo() {{
 
 function webPushSupported() {{
   const support = webPushSupportInfo();
-  return support.secure && support.hasServiceWorker && support.hasPushManager && support.hasNotification;
+  return !support.reason;
 }}
 
 function notificationGranted() {{
@@ -6853,18 +6866,21 @@ exit 127
                     self.client_ip(),
                     self.headers.get("User-Agent", ""),
                 )
-                queue_web_push_payload(
-                    {
-                        "title": APP_NAME,
-                        "body": "Push включён на этом устройстве.",
-                        "tag": "owrt-push-test",
-                        "url": "/",
-                        "kind": "push-test",
-                        "ts": now_ts(),
-                    },
-                    [subscription],
-                )
-                self.send_json(200, {"ok": True, "subscription": {"id": subscription.get("id"), "client": subscription.get("client")}})
+                test_payload = {
+                    "title": APP_NAME,
+                    "body": "Push включён на этом устройстве.",
+                    "tag": "owrt-push-test",
+                    "url": "/",
+                    "kind": "push-test",
+                    "ts": now_ts(),
+                }
+                result = send_web_push(subscription, test_payload)
+                if result == "gone":
+                    remove_push_subscription(subscription.get("endpoint", ""))
+                if result != "ok":
+                    self.send_json(503, {"ok": False, "error": push_result_message(result), "delivery": result, "subscription": {"id": subscription.get("id"), "client": subscription.get("client")}})
+                    return
+                self.send_json(200, {"ok": True, "delivery": result, "subscription": {"id": subscription.get("id"), "client": subscription.get("client")}})
             except Exception as exc:
                 self.send_json(400, {"ok": False, "error": str(exc)})
             return
