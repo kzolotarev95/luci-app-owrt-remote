@@ -4457,7 +4457,35 @@ function webPushSupported() {{
   return support.secure && support.hasServiceWorker && support.hasPushManager && support.hasNotification;
 }}
 
+function notificationGranted() {{
+  return 'Notification' in window && Notification.permission === 'granted';
+}}
+
+function localNotificationsEnabled() {{
+  return localStorage.getItem('owrtNotifyEnabled') === '1';
+}}
+
+function webPushEnabled() {{
+  return localStorage.getItem('owrtPushEnabled') === '1';
+}}
+
+function syncNotificationFlags() {{
+  if (!('Notification' in window)) {{
+    localStorage.setItem('owrtPushEnabled', '0');
+    return;
+  }}
+  if (Notification.permission !== 'granted') {{
+    localStorage.setItem('owrtPushEnabled', '0');
+    if (Notification.permission === 'denied') localStorage.setItem('owrtNotifyEnabled', '0');
+    return;
+  }}
+  if (!localNotificationsEnabled()) {{
+    localStorage.setItem('owrtNotifyEnabled', '1');
+  }}
+}}
+
 function notificationPermissionText() {{
+  syncNotificationFlags();
   const support = webPushSupportInfo();
   if (!webPushSupported()) {{
     if (support.reason === 'https') return 'Push: нужен HTTPS';
@@ -4471,8 +4499,9 @@ function notificationPermissionText() {{
 }}
 
 function updateNotifyButton() {{
+  syncNotificationFlags();
   notifyEnable.textContent = notificationPermissionText();
-  notifyEnable.classList.toggle('on', localStorage.getItem('owrtPushEnabled') === '1' && webPushSupported() && Notification.permission === 'granted');
+  notifyEnable.classList.toggle('on', Notification.permission === 'granted' && (localStorage.getItem('owrtNotifyEnabled') === '1' || localStorage.getItem('owrtPushEnabled') === '1'));
 }}
 
 function urlBase64ToUint8Array(value) {{
@@ -4511,7 +4540,7 @@ async function registerPushSubscription() {{
 
 async function enableNotifications() {{
   if (!webPushSupported()) {{
-    localStorage.setItem('owrtNotifyEnabled', '0');
+    localStorage.setItem('owrtNotifyEnabled', notificationGranted() ? '1' : '0');
     localStorage.setItem('owrtPushEnabled', '0');
     updateNotifyButton();
     const support = webPushSupportInfo();
@@ -4537,21 +4566,21 @@ async function enableNotifications() {{
     showRouterMsg('Браузер не дал разрешение на уведомления. Проверь замочек возле адреса сайта и разреши уведомления.', true);
     return;
   }}
+  localStorage.setItem('owrtNotifyEnabled', '1');
   try {{
     showRouterMsg('Включаю настоящий Web Push для этого устройства...');
     await registerPushSubscription();
-    localStorage.setItem('owrtNotifyEnabled', '1');
     localStorage.setItem('owrtPushEnabled', '1');
     showRouterMsg('Push включён. Теперь уведомления должны приходить даже когда вкладка закрыта.');
   }} catch (e) {{
     localStorage.setItem('owrtPushEnabled', '0');
-    localStorage.setItem('owrtNotifyEnabled', '0');
     showRouterMsg(e.message || 'Не удалось включить Web Push', true);
   }}
   updateNotifyButton();
 }}
 
 function showBrowserNotification(item) {{
+  syncNotificationFlags();
   if (localStorage.getItem('owrtPushEnabled') === '1') return;
   if (!item || !('Notification' in window) || Notification.permission !== 'granted') return;
   if (localStorage.getItem('owrtNotifyEnabled') !== '1') return;
