@@ -72,6 +72,7 @@ ROUTER_PROXY_LOCK = threading.Lock()
 ROUTER_PROXY_LIMITERS = {}
 STATIC_CACHE_LOCK = threading.Lock()
 NOTIFICATIONS_LOCK = threading.Lock()
+NOTIFICATIONS_COND = threading.Condition()
 PUSH_LOCK = threading.Lock()
 STATIC_CACHE = {}
 STATIC_CACHE_BYTES = 0
@@ -505,12 +506,37 @@ def load_notifications():
         data = data.get("notifications", [])
     if not isinstance(data, list):
         return []
-    return [item for item in data if isinstance(item, dict)]
+    return normalize_notification_items([item for item in data if isinstance(item, dict)])
 
 
 def save_notifications(items):
-    items = sorted(items, key=lambda item: int(item.get("ts") or 0), reverse=True)[:NOTIFICATIONS_MAX]
+    items = normalize_notification_items(items)
+    items = sorted(
+        items,
+        key=lambda item: (int(item.get("ts") or 0), int(item.get("serial") or 0)),
+        reverse=True,
+    )[:NOTIFICATIONS_MAX]
     write_json_private(NOTIFICATIONS_FILE, {"notifications": items})
+
+
+def normalize_notification_items(items):
+    rows = [dict(item) for item in (items or []) if isinstance(item, dict)]
+    rows.sort(key=lambda item: (int(item.get("ts") or 0), int(item.get("serial") or 0), str(item.get("id") or "")))
+    serial = 0
+    for item in rows:
+        current = int(item.get("serial") or 0)
+        if current <= serial:
+            serial += 1
+            item["serial"] = serial
+        else:
+            serial = current
+            item["serial"] = current
+    return rows
+
+
+def latest_notification_serial(items=None):
+    rows = normalize_notification_items(items if items is not None else load_notifications())
+    return max((int(item.get("serial") or 0) for item in rows), default=0)
 
 
 def add_notification(kind, title, body="", level="info", details=None, data=None, dedupe_seconds=0):
@@ -534,6 +560,8 @@ def add_notification(kind, title, body="", level="info", details=None, data=None
     }
     with NOTIFICATIONS_LOCK:
         items = load_notifications()
+        next_serial = latest_notification_serial(items) + 1
+        item["serial"] = next_serial
         if dedupe_seconds:
             for old in items:
                 if (
@@ -545,26 +573,66 @@ def add_notification(kind, title, body="", level="info", details=None, data=None
                     return old
         items.insert(0, item)
         save_notifications(items)
+    with NOTIFICATIONS_COND:
+        NOTIFICATIONS_COND.notify_all()
     queue_web_push_notification(item)
     return item
 
 
-def list_notifications(after=0, limit=60):
+def list_notifications(after=0, limit=60, after_serial=0):
     try:
         after = int(after or 0)
     except (TypeError, ValueError):
         after = 0
     try:
+        after_serial = int(after_serial or 0)
+    except (TypeError, ValueError):
+        after_serial = 0
+    try:
         limit = max(1, min(120, int(limit or 60)))
     except (TypeError, ValueError):
         limit = 60
-    items = [item for item in load_notifications() if int(item.get("ts") or 0) > after]
-    return sorted(items, key=lambda item: int(item.get("ts") or 0), reverse=True)[:limit]
+    items = load_notifications()
+    latest_serial = max((int(item.get("serial") or 0) for item in items), default=0)
+    if after_serial > latest_serial:
+        after_serial = 0
+    if after_serial > 0:
+        items = [item for item in items if int(item.get("serial") or 0) > after_serial]
+    elif after > 0:
+        items = [item for item in items if int(item.get("ts") or 0) >= after]
+    return sorted(
+        items,
+        key=lambda item: (int(item.get("ts") or 0), int(item.get("serial") or 0)),
+        reverse=True,
+    )[:limit]
+
+
+def wait_for_notifications(after_serial=0, timeout=25, limit=60):
+    try:
+        after_serial = int(after_serial or 0)
+    except (TypeError, ValueError):
+        after_serial = 0
+    try:
+        timeout = max(1, min(60, int(timeout or 25)))
+    except (TypeError, ValueError):
+        timeout = 25
+    deadline = time.time() + timeout
+    while True:
+        items = list_notifications(limit=limit, after_serial=after_serial)
+        if items:
+            return items
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            return []
+        with NOTIFICATIONS_COND:
+            NOTIFICATIONS_COND.wait(timeout=remaining)
 
 
 def clear_notifications():
     with NOTIFICATIONS_LOCK:
         save_notifications([])
+    with NOTIFICATIONS_COND:
+        NOTIFICATIONS_COND.notify_all()
 
 
 def b64url(raw):
@@ -1151,6 +1219,58 @@ def row_to_router(row):
     return data
 
 
+def router_notification_label(router):
+    router_id = str((router or {}).get("id") or "").strip()
+    name = str((router or {}).get("name") or router_id or "router").strip()
+    if router_id and name and name != router_id:
+        return f"{name} ({router_id})"
+    return name or router_id or "router"
+
+
+def router_notification_details(router):
+    details = []
+    if not isinstance(router, dict):
+        return details
+    last_seen_iso = str(router.get("last_seen_iso") or "").strip()
+    if last_seen_iso:
+        details.append(f"Последний heartbeat: {last_seen_iso}")
+    status = router.get("status") if isinstance(router.get("status"), dict) else {}
+    wan_ip = str(status.get("wan_ip") or status.get("ip") or "").strip()
+    if wan_ip:
+        details.append(f"WAN IP: {wan_ip}")
+    release = str(status.get("release") or "").strip()
+    if release:
+        details.append(f"Система: {release}")
+    return details[:6]
+
+
+def notify_router_online(router, dedupe_seconds=45):
+    label = router_notification_label(router)
+    add_notification(
+        "router_online",
+        "Роутер снова в сети",
+        f"{label} снова выходит на связь с Hub.",
+        "info",
+        router_notification_details(router),
+        {"router_id": str((router or {}).get("id") or ""), "online": True},
+        dedupe_seconds=dedupe_seconds,
+    )
+
+
+def notify_router_offline(router, dedupe_seconds=0):
+    label = router_notification_label(router)
+    grace = max(ONLINE_AFTER_SECONDS, 1)
+    add_notification(
+        "router_offline",
+        "Роутер пропал из сети",
+        f"{label} не присылает heartbeat дольше {grace} сек.",
+        "bad",
+        router_notification_details(router),
+        {"router_id": str((router or {}).get("id") or ""), "online": False},
+        dedupe_seconds=dedupe_seconds or max(45, grace // 2),
+    )
+
+
 def backup_filename():
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
     return f"owrt-remote-hub-backup-{stamp}.tar.gz"
@@ -1421,6 +1541,8 @@ def heartbeat(conn, payload):
     ts = now_ts()
     status_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     was_deleted = router_deleted(row)
+    known_before = bool(row and not was_deleted)
+    was_online = bool(row_to_router(row).get("online")) if known_before else False
     old_entry_port = int(row["entry_port"] or 0) if row else 0
     old_ssh_entry_port = int(row["ssh_entry_port"] or 0) if row else 0
     created_with_xray_ports = False
@@ -1495,6 +1617,7 @@ def heartbeat(conn, payload):
             or old_ssh_entry_port != ssh_entry_now
         )
     )
+    router["_became_online"] = bool(known_before and not was_online and router.get("online"))
     return router
 
 
@@ -4449,31 +4572,101 @@ function initialNotificationTs() {{
   return result;
 }}
 
-let lastNotificationTs = initialNotificationTs();
+function initialNotificationSerial() {{
+  const stored = Number(localStorage.getItem('owrtLastNotificationSerial') || 0);
+  const initial = (window.HUB_NOTIFICATIONS || []).reduce((max, n) => Math.max(max, Number(n.serial || 0)), 0);
+  const result = Math.max(stored, initial);
+  localStorage.setItem('owrtLastNotificationSerial', String(result));
+  return result;
+}}
 
-async function loadNotifications({{initial = false}} = {{}}) {{
-  const res = await fetch('/api/notifications?after=' + encodeURIComponent(initial ? 0 : lastNotificationTs), {{cache: 'no-store'}});
-  if (!res.ok) return;
-  const data = await res.json();
-  const items = data.notifications || [];
-  if (initial) {{
-    window.HUB_NOTIFICATIONS = items;
-    renderNotifications(window.HUB_NOTIFICATIONS);
-    return;
-  }}
-  if (!items.length) return;
+let lastNotificationTs = initialNotificationTs();
+let lastNotificationSerial = initialNotificationSerial();
+let notificationWaitAbort = false;
+let notificationWaitRunning = false;
+
+function storeNotificationCursor() {{
+  localStorage.setItem('owrtLastNotificationTs', String(lastNotificationTs));
+  localStorage.setItem('owrtLastNotificationSerial', String(lastNotificationSerial));
+}}
+
+function applyNotificationItems(items, {{initial = false}} = {{}}) {{
+  const list = Array.isArray(items) ? items : [];
   const known = new Set((window.HUB_NOTIFICATIONS || []).map(n => n.id));
-  const fresh = items.filter(n => !known.has(n.id)).sort((a, b) => Number(a.ts || 0) - Number(b.ts || 0));
-  window.HUB_NOTIFICATIONS = [...items, ...(window.HUB_NOTIFICATIONS || [])]
+  const fresh = initial ? [] : list.filter(n => !known.has(n.id)).sort((a, b) => {{
+    const serialDiff = Number(a.serial || 0) - Number(b.serial || 0);
+    if (serialDiff) return serialDiff;
+    return Number(a.ts || 0) - Number(b.ts || 0);
+  }});
+  window.HUB_NOTIFICATIONS = [...list, ...(window.HUB_NOTIFICATIONS || [])]
     .filter((item, idx, arr) => arr.findIndex(other => other.id === item.id) === idx)
-    .sort((a, b) => Number(b.ts || 0) - Number(a.ts || 0))
+    .sort((a, b) => {{
+      const tsDiff = Number(b.ts || 0) - Number(a.ts || 0);
+      if (tsDiff) return tsDiff;
+      return Number(b.serial || 0) - Number(a.serial || 0);
+    }})
     .slice(0, 60);
-  for (const item of fresh) {{
+  for (const item of window.HUB_NOTIFICATIONS) {{
     lastNotificationTs = Math.max(lastNotificationTs, Number(item.ts || 0));
+    lastNotificationSerial = Math.max(lastNotificationSerial, Number(item.serial || 0));
+  }}
+  storeNotificationCursor();
+  renderNotifications(window.HUB_NOTIFICATIONS);
+  for (const item of fresh) {{
     showBrowserNotification(item);
   }}
-  localStorage.setItem('owrtLastNotificationTs', String(lastNotificationTs));
-  renderNotifications(window.HUB_NOTIFICATIONS);
+}}
+
+async function loadNotifications({{initial = false}} = {{}}) {{
+  const params = new URLSearchParams();
+  if (!initial && lastNotificationSerial > 0) params.set('after_serial', String(lastNotificationSerial));
+  else if (!initial && lastNotificationTs > 0) params.set('after', String(lastNotificationTs));
+  params.set('limit', initial ? '40' : '60');
+  const res = await fetch('/api/notifications?' + params.toString(), {{cache: 'no-store'}});
+  if (!res.ok) return;
+  const data = await res.json().catch(() => ({{}}));
+  const items = Array.isArray(data.notifications) ? data.notifications : [];
+  if (!items.length && !initial) {{
+    lastNotificationSerial = Math.max(lastNotificationSerial, Number(data.serial || 0));
+    storeNotificationCursor();
+    return;
+  }}
+  applyNotificationItems(items, {{initial}});
+}}
+
+async function waitNotificationsLoop() {{
+  if (notificationWaitRunning || notificationWaitAbort) return;
+  notificationWaitRunning = true;
+  try {{
+    while (!notificationWaitAbort) {{
+      const params = new URLSearchParams({{
+        after_serial: String(lastNotificationSerial || 0),
+        timeout: '25',
+        limit: '60'
+      }});
+      let res;
+      try {{
+        res = await fetch('/api/notifications/wait?' + params.toString(), {{cache: 'no-store'}});
+      }} catch (e) {{
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        continue;
+      }}
+      if (!res.ok) {{
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        continue;
+      }}
+      const data = await res.json().catch(() => ({{}}));
+      const items = Array.isArray(data.notifications) ? data.notifications : [];
+      if (items.length) {{
+        applyNotificationItems(items);
+        continue;
+      }}
+      lastNotificationSerial = Math.max(lastNotificationSerial, Number(data.serial || 0));
+      storeNotificationCursor();
+    }}
+  }} finally {{
+    notificationWaitRunning = false;
+  }}
 }}
 
 function bytesToBase64(bytes) {{
@@ -4536,7 +4729,8 @@ notifyClear.addEventListener('click', async () => {{
   }}
   window.HUB_NOTIFICATIONS = [];
   lastNotificationTs = Math.floor(Date.now() / 1000);
-  localStorage.setItem('owrtLastNotificationTs', String(lastNotificationTs));
+  lastNotificationSerial = 0;
+  storeNotificationCursor();
   renderNotifications(window.HUB_NOTIFICATIONS);
 }});
 
@@ -4579,8 +4773,9 @@ updateNotifyButton();
 syncRouterSearchToggleState();
 renderRouterView();
 fillRouterForm(true);
+waitNotificationsLoop();
 setInterval(loadRouters, 5000);
-setInterval(loadNotifications, 9000);
+setInterval(() => loadNotifications(), 30000);
 </script>
 </body>
 </html>"""
@@ -5285,11 +5480,63 @@ class App:
         self.session_token = session
         self.agent_token = agent
         self.public_url = public_url.rstrip("/")
+        self.router_state_lock = threading.Lock()
+        self.router_state_snapshot = {}
+        self.router_monitor_stop = threading.Event()
+        self.router_monitor_thread = None
 
     def conn(self):
         conn = connect(self.db_path)
         init_db(conn)
         return conn
+
+    def snapshot_router_states(self):
+        with self.conn() as conn:
+            routers = [row_to_router(row) for row in list_router_rows(conn)]
+        return {
+            str(router.get("id") or ""): {
+                "online": bool(router.get("online")),
+                "router": router,
+            }
+            for router in routers
+            if str(router.get("id") or "").strip()
+        }
+
+    def prime_router_state_snapshot(self):
+        snapshot = self.snapshot_router_states()
+        with self.router_state_lock:
+            self.router_state_snapshot = snapshot
+
+    def check_router_state_changes(self):
+        current = self.snapshot_router_states()
+        with self.router_state_lock:
+            previous = dict(self.router_state_snapshot)
+            self.router_state_snapshot = current
+        for router_id, old in previous.items():
+            new = current.get(router_id)
+            if not new:
+                continue
+            if bool(old.get("online")) and not bool(new.get("online")):
+                notify_router_offline(new.get("router") or {})
+
+    def router_state_monitor_loop(self):
+        interval = max(3, int(os.environ.get("OWRT_REMOTE_ROUTER_NOTIFY_POLL", "5")))
+        self.prime_router_state_snapshot()
+        while not self.router_monitor_stop.wait(interval):
+            try:
+                self.check_router_state_changes()
+            except Exception as exc:
+                print(f"WARNING: router state monitor error: {exc}", file=sys.stderr)
+
+    def start_router_state_monitor(self):
+        if self.router_monitor_thread and self.router_monitor_thread.is_alive():
+            return
+        self.router_monitor_stop.clear()
+        self.router_monitor_thread = threading.Thread(target=self.router_state_monitor_loop, daemon=True)
+        self.router_monitor_thread.start()
+
+    def stop_router_state_monitor(self):
+        self.router_monitor_stop.set()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -6425,7 +6672,23 @@ exit 127
                     "notifications": list_notifications(
                         query.get("after", ["0"])[0],
                         query.get("limit", ["60"])[0],
-                    )
+                        query.get("after_serial", ["0"])[0],
+                    ),
+                    "serial": latest_notification_serial(),
+                },
+            )
+            return
+        if path == "/api/notifications/wait":
+            query = self.query()
+            self.send_json(
+                200,
+                {
+                    "notifications": wait_for_notifications(
+                        query.get("after_serial", ["0"])[0],
+                        query.get("timeout", ["25"])[0],
+                        query.get("limit", ["60"])[0],
+                    ),
+                    "serial": latest_notification_serial(),
                 },
             )
             return
@@ -6483,6 +6746,8 @@ exit 127
                 payload = self.read_payload()
                 with self.app.conn() as conn:
                     router = heartbeat(conn, payload)
+                if router and router.pop("_became_online", False):
+                    notify_router_online(router)
                 xray_reload = None
                 if router and router.pop("_xray_reload_required", False):
                     try:
@@ -7364,6 +7629,7 @@ def cmd_serve(args):
     with app.conn():
         pass
     record_hub_start_event()
+    app.start_router_state_monitor()
     auth = load_auth()
     server = make_http_server(app, args.host, args.port)
     extra_servers = []
@@ -7406,6 +7672,7 @@ def cmd_serve(args):
     except KeyboardInterrupt:
         print("")
     finally:
+        app.stop_router_state_monitor()
         for extra_server in extra_servers:
             extra_server.shutdown()
 
