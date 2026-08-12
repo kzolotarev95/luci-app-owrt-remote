@@ -2266,69 +2266,175 @@ def dashboard_html(routers, username, sessions=None, notifications=None):
 body::before{{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none;background:conic-gradient(from 0deg at 50% 50%,rgba(168,85,247,.05),rgba(236,72,153,.34),rgba(59,130,246,.22),rgba(245,158,11,.13),rgba(168,85,247,.05));filter:blur(54px);opacity:.7;animation:auraSpin 38s linear infinite}}
 @keyframes bgFlow{{0%{{background-position:0% 0%,100% 0%,50% 100%,0 0,0 0,0 0}}50%{{background-position:28% 18%,62% 26%,38% 82%,0 0,15px 24px,24px 15px}}100%{{background-position:48% 28%,42% 42%,74% 62%,0 0,30px 0,0 30px}}}}
 @keyframes auraSpin{{from{{transform:rotate(0deg) scale(1)}}to{{transform:rotate(360deg) scale(1.08)}}}}
-.wrap{{position:relative;z-index:1;max-width:1220px;margin:0 auto;padding:22px}}.top{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);padding:20px 0 18px}}
-.brand{{display:flex;align-items:center;gap:14px}}
-h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10);overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px}}.links{{margin-top:8px;flex-wrap:wrap}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{position:relative;align-self:flex-end;justify-content:flex-end;align-content:flex-end;flex:1 1 auto;min-width:0;flex-wrap:nowrap;gap:6px;padding-top:42px;max-width:none}}.headerActions .badge,.headerActions .btn{{min-height:36px;min-width:132px;padding:8px 12px;border-radius:999px;font-weight:800;font-size:13px;line-height:1;white-space:nowrap}}.headerActions .btn[href="/logout"]{{margin-left:0}}.badge{{background:rgba(255,255,255,.08);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.nethavenTop{{border-color:rgba(34,211,238,.46);background:linear-gradient(110deg,rgba(14,165,233,.20),rgba(168,85,247,.22),rgba(34,197,94,.14));color:#ecfeff;box-shadow:0 10px 24px rgba(14,165,233,.14),inset 0 1px 0 rgba(255,255,255,.10)}}.nethavenTop::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite;pointer-events:none}}.authToggle{{cursor:pointer}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
- .toolbar{{display:grid;grid-template-columns:1fr 1fr 110px 110px 150px auto;gap:10px;margin:18px 0;padding:14px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px)}}.toolbar input,.toolbar select{{background:rgba(255,255,255,.08);border-color:var(--line);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}}.toolbar input::placeholder{{color:#b9adc9}}
-.authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:60;width:min(640px,calc(100vw - 44px));max-height:min(820px,calc(100svh - 120px));overflow:auto;padding:16px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px);scrollbar-width:thin}}.authMenu[hidden]{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
+.wrap{{position:relative;z-index:1;max-width:1220px;margin:0 auto;padding:22px}}.top{{display:grid;align-items:flex-start;justify-items:start;gap:8px;border-bottom:1px solid var(--line);padding:20px 0 18px}}
+.brand{{display:flex;align-items:center;gap:14px;width:100%;min-width:0}}
+h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10);overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.appBannerVersion{{color:#fb7185;text-shadow:0 0 12px rgba(251,113,133,.35)}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px}}.links{{margin-top:0;flex-wrap:nowrap}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-self:flex-start;justify-content:flex-start;align-content:flex-start;flex:1 1 auto;min-width:0;gap:8px;padding-top:0;max-width:none}}.headerActions .badge,.headerActions .btn{{width:100%;min-height:36px;min-width:0;padding:8px 10px;border-radius:999px;font-weight:800;font-size:12px;line-height:1;white-space:nowrap}}.headerActions .btn[href="/logout"]{{margin-left:0}}.badge{{background:rgba(255,255,255,.08);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.nethavenTop{{border-color:rgba(34,211,238,.46);background:linear-gradient(110deg,rgba(14,165,233,.20),rgba(168,85,247,.22),rgba(34,197,94,.14));color:#ecfeff;box-shadow:0 10px 24px rgba(14,165,233,.14),inset 0 1px 0 rgba(255,255,255,.10)}}.nethavenTop::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite;pointer-events:none}}.authToggle{{cursor:pointer}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
+ .toolbar{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1.25fr) minmax(88px,.46fr) minmax(92px,.48fr) minmax(0,1.1fr) minmax(116px,.58fr);gap:8px;margin:18px 0;padding:14px 16px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px);width:100%;max-width:100%;box-sizing:border-box}}.toolbar>*{{width:100%;min-width:0}}.toolbar input,.toolbar select{{background:rgba(255,255,255,.08);border-color:var(--line);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}}.toolbar input::placeholder{{color:#b9adc9}}
+.authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:60;width:min(640px,calc(100vw - 44px));max-height:min(820px,calc(100svh - 120px));overflow:auto;padding:16px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px);scrollbar-width:thin}}.authMenu[hidden]{{display:none}}.authMenu>h2,.authMenu>p{{display:none}}.authMenuHead{{position:relative;display:block}}.authMenuHead>div{{min-width:0}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenuClose{{display:none;position:absolute;top:14px;right:14px;min-height:34px;padding:7px 12px;border-radius:999px;white-space:nowrap}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
 .sessionBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.sessionHead{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}}.sessionHead h3{{margin:0;font-size:15px}}.sessionList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.sessionRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.sessionTitle{{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-weight:900}}.sessionMeta{{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.sessionCurrent{{border:1px solid rgba(34,197,94,.38);border-radius:999px;padding:2px 7px;color:#bbf7d0;background:rgba(34,197,94,.13);font-size:11px}}.sessionBtn{{padding:7px 9px;font-size:12px;border-radius:999px}}.sessionEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}
 .notifyBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.notifyActions{{display:flex;gap:7px;align-items:center;justify-content:flex-end;flex-wrap:wrap}}.notifyHint{{margin:-4px 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.notifyList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.notifyRow{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.notifyTitle{{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:950}}.notifyTitle span:first-child{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.notifyTime{{color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}}.notifyBody{{margin-top:4px;color:#ddd6fe;font-size:12px;line-height:1.35;word-break:break-word}}.notifyDetails{{margin:7px 0 0;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;max-height:92px;overflow:auto}}.notifyRow.warn{{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.08)}}.notifyRow.bad{{border-color:rgba(251,113,133,.38);background:rgba(251,113,133,.09)}}.notifyBtn.on{{border-color:rgba(34,197,94,.36);background:rgba(34,197,94,.15);color:#bbf7d0}}
 .backupBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.backupGrid{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}.backupGrid .wide{{grid-column:1/-1}}.backupGrid input[type=file]{{padding:8px;background:rgba(8,5,18,.72);border:1px solid var(--line);border-radius:8px;color:#ddd6fe;min-width:0}}.backupHint{{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.backupCmds{{display:grid;gap:8px;margin-top:10px}}.backupCmd{{border:1px solid rgba(255,255,255,.10);border-radius:8px;background:rgba(0,0,0,.18);padding:9px}}.backupCmd strong{{display:block;margin-bottom:5px;color:#f7f2ff;font-size:12px}}.backupCmd pre{{margin:0;white-space:pre-wrap;word-break:break-word;color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace}}.backupMsg{{margin-top:9px;color:#bbf7d0;font-size:12px;font-weight:800;line-height:1.35}}.backupMsg.bad{{color:#fecdd3}}
 input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:rgba(8,5,18,.72);color:var(--text)}}button,.btn{{border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:10px 13px;background:rgba(255,255,255,.10);color:#f7f2ff;font-weight:850;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}.authToggle{{border-radius:999px;padding:8px 14px;background:rgba(255,255,255,.08);color:#f3e8ff}}button.primary,.btn.primary{{background:var(--blue);color:#fff;box-shadow:0 10px 22px rgba(124,58,237,.22)}}button.bad,.btn.bad{{background:rgba(251,113,133,.16);color:#fecdd3}}.btn.good{{background:rgba(34,197,94,.16);color:#bbf7d0}}.btn.disabled{{opacity:.45;cursor:not-allowed}}
 .summary{{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}}.miniStat{{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.07);padding:8px 12px;color:#ddd6fe;font-weight:800;font-size:13px;line-height:1;white-space:nowrap}}
-.routerStats{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:8px;margin:0 0 10px}}.statCard{{position:relative;min-height:64px;overflow:hidden;border:1px solid var(--line);border-radius:8px;padding:10px 10px 9px;background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.04)),var(--panel);box-shadow:0 8px 20px rgba(0,0,0,.14);text-align:center;box-sizing:border-box}}.statCard::before{{content:"";position:absolute;inset:0 0 auto 0;height:2px;background:var(--cyan)}}.statCard span{{display:block;color:var(--muted);font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.035em}}.statCard strong{{display:block;margin-top:0;font-size:24px;line-height:1;color:#f7f2ff}}.statCard em{{display:block;min-width:0;margin-top:3px;padding:0 2px;color:#c4b5fd;font-style:normal;font-size:10px;line-height:1.2}}.statCard.online::before{{background:var(--green)}}.statCard.online strong{{color:#bbf7d0}}.statCard.offline::before{{background:var(--red)}}.statCard.offline strong{{color:#fecdd3}}.statCard.total::before{{background:var(--cyan)}}.statCard.total strong{{color:#a5f3fc}}.statCardHead{{display:flex;align-items:center;justify-content:center;min-height:18px}}.statCard.has-popover{{overflow:visible;z-index:12}}.statValueRow,.offlineStatRow{{position:relative;display:flex;align-items:center;justify-content:center;min-height:24px;margin-top:5px}}.offlineMoreBtn{{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;min-height:22px;padding:0 8px;border:1px solid rgba(251,113,133,.34);border-radius:999px;background:rgba(251,113,133,.12);color:#fecdd3;font-size:10px;font-weight:900;line-height:1;cursor:pointer;white-space:nowrap}}.offlineMoreBtn[aria-expanded="true"]{{background:rgba(251,113,133,.18);border-color:rgba(251,113,133,.48)}}.offlinePopover{{position:absolute;top:calc(100% + 8px);right:6px;width:min(340px,calc(100vw - 30px));padding:10px;border:1px solid rgba(251,113,133,.28);border-radius:12px;background:linear-gradient(180deg,rgba(49,28,44,.98),rgba(30,18,40,.98));box-shadow:0 22px 50px rgba(0,0,0,.34);text-align:left;z-index:25}}.offlinePopover[hidden]{{display:none!important}}.offlineList{{display:grid;gap:6px;max-height:170px;overflow:auto;padding-right:2px}}.offlineItem{{border:1px solid rgba(251,113,133,.18);border-radius:8px;padding:7px 8px;background:rgba(251,113,133,.08)}}.offlineName{{display:block;color:#fdf2f8;font-size:11px;font-weight:900;line-height:1.25;text-transform:none;letter-spacing:0}}
+.routerStats{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:8px;margin:0 0 10px}}.statCard{{position:relative;min-height:54px;overflow:hidden;border:1px solid var(--line);border-radius:8px;padding:8px 10px 7px;background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.04)),var(--panel);box-shadow:0 8px 20px rgba(0,0,0,.14);text-align:center;box-sizing:border-box}}.statCard::before{{content:"";position:absolute;inset:0 0 auto 0;height:2px;background:var(--cyan)}}.statCard span{{display:block;color:var(--muted);font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.035em}}.statCard strong{{display:block;margin-top:0;font-size:22px;line-height:1;color:#f7f2ff}}.statCard em{{display:block;min-width:0;margin-top:2px;padding:0 2px;color:#c4b5fd;font-style:normal;font-size:10px;line-height:1.15}}.statCard.online::before{{background:var(--green)}}.statCard.online strong{{color:#bbf7d0}}.statCard.offline::before{{background:var(--red)}}.statCard.offline strong{{color:#fecdd3}}.statCard.total::before{{background:var(--cyan)}}.statCard.total strong{{color:#a5f3fc}}.statCardHead{{display:flex;align-items:center;justify-content:center;min-height:14px}}.statCard.has-popover{{overflow:visible;z-index:12}}.statValueRow,.offlineStatRow{{position:relative;display:flex;align-items:center;justify-content:center;min-height:20px;margin-top:3px}}.offlineMoreBtn{{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;min-height:22px;padding:0 8px;border:1px solid rgba(251,113,133,.34);border-radius:999px;background:rgba(251,113,133,.12);color:#fecdd3;font-size:10px;font-weight:900;line-height:1;cursor:pointer;white-space:nowrap}}.offlineMoreBtn[aria-expanded="true"]{{background:rgba(251,113,133,.18);border-color:rgba(251,113,133,.48)}}.offlinePopover{{position:absolute;top:calc(100% + 8px);right:6px;width:min(340px,calc(100vw - 30px));padding:10px;border:1px solid rgba(251,113,133,.28);border-radius:12px;background:linear-gradient(180deg,rgba(49,28,44,.98),rgba(30,18,40,.98));box-shadow:0 22px 50px rgba(0,0,0,.34);text-align:left;z-index:25}}.offlinePopover[hidden]{{display:none!important}}.offlineList{{display:grid;gap:6px;max-height:170px;overflow:auto;padding-right:2px}}.offlineItem{{border:1px solid rgba(251,113,133,.18);border-radius:8px;padding:7px 8px;background:rgba(251,113,133,.08)}}.offlineName{{display:block;color:#fdf2f8;font-size:11px;font-weight:900;line-height:1.25;text-transform:none;letter-spacing:0}}
 .cards{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{position:relative;min-height:246px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;box-shadow:0 18px 46px rgba(0,0,0,.28);backdrop-filter:blur(10px)}}.card::before{{content:"";position:absolute;inset:0 0 auto 0;height:3px;background:var(--green)}}.card.online{{border-color:rgba(34,197,94,.45);box-shadow:0 18px 46px rgba(0,0,0,.28),0 0 0 1px rgba(34,197,94,.10),0 0 34px rgba(34,197,94,.10)}}.card.off{{border-color:rgba(251,113,133,.42);box-shadow:0 18px 46px rgba(0,0,0,.28),0 0 0 1px rgba(251,113,133,.08),0 0 30px rgba(251,113,133,.08)}}.card.off::before{{background:var(--red)}}.card.warn::before{{background:var(--amber)}}.card.main{{grid-column:span 1}}
 @keyframes onlineGlow{{0%,100%{{transform:scale(.9);opacity:.55}}50%{{transform:scale(1.08);opacity:1}}}}@keyframes offlineGlow{{0%,100%{{transform:scale(.88);opacity:.34}}50%{{transform:scale(1.08);opacity:.9}}}}
 @keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.nameRow{{display:inline-flex;align-items:center;justify-content:center;gap:8px;max-width:100%;margin-top:12px;vertical-align:top}}.nameRow::before{{content:"";display:block;flex:0 0 28px;width:28px;height:28px}}.name{{margin:0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}}.nameEditBtn{{position:static;display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;padding:0;border:1px solid rgba(251,191,36,.38);border-radius:999px;background:rgba(251,191,36,.12);color:#fde68a;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);cursor:pointer;opacity:.5;transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,opacity .15s ease}}.nameEditBtn:hover,.nameEditBtn:focus-visible{{opacity:1;border-color:rgba(34,211,238,.55);background:rgba(34,211,238,.14);color:#cffafe}}.nameEditBtn:active{{transform:scale(.96)}}.nameEditBtn svg{{width:13px;height:13px;display:block}}.mobilePanelToggle,.routerFormToggle{{display:none;width:100%;margin:14px 0 10px;border-radius:999px}}.routerFormWrap{{display:block}}[hidden],.headerActions[hidden],.routerStats[hidden],.routerFormWrap[hidden]{{display:none!important}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
-.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong,.metric.memory-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong,.metric.memory-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong,.metric.memory-bad strong{{color:#fecdd3}}.metric>span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.metric.temp-unavailable strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal;color:#f3e8ff}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.wolPanel{{display:grid;gap:10px;margin-top:12px;padding:12px;border:1px solid rgba(34,211,238,.20);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),rgba(18,14,30,.82);text-align:left}}.wolPanel[hidden]{{display:none!important}}.wolHeader{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.wolTitle{{margin:0;color:#f3e8ff;font-size:13px;font-weight:900}}.wolMeta{{min-height:16px;color:#c4b5fd;font-size:12px;line-height:1.35}}.wolMeta.bad{{color:#fecdd3}}.wolControls{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.95fr) auto auto;gap:8px;align-items:end}}.wolField{{display:grid;gap:6px;min-width:0;color:#ddd6fe;font-size:11px;font-weight:850}}.wolField select,.wolField input{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField select option{{background:#221a34;color:#f5f3ff}}.wolField select option:checked{{background:#3b82f6;color:#ffffff}}.wolField select:focus,.wolField input:focus{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolField input::placeholder{{color:rgba(221,214,254,.52)}}.wolControls .btn,.wolControls button{{min-height:38px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong,.metric.memory-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong,.metric.memory-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong,.metric.memory-bad strong{{color:#fecdd3}}.metric>span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.metric.temp-unavailable strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal;color:#f3e8ff}}.metric.model-metric strong{{margin-top:5px}}.modelMetricValue{{position:relative;display:flex;align-items:center;justify-content:center;width:100%;max-width:100%}}.modelLegendSpacer{{display:none}}.modelMetricName{{display:block;max-width:calc(100% - 72px);min-width:0;color:#ffffff;font-size:14px;line-height:1.2;text-align:center;white-space:nowrap}}.modelLegendBadge{{position:absolute;right:0;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;min-height:20px;min-width:62px;padding:0 8px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(120deg,rgba(34,211,238,.24),rgba(59,130,246,.16),rgba(168,85,247,.14));color:#e0f7ff;font-size:8px;font-weight:900;line-height:1;letter-spacing:.10em;text-transform:uppercase;box-shadow:0 8px 18px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12);overflow:hidden;white-space:nowrap}}.modelLegendBadge::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.modelLegendBadge span{{position:relative;display:block}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.wolPanel{{display:grid;gap:10px;margin-top:12px;padding:12px;border:1px solid rgba(34,211,238,.20);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),rgba(18,14,30,.82);text-align:left}}.wolPanel[hidden]{{display:none!important}}.wolHeader{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.wolTitle{{margin:0;color:#f3e8ff;font-size:13px;font-weight:900}}.wolMeta{{min-height:16px;color:#c4b5fd;font-size:12px;line-height:1.35}}.wolMeta.bad{{color:#fecdd3}}.wolControls{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.95fr) auto auto;gap:8px;align-items:end}}.wolField{{display:grid;gap:6px;min-width:0;color:#ddd6fe;font-size:11px;font-weight:850}}.wolField select,.wolField input{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField select option{{background:#221a34;color:#f5f3ff}}.wolField select option:checked{{background:#3b82f6;color:#ffffff}}.wolField select:focus,.wolField input:focus{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolField input::placeholder{{color:rgba(221,214,254,.52)}}.wolControls .btn,.wolControls button{{min-height:38px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 .wolControls .btn[disabled],.wolControls button[disabled]{{opacity:.48;cursor:not-allowed;filter:saturate(.62)}}
 .wolField input,.wolPickerToggle{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField input:focus,.wolPickerToggle:focus,.wolPickerToggle:focus-visible{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolDeviceField{{grid-column:1/-1;width:100%}}.wolPickerToggle{{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;cursor:pointer;touch-action:manipulation}}.wolPickerToggle[disabled]{{opacity:.55;cursor:not-allowed}}.wolPickerValue{{display:grid;gap:2px;min-width:0;flex:1}}.wolPickerValue strong{{display:block;min-width:0;color:#f5f3ff;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.wolPickerValue small{{display:block;min-width:0;color:#c4b5fd;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.wolPickerChevron{{flex:0 0 auto;color:#c4b5fd;font-size:15px;line-height:1}}.wolPickerList{{display:grid;gap:8px;max-height:240px;overflow:auto;padding:8px;border:1px solid rgba(34,211,238,.24);border-radius:12px;background:rgba(17,12,29,.88);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolDeviceBtn{{width:100%;display:grid;gap:3px;padding:10px 12px;border:1px solid rgba(167,139,250,.18);border-radius:10px;background:rgba(255,255,255,.04);color:#f5f3ff;text-align:left;cursor:pointer;touch-action:manipulation;transition:border-color .15s ease,background .15s ease,transform .15s ease}}.wolDeviceBtn:hover,.wolDeviceBtn:focus-visible{{border-color:rgba(34,211,238,.48);background:rgba(34,211,238,.12)}}.wolDeviceBtn:active{{transform:scale(.99)}}.wolDeviceBtn.active{{border-color:rgba(59,130,246,.62);background:rgba(59,130,246,.18);box-shadow:0 0 0 1px rgba(59,130,246,.16)}}.wolDeviceName{{display:block;color:#f5f3ff;font-size:13px;font-weight:800;line-height:1.3}}.wolDeviceMeta{{display:block;color:#c4b5fd;font-size:11px;line-height:1.35;word-break:break-word}}.wolPickerEmpty{{padding:14px 12px;border:1px dashed rgba(167,139,250,.20);border-radius:10px;background:rgba(255,255,255,.03);color:#c4b5fd;text-align:center}}.metric.memory-ok strong,.metric.flash-ok strong,.metric.memory-warn strong,.metric.flash-warn strong,.metric.memory-bad strong,.metric.flash-bad strong{{color:#f3e8ff}}.metric.memory-ok .metric-accent,.metric.flash-ok .metric-accent{{color:#bbf7d0}}.metric.memory-warn .metric-accent,.metric.flash-warn .metric-accent{{color:#fde68a}}.metric.memory-bad .metric-accent,.metric.flash-bad .metric-accent{{color:#fecdd3}}.metric-line{{display:block}}.metric-accent{{font-weight:inherit}}
-.brandPanel{{display:grid;grid-template-columns:132px 132px 168px;gap:8px;width:448px;max-width:100%}}.brandPanel .appBanner{{grid-column:1/span 2;width:100%;min-width:0}}.brandPanel .links{{grid-column:1/-1;display:grid;grid-template-columns:132px 132px 168px;gap:8px;margin-top:0}}.brandPanel .links a{{width:100%;min-width:0}}.routerSearchDock{{position:relative;display:block;grid-column:3;grid-row:1;align-self:start;width:168px;max-width:100%}}.mobileSearchDock{{display:none;width:100%;position:relative}}.routerSearchToggle{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;width:100%;padding:8px 14px;border:1px solid rgba(34,211,238,.30);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.12),rgba(124,58,237,.22),rgba(236,72,153,.12));color:#f3e8ff;font-size:13px;font-weight:800;line-height:1;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10)}}.routerSearchToggle[data-active="true"],.routerSearchToggle[aria-expanded="true"]{{border-color:rgba(34,211,238,.52);box-shadow:0 14px 30px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12)}}.routerSearchToggleIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:55;width:min(296px,calc(100vw - 24px))}}.routerSearchPanel[hidden]{{display:none!important}}.routerSearchCard{{display:grid;grid-template-rows:auto auto auto;align-content:start;gap:8px;width:100%;min-height:82px;padding:12px;border:1px solid rgba(34,211,238,.26);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.045)),rgba(19,14,32,.96);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}}.routerSearchHead{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.routerSearchTitle{{display:block;color:#f3e8ff;font-size:12px;font-weight:900;line-height:1.1}}.routerSearchClear{{min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.24);border-radius:999px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:11px;font-weight:850;cursor:pointer}}.routerSearchClear[disabled]{{opacity:.42;cursor:not-allowed}}.routerSearchField{{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.26);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.08),rgba(124,58,237,.14),rgba(236,72,153,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.routerSearchField:focus-within{{border-color:rgba(34,211,238,.54);box-shadow:0 0 0 3px rgba(34,211,238,.10),inset 0 1px 0 rgba(255,255,255,.08)}}.routerSearchField input{{width:100%;padding:0;border:0;background:transparent;color:#f7f2ff;box-shadow:none;outline:none;font-size:13px;font-weight:700}}.routerSearchField input::placeholder{{color:#b9adc9}}.routerSearchIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchMeta{{min-height:14px;color:#c4b5fd;font-size:11px;font-weight:800;line-height:1.2}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:220px;min-height:34px;margin:0;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
-@media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 1}}.top{{flex-direction:column}}.brandPanel{{width:448px}}.headerActions{{align-self:flex-start;flex-wrap:wrap;padding-top:0;justify-content:flex-start}}}}
-@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start;flex-direction:column}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.routerSearchToggle{{width:100%}}.routerSearchPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}.wolControls{{grid-template-columns:1fr}}.wolField span,.wolMeta{{text-align:center}}.wolControls .btn,.wolControls button{{width:100%}}}}
-@media(max-width:680px){{.brandPanel{{display:none}}.top{{padding:6px 0 8px;gap:8px}}.mobileSearchDock{{display:block;margin:0 0 2px}}.mobilePanelToggle,.routerFormToggle,.actionToggle{{width:100%;min-height:38px;margin:7px 0;padding:9px 12px;border-radius:999px;font-size:12px;line-height:1}}#hubMenuToggle{{margin-top:0}}.actionToggle{{display:inline-flex}}body.preload-mobile-panels .headerActions,body.preload-mobile-panels .routerFormWrap,body.preload-mobile-panels .routerStats{{display:none!important}}.card .actions.mobileCollapsed:not(.open){{display:none}}.cardTop{{gap:0}}}}
+.seasonalFx{{position:fixed;inset:0;display:block;width:100vw;height:100vh;z-index:0;pointer-events:none;opacity:.9;mix-blend-mode:screen}}.desktopHeader{{--hdr-col-1:124px;--hdr-col-2:124px;--hdr-col-3:156px;--hdr-col-4:124px;--hdr-col-5:144px;--hdr-col-6:144px;--hdr-col-7:144px;--hdr-col-8:144px;--top-col-1:256px;--top-col-2:288px;--top-col-3:144px;display:grid;gap:8px;width:max-content;max-width:100%;margin-left:15px}}.desktopHeaderTop{{display:grid;grid-template-columns:var(--top-col-1) var(--top-col-2) var(--top-col-3);align-items:flex-start;gap:8px;width:max-content;max-width:100%;justify-self:start}}.desktopHeaderTop>.appBanner{{width:var(--top-col-1);min-width:var(--top-col-1);max-width:var(--top-col-1)}}.desktopHeaderTop>.routerSearchDock{{width:var(--top-col-2);min-width:var(--top-col-2);max-width:var(--top-col-2)}}.desktopHeaderTop>#seasonDock{{width:var(--top-col-3);min-width:var(--top-col-3);max-width:var(--top-col-3)}}.desktopHeaderBottom{{display:grid;grid-template-columns:var(--hdr-col-1) var(--hdr-col-2) var(--hdr-col-3) var(--hdr-col-4) var(--hdr-col-5) var(--hdr-col-6) var(--hdr-col-7) var(--hdr-col-8);gap:8px;width:max-content;max-width:100%;align-items:start;justify-self:start}}.desktopHeader .appBanner{{grid-column:auto;width:100%;min-width:0}}.desktopHeader .links{{display:grid;grid-column:1/span 3;grid-template-columns:var(--hdr-col-1) var(--hdr-col-2) var(--hdr-col-3);gap:8px;margin-top:0}}.desktopHeader .links a{{width:100%;min-width:0}}.routerSearchDock{{position:relative;display:block;grid-column:auto;width:100%;min-width:0;max-width:100%}}.mobileSearchDock{{display:none;width:100%;position:relative}}.routerSearchToggle{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;width:100%;padding:8px 14px;border:1px solid rgba(34,211,238,.30);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.12),rgba(124,58,237,.22),rgba(236,72,153,.12));color:#f3e8ff;font-size:13px;font-weight:800;line-height:1;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10)}}.routerSearchToggle[data-active="true"],.routerSearchToggle[aria-expanded="true"]{{border-color:rgba(34,211,238,.52);box-shadow:0 14px 30px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12)}}.routerSearchToggleIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}#routerSearchToggle,#seasonToggle{{border:1px solid var(--line);background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.06);color:#f3e8ff}}#routerSearchToggle[data-active="true"],#routerSearchToggle[aria-expanded="true"],#seasonToggle[data-open="true"],#seasonToggle[aria-expanded="true"]{{border-color:var(--line);background:rgba(255,255,255,.11);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}}#routerSearchToggle .routerSearchToggleIcon,#seasonToggle .routerSearchToggleIcon{{color:#ddd6fe}}.routerSearchPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:55;width:min(296px,calc(100vw - 24px))}}.routerSearchPanel[hidden]{{display:none!important}}.routerSearchCard{{display:grid;grid-template-rows:auto auto auto;align-content:start;gap:8px;width:100%;min-height:82px;padding:12px;border:1px solid rgba(34,211,238,.26);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.045)),rgba(19,14,32,.96);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}}.routerSearchHead{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.routerSearchTitle{{display:block;color:#f3e8ff;font-size:12px;font-weight:900;line-height:1.1}}.routerSearchClear{{min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.24);border-radius:999px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:11px;font-weight:850;cursor:pointer}}.routerSearchClear[disabled]{{opacity:.42;cursor:not-allowed}}.routerSearchField{{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.26);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.08),rgba(124,58,237,.14),rgba(236,72,153,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.routerSearchField:focus-within{{border-color:rgba(34,211,238,.54);box-shadow:0 0 0 3px rgba(34,211,238,.10),inset 0 1px 0 rgba(255,255,255,.08)}}.routerSearchField input{{width:100%;padding:0;border:0;background:transparent;color:#f7f2ff;box-shadow:none;outline:none;font-size:13px;font-weight:700}}.routerSearchField input::placeholder{{color:#b9adc9}}.routerSearchIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchMeta{{min-height:14px;color:#c4b5fd;font-size:11px;font-weight:800;line-height:1.2}}.seasonDock{{display:grid;gap:6px;width:100%;padding:9px 10px;border:1px solid rgba(251,191,36,.18);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.035)),rgba(19,14,32,.90);box-shadow:0 12px 28px rgba(0,0,0,.18);backdrop-filter:blur(10px)}}.seasonLabel{{display:flex;align-items:center;justify-content:center;text-align:center;gap:8px;color:#fde68a;font-size:11px;font-weight:900;line-height:1.1;text-transform:uppercase;letter-spacing:.04em}}.seasonSwitch{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}}.seasonBtn{{min-height:30px;padding:6px 8px;border:1px solid rgba(251,191,36,.22);border-radius:999px;background:rgba(255,255,255,.06);color:#f7f2ff;font-size:11px;font-weight:850;line-height:1;cursor:pointer;transition:transform .15s ease,border-color .15s ease,background .15s ease,box-shadow .15s ease,color .15s ease}}.seasonBtn:hover,.seasonBtn:focus-visible{{border-color:rgba(34,211,238,.50);background:rgba(34,211,238,.12);color:#ecfeff}}.seasonBtn[data-active="true"]{{border-color:rgba(251,191,36,.52);background:linear-gradient(110deg,rgba(251,191,36,.22),rgba(34,211,238,.10),rgba(168,85,247,.14));box-shadow:0 10px 20px rgba(251,191,36,.14),inset 0 1px 0 rgba(255,255,255,.08);color:#fff7cc}}.seasonBtn:active{{transform:scale(.98)}}#seasonDock{{position:relative;display:block;grid-column:auto;width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none;align-self:start}}.seasonToggle{{min-height:36px;padding:8px 12px;font-size:13px;line-height:1;white-space:normal;text-align:center}}.seasonToggleText{{display:block}}.seasonPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:56;width:min(320px,calc(100vw - 24px))}}.seasonPanel[hidden]{{display:none!important}}.seasonCard{{display:grid;gap:8px;width:100%;padding:12px;border:1px solid rgba(251,191,36,.18);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035)),rgba(19,14,32,.95);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(12px)}}.headerActions{{display:grid;grid-column:4/span 5;grid-template-columns:var(--hdr-col-4) var(--hdr-col-5) var(--hdr-col-6) var(--hdr-col-7) var(--hdr-col-8);align-self:flex-start;justify-content:flex-start;align-content:flex-start;min-width:0;gap:8px;padding-top:0;max-width:none}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:220px;min-height:34px;margin:0;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
+@media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 1}}.top{{justify-items:stretch}}.desktopHeader,.desktopHeaderTop,.desktopHeaderBottom{{width:100%;max-width:none}}.desktopHeader{{--hdr-col-1:minmax(0,1fr);--hdr-col-2:minmax(0,1fr);--hdr-col-3:minmax(0,1.35fr);--hdr-col-4:minmax(0,1fr);--hdr-col-5:minmax(0,1fr);--hdr-col-6:minmax(0,1fr);--hdr-col-7:minmax(0,1fr);--hdr-col-8:minmax(0,1fr)}}.headerActions{{width:100%}}}}
+@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.headerStack{{margin-top:0;width:100%;min-width:0}}.headerStack .badge{{width:100%;min-width:0}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.authMenuHead{{padding-right:96px}}.authMenu h2{{margin-right:96px}}.authMenuClose{{display:inline-flex}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.seasonDock{{width:100%}}#mobileSeasonDock{{width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none}}.routerSearchToggle,.seasonToggle{{width:100%}}.routerSearchPanel,.seasonPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard,.seasonCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}.wolControls{{grid-template-columns:1fr}}.wolField span,.wolMeta{{text-align:center}}.wolControls .btn,.wolControls button{{width:100%}}}}
+@media(max-width:680px){{.desktopHeader{{display:none}}#hubMenuPanelHost{{display:block;width:100%}}#hubMenuPanelHost:empty{{display:none}}.top{{padding:6px 0 0;gap:0}}.mobileSearchDock{{display:block;margin:0}}.mobilePanelToggle,.routerFormToggle,.actionToggle{{width:100%;min-height:38px;margin:7px 0;padding:9px 12px;border-radius:999px;font-size:12px;line-height:1}}.actionToggle{{display:inline-flex}}body.preload-mobile-panels .headerActions,body.preload-mobile-panels .routerFormWrap,body.preload-mobile-panels .routerStats{{display:none!important}}.card .actions.mobileCollapsed:not(.open){{display:none}}.cardTop{{gap:0}}}}
 @media(max-width:680px){{.headerActions .badge,.headerActions .btn{{width:100%;min-width:0;max-width:none}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
-@media(max-width:680px){{.brandPanel{{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}}.brandPanel .appBanner{{width:100%}}.summary{{justify-content:center}}}}
+@media(max-width:680px){{.desktopHeader{{width:100%}}.summary{{justify-content:center}}}}
+#diagnosticBuild,.btn[data-diagnose]{{display:none!important}}
 </style>
 </head>
 <body class="preload-mobile-panels">
+<canvas class="seasonalFx" id="seasonalFx" aria-hidden="true" hidden></canvas>
 <main class="wrap">
   <section class="top">
     <div class="brand">
-      <div class="brandPanel">
-        <h1 class="appBanner"><span>OpenWrt Remote Hub</span></h1>
-        <div class="routerSearchDock" id="routerSearchDock">
-          <button class="routerSearchToggle" id="routerSearchToggle" type="button" aria-expanded="false" aria-controls="routerSearchPanel" data-active="false">
-            <span class="routerSearchToggleIcon" aria-hidden="true">⌕</span>
-            <span>Поиск роутеров</span>
-          </button>
-          <section class="routerSearchPanel" id="routerSearchPanel" aria-label="Поиск роутеров" hidden>
-            <div class="routerSearchCard">
-              <div class="routerSearchHead">
-                <strong class="routerSearchTitle">Поиск по роутерам</strong>
-                <button class="routerSearchClear" id="routerSearchClear" type="button" disabled>Очистить</button>
+      <div class="desktopHeader">
+        <div class="desktopHeaderTop">
+          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v100</span></span></h1>
+          <div class="routerSearchDock" id="routerSearchDock">
+            <button class="routerSearchToggle" id="routerSearchToggle" type="button" aria-expanded="false" aria-controls="routerSearchPanel" data-active="false">
+              <span>Поиск роутеров</span>
+            </button>
+            <section class="routerSearchPanel" id="routerSearchPanel" aria-label="Поиск роутеров" hidden>
+              <div class="routerSearchCard">
+                <div class="routerSearchHead">
+                  <strong class="routerSearchTitle">Поиск по роутерам</strong>
+                  <button class="routerSearchClear" id="routerSearchClear" type="button" disabled>Очистить</button>
+                </div>
+                <label class="routerSearchField" for="routerSearchInput">
+                  <span class="routerSearchIcon" aria-hidden="true">⌕</span>
+                  <input id="routerSearchInput" type="search" placeholder="Имя или router id" autocomplete="off" spellcheck="false">
+                </label>
+                <div class="routerSearchMeta" id="routerSearchMeta">Всего роутеров: 0</div>
               </div>
-              <label class="routerSearchField" for="routerSearchInput">
-                <span class="routerSearchIcon" aria-hidden="true">⌕</span>
-                <input id="routerSearchInput" type="search" placeholder="Имя или router id" autocomplete="off" spellcheck="false">
-              </label>
-              <div class="routerSearchMeta" id="routerSearchMeta">Всего роутеров: 0</div>
-            </div>
-          </section>
+            </section>
+          </div>
+          <div class="seasonDock" id="seasonDock" aria-label="Зимние эффекты">
+            <button class="routerSearchToggle seasonToggle" id="seasonToggle" type="button" aria-expanded="false" aria-controls="seasonPanel" data-open="false">
+              <span class="seasonToggleText">Эффекты</span>
+            </button>
+            <section class="seasonPanel" id="seasonPanel" aria-label="Зимние эффекты" hidden>
+              <div class="seasonCard">
+                <div class="seasonLabel">Эффекты Hub</div>
+                <div class="seasonSwitch" role="group" aria-label="Снег, дождь или космос">
+                  <button class="seasonBtn" type="button" data-season-mode="off" data-active="true" aria-pressed="true">Выкл</button>
+                  <button class="seasonBtn" type="button" data-season-mode="snow" data-active="false" aria-pressed="false">Снег</button>
+                  <button class="seasonBtn" type="button" data-season-mode="rain" data-active="false" aria-pressed="false">Дождь</button>
+                  <button class="seasonBtn" type="button" data-season-mode="cosmos" data-active="false" aria-pressed="false">Космос</button>
+                  <button class="seasonBtn" type="button" data-season-mode="embers" data-active="false" aria-pressed="false">&#1048;&#1089;&#1082;&#1088;&#1099;</button>
+                  <button class="seasonBtn" type="button" data-season-mode="orbit" data-active="false" aria-pressed="false">&#1054;&#1088;&#1073;&#1080;&#1090;&#1099;</button>
+                  <button class="seasonBtn" type="button" data-season-mode="prism" data-active="false" aria-pressed="false">&#1055;&#1088;&#1080;&#1079;&#1084;&#1072;</button>
+                  <button class="seasonBtn" type="button" data-season-mode="pulse" data-active="false" aria-pressed="false">&#1055;&#1091;&#1083;&#1100;&#1089;</button>
+                  <button class="seasonBtn" type="button" data-season-mode="laser" data-active="false" aria-pressed="false">&#1051;&#1091;&#1095;&#1080;</button>
+                </div>
+              </div>
+            </section>
+          </div>
         </div>
-        <div class="links">
-          <a href="https://t.me/kzolotarev95" target="_blank" rel="noopener noreferrer">Telegram</a>
-          <a href="https://github.com/kzolotarev95" target="_blank" rel="noopener noreferrer">GitHub</a>
-          <a class="nethavenTop" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">NetHaven VPN</a>
+        <div class="desktopHeaderBottom">
+          <div class="links">
+            <a href="https://t.me/kzolotarev95" target="_blank" rel="noopener noreferrer">Telegram</a>
+            <a href="https://github.com/kzolotarev95" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a class="nethavenTop" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">NetHaven VPN</a>
+          </div>
+          <div class="headerActions">
+            <a class="badge" href="/vps-terminal/" target="_blank" rel="noopener noreferrer">Терминал VPS</a>
+            <button class="badge" id="xrayReload" type="button">Обновить Xray CFG</button>
+            <button class="badge" id="xrayRestart" type="button">Рестарт Xray VPS</button>
+            <button class="badge authToggle" id="authToggle" type="button">{safe_username}</button>
+            <a class="btn" href="/logout">Выйти</a>
+            <div class="authMenu" id="authMenu" hidden>
+              <h2>Доступ к Hub</h2>
+              <p>Смена логина и пароля входа.</p>
+              <div class="authMenuHead">
+                <div>
+                  <h2>Р”РѕСЃС‚СѓРї Рє Hub</h2>
+                  <p>РЎРјРµРЅР° Р»РѕРіРёРЅР° Рё РїР°СЂРѕР»СЏ РІС…РѕРґР°.</p>
+                </div>
+                <button class="sessionBtn authMenuClose" id="authMenuClose" type="button">Р—Р°РєСЂС‹С‚СЊ</button>
+              </div>
+              <form id="authForm" class="authGrid">
+                <input class="wide" name="username" value="{safe_username}" placeholder="Логин" autocomplete="username" required>
+                <input name="current_password" type="password" placeholder="Текущий пароль" autocomplete="current-password" required>
+                <input name="password" type="password" placeholder="Новый пароль" autocomplete="new-password">
+                <input name="password_confirm" type="password" placeholder="Повтор пароля" autocomplete="new-password">
+                <button class="primary wide">Сохранить</button>
+              </form>
+              <div id="authMsg" class="msg" hidden></div>
+              <div class="sessionBox">
+                <div class="sessionHead">
+                  <h3>Управление сессиями</h3>
+                  <button class="sessionBtn bad" id="revokeOtherSessions" type="button">Завершить остальные</button>
+                </div>
+                <div id="sessionList" class="sessionList"></div>
+              </div>
+              <div class="notifyBox">
+                <div class="sessionHead">
+                  <h3>Уведомления</h3>
+                  <div class="notifyActions">
+                    <button class="sessionBtn notifyBtn" id="notifyEnable" type="button">Включить</button>
+                    <button class="sessionBtn" id="notifyClear" type="button">Очистить</button>
+                  </div>
+                </div>
+                <div class="notifyHint">Web Push для входов в панель, смены IP и запуска VPS/Hub. На iOS включай из приложения Hub с экрана Домой.</div>
+                <div id="notifyList" class="notifyList"></div>
+              </div>
+              <div class="backupBox">
+                <div class="sessionHead">
+                  <h3>Backup VPS</h3>
+                  <a class="sessionBtn btn good" id="backupDownload" href="/api/backup/download">Скачать</a>
+                </div>
+                <div class="backupHint">Архив переносит БД роутеров, логин, токены Hub/агента, push-ключи и уведомления. Для переезда на другой IP укажи новый VPS host/Public URL перед восстановлением.</div>
+                <div class="backupCmds">
+                  <div class="backupCmd">
+                    <strong>1. Сделать backup на старой VPS</strong>
+                    <pre>/opt/owrt-remote/owrt-remote-hub.py backup --out /root/owrt-hub-backup.tar.gz</pre>
+                  </div>
+                  <div class="backupCmd">
+                    <strong>2. Поднять Hub на новой VPS</strong>
+                    <pre>curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sh</pre>
+                  </div>
+                  <div class="backupCmd">
+                    <strong>3. Перенести архив на новую VPS</strong>
+                    <pre>scp /root/owrt-hub-backup.tar.gz root@NEW_IP:/root/owrt-hub-backup.tar.gz</pre>
+                  </div>
+                  <div class="backupCmd">
+                    <strong>4. Восстановить на новой VPS с новым IP/domain</strong>
+                    <pre>/opt/owrt-remote/owrt-remote-hub.py restore --file /root/owrt-hub-backup.tar.gz --vps-host NEW_IP_OR_DOMAIN --public-url https://NEW_DOMAIN</pre>
+                  </div>
+                  <div class="backupCmd">
+                    <strong>5. Применить после restore</strong>
+                    <pre>systemctl restart owrt-remote
+systemctl restart owrt-remote-xray</pre>
+                  </div>
+                </div>
+                <div class="backupGrid">
+                  <input class="wide" id="backupFile" type="file" accept=".gz,.tgz,.tar.gz,application/gzip,application/x-gzip">
+                  <input id="backupVpsHost" placeholder="Новый VPS host/IP">
+                  <input id="backupPublicUrl" placeholder="Новый Public URL">
+                  <button class="primary wide" id="backupRestore" type="button">Восстановить из backup</button>
+                </div>
+                <div id="backupMsg" class="backupMsg" hidden></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
     <div class="mobileSearchDock" id="mobileRouterSearchDock">
       <button class="routerSearchToggle mobilePanelToggle primary" id="mobileRouterSearchToggle" type="button" aria-expanded="false" aria-controls="mobileRouterSearchPanel" data-active="false">
-        <span class="routerSearchToggleIcon" aria-hidden="true">⌕</span>
         <span>Поиск роутеров</span>
       </button>
       <section class="routerSearchPanel" id="mobileRouterSearchPanel" aria-label="Поиск роутеров" hidden>
@@ -2345,81 +2451,29 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
         </div>
       </section>
     </div>
-    <button class="mobilePanelToggle primary" id="hubMenuToggle" type="button" hidden>Открыть меню хаба</button>
-    <div class="headerActions">
-      <a class="badge" href="/vps-terminal/" target="_blank" rel="noopener noreferrer">Терминал VPS</a>
-      <button class="badge" id="xrayReload" type="button">Обновить Xray CFG</button>
-      <button class="badge" id="xrayRestart" type="button">Рестарт Xray VPS</button>
-      <button class="badge authToggle" id="authToggle" type="button">{safe_username}</button>
-      <a class="btn" href="/logout">Выйти</a>
-      <div class="authMenu" id="authMenu" hidden>
-        <h2>Доступ к Hub</h2>
-        <p>Смена логина и пароля входа.</p>
-        <form id="authForm" class="authGrid">
-          <input class="wide" name="username" value="{safe_username}" placeholder="Логин" autocomplete="username" required>
-          <input name="current_password" type="password" placeholder="Текущий пароль" autocomplete="current-password" required>
-          <input name="password" type="password" placeholder="Новый пароль" autocomplete="new-password">
-          <input name="password_confirm" type="password" placeholder="Повтор пароля" autocomplete="new-password">
-          <button class="primary wide">Сохранить</button>
-        </form>
-        <div id="authMsg" class="msg" hidden></div>
-        <div class="sessionBox">
-          <div class="sessionHead">
-            <h3>Управление сессиями</h3>
-            <button class="sessionBtn bad" id="revokeOtherSessions" type="button">Завершить остальные</button>
+    <div class="mobileSearchDock" id="mobileSeasonDock" aria-label="Зимние эффекты">
+      <button class="routerSearchToggle seasonToggle mobilePanelToggle primary" id="mobileSeasonToggle" type="button" aria-expanded="false" aria-controls="mobileSeasonPanel" data-open="false">
+        <span class="seasonToggleText">Эффекты</span>
+      </button>
+      <section class="seasonPanel" id="mobileSeasonPanel" aria-label="Зимние эффекты" hidden>
+        <div class="seasonCard">
+          <div class="seasonLabel">Эффекты Hub</div>
+          <div class="seasonSwitch" role="group" aria-label="Снег, дождь или космос">
+            <button class="seasonBtn" type="button" data-season-mode="off" data-active="true" aria-pressed="true">Выкл</button>
+            <button class="seasonBtn" type="button" data-season-mode="snow" data-active="false" aria-pressed="false">Снег</button>
+            <button class="seasonBtn" type="button" data-season-mode="rain" data-active="false" aria-pressed="false">Дождь</button>
+            <button class="seasonBtn" type="button" data-season-mode="cosmos" data-active="false" aria-pressed="false">Космос</button>
+            <button class="seasonBtn" type="button" data-season-mode="embers" data-active="false" aria-pressed="false">&#1048;&#1089;&#1082;&#1088;&#1099;</button>
+            <button class="seasonBtn" type="button" data-season-mode="orbit" data-active="false" aria-pressed="false">&#1054;&#1088;&#1073;&#1080;&#1090;&#1099;</button>
+            <button class="seasonBtn" type="button" data-season-mode="prism" data-active="false" aria-pressed="false">&#1055;&#1088;&#1080;&#1079;&#1084;&#1072;</button>
+            <button class="seasonBtn" type="button" data-season-mode="pulse" data-active="false" aria-pressed="false">&#1055;&#1091;&#1083;&#1100;&#1089;</button>
+            <button class="seasonBtn" type="button" data-season-mode="laser" data-active="false" aria-pressed="false">&#1051;&#1091;&#1095;&#1080;</button>
           </div>
-          <div id="sessionList" class="sessionList"></div>
         </div>
-        <div class="notifyBox">
-          <div class="sessionHead">
-            <h3>Уведомления</h3>
-            <div class="notifyActions">
-              <button class="sessionBtn notifyBtn" id="notifyEnable" type="button">Включить</button>
-              <button class="sessionBtn" id="notifyClear" type="button">Очистить</button>
-            </div>
-          </div>
-          <div class="notifyHint">Web Push для входов в панель, смены IP и запуска VPS/Hub. На iOS включай из приложения Hub с экрана Домой.</div>
-          <div id="notifyList" class="notifyList"></div>
-        </div>
-        <div class="backupBox">
-          <div class="sessionHead">
-            <h3>Backup VPS</h3>
-            <a class="sessionBtn btn good" id="backupDownload" href="/api/backup/download">Скачать</a>
-          </div>
-          <div class="backupHint">Архив переносит БД роутеров, логин, токены Hub/агента, push-ключи и уведомления. Для переезда на другой IP укажи новый VPS host/Public URL перед восстановлением.</div>
-          <div class="backupCmds">
-            <div class="backupCmd">
-              <strong>1. Сделать backup на старой VPS</strong>
-              <pre>/opt/owrt-remote/owrt-remote-hub.py backup --out /root/owrt-hub-backup.tar.gz</pre>
-            </div>
-            <div class="backupCmd">
-              <strong>2. Поднять Hub на новой VPS</strong>
-              <pre>curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sh</pre>
-            </div>
-            <div class="backupCmd">
-              <strong>3. Перенести архив на новую VPS</strong>
-              <pre>scp /root/owrt-hub-backup.tar.gz root@NEW_IP:/root/owrt-hub-backup.tar.gz</pre>
-            </div>
-            <div class="backupCmd">
-              <strong>4. Восстановить на новой VPS с новым IP/domain</strong>
-              <pre>/opt/owrt-remote/owrt-remote-hub.py restore --file /root/owrt-hub-backup.tar.gz --vps-host NEW_IP_OR_DOMAIN --public-url https://NEW_DOMAIN</pre>
-            </div>
-            <div class="backupCmd">
-              <strong>5. Применить после restore</strong>
-              <pre>systemctl restart owrt-remote
-systemctl restart owrt-remote-xray</pre>
-            </div>
-          </div>
-          <div class="backupGrid">
-            <input class="wide" id="backupFile" type="file" accept=".gz,.tgz,.tar.gz,application/gzip,application/x-gzip">
-            <input id="backupVpsHost" placeholder="Новый VPS host/IP">
-            <input id="backupPublicUrl" placeholder="Новый Public URL">
-            <button class="primary wide" id="backupRestore" type="button">Восстановить из backup</button>
-          </div>
-          <div id="backupMsg" class="backupMsg" hidden></div>
-        </div>
-      </div>
+      </section>
     </div>
+    <button class="mobilePanelToggle primary" id="hubMenuToggle" type="button" hidden>Открыть меню хаба</button>
+    <div id="hubMenuPanelHost"></div>
   </section>
 
   <button class="routerFormToggle primary" id="routerFormToggle" type="button" hidden>Открыть добавление</button>
@@ -2469,6 +2523,7 @@ const routerStats = document.getElementById('routerStats');
 const routerStatsToggle = document.getElementById('routerStatsToggle');
 const headerActions = document.querySelector('.headerActions');
 const hubMenuToggle = document.getElementById('hubMenuToggle');
+const hubMenuPanelHost = document.getElementById('hubMenuPanelHost');
 const routerFormWrap = document.getElementById('routerFormWrap');
 const routerForm = document.getElementById('routerForm');
 const routerFormToggle = document.getElementById('routerFormToggle');
@@ -2485,6 +2540,15 @@ const mobileRouterSearchPanel = document.getElementById('mobileRouterSearchPanel
 const mobileRouterSearchInput = document.getElementById('mobileRouterSearchInput');
 const mobileRouterSearchClear = document.getElementById('mobileRouterSearchClear');
 const mobileRouterSearchMeta = document.getElementById('mobileRouterSearchMeta');
+const seasonDock = document.getElementById('seasonDock');
+const seasonToggle = document.getElementById('seasonToggle');
+const seasonPanel = document.getElementById('seasonPanel');
+const mobileSeasonDock = document.getElementById('mobileSeasonDock');
+const mobileSeasonToggle = document.getElementById('mobileSeasonToggle');
+const mobileSeasonPanel = document.getElementById('mobileSeasonPanel');
+const seasonalFxCanvas = document.getElementById('seasonalFx');
+const seasonButtons = Array.from(document.querySelectorAll('[data-season-mode]')).filter(Boolean);
+const seasonSwitches = Array.from(document.querySelectorAll('.seasonSwitch')).filter(Boolean);
 const routerIdInput = routerForm && routerForm.elements ? routerForm.elements.namedItem('id') : null;
 const routerNameInput = routerForm && routerForm.elements ? routerForm.elements.namedItem('name') : null;
 const routerRoleInput = routerForm && routerForm.elements ? routerForm.elements.namedItem('role') : null;
@@ -2511,6 +2575,17 @@ let activeDiagnosticRouterId = '';
 let offlineStatsExpanded = false;
 let routerSearchQuery = '';
 let lastRouterSearchTrigger = null;
+const SEASON_EFFECT_KEY = 'owrtRemote:seasonEffectMode';
+const SEASON_EFFECT_MODES = new Set(['off', 'snow', 'rain', 'cosmos', 'embers', 'orbit', 'prism', 'pulse', 'laser']);
+let seasonEffectMode = 'off';
+let seasonalFxCtx = null;
+let seasonalFxFrame = 0;
+let seasonalFxResizeTimer = 0;
+let seasonalFxLastTs = 0;
+let seasonalFxParticles = [];
+let seasonalFxSize = {{width: 0, height: 0, dpr: 1}};
+let seasonalFxPointer = {{x: 0, y: 0, lastX: 0, lastY: 0, targetWind: 0, wind: 0, lastMoveTs: 0, active: false}};
+let seasonPanelOpen = false;
 
 const routerSearchToggles = [routerSearchToggle, mobileRouterSearchToggle].filter(Boolean);
 const routerSearchPanels = [routerSearchPanel, mobileRouterSearchPanel].filter(Boolean);
@@ -2518,6 +2593,9 @@ const routerSearchInputs = [routerSearchInput, mobileRouterSearchInput].filter(B
 const routerSearchClears = [routerSearchClear, mobileRouterSearchClear].filter(Boolean);
 const routerSearchMetas = [routerSearchMeta, mobileRouterSearchMeta].filter(Boolean);
 const routerSearchDocks = [routerSearchDock, mobileRouterSearchDock].filter(Boolean);
+const seasonToggles = [seasonToggle, mobileSeasonToggle].filter(Boolean);
+const seasonPanels = [seasonPanel, mobileSeasonPanel].filter(Boolean);
+const seasonDocks = [seasonDock, mobileSeasonDock].filter(Boolean);
 
 function actionPanelId(routerId) {{
   return 'router-actions-' + String(routerId || '');
@@ -2794,7 +2872,7 @@ function renderWolPanelResponsive(router) {{
 }}
 
 function normalizeRouterSearch(value) {{
-  return String(value || '').toLowerCase().trim().replace(/\s+/g, ' ');
+  return String(value || '').toLowerCase().trim().replace(/\\s+/g, ' ');
 }}
 
 function syncRouterSearchToggleState() {{
@@ -2864,6 +2942,584 @@ function updateRouterSearchMeta(total, visible) {{
   }});
 }}
 
+function loadSeasonEffectMode() {{
+  try {{
+    const value = localStorage.getItem(SEASON_EFFECT_KEY);
+    return SEASON_EFFECT_MODES.has(value) ? value : 'off';
+  }} catch (e) {{
+    return 'off';
+  }}
+}}
+
+function saveSeasonEffectMode(mode) {{
+  try {{
+    localStorage.setItem(SEASON_EFFECT_KEY, mode);
+  }} catch (e) {{}}
+}}
+
+function syncSeasonButtons() {{
+  seasonButtons.forEach((button) => {{
+    const active = button.dataset.seasonMode === seasonEffectMode;
+    button.dataset.active = active ? 'true' : 'false';
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }});
+}}
+
+function syncSeasonPanelToggleState() {{
+  seasonToggles.forEach((toggle) => {{
+    const open = seasonPanelOpen;
+    toggle.dataset.open = open ? 'true' : 'false';
+    toggle.dataset.active = open ? 'true' : 'false';
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    const label = toggle.querySelector('.seasonToggleText');
+    if (label) label.textContent = 'Эффекты';
+  }});
+}}
+
+function setSeasonPanelOpen(nextOpen) {{
+  seasonPanelOpen = !!nextOpen;
+  seasonPanels.forEach((panel) => {{
+    panel.hidden = !seasonPanelOpen;
+  }});
+  syncSeasonPanelToggleState();
+}}
+
+function seasonFxResetCanvas() {{
+  if (!seasonalFxCanvas) return;
+  seasonalFxCtx = seasonalFxCanvas.getContext('2d');
+  if (!seasonalFxCtx) return;
+  const rect = seasonalFxCanvas.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.max(1, Math.round(rect.width || window.innerWidth || 1));
+  const height = Math.max(1, Math.round(rect.height || window.innerHeight || 1));
+  seasonalFxCanvas.width = Math.max(1, Math.round(width * dpr));
+  seasonalFxCanvas.height = Math.max(1, Math.round(height * dpr));
+  seasonalFxCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  seasonalFxSize = {{width, height, dpr}};
+  if (!seasonalFxPointer.active) {{
+    seasonalFxPointer.x = width * .5;
+    seasonalFxPointer.y = height * .44;
+    seasonalFxPointer.lastX = seasonalFxPointer.x;
+    seasonalFxPointer.lastY = seasonalFxPointer.y;
+  }}
+}}
+
+function seasonFxSpawn(mode, randomY = false) {{
+  const width = seasonalFxSize.width || window.innerWidth || 1;
+  const height = seasonalFxSize.height || window.innerHeight || 1;
+  if (mode === 'snow') {{
+    return {{
+      x: Math.random() * width,
+      y: randomY ? Math.random() * height : -Math.random() * height,
+      r: .8 + Math.random() * 1.1,
+      vy: .014 + Math.random() * .022,
+      vx: (Math.random() - .5) * .02,
+      drift: Math.random() * Math.PI * 2,
+      driftSpeed: .00045 + Math.random() * .0009,
+      alpha: .52 + Math.random() * .26
+    }};
+  }}
+  if (mode === 'cosmos') {{
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 20 + Math.random() * Math.max(width, height) * .28;
+    const speed = .10 + Math.random() * .18;
+    return {{
+      x: width * .5 + Math.cos(angle) * distance,
+      y: height * .5 + Math.sin(angle) * distance,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      size: .7 + Math.random() * 1.8,
+      tail: 10 + Math.random() * 18,
+      twinkle: Math.random() * Math.PI * 2,
+      twinkleSpeed: .006 + Math.random() * .01,
+      alpha: .45 + Math.random() * .42
+    }};
+  }}
+  if (mode === 'embers') {{
+    return {{
+      x: Math.random() * width,
+      y: randomY ? Math.random() * height : height + Math.random() * height * .18,
+      vx: (Math.random() - .5) * .045,
+      vy: -(.022 + Math.random() * .05),
+      size: 1.1 + Math.random() * 2.4,
+      hue: 18 + Math.random() * 26,
+      alpha: .22 + Math.random() * .26,
+      sway: Math.random() * Math.PI * 2,
+      swaySpeed: .0015 + Math.random() * .0024
+    }};
+  }}
+  if (mode === 'orbit') {{
+    const centerX = width * .5;
+    const centerY = height * .42;
+    return {{
+      angle: Math.random() * Math.PI * 2,
+      radius: 20 + Math.random() * Math.min(width, height) * .22,
+      radiusSwing: 6 + Math.random() * 16,
+      radiusDrift: Math.random() * Math.PI * 2,
+      radiusSpeed: .0014 + Math.random() * .0022,
+      speed: (Math.random() > .5 ? 1 : -1) * (.0012 + Math.random() * .0024),
+      size: .9 + Math.random() * 2.2,
+      alpha: .22 + Math.random() * .34,
+      hue: 182 + Math.random() * 110,
+      lane: .72 + Math.random() * .7,
+      x: centerX,
+      y: centerY
+    }};
+  }}
+  if (mode === 'prism') {{
+    return {{
+      x: Math.random() * width,
+      y: randomY ? Math.random() * height : (Math.random() * height * .2),
+      vx: (Math.random() - .5) * .075,
+      vy: (Math.random() - .5) * .075,
+      size: 3.8 + Math.random() * 8.8,
+      rot: Math.random() * Math.PI * 2,
+      rotSpeed: (Math.random() - .5) * .006,
+      hue: Math.random() * 360,
+      alpha: .26 + Math.random() * .28
+    }};
+  }}
+  if (mode === 'pulse') {{
+    return {{
+      angle: Math.random() * Math.PI * 2,
+      radius: Math.random() * 26,
+      radiusSpeed: .035 + Math.random() * .065,
+      orbit: Math.random() * Math.PI * 2,
+      orbitSpeed: (Math.random() - .5) * .0034,
+      size: 4 + Math.random() * 16,
+      hue: 182 + Math.random() * 150,
+      alpha: .18 + Math.random() * .26,
+      phase: Math.random() * Math.PI * 2,
+      phaseSpeed: .003 + Math.random() * .0045
+    }};
+  }}
+  if (mode === 'laser') {{
+    const side = Math.random() > .5 ? 1 : -1;
+    return {{
+      x: side > 0 ? -40 - Math.random() * width * .18 : width + 40 + Math.random() * width * .18,
+      y: Math.random() * height,
+      vx: side > 0 ? (.24 + Math.random() * .26) : -(.24 + Math.random() * .26),
+      vy: (Math.random() - .5) * .065,
+      len: 20 + Math.random() * 42,
+      width: .8 + Math.random() * 1.5,
+      hue: 190 + Math.random() * 140,
+      alpha: .16 + Math.random() * .26,
+      pulse: Math.random() * Math.PI * 2,
+      pulseSpeed: .003 + Math.random() * .004
+    }};
+  }}
+  return {{
+    x: Math.random() * width,
+    y: randomY ? Math.random() * height : -Math.random() * height,
+    len: 8 + Math.random() * 10,
+    vy: .12 + Math.random() * .12,
+    vx: -(0.028 + Math.random() * .055),
+    width: .55 + Math.random() * .55,
+    alpha: .14 + Math.random() * .16
+  }};
+}}
+
+function seasonFxBuildParticles() {{
+  if (seasonEffectMode === 'off') {{
+    seasonalFxParticles = [];
+    return;
+  }}
+  const area = Math.max(1, seasonalFxSize.width * seasonalFxSize.height);
+  const count = seasonEffectMode === 'snow'
+    ? Math.min(560, Math.max(180, Math.round(area / 2100)))
+    : seasonEffectMode === 'cosmos'
+      ? Math.min(420, Math.max(160, Math.round(area / 2600)))
+      : seasonEffectMode === 'embers'
+        ? Math.min(280, Math.max(90, Math.round(area / 6200)))
+        : seasonEffectMode === 'orbit'
+          ? Math.min(160, Math.max(54, Math.round(area / 10800)))
+          : seasonEffectMode === 'prism'
+            ? Math.min(240, Math.max(84, Math.round(area / 7200)))
+            : seasonEffectMode === 'pulse'
+              ? Math.min(110, Math.max(36, Math.round(area / 16000)))
+              : seasonEffectMode === 'laser'
+                ? Math.min(180, Math.max(68, Math.round(area / 9200)))
+          : Math.min(360, Math.max(140, Math.round(area / 3200)));
+  seasonalFxParticles = Array.from({{length: count}}, () => seasonFxSpawn(seasonEffectMode, true));
+}}
+
+function seasonFxStop() {{
+  if (seasonalFxFrame) {{
+    cancelAnimationFrame(seasonalFxFrame);
+    seasonalFxFrame = 0;
+  }}
+  seasonalFxLastTs = 0;
+  seasonalFxPointer.targetWind = 0;
+  seasonalFxPointer.wind = 0;
+  if (seasonalFxCtx && seasonalFxCanvas) {{
+    seasonalFxCtx.clearRect(0, 0, seasonalFxSize.width, seasonalFxSize.height);
+  }}
+}}
+
+function seasonFxHandlePointerMove(ev) {{
+  if (!seasonalFxCanvas) return;
+  const width = seasonalFxSize.width || window.innerWidth || 1;
+  const height = seasonalFxSize.height || window.innerHeight || 1;
+  const x = Math.max(0, Math.min(width, Number(ev.clientX) || 0));
+  const y = Math.max(0, Math.min(height, Number(ev.clientY) || 0));
+  const deltaX = seasonalFxPointer.lastMoveTs ? (x - seasonalFxPointer.lastX) : 0;
+  const centerBias = ((x / width) - .5) * .03;
+  const motionBias = Math.max(-.05, Math.min(.05, deltaX * .0016));
+  seasonalFxPointer.x = x;
+  seasonalFxPointer.y = y;
+  seasonalFxPointer.lastX = x;
+  seasonalFxPointer.lastY = y;
+  seasonalFxPointer.lastMoveTs = Date.now();
+  seasonalFxPointer.active = true;
+  seasonalFxPointer.targetWind = centerBias + motionBias;
+}}
+
+function seasonFxHandlePointerLeave() {{
+  seasonalFxPointer.active = false;
+  seasonalFxPointer.targetWind = 0;
+}}
+
+function seasonFxStep(ts) {{
+  if (!seasonalFxCanvas || !seasonalFxCtx || seasonEffectMode === 'off') return;
+  if (!seasonalFxLastTs) seasonalFxLastTs = ts;
+  const dt = Math.min(40, Math.max(1, ts - seasonalFxLastTs));
+  seasonalFxLastTs = ts;
+  const {{width, height}} = seasonalFxSize;
+  if (!seasonalFxPointer.active || (Date.now() - seasonalFxPointer.lastMoveTs) > 160) {{
+    seasonalFxPointer.targetWind *= .92;
+    if (Math.abs(seasonalFxPointer.targetWind) < .0008) seasonalFxPointer.targetWind = 0;
+  }}
+  seasonalFxPointer.wind += (seasonalFxPointer.targetWind - seasonalFxPointer.wind) * Math.min(.18, dt / 140);
+  seasonalFxCtx.clearRect(0, 0, width, height);
+  if (seasonEffectMode === 'snow') {{
+    seasonalFxCtx.fillStyle = 'rgba(255,255,255,.8)';
+    for (const p of seasonalFxParticles) {{
+      p.drift += p.driftSpeed * dt;
+      p.y += p.vy * dt;
+      p.x += (p.vx + seasonalFxPointer.wind * (.75 + p.r * .22)) * dt + Math.sin(p.drift) * .013 * dt;
+      if (p.y > height + 14) {{
+        Object.assign(p, seasonFxSpawn('snow'));
+        p.y = -12 - Math.random() * 40;
+      }}
+      if (p.x < -20) p.x = width + 20;
+      if (p.x > width + 20) p.x = -20;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.fillStyle = `rgba(255,255,255,${{p.alpha}})`;
+      seasonalFxCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      seasonalFxCtx.fill();
+    }}
+  }} else if (seasonEffectMode === 'rain') {{
+    seasonalFxCtx.lineCap = 'round';
+    for (const p of seasonalFxParticles) {{
+      p.y += p.vy * dt;
+      const rainWind = seasonalFxPointer.wind * .42;
+      p.x += (p.vx + rainWind) * dt;
+      if (p.y > height + p.len + 20) {{
+        Object.assign(p, seasonFxSpawn('rain'));
+        p.y = -20 - Math.random() * height * .2;
+      }}
+      if (p.x < -40) p.x = width + 40;
+      if (p.x > width + 40) p.x = -40;
+      seasonalFxCtx.strokeStyle = `rgba(191,229,255,${{p.alpha}})`;
+      seasonalFxCtx.lineWidth = p.width;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(p.x, p.y);
+      seasonalFxCtx.lineTo(p.x + (p.vx + rainWind * .7) * 18, p.y + p.len);
+      seasonalFxCtx.stroke();
+    }}
+  }} else if (seasonEffectMode === 'cosmos') {{
+    seasonalFxCtx.lineCap = 'round';
+    seasonalFxCtx.lineJoin = 'round';
+    seasonalFxCtx.fillStyle = 'rgba(255,255,255,.9)';
+    const centerX = width * .5;
+    const centerY = height * .5;
+    for (const p of seasonalFxParticles) {{
+      p.twinkle += p.twinkleSpeed * dt;
+      const driftX = seasonalFxPointer.wind * (18 + p.size * 6);
+      const driftY = Math.sin(p.twinkle) * .15;
+      p.x += (p.vx + driftX) * dt;
+      p.y += (p.vy + driftY) * dt;
+      const dx = p.x - centerX;
+      const dy = p.y - centerY;
+      const dist = Math.hypot(dx, dy);
+      if (dist > Math.max(width, height) * .8) {{
+        Object.assign(p, seasonFxSpawn('cosmos'));
+      }}
+      const alpha = Math.max(.12, Math.min(.95, p.alpha + Math.sin(p.twinkle) * .12));
+      seasonalFxCtx.strokeStyle = `rgba(171,205,255,${{alpha * .34}})`;
+      seasonalFxCtx.lineWidth = Math.max(.4, p.size * .55);
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(p.x, p.y);
+      seasonalFxCtx.lineTo(p.x - (p.vx * p.tail + seasonalFxPointer.wind * 4), p.y - (p.vy * p.tail));
+      seasonalFxCtx.stroke();
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.fillStyle = `rgba(255,255,255,${{alpha}})`;
+      seasonalFxCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      seasonalFxCtx.fill();
+    }}
+  }} else if (seasonEffectMode === 'embers') {{
+    seasonalFxCtx.lineCap = 'round';
+    seasonalFxCtx.lineJoin = 'round';
+    const focusX = seasonalFxPointer.active ? seasonalFxPointer.x : width * .5;
+    const focusY = seasonalFxPointer.active ? seasonalFxPointer.y : height * .74;
+    const influenceRadius = Math.min(width, height) * .34 + 70;
+    for (const p of seasonalFxParticles) {{
+      const prevX = p.x;
+      const prevY = p.y;
+      p.sway += p.swaySpeed * dt;
+      if (seasonalFxPointer.active) {{
+        const dx = focusX - p.x;
+        const dy = focusY - p.y;
+        const dist = Math.max(1, Math.hypot(dx, dy));
+        const pull = Math.max(0, 1 - dist / influenceRadius);
+        p.vx += ((dx / dist) * pull * .0058 + seasonalFxPointer.wind * .04) * dt;
+        p.vy += ((dy / dist) * pull * .0041 - .0002) * dt;
+      }} else {{
+        p.vx += seasonalFxPointer.wind * .015 * dt;
+        p.vy -= .00038 * dt;
+      }}
+      p.vx *= .988;
+      p.vy *= .988;
+      p.x += (p.vx + Math.sin(p.sway) * .018) * dt;
+      p.y += p.vy * dt;
+      if (p.y < -34 || p.x < -80 || p.x > width + 80 || p.y > height + 80) {{
+        Object.assign(p, seasonFxSpawn('embers'));
+        p.y = height + Math.random() * 30;
+        p.x = seasonalFxPointer.active ? focusX + (Math.random() - .5) * 120 : Math.random() * width;
+      }}
+      const glow = seasonalFxPointer.active
+        ? Math.max(0, 1 - Math.hypot(focusX - p.x, focusY - p.y) / 150)
+        : 0;
+      const alpha = Math.min(.96, p.alpha + glow * .4 + Math.abs(Math.sin(p.sway)) * .08);
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue}},100%,72%,${{alpha * .56}})`;
+      seasonalFxCtx.lineWidth = Math.max(.7, p.size * .58);
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(prevX, prevY);
+      seasonalFxCtx.lineTo(p.x, p.y);
+      seasonalFxCtx.stroke();
+      seasonalFxCtx.fillStyle = `hsla(${{p.hue + 8}},100%,66%,${{alpha}})`;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      seasonalFxCtx.fill();
+    }}
+  }} else if (seasonEffectMode === 'orbit') {{
+    seasonalFxCtx.lineCap = 'round';
+    seasonalFxCtx.lineJoin = 'round';
+    const centerX = (seasonalFxPointer.active ? seasonalFxPointer.x : width * .5) + seasonalFxPointer.wind * width * .06;
+    const centerY = seasonalFxPointer.active ? seasonalFxPointer.y : height * .42;
+    const core = seasonalFxCtx.createRadialGradient(centerX, centerY, 0, centerX, centerY, Math.min(width, height) * .16);
+    core.addColorStop(0, 'rgba(34,211,238,.14)');
+    core.addColorStop(.45, 'rgba(168,85,247,.08)');
+    core.addColorStop(1, 'rgba(15,23,42,0)');
+    seasonalFxCtx.fillStyle = core;
+    seasonalFxCtx.beginPath();
+    seasonalFxCtx.arc(centerX, centerY, Math.min(width, height) * .16, 0, Math.PI * 2);
+    seasonalFxCtx.fill();
+    for (const p of seasonalFxParticles) {{
+      const prevX = p.x || centerX;
+      const prevY = p.y || centerY;
+      p.radiusDrift += p.radiusSpeed * dt;
+      p.angle += p.speed * dt * (1 + Math.min(.8, Math.abs(seasonalFxPointer.wind) * 10));
+      const radius = p.radius + Math.sin(p.radiusDrift) * p.radiusSwing;
+      p.x = centerX + Math.cos(p.angle) * radius;
+      p.y = centerY + Math.sin(p.angle * p.lane) * radius * (.42 + p.lane * .22);
+      const alpha = Math.max(.14, Math.min(.92, p.alpha + Math.sin(p.radiusDrift) * .1));
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue}},100%,72%,${{alpha * .42}})`;
+      seasonalFxCtx.lineWidth = Math.max(.6, p.size * .52);
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(prevX, prevY);
+      seasonalFxCtx.lineTo(p.x, p.y);
+      seasonalFxCtx.stroke();
+      if (p.size > 1.7) {{
+        seasonalFxCtx.strokeStyle = `hsla(${{p.hue + 18}},100%,74%,${{alpha * .18}})`;
+        seasonalFxCtx.lineWidth = .55;
+        seasonalFxCtx.beginPath();
+        seasonalFxCtx.moveTo(centerX, centerY);
+        seasonalFxCtx.lineTo(p.x, p.y);
+        seasonalFxCtx.stroke();
+      }}
+      seasonalFxCtx.fillStyle = `hsla(${{p.hue + 12}},100%,76%,${{alpha}})`;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      seasonalFxCtx.fill();
+    }}
+  }} else if (seasonEffectMode === 'prism') {{
+    seasonalFxCtx.lineCap = 'round';
+    seasonalFxCtx.lineJoin = 'round';
+    const focusX = seasonalFxPointer.active ? seasonalFxPointer.x : width * .5;
+    const focusY = seasonalFxPointer.active ? seasonalFxPointer.y : height * .46;
+    const pullRadius = Math.min(width, height) * .38 + 90;
+    for (const p of seasonalFxParticles) {{
+      const prevX = p.x;
+      const prevY = p.y;
+      p.rot += p.rotSpeed * dt;
+      if (seasonalFxPointer.active) {{
+        const dx = focusX - p.x;
+        const dy = focusY - p.y;
+        const dist = Math.max(1, Math.hypot(dx, dy));
+        const pull = Math.max(0, 1 - dist / pullRadius);
+        p.vx += ((dx / dist) * pull * .0052 + seasonalFxPointer.wind * .022) * dt;
+        p.vy += ((dy / dist) * pull * .0044) * dt;
+      }} else {{
+        p.vx += seasonalFxPointer.wind * .01 * dt;
+        p.vy += Math.sin(p.rot) * .0009 * dt;
+      }}
+      p.vx *= .992;
+      p.vy *= .992;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.x < -90 || p.x > width + 90 || p.y < -90 || p.y > height + 90) {{
+        Object.assign(p, seasonFxSpawn('prism', true));
+        if (seasonalFxPointer.active) {{
+          p.x = focusX + (Math.random() - .5) * 140;
+          p.y = focusY + (Math.random() - .5) * 140;
+        }}
+      }}
+      const alpha = Math.min(.96, p.alpha + Math.abs(Math.sin(p.rot * 1.6)) * .16);
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue}},100%,76%,${{alpha * .34}})`;
+      seasonalFxCtx.lineWidth = Math.max(.7, p.size * .16);
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(prevX, prevY);
+      seasonalFxCtx.lineTo(p.x, p.y);
+      seasonalFxCtx.stroke();
+      seasonalFxCtx.save();
+      seasonalFxCtx.translate(p.x, p.y);
+      seasonalFxCtx.rotate(p.rot);
+      seasonalFxCtx.fillStyle = `hsla(${{p.hue}},100%,64%,${{alpha}})`;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(0, -p.size);
+      seasonalFxCtx.lineTo(p.size * .8, 0);
+      seasonalFxCtx.lineTo(0, p.size);
+      seasonalFxCtx.lineTo(-p.size * .8, 0);
+      seasonalFxCtx.closePath();
+      seasonalFxCtx.fill();
+      seasonalFxCtx.restore();
+    }}
+  }} else if (seasonEffectMode === 'pulse') {{
+    seasonalFxCtx.lineCap = 'round';
+    seasonalFxCtx.lineJoin = 'round';
+    const centerX = seasonalFxPointer.active ? seasonalFxPointer.x : width * .5;
+    const centerY = seasonalFxPointer.active ? seasonalFxPointer.y : height * .48;
+    const maxRadius = Math.min(width, height) * .34 + 50;
+    for (const p of seasonalFxParticles) {{
+      p.phase += p.phaseSpeed * dt;
+      p.orbit += p.orbitSpeed * dt * (1 + Math.min(1.2, Math.abs(seasonalFxPointer.wind) * 12));
+      p.radius += p.radiusSpeed * dt;
+      if (p.radius > maxRadius) {{
+        Object.assign(p, seasonFxSpawn('pulse', true));
+        p.radius = Math.random() * 18;
+      }}
+      const offsetX = Math.cos(p.orbit) * p.radius;
+      const offsetY = Math.sin(p.orbit * 1.18) * p.radius * .7;
+      const x = centerX + offsetX;
+      const y = centerY + offsetY;
+      const life = 1 - Math.min(1, p.radius / maxRadius);
+      const pulse = .45 + .55 * Math.abs(Math.sin(p.phase));
+      const alpha = Math.max(.05, Math.min(.92, p.alpha * life + pulse * .08));
+      const ring = Math.max(2, p.size * (.45 + (1 - life) * 1.6));
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue}},100%,74%,${{alpha * .82}})`;
+      seasonalFxCtx.lineWidth = Math.max(.7, 1.1 + (1 - life) * 2.2);
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.arc(x, y, ring, 0, Math.PI * 2);
+      seasonalFxCtx.stroke();
+      seasonalFxCtx.fillStyle = `hsla(${{p.hue + 24}},100%,76%,${{alpha * .72}})`;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.arc(x, y, Math.max(.8, ring * .18), 0, Math.PI * 2);
+      seasonalFxCtx.fill();
+    }}
+  }} else if (seasonEffectMode === 'laser') {{
+    seasonalFxCtx.lineCap = 'round';
+    seasonalFxCtx.lineJoin = 'round';
+    const focusX = seasonalFxPointer.active ? seasonalFxPointer.x : width * .5;
+    const focusY = seasonalFxPointer.active ? seasonalFxPointer.y : height * .52;
+    const influence = Math.min(width, height) * .42 + 120;
+    for (const p of seasonalFxParticles) {{
+      p.pulse += p.pulseSpeed * dt;
+      if (seasonalFxPointer.active) {{
+        const dx = focusX - p.x;
+        const dy = focusY - p.y;
+        const dist = Math.max(1, Math.hypot(dx, dy));
+        const pull = Math.max(0, 1 - dist / influence);
+        p.vx += (dx / dist) * pull * .008 * dt;
+        p.vy += (dy / dist) * pull * .006 * dt;
+      }} else {{
+        p.vx += seasonalFxPointer.wind * .02 * dt;
+      }}
+      p.vx *= .996;
+      p.vy *= .995;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      if (p.x < -width * .35 || p.x > width * 1.35 || p.y < -120 || p.y > height + 120) {{
+        Object.assign(p, seasonFxSpawn('laser', true));
+      }}
+      const alpha = Math.min(.94, p.alpha + Math.abs(Math.sin(p.pulse)) * .18);
+      const tailX = p.x - p.vx * p.len * .55;
+      const tailY = p.y - p.vy * p.len * .55;
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue}},100%,72%,${{alpha * .9}})`;
+      seasonalFxCtx.lineWidth = p.width;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(p.x, p.y);
+      seasonalFxCtx.lineTo(tailX, tailY);
+      seasonalFxCtx.stroke();
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue + 28}},100%,86%,${{alpha * .34}})`;
+      seasonalFxCtx.lineWidth = p.width * 3.2;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(p.x, p.y);
+      seasonalFxCtx.lineTo(tailX, tailY);
+      seasonalFxCtx.stroke();
+    }}
+  }}
+  seasonalFxFrame = requestAnimationFrame(seasonFxStep);
+}}
+
+function seasonFxStart() {{
+  if (!seasonalFxCanvas || seasonEffectMode === 'off') return;
+  seasonalFxCanvas.hidden = false;
+  seasonFxResetCanvas();
+  seasonFxBuildParticles();
+  seasonFxStop();
+  seasonalFxFrame = requestAnimationFrame(seasonFxStep);
+}}
+
+function setSeasonEffectMode(nextMode, options = {{}}) {{
+  const mode = SEASON_EFFECT_MODES.has(nextMode) ? nextMode : 'off';
+  seasonEffectMode = mode;
+  if (options.persist !== false) saveSeasonEffectMode(mode);
+  syncSeasonButtons();
+  if (!seasonalFxCanvas) return;
+  if (mode === 'off') {{
+    seasonalFxCanvas.hidden = true;
+    seasonFxStop();
+    return;
+  }}
+  seasonalFxCanvas.hidden = false;
+  seasonFxStart();
+}}
+
+function initSeasonEffects() {{
+  if (!seasonalFxCanvas) return;
+  seasonSwitches.forEach((el) => {{
+    const columns = Math.min(3, Math.max(2, el.querySelectorAll('[data-season-mode]').length));
+    el.style.gridTemplateColumns = `repeat(${{columns}},minmax(0,1fr))`;
+  }});
+  window.addEventListener('resize', () => {{
+    clearTimeout(seasonalFxResizeTimer);
+    seasonalFxResizeTimer = setTimeout(() => {{
+      seasonalFxResizeTimer = 0;
+      if (seasonEffectMode === 'off') return;
+      seasonFxResetCanvas();
+      seasonFxBuildParticles();
+    }}, 120);
+  }});
+  window.addEventListener('pointermove', seasonFxHandlePointerMove, {{passive: true}});
+  window.addEventListener('pointerleave', seasonFxHandlePointerLeave);
+  window.addEventListener('blur', seasonFxHandlePointerLeave);
+  seasonEffectMode = loadSeasonEffectMode();
+  syncSeasonButtons();
+  setSeasonPanelOpen(false);
+  setSeasonEffectMode(seasonEffectMode, {{persist: false}});
+}}
+
 function numericMetric(value) {{
   const match = String(value ?? '').replace(',', '.').match(/-?\\d+(?:\\.\\d+)?/);
   return match ? Number(match[0]) : NaN;
@@ -2892,7 +3548,7 @@ function memoryUsagePercent(value) {{
 
 function flashUsagePercent(value) {{
   const text = String(value || '');
-  if (/mounted\s+used/i.test(text)) return NaN;
+  if (/mounted\\s+used/i.test(text)) return NaN;
   const explicit = text.match(/(\\d+(?:\\.\\d+)?)\\s*%\\s*used/i);
   if (explicit) return Number(explicit[1]);
   const numbers = text.match(/\\d+(?:\\.\\d+)?/g) || [];
@@ -2909,7 +3565,7 @@ function flashUsagePercent(value) {{
 function flashMetricLooksBroken(value) {{
   const text = String(value || '').trim();
   if (!text) return false;
-  if (/mounted\s+used/i.test(text)) return true;
+  if (/mounted\\s+used/i.test(text)) return true;
   return /^0(?:\\.0+)?\\s*[KMGTP]?B\\s*free\\s*\\/\\s*0(?:\\.0+)?\\s*[KMGTP]?B/i.test(text);
 }}
 
@@ -2982,8 +3638,8 @@ function numberedLines(items) {{
 function looksLikeShellCommand(text) {{
   const sample = String(text || '').trim();
   if (!sample) return false;
-  if (/^(LuCI|DevTools)\s*:/i.test(sample)) return false;
-  return /^(?:\/etc\/init\.d\/|systemctl|journalctl|ss|scp|cp|chmod|logread|pgrep|ping|grep|curl|wget|cat|tail|head|ps|ip|uci|ubus|opkg|service|netstat|sh|ash|bash|python|node|nginx|xray)\b/i.test(sample)
+  if (/^(LuCI|DevTools)\\s*:/i.test(sample)) return false;
+  return /^(?:\\/etc\\/init\\.d\\/|systemctl|journalctl|ss|scp|cp|chmod|logread|pgrep|ping|grep|curl|wget|cat|tail|head|ps|ip|uci|ubus|opkg|service|netstat|sh|ash|bash|python|node|nginx|xray)\\b/i.test(sample)
     || sample.includes(' | ')
     || sample.includes(' --');
 }}
@@ -3482,6 +4138,22 @@ function metricHtml(label, valueHtml, cls = '') {{
   return `<div class="metric ${{cls}}"><span>${{escapeHtml(label)}}</span><strong>${{valueHtml || escapeHtml('Неизвестно')}}</strong></div>`;
 }}
 
+function renderModelMetric(modelValue, showLegend = false) {{
+  const model = metricPlaceholder(modelValue);
+  const safeModel = escapeHtml(model);
+  if (!showLegend) return metricHtml('Модель', safeModel, 'span2 model-metric');
+  return metricHtml(
+    'Модель',
+    `<span class="modelMetricValue"><span class="modelLegendSpacer" aria-hidden="true"></span><span class="modelMetricName">${{safeModel}}</span><span class="modelLegendBadge"><span>Legend</span></span></span>`,
+    'span2 model-metric'
+  );
+}}
+
+function modelGetsLegendBadge(modelValue) {{
+  const model = String(modelValue || '').trim();
+  return /xiaomi\\s+mi\\s+router\\s+ax3000t/i.test(model);
+}}
+
 function formatTemperatureHtml(value) {{
   const raw = String(value || '').trim();
   const text = raw.toLowerCase();
@@ -3680,7 +4352,7 @@ function render(list) {{
     const actionsId = actionPanelId(r.id);
     const actionsOpen = expandedActionPanels.has(actionsId);
     const metricsHtml = [
-      metric('Модель', model, 'span2'),
+      renderModelMetric(model, modelGetsLegendBadge(model)),
       metric('Система', release),
       metric('Xray', statusRu(xray)),
       metric('SSH', statusRu(ssh)),
@@ -3707,7 +4379,6 @@ function render(list) {{
         ${{sshButton}}
         ${{wolButton}}
         <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
-        <a class="btn" href="${{escapeAttr(r.xray_client_url)}}">Client JSON</a>
         <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
         <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
@@ -3727,7 +4398,7 @@ function escapeAttr(s) {{
 }}
 
 function normalizeRouterName(value) {{
-  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 80);
+  return String(value || '').trim().replace(/\\s+/g, ' ').slice(0, 80);
 }}
 
 function renderRouterStats(list) {{
@@ -3804,7 +4475,7 @@ render = function(list) {{
     const actionsId = actionPanelId(r.id);
     const actionsOpen = expandedActionPanels.has(actionsId);
     const metricsHtml = [
-      metric('Модель', model, 'span2'),
+      renderModelMetric(model, modelGetsLegendBadge(model)),
       metric('Система', release),
       metric('Xray', statusRu(xray)),
       metric('SSH', statusRu(ssh)),
@@ -3829,7 +4500,6 @@ render = function(list) {{
         ${{sshButton}}
         ${{wolButton}}
         <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
-        <a class="btn" href="${{escapeAttr(r.xray_client_url)}}">Client JSON</a>
         <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
         <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
@@ -3991,6 +4661,24 @@ function initMobilePanelToggle(toggle, panel, openText, closeText, closedOnMobil
   }});
 }}
 
+const headerActionsAnchor = headerActions ? document.createComment('headerActions-anchor') : null;
+if (headerActionsAnchor && headerActions.parentNode) {{
+  headerActions.parentNode.insertBefore(headerActionsAnchor, headerActions.nextSibling);
+}}
+
+function syncHubMenuPlacement() {{
+  if (!headerActions || !hubMenuPanelHost || !headerActionsAnchor) return;
+  if (mobileLayoutMq.matches) {{
+    if (headerActions.parentNode !== hubMenuPanelHost) {{
+      hubMenuPanelHost.appendChild(headerActions);
+    }}
+    return;
+  }}
+  if (headerActionsAnchor.parentNode && headerActions.parentNode !== headerActionsAnchor.parentNode) {{
+    headerActionsAnchor.parentNode.insertBefore(headerActions, headerActionsAnchor);
+  }}
+}}
+
 function updateRouterFormToggle() {{
   if (!routerFormToggle || !routerFormWrap) return;
   const mobile = mobileLayoutMq.matches;
@@ -4011,6 +4699,7 @@ function initRouterFormToggle() {{
   if (mobileLayoutMq.matches) {{
     routerFormWrap.hidden = true;
   }}
+  syncHubMenuPlacement();
   updateRouterFormToggle();
 }}
 
@@ -4071,22 +4760,48 @@ routerSearchToggles.forEach((toggle) => {{
     setRouterSearchOpen(panel ? panel.hidden : true, {{preferredInput: input}});
   }});
 }});
+seasonButtons.forEach((button) => {{
+  button.addEventListener('click', () => {{
+    setSeasonEffectMode(button.dataset.seasonMode || 'off');
+  }});
+}});
+seasonToggles.forEach((toggle) => {{
+  toggle.addEventListener('click', (ev) => {{
+    ev.stopPropagation();
+    setSeasonPanelOpen(!seasonPanelOpen);
+  }});
+}});
 routerSearchPanels.forEach((panel) => {{
   panel.addEventListener('click', (ev) => ev.stopPropagation());
 }});
+seasonPanels.forEach((panel) => {{
+  panel.addEventListener('click', (ev) => ev.stopPropagation());
+}});
 document.addEventListener('click', (ev) => {{
+  if (seasonPanelOpen && !seasonDocks.some((dock) => dock && dock.contains(ev.target))) {{
+    setSeasonPanelOpen(false);
+  }}
   if (!routerSearchPanels.length || routerSearchPanels.every((panel) => panel.hidden)) return;
   if (routerSearchDocks.some((dock) => dock && dock.contains(ev.target))) return;
   setRouterSearchOpen(false, {{focusInput: false}});
 }});
 document.addEventListener('keydown', (ev) => {{
-  if (ev.key !== 'Escape' || !routerSearchPanels.length || routerSearchPanels.every((panel) => panel.hidden)) return;
-  setRouterSearchOpen(false, {{focusInput: false}});
-  if (lastRouterSearchTrigger) {{
-    lastRouterSearchTrigger.focus();
-  }} else if (routerSearchToggle) {{
-    routerSearchToggle.focus();
+  if (ev.key !== 'Escape') return;
+  let handled = false;
+  if (seasonPanelOpen) {{
+    setSeasonPanelOpen(false);
+    handled = true;
   }}
+  if (routerSearchPanels.length && routerSearchPanels.some((panel) => !panel.hidden)) {{
+    setRouterSearchOpen(false, {{focusInput: false}});
+    handled = true;
+    if (lastRouterSearchTrigger) {{
+      lastRouterSearchTrigger.focus();
+    }} else if (routerSearchToggle) {{
+      routerSearchToggle.focus();
+    }}
+  }}
+  if (handled) ev.preventDefault();
 }});
 diagnosticClose.addEventListener('click', closeDiagnosticPanel);
 diagnosticWorks.addEventListener('input', () => {{
@@ -4117,6 +4832,7 @@ if (routerFormToggle) {{
   }});
 }}
 initRouterFormToggle();
+syncHubMenuPlacement();
 initMobilePanelToggle(hubMenuToggle, headerActions, 'Открыть меню хаба', 'Скрыть меню хаба');
 initMobilePanelToggle(routerStatsToggle, routerStats, 'Открыть статистику', 'Скрыть статистику');
 document.body.classList.remove('preload-mobile-panels');
@@ -4391,6 +5107,7 @@ if (typeof mobileCardsMq.addEventListener === 'function') {{
   }});
 }}
 function updateMobileChromeToggles() {{
+  syncHubMenuPlacement();
   updateRouterFormToggle();
   updateMobilePanelToggle(hubMenuToggle, headerActions, 'Открыть меню хаба', 'Скрыть меню хаба');
   updateMobilePanelToggle(routerStatsToggle, routerStats, 'Открыть статистику', 'Скрыть статистику');
@@ -4403,6 +5120,9 @@ if (typeof mobileLayoutMq.addEventListener === 'function') {{
 
 const authToggle = document.getElementById('authToggle');
 const authMenu = document.getElementById('authMenu');
+const authMenuClose = document.getElementById('authMenuClose');
+const authMenuHeadTitle = authMenu ? authMenu.querySelector('.authMenuHead h2') : null;
+const authMenuHeadLead = authMenu ? authMenu.querySelector('.authMenuHead p') : null;
 const sessionList = document.getElementById('sessionList');
 const revokeOtherSessions = document.getElementById('revokeOtherSessions');
 const notifyList = document.getElementById('notifyList');
@@ -4419,6 +5139,14 @@ function hideOfflineStats() {{
   offlineStatsExpanded = false;
   renderRouterStats(window.ROUTERS || []);
 }}
+function closeAuthMenu(returnFocus = false) {{
+  clearTimeout(authHideTimer);
+  authMenu.hidden = true;
+  if (returnFocus && authToggle) authToggle.focus();
+}}
+if (authMenuHeadTitle) authMenuHeadTitle.textContent = '\u0414\u043e\u0441\u0442\u0443\u043f \u043a Hub';
+if (authMenuHeadLead) authMenuHeadLead.textContent = '\u0421\u043c\u0435\u043d\u0430 \u043b\u043e\u0433\u0438\u043d\u0430 \u0438 \u043f\u0430\u0440\u043e\u043b\u044f \u0432\u0445\u043e\u0434\u0430.';
+if (authMenuClose) authMenuClose.textContent = '\u0417\u0430\u043a\u0440\u044b\u0442\u044c';
 function showAuthMenu() {{
   clearTimeout(authHideTimer);
   hideOfflineStats();
@@ -4427,7 +5155,7 @@ function showAuthMenu() {{
 function scheduleHideAuthMenu() {{
   clearTimeout(authHideTimer);
   authHideTimer = setTimeout(() => {{
-    authMenu.hidden = true;
+    closeAuthMenu();
   }}, 180);
 }}
 authToggle.addEventListener('click', (ev) => {{
@@ -4435,9 +5163,15 @@ authToggle.addEventListener('click', (ev) => {{
   if (authMenu.hidden) {{
     showAuthMenu();
   }} else {{
-    authMenu.hidden = true;
+    closeAuthMenu();
   }}
 }});
+if (authMenuClose) {{
+  authMenuClose.addEventListener('click', (ev) => {{
+    ev.stopPropagation();
+    closeAuthMenu();
+  }});
+}}
 authToggle.addEventListener('mouseenter', showAuthMenu);
 authToggle.addEventListener('focus', showAuthMenu);
 authToggle.addEventListener('mouseleave', scheduleHideAuthMenu);
@@ -4446,7 +5180,7 @@ authMenu.addEventListener('focusin', showAuthMenu);
 authMenu.addEventListener('mouseleave', scheduleHideAuthMenu);
 authMenu.addEventListener('click', (ev) => ev.stopPropagation());
 document.addEventListener('click', () => {{
-  authMenu.hidden = true;
+  closeAuthMenu();
 }});
 document.addEventListener('click', (ev) => {{
   if (!offlineStatsExpanded) return;
@@ -4905,6 +5639,7 @@ renderSessions(window.HUB_SESSIONS);
 renderNotifications(window.HUB_NOTIFICATIONS);
 reportClientHint();
 updateNotifyButton();
+initSeasonEffects();
 syncRouterSearchToggleState();
 renderRouterView();
 fillRouterForm(true);
@@ -5534,7 +6269,7 @@ quickRunButtons.forEach((btn)=>btn.addEventListener('click',()=>runQuickCommand(
 function quickCommandText(btn){return String(btn?.dataset?.cmd||'');}
 async function copyQuickCommand(btn){const text=quickCommandText(btn);if(!text)return;const ok=await copyText(text);if(ok)notice('Команда скопирована','32');}
 async function runQuickCommand(btn){const text=quickCommandText(btn);if(!text)return;term&&term.focus&&term.focus();await sendData(normalizePaste(text)+'\r',true);}
-window.addEventListener('load',initTerminal);
+window.addEventListener('load',()=>{initTerminal();});
 </script>
 </body>
 </html>"""
