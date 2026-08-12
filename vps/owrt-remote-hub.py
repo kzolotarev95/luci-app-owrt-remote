@@ -2941,7 +2941,16 @@ function consumeWolPointerAction(kind, routerId, extra = '') {{
 
 function flushDeferredRouterRender() {{
   if (!pendingRouterRender) return;
+  if (shouldDeferRouterRender()) return;
   pendingRouterRender = false;
+  renderRouterView();
+}}
+
+function requestRouterRender() {{
+  if (shouldDeferRouterRender()) {{
+    pendingRouterRender = true;
+    return;
+  }}
   renderRouterView();
 }}
 
@@ -5175,7 +5184,7 @@ async function loadWolDevices(routerId, force = false) {{
   const state = getWolState(key);
   if (state.loading || (state.loaded && !force)) return;
   setWolState(key, {{loading: true, error: '', message: ''}});
-  renderRouterView();
+  requestRouterRender();
   try {{
     const res = await fetch('/api/router/' + encodeURIComponent(key) + '/wol/devices', {{
       method: 'POST',
@@ -5204,7 +5213,7 @@ async function loadWolDevices(routerId, force = false) {{
       error: err && err.message ? err.message : 'Не удалось получить список устройств'
     }});
   }}
-  renderRouterView();
+  requestRouterRender();
 }}
 
 async function loadTrafficClients(routerId, force = false, options = {{}}) {{
@@ -5215,7 +5224,7 @@ async function loadTrafficClients(routerId, force = false, options = {{}}) {{
   const silent = Boolean(options && options.silent);
   if (state.loading || (state.loaded && !force)) return;
   setTrafficState(key, silent ? {{loading: true, error: ''}} : {{loading: true, error: '', message: ''}});
-  if (!silent) renderRouterView();
+  if (!silent) requestRouterRender();
   try {{
     const res = await fetch('/api/router/' + encodeURIComponent(key) + '/traffic/clients', {{
       method: 'POST',
@@ -5252,7 +5261,7 @@ async function loadTrafficClients(routerId, force = false, options = {{}}) {{
       error: err && err.message ? err.message : 'Не удалось получить клиентов и трафик'
     }});
   }}
-  renderRouterView();
+  requestRouterRender();
 }}
 
 async function loadTrafficClients(routerId, force = false, options = {{}}) {{
@@ -5263,7 +5272,7 @@ async function loadTrafficClients(routerId, force = false, options = {{}}) {{
   const silent = Boolean(options && options.silent);
   if (state.loading || (state.loaded && !force)) return;
   setTrafficState(key, silent ? {{loading: true, error: ''}} : {{loading: true, error: '', message: ''}});
-  if (!silent) renderRouterView();
+  if (!silent) requestRouterRender();
   try {{
     const res = await fetch('/api/router/' + encodeURIComponent(key) + '/traffic/clients', {{
       method: 'POST',
@@ -5301,7 +5310,7 @@ async function loadTrafficClients(routerId, force = false, options = {{}}) {{
       error: err && err.message ? err.message : 'Не удалось получить клиентов и трафик'
     }});
   }}
-  renderRouterView();
+  requestRouterRender();
 }}
 
 async function resetTrafficClients(routerId) {{
@@ -5313,7 +5322,7 @@ async function resetTrafficClients(routerId) {{
   const confirmed = window.confirm('Сбросить счётчики трафика на роутере? Это очистит conntrack и может оборвать текущие подключения.');
   if (!confirmed) return;
   setTrafficState(key, {{loading: true, error: '', message: 'Сбрасываю conntrack и трафик...'}});
-  renderRouterView();
+  requestRouterRender();
   try {{
     const res = await fetch('/api/router/' + encodeURIComponent(key) + '/traffic/reset', {{
       method: 'POST',
@@ -5345,7 +5354,7 @@ async function resetTrafficClients(routerId) {{
       error: err && err.message ? err.message : 'Не удалось сбросить трафик'
     }});
   }}
-  renderRouterView();
+  requestRouterRender();
 }}
 
 async function wakeSelectedDevice(routerId) {{
@@ -5354,11 +5363,11 @@ async function wakeSelectedDevice(routerId) {{
   const selected = (Array.isArray(state.devices) ? state.devices : []).find((device) => String(device.mac || '') === String(state.selectedMac || ''));
   if (!selected) {{
     setWolState(key, {{error: 'Сначала выбери устройство из списка.', message: ''}});
-    renderRouterView();
+    requestRouterRender();
     return;
   }}
   setWolState(key, {{waking: true, error: '', message: ''}});
-  renderRouterView();
+  requestRouterRender();
   try {{
     const res = await fetch('/api/router/' + encodeURIComponent(key) + '/wol', {{
       method: 'POST',
@@ -5386,7 +5395,7 @@ async function wakeSelectedDevice(routerId) {{
       error: err && err.message ? err.message : 'Не удалось отправить Wake-on-LAN пакет'
     }});
   }}
-  renderRouterView();
+  requestRouterRender();
 }}
 
 function nextEntryPort(list) {{
@@ -5731,7 +5740,7 @@ cards.addEventListener('change', (ev) => {{
   clearPendingWolBlurFlush();
   const mac = String(ev.target.value || '');
   setWolState(routerId, {{selectedMac: mac, pickerOpen: false, error: '', message: ''}});
-  renderRouterView();
+  requestRouterRender();
   flushDeferredRouterRender();
 }});
 
@@ -5756,7 +5765,7 @@ cards.addEventListener('pointerup', (ev) => {{
     const mac = wolPickButton.dataset.wolMac || '';
     rememberWolPointerAction('pick', routerId, mac);
     setWolState(routerId, {{selectedMac: mac, pickerOpen: false, error: '', message: ''}});
-    renderRouterView();
+    requestRouterRender();
     flushDeferredRouterRender();
     return;
   }}
@@ -5769,7 +5778,7 @@ cards.addEventListener('pointerup', (ev) => {{
     const state = getWolState(wolPickerToggle);
     const pickerOpen = !state.pickerOpen;
     setWolState(wolPickerToggle, {{pickerOpen}});
-    renderRouterView();
+  requestRouterRender();
     if (!pickerOpen) flushDeferredRouterRender();
   }}
 }});
@@ -5805,7 +5814,7 @@ cards.addEventListener('click', async (ev) => {{
     const state = getWolState(wolToggleId);
     const open = !state.open;
     setWolState(wolToggleId, {{open, pickerOpen: open ? state.pickerOpen : false, error: '', message: open ? state.message : ''}});
-    renderRouterView();
+  requestRouterRender();
     if (!open) flushDeferredRouterRender();
     if (open) {{
       await loadWolDevices(wolToggleId, false);
@@ -5817,7 +5826,7 @@ cards.addEventListener('click', async (ev) => {{
     const state = getTrafficState(trafficToggleId);
     const open = !state.open;
     setTrafficState(trafficToggleId, {{open, error: '', message: open ? state.message : ''}});
-    renderRouterView();
+    requestRouterRender();
     if (open) {{
       await loadTrafficClients(trafficToggleId, false);
     }}
@@ -5832,7 +5841,7 @@ cards.addEventListener('click', async (ev) => {{
     if (consumeWolPointerAction('pick', routerId, mac)) return;
     clearPendingWolBlurFlush();
     setWolState(routerId, {{selectedMac: mac, pickerOpen: false, error: '', message: ''}});
-    renderRouterView();
+  requestRouterRender();
     flushDeferredRouterRender();
     return;
   }}
@@ -5844,7 +5853,7 @@ cards.addEventListener('click', async (ev) => {{
     const state = getWolState(wolPickerToggle);
     const pickerOpen = !state.pickerOpen;
     setWolState(wolPickerToggle, {{pickerOpen}});
-    renderRouterView();
+  requestRouterRender();
     if (!pickerOpen) flushDeferredRouterRender();
     return;
   }}
@@ -6453,7 +6462,7 @@ reportClientHint();
 updateNotifyButton();
 initSeasonEffects();
 syncRouterSearchToggleState();
-renderRouterView();
+  requestRouterRender();
 fillRouterForm(true);
 waitNotificationsLoop();
 setInterval(loadRouters, 5000);
