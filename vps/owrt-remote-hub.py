@@ -48,6 +48,7 @@ VAPID_PUBLIC_KEY_FILE = STATE_DIR / "hub-vapid-public.txt"
 BOOT_ID_FILE = STATE_DIR / "hub-boot.id"
 AGENT_TOKEN_FILE = STATE_DIR / "agent.token"
 XRAY_WAN_RECONNECT_FILE = STATE_DIR / "xray-wan-reconnect-restart.json"
+TRAFFIC_COUNTERS_FILE = STATE_DIR / "hub-traffic-counters.json"
 ACME_WEBROOT = STATE_DIR / "acme-webroot"
 ONLINE_AFTER_SECONDS = int(os.environ.get("OWRT_REMOTE_ONLINE_AFTER", "75"))
 DEFAULT_VLESS_PORT = int(os.environ.get("OWRT_REMOTE_VLESS_PORT", "8443"))
@@ -74,6 +75,7 @@ STATIC_CACHE_LOCK = threading.Lock()
 NOTIFICATIONS_LOCK = threading.Lock()
 NOTIFICATIONS_COND = threading.Condition()
 PUSH_LOCK = threading.Lock()
+TRAFFIC_COUNTERS_LOCK = threading.Lock()
 STATIC_CACHE = {}
 STATIC_CACHE_BYTES = 0
 BACKUP_VERSION = 1
@@ -88,6 +90,7 @@ BACKUP_STATE_FILES = (
     BOOT_ID_FILE,
     AGENT_TOKEN_FILE,
     XRAY_WAN_RECONNECT_FILE,
+    TRAFFIC_COUNTERS_FILE,
 )
 
 
@@ -239,6 +242,100 @@ def write_json_private(path, data):
         os.chmod(path, 0o600)
     except OSError:
         pass
+
+
+def clamp_nonnegative_int(value):
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def load_traffic_counters():
+    ensure_state()
+    if not TRAFFIC_COUNTERS_FILE.exists():
+        return {"version": 1, "routers": {}}
+    try:
+        data = json.loads(TRAFFIC_COUNTERS_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return {"version": 1, "routers": {}}
+    routers = data.get("routers")
+    if not isinstance(routers, dict):
+        routers = {}
+    return {"version": 1, "routers": routers}
+
+
+def save_traffic_counters(data):
+    payload = {"version": 1, "routers": data.get("routers") if isinstance(data, dict) else {}}
+    atomic_write_text(TRAFFIC_COUNTERS_FILE, json.dumps(payload, ensure_ascii=False, indent=2) + "\n", mode=0o600)
+
+
+def accumulate_traffic_clients(router_id, clients):
+    router_key = str(router_id or "").strip()
+    if not router_key or not isinstance(clients, list):
+        return clients
+    now = now_ts()
+    with TRAFFIC_COUNTERS_LOCK:
+        state = load_traffic_counters()
+        routers = state.setdefault("routers", {})
+        current_router_state = routers.get(router_key)
+        if not isinstance(current_router_state, dict):
+            current_router_state = {}
+        router_state = {}
+        for mac, item in current_router_state.items():
+            if not isinstance(item, dict):
+                continue
+            mac_key = str(mac or "").strip().upper()
+            if mac_key:
+                router_state[mac_key] = item
+        changed = router_state != current_router_state
+        for client in clients:
+            mac_key = str(client.get("mac") or "").strip().upper()
+            if not mac_key:
+                continue
+            raw_rx = clamp_nonnegative_int(client.get("rx_bytes"))
+            raw_tx = clamp_nonnegative_int(client.get("tx_bytes"))
+            saved = router_state.get(mac_key)
+            if isinstance(saved, dict):
+                prev_raw_rx = clamp_nonnegative_int(saved.get("raw_rx_bytes"))
+                prev_raw_tx = clamp_nonnegative_int(saved.get("raw_tx_bytes"))
+                total_rx = clamp_nonnegative_int(saved.get("rx_bytes")) + max(0, raw_rx - prev_raw_rx)
+                total_tx = clamp_nonnegative_int(saved.get("tx_bytes")) + max(0, raw_tx - prev_raw_tx)
+            else:
+                total_rx = raw_rx
+                total_tx = raw_tx
+            client["rx_bytes"] = total_rx
+            client["tx_bytes"] = total_tx
+            client["total_bytes"] = total_rx + total_tx
+            next_saved = {
+                "raw_rx_bytes": raw_rx,
+                "raw_tx_bytes": raw_tx,
+                "rx_bytes": total_rx,
+                "tx_bytes": total_tx,
+                "updated_at": now,
+                "ip": str(client.get("ip") or ""),
+                "name": str(client.get("name") or ""),
+            }
+            if router_state.get(mac_key) != next_saved:
+                router_state[mac_key] = next_saved
+                changed = True
+        if changed or routers.get(router_key) != router_state:
+            routers[router_key] = router_state
+            save_traffic_counters(state)
+    return clients
+
+
+def clear_traffic_counters(router_id):
+    router_key = str(router_id or "").strip()
+    if not router_key:
+        return
+    with TRAFFIC_COUNTERS_LOCK:
+        state = load_traffic_counters()
+        routers = state.get("routers")
+        if not isinstance(routers, dict) or router_key not in routers:
+            return
+        routers.pop(router_key, None)
+        save_traffic_counters(state)
 
 
 def save_auth(username, password):
@@ -2282,16 +2379,21 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 @keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.nameRow{{display:inline-flex;align-items:center;justify-content:center;gap:8px;max-width:100%;margin-top:12px;vertical-align:top}}.nameRow::before{{content:"";display:block;flex:0 0 28px;width:28px;height:28px}}.name{{margin:0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}}.nameEditBtn{{position:static;display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;padding:0;border:1px solid rgba(251,191,36,.38);border-radius:999px;background:rgba(251,191,36,.12);color:#fde68a;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);cursor:pointer;opacity:.5;transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,opacity .15s ease}}.nameEditBtn:hover,.nameEditBtn:focus-visible{{opacity:1;border-color:rgba(34,211,238,.55);background:rgba(34,211,238,.14);color:#cffafe}}.nameEditBtn:active{{transform:scale(.96)}}.nameEditBtn svg{{width:13px;height:13px;display:block}}.mobilePanelToggle,.routerFormToggle{{display:none;width:100%;margin:14px 0 10px;border-radius:999px}}.routerFormWrap{{display:block}}[hidden],.headerActions[hidden],.routerStats[hidden],.routerFormWrap[hidden]{{display:none!important}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
-.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong,.metric.memory-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong,.metric.memory-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong,.metric.memory-bad strong{{color:#fecdd3}}.metric>span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.metric.temp-unavailable strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal;color:#f3e8ff}}.metric.model-metric strong{{margin-top:5px}}.modelMetricValue{{position:relative;display:flex;align-items:center;justify-content:center;width:100%;max-width:100%}}.modelLegendSpacer{{display:none}}.modelMetricName{{display:block;max-width:calc(100% - 72px);min-width:0;color:#ffffff;font-size:14px;line-height:1.2;text-align:center;white-space:nowrap}}.modelLegendBadge{{position:absolute;right:0;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;min-height:20px;min-width:62px;padding:0 8px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(120deg,rgba(34,211,238,.24),rgba(59,130,246,.16),rgba(168,85,247,.14));color:#e0f7ff;font-size:8px;font-weight:900;line-height:1;letter-spacing:.10em;text-transform:uppercase;box-shadow:0 8px 18px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12);overflow:hidden;white-space:nowrap}}.modelLegendBadge::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.modelLegendBadge span{{position:relative;display:block}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.wolPanel{{display:grid;gap:10px;margin-top:12px;padding:12px;border:1px solid rgba(34,211,238,.20);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),rgba(18,14,30,.82);text-align:left}}.wolPanel[hidden]{{display:none!important}}.wolHeader{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.wolTitle{{margin:0;color:#f3e8ff;font-size:13px;font-weight:900}}.wolMeta{{min-height:16px;color:#c4b5fd;font-size:12px;line-height:1.35}}.wolMeta.bad{{color:#fecdd3}}.wolControls{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.95fr) auto auto;gap:8px;align-items:end}}.wolField{{display:grid;gap:6px;min-width:0;color:#ddd6fe;font-size:11px;font-weight:850}}.wolField select,.wolField input{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField select option{{background:#221a34;color:#f5f3ff}}.wolField select option:checked{{background:#3b82f6;color:#ffffff}}.wolField select:focus,.wolField input:focus{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolField input::placeholder{{color:rgba(221,214,254,.52)}}.wolControls .btn,.wolControls button{{min-height:38px}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong,.metric.memory-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong,.metric.memory-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong,.metric.memory-bad strong{{color:#fecdd3}}.metric>span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.metric.temp-unavailable strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal;color:#f3e8ff}}.metric.model-metric strong{{margin-top:5px}}.modelMetricValue{{position:relative;display:flex;align-items:center;justify-content:center;width:100%;max-width:100%}}.modelLegendSpacer{{display:none}}.modelMetricName{{display:block;max-width:calc(100% - 72px);min-width:0;color:#ffffff;font-size:14px;line-height:1.2;text-align:center;white-space:nowrap}}.modelLegendBadge{{position:absolute;right:0;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;min-height:20px;min-width:62px;padding:0 8px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(120deg,rgba(34,211,238,.24),rgba(59,130,246,.16),rgba(168,85,247,.14));color:#e0f7ff;font-size:8px;font-weight:900;line-height:1;letter-spacing:.10em;text-transform:uppercase;box-shadow:0 8px 18px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12);overflow:hidden;white-space:nowrap}}.modelLegendBadge::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.modelLegendBadge span{{position:relative;display:block}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.wolPanel,.trafficPanel{{display:grid;gap:10px;margin-top:12px;padding:12px;border:1px solid rgba(34,211,238,.20);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),rgba(18,14,30,.82);text-align:left}}.trafficPanel{{gap:12px}}.wolPanel[hidden],.trafficPanel[hidden]{{display:none!important}}.wolHeader{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.wolTitle{{margin:0;color:#f3e8ff;font-size:13px;font-weight:900}}.wolMeta{{min-height:16px;color:#c4b5fd;font-size:12px;line-height:1.35}}.wolMeta.bad{{color:#fecdd3}}.wolControls,.trafficControls{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.95fr) auto;gap:8px;align-items:end}}.wolField{{display:grid;gap:6px;min-width:0;color:#ddd6fe;font-size:11px;font-weight:850}}.wolField select,.wolField input{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField select option{{background:#221a34;color:#f5f3ff}}.wolField select option:checked{{background:#3b82f6;color:#ffffff}}.wolField select:focus,.wolField input:focus{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolField input::placeholder{{color:rgba(221,214,254,.52)}}.wolControls .btn,.wolControls button,.trafficControls .btn,.trafficControls button{{min-height:38px}}.trafficSummary{{display:flex;flex-wrap:wrap;gap:6px}}.trafficSummaryChip{{display:inline-flex;align-items:center;min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.20);border-radius:999px;background:rgba(255,255,255,.05);color:#ddd6fe;font-size:10px;font-weight:850;letter-spacing:.03em;text-transform:uppercase}}.trafficSummaryChip.accent{{border-color:rgba(34,211,238,.34);background:rgba(34,211,238,.12);color:#cffafe}}.trafficSummaryChip.muted{{border-color:rgba(245,158,11,.24);background:rgba(245,158,11,.10);color:#fde68a}}.trafficViewport{{max-height:min(46vh,420px);overflow:auto;padding:8px 4px 0 0;border-top:1px solid rgba(167,139,250,.14);scrollbar-width:thin;overscroll-behavior:contain}}.trafficViewport::-webkit-scrollbar{{width:8px}}.trafficViewport::-webkit-scrollbar-thumb{{background:rgba(167,139,250,.24);border-radius:999px}}.trafficViewport::-webkit-scrollbar-track{{background:transparent}}.trafficList{{display:grid;gap:7px}}.trafficRow{{display:grid;gap:7px;padding:10px;border:1px solid rgba(167,139,250,.16);border-radius:10px;background:linear-gradient(180deg,rgba(57,43,82,.45),rgba(33,26,48,.70));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.trafficRowTop{{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:10px}}.trafficIdentity{{min-width:0}}.trafficName{{margin:0;color:#f5f3ff;font-size:13px;font-weight:900;line-height:1.35}}.trafficMetaLine{{margin:3px 0 0;color:#c4b5fd;font-size:10.5px;line-height:1.4;word-break:break-word}}.trafficTotalBadge{{display:grid;gap:2px;min-width:84px;padding:7px 9px;border:1px solid rgba(34,211,238,.22);border-radius:10px;background:linear-gradient(180deg,rgba(34,211,238,.12),rgba(34,211,238,.04));text-align:right}}.trafficTotalBadge span{{color:#a5f3fc;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}}.trafficTotalBadge strong{{color:#ecfeff;font-size:12px;line-height:1.25;word-break:break-word}}.trafficTagRow{{display:flex;flex-wrap:wrap;gap:5px}}.trafficTag{{display:inline-flex;align-items:center;min-height:20px;padding:0 7px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.10);color:#cffafe;font-size:9px;font-weight:850;letter-spacing:.03em;text-transform:uppercase}}.trafficStats{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}}.trafficStat{{display:grid;gap:2px;padding:7px 8px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.04);text-align:center}}.trafficStat span{{color:#c4b5fd;font-size:9px;font-weight:800;letter-spacing:.02em;text-transform:uppercase}}.trafficStat strong{{color:#f5f3ff;font-size:11px;line-height:1.35;word-break:break-word}}.trafficStatTotal{{display:none}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 .wolControls .btn[disabled],.wolControls button[disabled]{{opacity:.48;cursor:not-allowed;filter:saturate(.62)}}
+.trafficControls{{grid-template-columns:repeat(2,minmax(0,1fr))}}.trafficPasswordField{{grid-column:1}}.trafficStatusField{{grid-column:2}}.trafficActionBtn{{width:100%;min-width:0;padding:8px 8px;font-size:10px;letter-spacing:.01em;white-space:nowrap}}.trafficStatusField .wolMeta{{font-size:10px;line-height:1.22}}.trafficDangerBtn{{border-color:rgba(251,113,133,.34)!important;background:linear-gradient(180deg,rgba(251,113,133,.18),rgba(251,113,133,.08))!important;color:#ffe4e6!important}}.trafficDangerBtn:hover{{border-color:rgba(251,113,133,.54)!important;background:linear-gradient(180deg,rgba(251,113,133,.24),rgba(251,113,133,.12))!important}}
 .wolField input,.wolPickerToggle{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField input:focus,.wolPickerToggle:focus,.wolPickerToggle:focus-visible{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolDeviceField{{grid-column:1/-1;width:100%}}.wolPickerToggle{{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;cursor:pointer;touch-action:manipulation}}.wolPickerToggle[disabled]{{opacity:.55;cursor:not-allowed}}.wolPickerValue{{display:grid;gap:2px;min-width:0;flex:1}}.wolPickerValue strong{{display:block;min-width:0;color:#f5f3ff;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.wolPickerValue small{{display:block;min-width:0;color:#c4b5fd;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.wolPickerChevron{{flex:0 0 auto;color:#c4b5fd;font-size:15px;line-height:1}}.wolPickerList{{display:grid;gap:8px;max-height:240px;overflow:auto;padding:8px;border:1px solid rgba(34,211,238,.24);border-radius:12px;background:rgba(17,12,29,.88);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolDeviceBtn{{width:100%;display:grid;gap:3px;padding:10px 12px;border:1px solid rgba(167,139,250,.18);border-radius:10px;background:rgba(255,255,255,.04);color:#f5f3ff;text-align:left;cursor:pointer;touch-action:manipulation;transition:border-color .15s ease,background .15s ease,transform .15s ease}}.wolDeviceBtn:hover,.wolDeviceBtn:focus-visible{{border-color:rgba(34,211,238,.48);background:rgba(34,211,238,.12)}}.wolDeviceBtn:active{{transform:scale(.99)}}.wolDeviceBtn.active{{border-color:rgba(59,130,246,.62);background:rgba(59,130,246,.18);box-shadow:0 0 0 1px rgba(59,130,246,.16)}}.wolDeviceName{{display:block;color:#f5f3ff;font-size:13px;font-weight:800;line-height:1.3}}.wolDeviceMeta{{display:block;color:#c4b5fd;font-size:11px;line-height:1.35;word-break:break-word}}.wolPickerEmpty{{padding:14px 12px;border:1px dashed rgba(167,139,250,.20);border-radius:10px;background:rgba(255,255,255,.03);color:#c4b5fd;text-align:center}}.metric.memory-ok strong,.metric.flash-ok strong,.metric.memory-warn strong,.metric.flash-warn strong,.metric.memory-bad strong,.metric.flash-bad strong{{color:#f3e8ff}}.metric.memory-ok .metric-accent,.metric.flash-ok .metric-accent{{color:#bbf7d0}}.metric.memory-warn .metric-accent,.metric.flash-warn .metric-accent{{color:#fde68a}}.metric.memory-bad .metric-accent,.metric.flash-bad .metric-accent{{color:#fecdd3}}.metric-line{{display:block}}.metric-accent{{font-weight:inherit}}
-.seasonalFx{{position:fixed;inset:0;display:block;width:100vw;height:100vh;z-index:0;pointer-events:none;opacity:.9;mix-blend-mode:screen}}.desktopHeader{{--hdr-col-1:124px;--hdr-col-2:124px;--hdr-col-3:156px;--hdr-col-4:124px;--hdr-col-5:144px;--hdr-col-6:144px;--hdr-col-7:144px;--hdr-col-8:144px;--top-col-1:256px;--top-col-2:288px;--top-col-3:144px;display:grid;gap:8px;width:max-content;max-width:100%;margin-left:15px}}.desktopHeaderTop{{display:grid;grid-template-columns:var(--top-col-1) var(--top-col-2) var(--top-col-3);align-items:flex-start;gap:8px;width:max-content;max-width:100%;justify-self:start}}.desktopHeaderTop>.appBanner{{width:var(--top-col-1);min-width:var(--top-col-1);max-width:var(--top-col-1)}}.desktopHeaderTop>.routerSearchDock{{width:var(--top-col-2);min-width:var(--top-col-2);max-width:var(--top-col-2)}}.desktopHeaderTop>#seasonDock{{width:var(--top-col-3);min-width:var(--top-col-3);max-width:var(--top-col-3)}}.desktopHeaderBottom{{display:grid;grid-template-columns:var(--hdr-col-1) var(--hdr-col-2) var(--hdr-col-3) var(--hdr-col-4) var(--hdr-col-5) var(--hdr-col-6) var(--hdr-col-7) var(--hdr-col-8);gap:8px;width:max-content;max-width:100%;align-items:start;justify-self:start}}.desktopHeader .appBanner{{grid-column:auto;width:100%;min-width:0}}.desktopHeader .links{{display:grid;grid-column:1/span 3;grid-template-columns:var(--hdr-col-1) var(--hdr-col-2) var(--hdr-col-3);gap:8px;margin-top:0}}.desktopHeader .links a{{width:100%;min-width:0}}.routerSearchDock{{position:relative;display:block;grid-column:auto;width:100%;min-width:0;max-width:100%}}.mobileSearchDock{{display:none;width:100%;position:relative}}.routerSearchToggle{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;width:100%;padding:8px 14px;border:1px solid rgba(34,211,238,.30);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.12),rgba(124,58,237,.22),rgba(236,72,153,.12));color:#f3e8ff;font-size:13px;font-weight:800;line-height:1;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10)}}.routerSearchToggle[data-active="true"],.routerSearchToggle[aria-expanded="true"]{{border-color:rgba(34,211,238,.52);box-shadow:0 14px 30px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12)}}.routerSearchToggleIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}#routerSearchToggle,#seasonToggle{{border:1px solid var(--line);background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.06);color:#f3e8ff}}#routerSearchToggle[data-active="true"],#routerSearchToggle[aria-expanded="true"],#seasonToggle[data-open="true"],#seasonToggle[aria-expanded="true"]{{border-color:var(--line);background:rgba(255,255,255,.11);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}}#routerSearchToggle .routerSearchToggleIcon,#seasonToggle .routerSearchToggleIcon{{color:#ddd6fe}}.routerSearchPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:55;width:min(296px,calc(100vw - 24px))}}.routerSearchPanel[hidden]{{display:none!important}}.routerSearchCard{{display:grid;grid-template-rows:auto auto auto;align-content:start;gap:8px;width:100%;min-height:82px;padding:12px;border:1px solid rgba(34,211,238,.26);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.045)),rgba(19,14,32,.96);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}}.routerSearchHead{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.routerSearchTitle{{display:block;color:#f3e8ff;font-size:12px;font-weight:900;line-height:1.1}}.routerSearchClear{{min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.24);border-radius:999px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:11px;font-weight:850;cursor:pointer}}.routerSearchClear[disabled]{{opacity:.42;cursor:not-allowed}}.routerSearchField{{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.26);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.08),rgba(124,58,237,.14),rgba(236,72,153,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.routerSearchField:focus-within{{border-color:rgba(34,211,238,.54);box-shadow:0 0 0 3px rgba(34,211,238,.10),inset 0 1px 0 rgba(255,255,255,.08)}}.routerSearchField input{{width:100%;padding:0;border:0;background:transparent;color:#f7f2ff;box-shadow:none;outline:none;font-size:13px;font-weight:700}}.routerSearchField input::placeholder{{color:#b9adc9}}.routerSearchIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchMeta{{min-height:14px;color:#c4b5fd;font-size:11px;font-weight:800;line-height:1.2}}.seasonDock{{display:grid;gap:6px;width:100%;padding:9px 10px;border:1px solid rgba(251,191,36,.18);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.035)),rgba(19,14,32,.90);box-shadow:0 12px 28px rgba(0,0,0,.18);backdrop-filter:blur(10px)}}.seasonLabel{{display:flex;align-items:center;justify-content:center;text-align:center;gap:8px;color:#fde68a;font-size:11px;font-weight:900;line-height:1.1;text-transform:uppercase;letter-spacing:.04em}}.seasonSwitch{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}}.seasonBtn{{min-height:30px;padding:6px 8px;border:1px solid rgba(251,191,36,.22);border-radius:999px;background:rgba(255,255,255,.06);color:#f7f2ff;font-size:11px;font-weight:850;line-height:1;cursor:pointer;transition:transform .15s ease,border-color .15s ease,background .15s ease,box-shadow .15s ease,color .15s ease}}.seasonBtn:hover,.seasonBtn:focus-visible{{border-color:rgba(34,211,238,.50);background:rgba(34,211,238,.12);color:#ecfeff}}.seasonBtn[data-active="true"]{{border-color:rgba(251,191,36,.52);background:linear-gradient(110deg,rgba(251,191,36,.22),rgba(34,211,238,.10),rgba(168,85,247,.14));box-shadow:0 10px 20px rgba(251,191,36,.14),inset 0 1px 0 rgba(255,255,255,.08);color:#fff7cc}}.seasonBtn:active{{transform:scale(.98)}}#seasonDock{{position:relative;display:block;grid-column:auto;width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none;align-self:start}}.seasonToggle{{min-height:36px;padding:8px 12px;font-size:13px;line-height:1;white-space:normal;text-align:center}}.seasonToggleText{{display:block}}.seasonPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:56;width:min(320px,calc(100vw - 24px))}}.seasonPanel[hidden]{{display:none!important}}.seasonCard{{display:grid;gap:8px;width:100%;padding:12px;border:1px solid rgba(251,191,36,.18);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035)),rgba(19,14,32,.95);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(12px)}}.headerActions{{display:grid;grid-column:4/span 5;grid-template-columns:var(--hdr-col-4) var(--hdr-col-5) var(--hdr-col-6) var(--hdr-col-7) var(--hdr-col-8);align-self:flex-start;justify-content:flex-start;align-content:flex-start;min-width:0;gap:8px;padding-top:0;max-width:none}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:220px;min-height:34px;margin:0;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
+.seasonalFx{{position:fixed;inset:0;display:block;width:100vw;height:100vh;z-index:0;pointer-events:none;opacity:.9;mix-blend-mode:screen}}.desktopHeader{{--hdr-col-1:124px;--hdr-col-2:124px;--hdr-col-3:156px;--hdr-col-4:124px;--hdr-col-5:144px;--hdr-col-6:144px;--hdr-col-7:144px;--hdr-col-8:144px;--top-col-1:256px;--top-col-2:288px;--top-col-3:144px;display:grid;gap:8px;width:max-content;max-width:100%;margin-left:15px}}.desktopHeaderTop{{display:grid;grid-template-columns:var(--top-col-1) var(--top-col-2) var(--top-col-3);align-items:flex-start;gap:8px;width:max-content;max-width:100%;justify-self:start}}.desktopHeaderTop>.appBanner{{width:var(--top-col-1);min-width:var(--top-col-1);max-width:var(--top-col-1)}}.desktopHeaderTop>.routerSearchDock{{width:var(--top-col-2);min-width:var(--top-col-2);max-width:var(--top-col-2)}}.desktopHeaderTop>#seasonDock{{width:var(--top-col-3);min-width:var(--top-col-3);max-width:var(--top-col-3)}}.desktopHeaderBottom{{display:grid;grid-template-columns:var(--hdr-col-1) var(--hdr-col-2) var(--hdr-col-3) var(--hdr-col-4) var(--hdr-col-5) var(--hdr-col-6) var(--hdr-col-7) var(--hdr-col-8);gap:8px;width:max-content;max-width:100%;align-items:start;justify-self:start}}.desktopHeader .appBanner{{grid-column:auto;width:100%;min-width:0}}.desktopHeader .links{{display:grid;grid-column:1/span 3;grid-template-columns:var(--hdr-col-1) var(--hdr-col-2) var(--hdr-col-3);gap:8px;margin-top:0}}.desktopHeader .links a{{width:100%;min-width:0}}.routerSearchDock{{position:relative;display:block;grid-column:auto;width:100%;min-width:0;max-width:100%}}.mobileSearchDock{{display:none;width:100%;position:relative}}.routerSearchToggle{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;width:100%;padding:8px 14px;border:1px solid rgba(34,211,238,.30);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.12),rgba(124,58,237,.22),rgba(236,72,153,.12));color:#f3e8ff;font-size:13px;font-weight:800;line-height:1;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10)}}.routerSearchToggle[data-active="true"],.routerSearchToggle[aria-expanded="true"]{{border-color:rgba(34,211,238,.52);box-shadow:0 14px 30px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12)}}.routerSearchToggleIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.mobileSearchVersion{{display:inline-flex;align-items:center;justify-content:center;min-height:20px;padding:0 7px;border:1px solid rgba(251,113,133,.34);border-radius:999px;background:rgba(251,113,133,.14);color:#fecdd3;font-size:10px;font-weight:900;line-height:1;letter-spacing:.04em;box-shadow:0 0 14px rgba(251,113,133,.14)}}.mobileSearchDock>.mobileSearchVersion{{display:flex;width:fit-content;margin:0 auto 6px}}#routerSearchToggle,#seasonToggle{{border:1px solid var(--line);background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.06);color:#f3e8ff}}#routerSearchToggle[data-active="true"],#routerSearchToggle[aria-expanded="true"],#seasonToggle[data-open="true"],#seasonToggle[aria-expanded="true"]{{border-color:var(--line);background:rgba(255,255,255,.11);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}}#routerSearchToggle .routerSearchToggleIcon,#seasonToggle .routerSearchToggleIcon{{color:#ddd6fe}}.routerSearchPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:55;width:min(296px,calc(100vw - 24px))}}.routerSearchPanel[hidden]{{display:none!important}}.routerSearchCard{{display:grid;grid-template-rows:auto auto auto;align-content:start;gap:8px;width:100%;min-height:82px;padding:12px;border:1px solid rgba(34,211,238,.26);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.045)),rgba(19,14,32,.96);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}}.routerSearchHead{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.routerSearchTitle{{display:block;color:#f3e8ff;font-size:12px;font-weight:900;line-height:1.1}}.routerSearchClear{{min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.24);border-radius:999px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:11px;font-weight:850;cursor:pointer}}.routerSearchClear[disabled]{{opacity:.42;cursor:not-allowed}}.routerSearchField{{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.26);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.08),rgba(124,58,237,.14),rgba(236,72,153,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.routerSearchField:focus-within{{border-color:rgba(34,211,238,.54);box-shadow:0 0 0 3px rgba(34,211,238,.10),inset 0 1px 0 rgba(255,255,255,.08)}}.routerSearchField input{{width:100%;padding:0;border:0;background:transparent;color:#f7f2ff;box-shadow:none;outline:none;font-size:13px;font-weight:700}}.routerSearchField input::placeholder{{color:#b9adc9}}.routerSearchIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchMeta{{min-height:14px;color:#c4b5fd;font-size:11px;font-weight:800;line-height:1.2}}.seasonDock{{display:grid;gap:6px;width:100%;padding:9px 10px;border:1px solid rgba(251,191,36,.18);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.035)),rgba(19,14,32,.90);box-shadow:0 12px 28px rgba(0,0,0,.18);backdrop-filter:blur(10px)}}.seasonLabel{{display:flex;align-items:center;justify-content:center;text-align:center;gap:8px;color:#fde68a;font-size:11px;font-weight:900;line-height:1.1;text-transform:uppercase;letter-spacing:.04em}}.seasonSwitch{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}}.seasonBtn{{min-height:30px;padding:6px 8px;border:1px solid rgba(251,191,36,.22);border-radius:999px;background:rgba(255,255,255,.06);color:#f7f2ff;font-size:11px;font-weight:850;line-height:1;cursor:pointer;transition:transform .15s ease,border-color .15s ease,background .15s ease,box-shadow .15s ease,color .15s ease}}.seasonBtn:hover,.seasonBtn:focus-visible{{border-color:rgba(34,211,238,.50);background:rgba(34,211,238,.12);color:#ecfeff}}.seasonBtn[data-active="true"]{{border-color:rgba(251,191,36,.52);background:linear-gradient(110deg,rgba(251,191,36,.22),rgba(34,211,238,.10),rgba(168,85,247,.14));box-shadow:0 10px 20px rgba(251,191,36,.14),inset 0 1px 0 rgba(255,255,255,.08);color:#fff7cc}}.seasonBtn:active{{transform:scale(.98)}}#seasonDock{{position:relative;display:block;grid-column:auto;width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none;align-self:start}}.seasonToggle{{min-height:36px;padding:8px 12px;font-size:13px;line-height:1;white-space:normal;text-align:center}}.seasonToggleText{{display:block}}.seasonPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:56;width:min(320px,calc(100vw - 24px))}}.seasonPanel[hidden]{{display:none!important}}.seasonCard{{display:grid;gap:8px;width:100%;padding:12px;border:1px solid rgba(251,191,36,.18);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035)),rgba(19,14,32,.95);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(12px)}}.headerActions{{display:grid;grid-column:4/span 5;grid-template-columns:var(--hdr-col-4) var(--hdr-col-5) var(--hdr-col-6) var(--hdr-col-7) var(--hdr-col-8);align-self:flex-start;justify-content:flex-start;align-content:flex-start;min-width:0;gap:8px;padding-top:0;max-width:none}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:220px;min-height:34px;margin:0;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 1}}.top{{justify-items:stretch}}.desktopHeader,.desktopHeaderTop,.desktopHeaderBottom{{width:100%;max-width:none}}.desktopHeader{{--hdr-col-1:minmax(0,1fr);--hdr-col-2:minmax(0,1fr);--hdr-col-3:minmax(0,1.35fr);--hdr-col-4:minmax(0,1fr);--hdr-col-5:minmax(0,1fr);--hdr-col-6:minmax(0,1fr);--hdr-col-7:minmax(0,1fr);--hdr-col-8:minmax(0,1fr)}}.headerActions{{width:100%}}}}
-@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.headerStack{{margin-top:0;width:100%;min-width:0}}.headerStack .badge{{width:100%;min-width:0}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.authMenuHead{{padding-right:96px}}.authMenu h2{{margin-right:96px}}.authMenuClose{{display:inline-flex}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.seasonDock{{width:100%}}#mobileSeasonDock{{width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none}}.routerSearchToggle,.seasonToggle{{width:100%}}.routerSearchPanel,.seasonPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard,.seasonCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}.wolControls{{grid-template-columns:1fr}}.wolField span,.wolMeta{{text-align:center}}.wolControls .btn,.wolControls button{{width:100%}}}}
+@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.headerStack{{margin-top:0;width:100%;min-width:0}}.headerStack .badge{{width:100%;min-width:0}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.authMenuHead{{padding-right:96px}}.authMenu h2{{margin-right:96px}}.authMenuClose{{display:inline-flex}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.seasonDock{{width:100%}}#mobileSeasonDock{{width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none}}.routerSearchToggle,.seasonToggle{{width:100%}}.routerSearchPanel,.seasonPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard,.seasonCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}.wolControls,.trafficControls{{grid-template-columns:1fr}}.wolField span,.wolMeta{{text-align:center}}.wolControls .btn,.wolControls button,.trafficControls .btn,.trafficControls button{{width:100%}}.trafficSummary{{justify-content:center}}.trafficViewport{{max-height:360px;padding-right:0}}.trafficRowTop{{grid-template-columns:1fr}}.trafficTotalBadge{{min-width:0;text-align:left}}}}
 @media(max-width:680px){{.desktopHeader{{display:none}}#hubMenuPanelHost{{display:block;width:100%}}#hubMenuPanelHost:empty{{display:none}}.top{{padding:6px 0 0;gap:0}}.mobileSearchDock{{display:block;margin:0}}.mobilePanelToggle,.routerFormToggle,.actionToggle{{width:100%;min-height:38px;margin:7px 0;padding:9px 12px;border-radius:999px;font-size:12px;line-height:1}}.actionToggle{{display:inline-flex}}body.preload-mobile-panels .headerActions,body.preload-mobile-panels .routerFormWrap,body.preload-mobile-panels .routerStats{{display:none!important}}.card .actions.mobileCollapsed:not(.open){{display:none}}.cardTop{{gap:0}}}}
 @media(max-width:680px){{.headerActions .badge,.headerActions .btn{{width:100%;min-width:0;max-width:none}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
 @media(max-width:680px){{.desktopHeader{{width:100%}}.summary{{justify-content:center}}}}
+@media(min-width:681px){{.trafficPanel{{width:min(100%,332px);justify-self:center;padding:9px 9px 8px;border-radius:10px;gap:9px}}.trafficControls{{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px}}.trafficPanel .wolField{{gap:4px;font-size:11px}}.trafficPanel .wolField span{{text-align:center}}.trafficPanel .wolField input{{min-height:32px;padding:0 9px;font-size:13px}}.trafficStatusField .wolMeta{{min-height:32px;font-size:11px;line-height:1.18;text-align:center}}.trafficPanel .btn{{min-height:32px;padding:6px 7px;font-size:11px}}.trafficSummary{{justify-content:center}}.trafficSummaryChip{{min-height:20px;padding:0 7px;font-size:9.5px}}.trafficViewport{{max-height:min(42svh,350px)}}.trafficList{{gap:6px}}.trafficRow{{gap:6px;padding:8px}}.trafficRowTop{{grid-template-columns:1fr;gap:7px}}.trafficIdentity{{text-align:center!important}}.trafficName{{display:block;width:100%;font-size:13px;text-align:center!important}}.trafficMetaLine{{font-size:10px;line-height:1.32;text-align:center!important}}.trafficTotalBadge{{display:grid;width:fit-content;min-width:136px;max-width:186px;justify-self:center!important;margin:0 auto;place-self:center;padding:6px 10px;text-align:center!important}}.trafficTotalBadge span{{font-size:9px}}.trafficTotalBadge strong{{font-size:12px}}.trafficStat{{padding:6px 5px}}.trafficStat span{{font-size:9px}}.trafficStat strong{{font-size:11px}}}}
+@media(max-width:900px),(pointer:coarse){{.trafficPanel{{width:min(100%,340px);justify-self:center;padding:10px 10px 9px;gap:9px}}.trafficControls{{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px;align-items:start}}.trafficPanel .wolField{{gap:4px;font-size:11px}}.trafficPanel .wolField span{{text-align:center}}.trafficPanel .wolField input{{min-height:34px;padding:0 10px;font-size:13px}}.trafficStatusField .wolMeta{{display:flex;align-items:center;justify-content:center;min-height:34px;padding:0 4px;font-size:11px;line-height:1.18;text-align:center}}.trafficPanel .btn{{min-height:34px;padding:7px 8px;font-size:11px}}.trafficSummary{{justify-content:center}}.trafficSummaryChip{{min-height:22px;padding:0 8px;font-size:9.5px}}.trafficViewport{{max-height:min(44svh,390px);padding-top:4px}}.trafficList{{gap:6px}}.trafficRow{{gap:6px;padding:8px}}.trafficRowTop{{grid-template-columns:1fr;gap:7px}}.trafficIdentity{{text-align:center!important}}.trafficName{{display:block;width:100%;font-size:13px;text-align:center!important}}.trafficMetaLine{{font-size:10px;line-height:1.33;text-align:center!important}}.trafficTotalBadge{{display:grid;width:fit-content;min-width:140px;max-width:198px;justify-self:center!important;margin:0 auto;place-self:center;padding:6px 12px;text-align:center!important}}.trafficTotalBadge span{{font-size:9px}}.trafficTotalBadge strong{{font-size:12px}}.trafficStats{{gap:5px}}.trafficStat{{padding:6px 6px}}.trafficStat span{{font-size:9px}}.trafficStat strong{{font-size:11px}}}}
+@media(max-width:680px){{.trafficPanel{{width:min(100%,332px);padding:9px 9px 8px;border-radius:10px}}.trafficControls{{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px}}.trafficPanel .wolField{{gap:4px;font-size:11px}}.trafficPanel .wolField input{{min-height:32px;padding:0 9px;font-size:12.5px}}.trafficStatusField .wolMeta{{min-height:32px;font-size:11px;line-height:1.18}}.trafficPanel .btn{{min-height:32px;padding:6px 7px;font-size:11px}}.trafficSummaryChip{{min-height:20px;padding:0 7px;font-size:9px}}.trafficViewport{{max-height:min(42svh,350px)}}.trafficIdentity{{text-align:center!important}}.trafficName{{font-size:12px;text-align:center!important}}.trafficMetaLine{{font-size:10px;line-height:1.28;text-align:center!important}}.trafficTotalBadge{{display:grid;width:fit-content;min-width:130px;max-width:180px;justify-self:center!important;margin:0 auto;place-self:center;padding:6px 10px;text-align:center!important}}.trafficTotalBadge strong{{font-size:11px}}.trafficStat{{padding:6px 5px}}.trafficStat strong{{font-size:11px}}}}
+@media(max-width:420px){{.trafficPanel{{width:100%}}.trafficControls{{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:5px}}.trafficStatusField,.trafficPasswordField{{grid-column:auto}}.trafficStatusField .wolMeta{{padding:6px 8px}}.trafficTotalBadge{{min-width:118px;max-width:168px}}}}
 #diagnosticBuild,.btn[data-diagnose]{{display:none!important}}
 </style>
 </head>
@@ -2302,7 +2404,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <div class="brand">
       <div class="desktopHeader">
         <div class="desktopHeaderTop">
-          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v100</span></span></h1>
+          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v101</span></span></h1>
           <div class="routerSearchDock" id="routerSearchDock">
             <button class="routerSearchToggle" id="routerSearchToggle" type="button" aria-expanded="false" aria-controls="routerSearchPanel" data-active="false">
               <span>Поиск роутеров</span>
@@ -2328,7 +2430,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
             <section class="seasonPanel" id="seasonPanel" aria-label="Зимние эффекты" hidden>
               <div class="seasonCard">
                 <div class="seasonLabel">Эффекты Hub</div>
-                <div class="seasonSwitch" role="group" aria-label="Снег, дождь или космос">
+                <div class="seasonSwitch" role="group" aria-label="Выбор эффектов">
                   <button class="seasonBtn" type="button" data-season-mode="off" data-active="true" aria-pressed="true">Выкл</button>
                   <button class="seasonBtn" type="button" data-season-mode="snow" data-active="false" aria-pressed="false">Снег</button>
                   <button class="seasonBtn" type="button" data-season-mode="rain" data-active="false" aria-pressed="false">Дождь</button>
@@ -2338,6 +2440,12 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
                   <button class="seasonBtn" type="button" data-season-mode="prism" data-active="false" aria-pressed="false">&#1055;&#1088;&#1080;&#1079;&#1084;&#1072;</button>
                   <button class="seasonBtn" type="button" data-season-mode="pulse" data-active="false" aria-pressed="false">&#1055;&#1091;&#1083;&#1100;&#1089;</button>
                   <button class="seasonBtn" type="button" data-season-mode="laser" data-active="false" aria-pressed="false">&#1051;&#1091;&#1095;&#1080;</button>
+                  <button class="seasonBtn" type="button" data-season-mode="aurora" data-active="false" aria-pressed="false">Аврора</button>
+                  <button class="seasonBtn" type="button" data-season-mode="matrix" data-active="false" aria-pressed="false">Матрица</button>
+                  <button class="seasonBtn" type="button" data-season-mode="nebula" data-active="false" aria-pressed="false">Туманность</button>
+                  <button class="seasonBtn" type="button" data-season-mode="fireworks" data-active="false" aria-pressed="false">Фейерверк</button>
+                  <button class="seasonBtn" type="button" data-season-mode="vortex" data-active="false" aria-pressed="false">Вихрь</button>
+                  <button class="seasonBtn" type="button" data-season-mode="comet" data-active="false" aria-pressed="false">Кометы</button>
                 </div>
               </div>
             </section>
@@ -2434,6 +2542,7 @@ systemctl restart owrt-remote-xray</pre>
       </div>
     </div>
     <div class="mobileSearchDock" id="mobileRouterSearchDock">
+      <span class="mobileSearchVersion">v101</span>
       <button class="routerSearchToggle mobilePanelToggle primary" id="mobileRouterSearchToggle" type="button" aria-expanded="false" aria-controls="mobileRouterSearchPanel" data-active="false">
         <span>Поиск роутеров</span>
       </button>
@@ -2458,7 +2567,7 @@ systemctl restart owrt-remote-xray</pre>
       <section class="seasonPanel" id="mobileSeasonPanel" aria-label="Зимние эффекты" hidden>
         <div class="seasonCard">
           <div class="seasonLabel">Эффекты Hub</div>
-          <div class="seasonSwitch" role="group" aria-label="Снег, дождь или космос">
+          <div class="seasonSwitch" role="group" aria-label="Выбор эффектов">
             <button class="seasonBtn" type="button" data-season-mode="off" data-active="true" aria-pressed="true">Выкл</button>
             <button class="seasonBtn" type="button" data-season-mode="snow" data-active="false" aria-pressed="false">Снег</button>
             <button class="seasonBtn" type="button" data-season-mode="rain" data-active="false" aria-pressed="false">Дождь</button>
@@ -2468,6 +2577,12 @@ systemctl restart owrt-remote-xray</pre>
             <button class="seasonBtn" type="button" data-season-mode="prism" data-active="false" aria-pressed="false">&#1055;&#1088;&#1080;&#1079;&#1084;&#1072;</button>
             <button class="seasonBtn" type="button" data-season-mode="pulse" data-active="false" aria-pressed="false">&#1055;&#1091;&#1083;&#1100;&#1089;</button>
             <button class="seasonBtn" type="button" data-season-mode="laser" data-active="false" aria-pressed="false">&#1051;&#1091;&#1095;&#1080;</button>
+            <button class="seasonBtn" type="button" data-season-mode="aurora" data-active="false" aria-pressed="false">Аврора</button>
+            <button class="seasonBtn" type="button" data-season-mode="matrix" data-active="false" aria-pressed="false">Матрица</button>
+            <button class="seasonBtn" type="button" data-season-mode="nebula" data-active="false" aria-pressed="false">Туманность</button>
+            <button class="seasonBtn" type="button" data-season-mode="fireworks" data-active="false" aria-pressed="false">Фейерверк</button>
+            <button class="seasonBtn" type="button" data-season-mode="vortex" data-active="false" aria-pressed="false">Вихрь</button>
+            <button class="seasonBtn" type="button" data-season-mode="comet" data-active="false" aria-pressed="false">Кометы</button>
           </div>
         </div>
       </section>
@@ -2567,6 +2682,10 @@ const diagnosticBlocks = document.getElementById('diagnosticBlocks');
 const expandedActionPanels = new Set();
 const diagnosticDrafts = new Map();
 const wolStateByRouter = new Map();
+const trafficStateByRouter = new Map();
+const trafficAutoRefreshTimers = new Map();
+const TRAFFIC_AUTO_REFRESH_MS = 4000;
+let pendingRouterViewRestore = 0;
 let pendingRouterRender = false;
 let pendingWolBlurFlush = 0;
 let recentWolPointerActionKey = '';
@@ -2576,7 +2695,7 @@ let offlineStatsExpanded = false;
 let routerSearchQuery = '';
 let lastRouterSearchTrigger = null;
 const SEASON_EFFECT_KEY = 'owrtRemote:seasonEffectMode';
-const SEASON_EFFECT_MODES = new Set(['off', 'snow', 'rain', 'cosmos', 'embers', 'orbit', 'prism', 'pulse', 'laser']);
+const SEASON_EFFECT_MODES = new Set(['off', 'snow', 'rain', 'cosmos', 'embers', 'orbit', 'prism', 'pulse', 'laser', 'aurora', 'matrix', 'nebula', 'fireworks', 'vortex', 'comet']);
 let seasonEffectMode = 'off';
 let seasonalFxCtx = null;
 let seasonalFxFrame = 0;
@@ -2603,6 +2722,58 @@ function actionPanelId(routerId) {{
 
 function wolPanelId(routerId) {{
   return 'router-wol-' + String(routerId || '');
+}}
+
+function trafficPanelId(routerId) {{
+  return 'router-traffic-' + String(routerId || '');
+}}
+
+function clearTrafficAutoRefresh(routerId) {{
+  const key = String(routerId || '');
+  const timer = trafficAutoRefreshTimers.get(key);
+  if (timer) {{
+    clearTimeout(timer);
+    trafficAutoRefreshTimers.delete(key);
+  }}
+}}
+
+function clearAllTrafficAutoRefresh() {{
+  Array.from(trafficAutoRefreshTimers.keys()).forEach((routerId) => clearTrafficAutoRefresh(routerId));
+}}
+
+function shouldAutoRefreshTraffic(routerId) {{
+  const key = String(routerId || '');
+  const router = selectedRouter(key);
+  const state = getTrafficState(key);
+  if (!router || !state || !state.open) return false;
+  if (document.hidden) return false;
+  return true;
+}}
+
+function scheduleTrafficAutoRefresh(routerId, delay = TRAFFIC_AUTO_REFRESH_MS) {{
+  const key = String(routerId || '');
+  clearTrafficAutoRefresh(key);
+  if (!shouldAutoRefreshTraffic(key)) return;
+  trafficAutoRefreshTimers.set(key, window.setTimeout(async () => {{
+    trafficAutoRefreshTimers.delete(key);
+    if (!shouldAutoRefreshTraffic(key)) return;
+    await loadTrafficClients(key, true, {{silent: true}});
+    scheduleTrafficAutoRefresh(key, TRAFFIC_AUTO_REFRESH_MS);
+  }}, Math.max(1200, Number(delay) || TRAFFIC_AUTO_REFRESH_MS)));
+}}
+
+function syncTrafficAutoRefresh() {{
+  const activeIds = new Set();
+  for (const [routerId, state] of trafficStateByRouter.entries()) {{
+    const key = String(routerId || '');
+    if (state && state.open && shouldAutoRefreshTraffic(key)) {{
+      activeIds.add(key);
+      if (!trafficAutoRefreshTimers.has(key)) scheduleTrafficAutoRefresh(key, TRAFFIC_AUTO_REFRESH_MS);
+    }}
+  }}
+  Array.from(trafficAutoRefreshTimers.keys()).forEach((routerId) => {{
+    if (!activeIds.has(String(routerId || ''))) clearTrafficAutoRefresh(routerId);
+  }});
 }}
 
 function wolPasswordKey(routerId) {{
@@ -2676,6 +2847,25 @@ function getWolState(routerId) {{
   return wolStateByRouter.get(key);
 }}
 
+function getTrafficState(routerId) {{
+  const key = String(routerId || '');
+  if (!trafficStateByRouter.has(key)) {{
+    trafficStateByRouter.set(key, {{
+      open: false,
+      loaded: false,
+      loading: false,
+      error: '',
+      message: '',
+      sshPassword: loadWolPassword(key),
+      clients: [],
+      trafficSource: '',
+      trafficSupported: false,
+      flowHits: 0
+    }});
+  }}
+  return trafficStateByRouter.get(key);
+}}
+
 function setWolState(routerId, patch) {{
   const key = String(routerId || '');
   const current = getWolState(key);
@@ -2691,6 +2881,15 @@ function setWolState(routerId, patch) {{
   return next;
 }}
 
+function setTrafficState(routerId, patch) {{
+  const key = String(routerId || '');
+  const current = getTrafficState(key);
+  const next = Object.assign({{}}, current, patch || {{}});
+  next.clients = Array.isArray(next.clients) ? next.clients : [];
+  trafficStateByRouter.set(key, next);
+  return next;
+}}
+
 function hasOpenWolPicker() {{
   for (const state of wolStateByRouter.values()) {{
     if (state && state.open && state.pickerOpen) return true;
@@ -2700,7 +2899,7 @@ function hasOpenWolPicker() {{
 
 function activeWolInteractiveField() {{
   const active = document.activeElement;
-  return active && typeof active.matches === 'function' && active.matches('[data-wol-password],[data-wol-select]') ? active : null;
+  return active && typeof active.matches === 'function' && active.matches('[data-wol-password],[data-wol-select],[data-traffic-password]') ? active : null;
 }}
 
 function shouldDeferRouterRender() {{
@@ -2780,6 +2979,111 @@ function wolMetaText(state) {{
   if (state.loaded && !count) return 'Устройства не найдены. Проверь DHCP leases или ARP на роутере.';
   if (count) return `Найдено устройств: ${{count}}`;
   return 'Открой список устройств для пробуждения.';
+}}
+
+function formatTrafficBytes(value) {{
+  const bytes = Number(value || 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = bytes;
+  let idx = 0;
+  while (size >= 1024 && idx < units.length - 1) {{
+    size /= 1024;
+    idx += 1;
+  }}
+  const digits = size >= 100 || idx === 0 ? 0 : (size >= 10 ? 1 : 2);
+  return size.toFixed(digits) + ' ' + units[idx];
+}}
+
+function trafficClientTitle(client) {{
+  if (!client) return 'Клиент';
+  return client.name || client.ip || client.static_ip || client.mac || 'Клиент';
+}}
+
+function trafficClientMeta(client) {{
+  if (!client) return '';
+  const parts = [];
+  if (client.ip) parts.push('IP ' + client.ip);
+  if (client.static_ip) parts.push('Static ' + client.static_ip);
+  if (client.mac) parts.push(client.mac);
+  if (client.iface) parts.push(client.iface);
+  return parts.join(' | ');
+}}
+
+function trafficClientTags(client) {{
+  return [];
+}}
+
+function trafficMetaText(state) {{
+  if (!state) return '';
+  if (state.loading) return 'Собираю клиентов, статику адресов и трафик с роутера...';
+  if (state.error) return state.error;
+  if (state.message) return state.message;
+  const count = Array.isArray(state.clients) ? state.clients.length : 0;
+  if (state.loaded && !count) return 'Клиенты не найдены. Проверь DHCP leases, ARP или SSH-доступ к роутеру.';
+  if (count && state.trafficSupported) return `Список обновлен: ${{count}} клиентов.`;
+  if (count) return `Клиентов: ${{count}} · адреса и статика видны, но счётчики трафика недоступны.`;
+  return 'Открой панель, чтобы получить список клиентов и их трафик.';
+}}
+
+function renderTrafficSummary(state, clients) {{
+  const count = Array.isArray(clients) ? clients.length : 0;
+  const chips = [`<span class="trafficSummaryChip accent">${{count}} клиентов</span>`];
+  if (state && state.loaded && !state.trafficSupported) {{
+    chips.push('<span class="trafficSummaryChip muted">Без счетчиков трафика</span>');
+  }}
+  return `<div class="trafficSummary">${{chips.join('')}}</div>`;
+}}
+
+function renderTrafficPanel(router) {{
+  const state = getTrafficState(router.id);
+  const panelId = trafficPanelId(router.id);
+  const clients = Array.isArray(state.clients) ? state.clients : [];
+  const metaClass = state.error ? 'wolMeta bad' : 'wolMeta';
+  const rows = clients.length
+    ? clients.map((client) => {{
+        const tags = trafficClientTags(client).map((tag) => `<span class="trafficTag">${{escapeHtml(tag)}}</span>`).join('');
+        return `<div class="trafficRow">
+          <div class="trafficRowTop">
+            <div class="trafficIdentity">
+              <div class="trafficName">${{escapeHtml(trafficClientTitle(client))}}</div>
+              <div class="trafficMetaLine">${{escapeHtml(trafficClientMeta(client) || 'Без IP/MAC данных')}}</div>
+            </div>
+            <div class="trafficTotalBadge">
+              <span>Всего</span>
+              <strong>${{escapeHtml(formatTrafficBytes(client.total_bytes))}}</strong>
+            </div>
+          </div>
+          ${{tags ? `<div class="trafficTagRow">${{tags}}</div>` : ''}}
+          <div class="trafficStats">
+            <div class="trafficStat"><span>Вход</span><strong>${{escapeHtml(formatTrafficBytes(client.rx_bytes))}}</strong></div>
+            <div class="trafficStat"><span>Выход</span><strong>${{escapeHtml(formatTrafficBytes(client.tx_bytes))}}</strong></div>
+            <div class="trafficStat trafficStatTotal"><span>Всего</span><strong>${{escapeHtml(formatTrafficBytes(client.total_bytes))}}</strong></div>
+          </div>
+        </div>`;
+      }}).join('')
+    : '<div class="wolPickerEmpty">Клиенты пока не найдены.</div>';
+  return `<div class="trafficPanel" id="${{escapeAttr(panelId)}}"${{state.open ? '' : ' hidden'}}>
+    <div class="wolHeader">
+      <h3 class="wolTitle">Клиенты Traffic</h3>
+    </div>
+    <div class="trafficControls">
+      <label class="wolField trafficPasswordField">
+        <span>SSH пароль</span>
+        <input type="password" data-traffic-password="${{escapeAttr(router.id)}}" value="${{escapeAttr(state.sshPassword || '')}}" placeholder="Если SSH по паролю" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="text" enterkeyhint="done"${{state.loading ? ' disabled' : ''}}>
+      </label>
+      <div class="wolField trafficStatusField">
+        <span>Статус</span>
+        <div class="${{metaClass}}">${{escapeHtml(trafficMetaText(state))}}</div>
+      </div>
+      <button class="btn trafficActionBtn" type="button" data-traffic-refresh="${{escapeAttr(router.id)}}"${{state.loading ? ' disabled' : ''}}>Обновить</button>
+      <button class="btn trafficDangerBtn trafficActionBtn" type="button" data-traffic-reset="${{escapeAttr(router.id)}}" title="Сбросить трафик"${{state.loading ? ' disabled' : ''}}>Сброс</button>
+    </div>
+    ${{renderTrafficSummary(state, clients)}}
+    <div class="trafficViewport" data-traffic-viewport="${{escapeAttr(router.id)}}">
+      <div class="trafficList">${{rows}}</div>
+    </div>
+  </div>`;
 }}
 
 function renderWolPanel(router) {{
@@ -3108,6 +3412,114 @@ function seasonFxSpawn(mode, randomY = false) {{
       pulseSpeed: .003 + Math.random() * .004
     }};
   }}
+  if (mode === 'aurora') {{
+    return {{
+      x: Math.random() * width,
+      y: height * (.08 + Math.random() * .34),
+      phase: Math.random() * Math.PI * 2,
+      phaseSpeed: .0008 + Math.random() * .0016,
+      wave: 24 + Math.random() * 88,
+      waveSpeed: .0002 + Math.random() * .0005,
+      sway: Math.random() * Math.PI * 2,
+      swaySpeed: .0004 + Math.random() * .001,
+      thickness: 10 + Math.random() * 18,
+      hue: 155 + Math.random() * 70,
+      alpha: .12 + Math.random() * .14,
+      vx: (Math.random() - .5) * .02,
+      vy: (Math.random() - .5) * .01
+    }};
+  }}
+  if (mode === 'matrix') {{
+    const columns = Math.max(2, Math.floor(width / 16));
+    const column = Math.floor(Math.random() * columns);
+    const columnWidth = width / columns;
+    return {{
+      x: column * columnWidth + columnWidth * .5,
+      y: randomY ? Math.random() * height : -Math.random() * height,
+      vy: 4.6 + Math.random() * 6.8,
+      size: 11 + Math.random() * 9,
+      alpha: .38 + Math.random() * .42,
+      glyph: seasonFxRandomGlyph(),
+      glyphSpeed: .003 + Math.random() * .006,
+      trail: 18 + Math.random() * 30,
+      trailAlpha: .06 + Math.random() * .08,
+      hue: 120 + Math.random() * 40
+    }};
+  }}
+  if (mode === 'nebula') {{
+    const angle = Math.random() * Math.PI * 2;
+    const distance = Math.random() * Math.min(width, height) * .34;
+    return {{
+      x: width * .5 + Math.cos(angle) * distance,
+      y: height * .5 + Math.sin(angle) * distance * .72,
+      vx: (Math.random() - .5) * .075,
+      vy: (Math.random() - .5) * .065,
+      size: 70 + Math.random() * 130,
+      hue: 225 + Math.random() * 90,
+      alpha: .06 + Math.random() * .08,
+      drift: Math.random() * Math.PI * 2,
+      driftSpeed: .0003 + Math.random() * .0008,
+      pulse: Math.random() * Math.PI * 2
+    }};
+  }}
+  if (mode === 'fireworks') {{
+    const fromLeft = Math.random() > .5;
+    const startX = fromLeft ? -60 - Math.random() * width * .2 : width + 60 + Math.random() * width * .2;
+    const startY = Math.random() * height * .82;
+    const speed = 1.8 + Math.random() * 3.4;
+    const angle = fromLeft ? (-.26 + Math.random() * .38) : (Math.PI - .26 + Math.random() * .38);
+    return {{
+      x: startX,
+      y: startY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      gravity: .022 + Math.random() * .028,
+      drag: .985 + Math.random() * .009,
+      life: .4 + Math.random() * 1.2,
+      size: 1.1 + Math.random() * 2.4,
+      hue: Math.random() * 360,
+      alpha: .34 + Math.random() * .42,
+      sparkle: Math.random() * Math.PI * 2,
+      sparkleSpeed: .03 + Math.random() * .06,
+      trail: 8 + Math.random() * 18
+    }};
+  }}
+  if (mode === 'vortex') {{
+    const angle = Math.random() * Math.PI * 2;
+    return {{
+      x: width * .5,
+      y: height * .5,
+      angle,
+      radius: 18 + Math.random() * Math.min(width, height) * .42,
+      radiusSpeed: .012 + Math.random() * .018,
+      spin: (Math.random() > .5 ? 1 : -1) * (.002 + Math.random() * .0035),
+      wobble: Math.random() * Math.PI * 2,
+      wobbleSpeed: .002 + Math.random() * .004,
+      lane: .38 + Math.random() * .76,
+      size: 1.2 + Math.random() * 3.4,
+      hue: 190 + Math.random() * 130,
+      alpha: .22 + Math.random() * .28
+    }};
+  }}
+  if (mode === 'comet') {{
+    const fromLeft = Math.random() > .5;
+    const startX = fromLeft ? -60 - Math.random() * width * .2 : width + 60 + Math.random() * width * .2;
+    const startY = Math.random() * height * .82;
+    const speed = 1.5 + Math.random() * 2.6;
+    const angle = fromLeft ? (-.25 + Math.random() * .35) : (Math.PI - .25 + Math.random() * .35);
+    return {{
+      x: startX,
+      y: startY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      len: 44 + Math.random() * 88,
+      width: 1 + Math.random() * 2.8,
+      hue: 190 + Math.random() * 120,
+      alpha: .2 + Math.random() * .24,
+      wobble: Math.random() * Math.PI * 2,
+      wobbleSpeed: .006 + Math.random() * .01
+    }};
+  }}
   return {{
     x: Math.random() * width,
     y: randomY ? Math.random() * height : -Math.random() * height,
@@ -3119,27 +3531,37 @@ function seasonFxSpawn(mode, randomY = false) {{
   }};
 }}
 
+function seasonFxRandomGlyph() {{
+  const glyphs = '01<>[]{{}}#@*+=%$';
+  return glyphs[Math.floor(Math.random() * glyphs.length)];
+}}
+
+function seasonFxParticleCountForMode(mode, area, width, height) {{
+  if (mode === 'snow') return Math.min(560, Math.max(180, Math.round(area / 2100)));
+  if (mode === 'cosmos') return Math.min(420, Math.max(160, Math.round(area / 2600)));
+  if (mode === 'embers') return Math.min(280, Math.max(90, Math.round(area / 6200)));
+  if (mode === 'orbit') return Math.min(160, Math.max(54, Math.round(area / 10800)));
+  if (mode === 'prism') return Math.min(240, Math.max(84, Math.round(area / 7200)));
+  if (mode === 'pulse') return Math.min(110, Math.max(36, Math.round(area / 16000)));
+  if (mode === 'laser') return Math.min(180, Math.max(68, Math.round(area / 9200)));
+  if (mode === 'aurora') return Math.min(12, Math.max(6, Math.round(width / 180)));
+  if (mode === 'matrix') return Math.min(96, Math.max(54, Math.round(width / 18)));
+  if (mode === 'nebula') return Math.min(24, Math.max(14, Math.round(area / 120000)));
+  if (mode === 'fireworks') return Math.min(220, Math.max(120, Math.round(area / 5200)));
+  if (mode === 'vortex') return Math.min(180, Math.max(80, Math.round(area / 9000)));
+  if (mode === 'comet') return Math.min(150, Math.max(54, Math.round(area / 11000)));
+  return Math.min(360, Math.max(140, Math.round(area / 3200)));
+}}
+
 function seasonFxBuildParticles() {{
   if (seasonEffectMode === 'off') {{
     seasonalFxParticles = [];
     return;
   }}
-  const area = Math.max(1, seasonalFxSize.width * seasonalFxSize.height);
-  const count = seasonEffectMode === 'snow'
-    ? Math.min(560, Math.max(180, Math.round(area / 2100)))
-    : seasonEffectMode === 'cosmos'
-      ? Math.min(420, Math.max(160, Math.round(area / 2600)))
-      : seasonEffectMode === 'embers'
-        ? Math.min(280, Math.max(90, Math.round(area / 6200)))
-        : seasonEffectMode === 'orbit'
-          ? Math.min(160, Math.max(54, Math.round(area / 10800)))
-          : seasonEffectMode === 'prism'
-            ? Math.min(240, Math.max(84, Math.round(area / 7200)))
-            : seasonEffectMode === 'pulse'
-              ? Math.min(110, Math.max(36, Math.round(area / 16000)))
-              : seasonEffectMode === 'laser'
-                ? Math.min(180, Math.max(68, Math.round(area / 9200)))
-          : Math.min(360, Math.max(140, Math.round(area / 3200)));
+  const width = seasonalFxSize.width || window.innerWidth || 1;
+  const height = seasonalFxSize.height || window.innerHeight || 1;
+  const area = Math.max(1, width * height);
+  const count = seasonFxParticleCountForMode(seasonEffectMode, area, width, height);
   seasonalFxParticles = Array.from({{length: count}}, () => seasonFxSpawn(seasonEffectMode, true));
 }}
 
@@ -3191,6 +3613,9 @@ function seasonFxStep(ts) {{
   }}
   seasonalFxPointer.wind += (seasonalFxPointer.targetWind - seasonalFxPointer.wind) * Math.min(.18, dt / 140);
   seasonalFxCtx.clearRect(0, 0, width, height);
+  seasonalFxCtx.globalCompositeOperation = 'source-over';
+  seasonalFxCtx.shadowBlur = 0;
+  seasonalFxCtx.shadowColor = 'rgba(0,0,0,0)';
   if (seasonEffectMode === 'snow') {{
     seasonalFxCtx.fillStyle = 'rgba(255,255,255,.8)';
     for (const p of seasonalFxParticles) {{
@@ -3425,6 +3850,193 @@ function seasonFxStep(ts) {{
       seasonalFxCtx.fillStyle = `hsla(${{p.hue + 24}},100%,76%,${{alpha * .72}})`;
       seasonalFxCtx.beginPath();
       seasonalFxCtx.arc(x, y, Math.max(.8, ring * .18), 0, Math.PI * 2);
+      seasonalFxCtx.fill();
+    }}
+  }} else if (seasonEffectMode === 'aurora') {{
+    seasonalFxCtx.globalCompositeOperation = 'screen';
+    seasonalFxCtx.lineCap = 'round';
+    seasonalFxCtx.lineJoin = 'round';
+    const baseY = height * .16;
+    for (let i = 0; i < seasonalFxParticles.length; i++) {{
+      const p = seasonalFxParticles[i];
+      p.phase += p.phaseSpeed * dt;
+      p.sway += p.swaySpeed * dt;
+      p.x += seasonalFxPointer.wind * dt * 36 + p.vx * dt * 10;
+      p.y += p.vy * dt * 10;
+      p.wave += p.waveSpeed * dt;
+      if (p.x < -160) p.x = width + 160;
+      if (p.x > width + 160) p.x = -160;
+      const amp = p.wave * (1 + Math.sin(p.sway) * .3);
+      const yBase = baseY + (i % 3) * height * .09 + Math.sin(p.phase * .7 + i * .42) * amp * .12;
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue}},100%,70%,${{p.alpha * .28}})`;
+      seasonalFxCtx.lineWidth = p.thickness * 3.2;
+      seasonalFxCtx.beginPath();
+      for (let s = 0; s <= 16; s++) {{
+        const x = width * s / 16;
+        const y = yBase + Math.sin(p.phase + s * .58 + p.sway) * amp + Math.cos(p.phase * .6 + s * .2) * amp * .18;
+        if (s === 0) seasonalFxCtx.moveTo(x, y);
+        else seasonalFxCtx.lineTo(x, y);
+      }}
+      seasonalFxCtx.stroke();
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue + 18}},100%,82%,${{p.alpha * .66}})`;
+      seasonalFxCtx.lineWidth = Math.max(1, p.thickness * .52);
+      seasonalFxCtx.beginPath();
+      for (let s = 0; s <= 16; s++) {{
+        const x = width * s / 16;
+        const y = yBase + Math.sin(p.phase + s * .58 + p.sway) * amp + Math.cos(p.phase * .6 + s * .2) * amp * .18;
+        if (s === 0) seasonalFxCtx.moveTo(x, y);
+        else seasonalFxCtx.lineTo(x, y);
+      }}
+      seasonalFxCtx.stroke();
+    }}
+  }} else if (seasonEffectMode === 'matrix') {{
+    seasonalFxCtx.globalCompositeOperation = 'lighter';
+    seasonalFxCtx.lineCap = 'round';
+    seasonalFxCtx.shadowColor = 'rgba(80,255,120,.55)';
+    seasonalFxCtx.shadowBlur = 10;
+    seasonalFxCtx.textAlign = 'center';
+    seasonalFxCtx.textBaseline = 'middle';
+    for (const p of seasonalFxParticles) {{
+      if (Math.random() < .08) p.glyph = seasonFxRandomGlyph();
+      p.y += p.vy * dt;
+      p.x += seasonalFxPointer.wind * dt * 8;
+      if (p.y > height + p.trail) {{
+        Object.assign(p, seasonFxSpawn('matrix'));
+        p.y = -Math.random() * height * .34;
+      }}
+      if (p.x < -40) p.x = width + 40;
+      if (p.x > width + 40) p.x = -40;
+      seasonalFxCtx.fillStyle = `rgba(70,255,130,${{p.trailAlpha}})`;
+      seasonalFxCtx.fillRect(p.x - .8, p.y - p.trail, 1.6, p.trail + 6);
+      seasonalFxCtx.font = `900 ${{Math.max(12, Math.round(p.size))}}px ui-monospace, SFMono-Regular, Consolas, monospace`;
+      seasonalFxCtx.fillStyle = `rgba(170,255,190,${{p.alpha}})`;
+      seasonalFxCtx.fillText(p.glyph, p.x, p.y);
+    }}
+  }} else if (seasonEffectMode === 'nebula') {{
+    seasonalFxCtx.globalCompositeOperation = 'screen';
+    for (const p of seasonalFxParticles) {{
+      p.drift += p.driftSpeed * dt;
+      p.pulse += .0006 * dt;
+      p.x += (p.vx + seasonalFxPointer.wind * .024) * dt;
+      p.y += p.vy * dt;
+      if (p.x < -p.size) p.x = width + p.size;
+      if (p.x > width + p.size) p.x = -p.size;
+      if (p.y < -p.size) p.y = height + p.size;
+      if (p.y > height + p.size) p.y = -p.size;
+      const alpha = Math.min(.22, p.alpha + Math.sin(p.drift) * .03 + Math.abs(Math.sin(p.pulse)) * .02);
+      const glow = seasonalFxCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size);
+      glow.addColorStop(0, `hsla(${{p.hue}},100%,72%,${{alpha}})`);
+      glow.addColorStop(.35, `hsla(${{p.hue + 18}},100%,60%,${{alpha * .44}})`);
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      seasonalFxCtx.fillStyle = glow;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      seasonalFxCtx.fill();
+    }}
+  }} else if (seasonEffectMode === 'fireworks') {{
+    seasonalFxCtx.globalCompositeOperation = 'lighter';
+    seasonalFxCtx.lineCap = 'round';
+    seasonalFxCtx.lineJoin = 'round';
+    for (const p of seasonalFxParticles) {{
+      const prevX = p.x;
+      const prevY = p.y;
+      p.sparkle += p.sparkleSpeed * dt;
+      p.vx *= Math.pow(p.drag, dt / 16);
+      p.vy = p.vy * Math.pow(p.drag, dt / 16) + p.gravity * dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt / 1200;
+      if (p.life <= 0 || p.x < -80 || p.x > width + 80 || p.y > height + 120) {{
+        Object.assign(p, seasonFxSpawn('fireworks'));
+        continue;
+      }}
+      const spark = .5 + .5 * Math.sin(p.sparkle);
+      const alpha = Math.min(.96, p.alpha * Math.max(.2, p.life) + Math.abs(spark) * .18);
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue}},100%,72%,${{alpha * .84}})`;
+      seasonalFxCtx.lineWidth = Math.max(.6, p.size * .6);
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(prevX, prevY);
+      seasonalFxCtx.lineTo(p.x, p.y);
+      seasonalFxCtx.stroke();
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue + 22}},100%,86%,${{alpha * .34}})`;
+      seasonalFxCtx.lineWidth = Math.max(1.2, p.size * 2.8);
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(prevX, prevY);
+      seasonalFxCtx.lineTo(p.x, p.y);
+      seasonalFxCtx.stroke();
+      seasonalFxCtx.fillStyle = `hsla(${{p.hue + 14}},100%,88%,${{alpha}})`;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.arc(p.x, p.y, Math.max(.8, p.size * .95), 0, Math.PI * 2);
+      seasonalFxCtx.fill();
+    }}
+  }} else if (seasonEffectMode === 'vortex') {{
+    seasonalFxCtx.globalCompositeOperation = 'lighter';
+    seasonalFxCtx.lineCap = 'round';
+    seasonalFxCtx.lineJoin = 'round';
+    const centerX = seasonalFxPointer.active ? seasonalFxPointer.x : width * .5;
+    const centerY = seasonalFxPointer.active ? seasonalFxPointer.y : height * .5;
+    for (const p of seasonalFxParticles) {{
+      const prevX = p.x || centerX;
+      const prevY = p.y || centerY;
+      p.radius += p.radiusSpeed * dt;
+      p.angle += p.spin * dt * (1 + Math.min(1.4, Math.abs(seasonalFxPointer.wind) * 10));
+      p.wobble += p.wobbleSpeed * dt;
+      const radius = p.radius + Math.sin(p.wobble) * 20;
+      p.x = centerX + Math.cos(p.angle) * radius;
+      p.y = centerY + Math.sin(p.angle * p.lane) * radius * .84;
+      if (radius > Math.max(width, height) * .6) {{
+        Object.assign(p, seasonFxSpawn('vortex'));
+      }}
+      const alpha = Math.min(.92, p.alpha + Math.abs(Math.sin(p.wobble)) * .14);
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue}},100%,72%,${{alpha * .22}})`;
+      seasonalFxCtx.lineWidth = Math.max(.7, p.size * .74);
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(prevX, prevY);
+      seasonalFxCtx.lineTo(p.x, p.y);
+      seasonalFxCtx.stroke();
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue + 22}},100%,84%,${{alpha * .14}})`;
+      seasonalFxCtx.lineWidth = Math.max(1.4, p.size * 2.8);
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(centerX, centerY);
+      seasonalFxCtx.lineTo(p.x, p.y);
+      seasonalFxCtx.stroke();
+      seasonalFxCtx.fillStyle = `hsla(${{p.hue + 12}},100%,86%,${{alpha}})`;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.arc(p.x, p.y, Math.max(.8, p.size), 0, Math.PI * 2);
+      seasonalFxCtx.fill();
+    }}
+  }} else if (seasonEffectMode === 'comet') {{
+    seasonalFxCtx.globalCompositeOperation = 'lighter';
+    seasonalFxCtx.lineCap = 'round';
+    seasonalFxCtx.lineJoin = 'round';
+    for (const p of seasonalFxParticles) {{
+      const prevX = p.x;
+      const prevY = p.y;
+      p.wobble += p.wobbleSpeed * dt;
+      p.x += (p.vx + seasonalFxPointer.wind * .03) * dt;
+      p.y += (p.vy + Math.sin(p.wobble) * .012) * dt;
+      if (p.x < -width * .4 || p.x > width * 1.4 || p.y < -120 || p.y > height + 120) {{
+        Object.assign(p, seasonFxSpawn('comet'));
+        continue;
+      }}
+      const tailX = p.x - p.vx * p.len * .62;
+      const tailY = p.y - p.vy * p.len * .62;
+      const alpha = Math.min(.95, p.alpha + Math.abs(Math.sin(p.wobble)) * .14);
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue}},100%,72%,${{alpha * .84}})`;
+      seasonalFxCtx.lineWidth = p.width;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(p.x, p.y);
+      seasonalFxCtx.lineTo(tailX, tailY);
+      seasonalFxCtx.stroke();
+      seasonalFxCtx.strokeStyle = `hsla(${{p.hue + 18}},100%,86%,${{alpha * .22}})`;
+      seasonalFxCtx.lineWidth = p.width * 3.6;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.moveTo(prevX, prevY);
+      seasonalFxCtx.lineTo(tailX, tailY);
+      seasonalFxCtx.stroke();
+      seasonalFxCtx.fillStyle = `hsla(${{p.hue + 12}},100%,88%,${{alpha}})`;
+      seasonalFxCtx.beginPath();
+      seasonalFxCtx.arc(p.x, p.y, Math.max(1, p.width * 1.2), 0, Math.PI * 2);
       seasonalFxCtx.fill();
     }}
   }} else if (seasonEffectMode === 'laser') {{
@@ -3974,8 +4586,8 @@ function diagnoseRouter(router, draft) {{
       level: 'good',
       title: 'Что работает по твоим словам',
       body: draft.works
-    }});
-  }}
+}});
+}}
 
   if (works.length) {{
     blocks.push({{
@@ -4344,9 +4956,14 @@ function render(list) {{
       : `<span class="btn disabled">SSH</span>`;
     const wolReady = routerSupportsWol(r);
     const wolState = getWolState(r.id);
+    const trafficState = getTrafficState(r.id);
+    const trafficReady = sshReady;
     const wolButton = wolReady
       ? `<button class="btn" data-wol-toggle="${{escapeAttr(r.id)}}" type="button">${{wolState.open ? 'Скрыть Wake-on-LAN' : 'Wake-on-LAN'}}</button>`
       : `<span class="btn disabled">Wake-on-LAN</span>`;
+    const trafficButton = trafficReady
+      ? `<button class="btn" data-traffic-toggle="${{escapeAttr(r.id)}}" type="button">${{trafficState.open ? 'Скрыть Клиенты Traffic' : 'Клиенты Traffic'}}</button>`
+      : `<span class="btn disabled">Клиенты Traffic</span>`;
     const renameLabel = 'Переименовать ' + (r.name || r.id || 'роутер');
     const renameButton = `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`;
     const actionsId = actionPanelId(r.id);
@@ -4378,11 +4995,13 @@ function render(list) {{
         ${{adminButton}}
         ${{sshButton}}
         ${{wolButton}}
+        ${{trafficButton}}
         <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
         <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
         <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
       ${{wolReady ? renderWolPanelResponsive(r) : ''}}
+      ${{trafficReady ? renderTrafficPanel(r) : ''}}
       </div>
     </article>`;
   }}).join('');
@@ -4467,9 +5086,14 @@ render = function(list) {{
       : `<span class="btn disabled">SSH</span>`;
     const wolReady = routerSupportsWol(r);
     const wolState = getWolState(r.id);
+    const trafficState = getTrafficState(r.id);
+    const trafficReady = sshReady;
     const wolButton = wolReady
       ? `<button class="btn" data-wol-toggle="${{escapeAttr(r.id)}}" type="button">${{wolState.open ? 'Скрыть Wake-on-LAN' : 'Wake-on-LAN'}}</button>`
       : `<span class="btn disabled">Wake-on-LAN</span>`;
+    const trafficButton = trafficReady
+      ? `<button class="btn" data-traffic-toggle="${{escapeAttr(r.id)}}" type="button">${{trafficState.open ? 'Скрыть Клиенты Traffic' : 'Клиенты Traffic'}}</button>`
+      : `<span class="btn disabled">Клиенты Traffic</span>`;
     const renameLabel = 'Переименовать ' + (r.name || r.id || 'роутер');
     const renameButton = `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`;
     const actionsId = actionPanelId(r.id);
@@ -4499,17 +5123,25 @@ render = function(list) {{
         ${{adminButton}}
         ${{sshButton}}
         ${{wolButton}}
+        ${{trafficButton}}
         <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
         <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
         <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
       </div>
       ${{wolReady ? renderWolPanelResponsive(r) : ''}}
+      ${{trafficReady ? renderTrafficPanel(r) : ''}}
     </article>`;
   }}).join('');
   syncActionToggleStates();
 }};
 
 function renderRouterView() {{
+  const pageScrollX = window.scrollX || window.pageXOffset || 0;
+  const pageScrollY = window.scrollY || window.pageYOffset || 0;
+  const trafficViewportState = Array.from(document.querySelectorAll('[data-traffic-viewport]')).map((node) => ({{
+    routerId: String(node.dataset.trafficViewport || ''),
+    scrollTop: node.scrollTop || 0
+  }})).filter((item) => item.routerId);
   const allRouters = window.ROUTERS || [];
   const visibleRouters = filteredRouters(allRouters);
   renderRouterStats(allRouters);
@@ -4521,6 +5153,19 @@ function renderRouterView() {{
     return;
   }}
   render(visibleRouters);
+  if (pendingRouterViewRestore) {{
+    window.cancelAnimationFrame(pendingRouterViewRestore);
+    pendingRouterViewRestore = 0;
+  }}
+  pendingRouterViewRestore = window.requestAnimationFrame(() => {{
+    window.scrollTo(pageScrollX, pageScrollY);
+    trafficViewportState.forEach((item) => {{
+      const viewport = Array.from(document.querySelectorAll('[data-traffic-viewport]')).find((node) => String(node.dataset.trafficViewport || '') === item.routerId);
+      if (viewport) viewport.scrollTop = item.scrollTop;
+    }});
+    pendingRouterViewRestore = 0;
+  }});
+  syncTrafficAutoRefresh();
 }}
 
 async function loadWolDevices(routerId, force = false) {{
@@ -4557,6 +5202,147 @@ async function loadWolDevices(routerId, force = false) {{
       loading: false,
       devices: [],
       error: err && err.message ? err.message : 'Не удалось получить список устройств'
+    }});
+  }}
+  renderRouterView();
+}}
+
+async function loadTrafficClients(routerId, force = false, options = {{}}) {{
+  const key = String(routerId || '');
+  const router = selectedRouter(key);
+  if (!router) return;
+  const state = getTrafficState(key);
+  const silent = Boolean(options && options.silent);
+  if (state.loading || (state.loaded && !force)) return;
+  setTrafficState(key, silent ? {{loading: true, error: ''}} : {{loading: true, error: '', message: ''}});
+  if (!silent) renderRouterView();
+  try {{
+    const res = await fetch('/api/router/' + encodeURIComponent(key) + '/traffic/clients', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{
+        ssh_password: state.sshPassword || ''
+      }})
+    }});
+    const data = await res.json().catch(() => ({{ok: false, error: 'bad json', clients: []}}));
+    if (!res.ok || !data.ok) {{
+      throw new Error(data.error || 'Не удалось получить клиентов и трафик');
+    }}
+    const clients = Array.isArray(data.clients) ? data.clients : [];
+    setTrafficState(key, {{
+      loaded: true,
+      loading: false,
+      clients,
+      trafficSource: String(data.traffic_source || ''),
+      trafficSupported: Boolean(data.traffic_supported),
+      flowHits: Number(data.flow_hits || 0),
+      error: '',
+      message: clients.length
+        ? `Список обновлен: ${{clients.length}} клиентов.`
+        : 'Список обновлен, но клиенты не найдены.'
+    }});
+  }} catch (err) {{
+    setTrafficState(key, {{
+      loaded: false,
+      loading: false,
+      clients: [],
+      trafficSource: '',
+      trafficSupported: false,
+      flowHits: 0,
+      error: err && err.message ? err.message : 'Не удалось получить клиентов и трафик'
+    }});
+  }}
+  renderRouterView();
+}}
+
+async function loadTrafficClients(routerId, force = false, options = {{}}) {{
+  const key = String(routerId || '');
+  const router = selectedRouter(key);
+  if (!router) return;
+  const state = getTrafficState(key);
+  const silent = Boolean(options && options.silent);
+  if (state.loading || (state.loaded && !force)) return;
+  setTrafficState(key, silent ? {{loading: true, error: ''}} : {{loading: true, error: '', message: ''}});
+  if (!silent) renderRouterView();
+  try {{
+    const res = await fetch('/api/router/' + encodeURIComponent(key) + '/traffic/clients', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{
+        ssh_password: state.sshPassword || ''
+      }})
+    }});
+    const data = await res.json().catch(() => ({{ok: false, error: 'bad json', clients: []}}));
+    if (!res.ok || !data.ok) {{
+      throw new Error(data.error || 'Не удалось получить клиентов и трафик');
+    }}
+    const clients = Array.isArray(data.clients) ? data.clients : [];
+    const successMessage = clients.length
+      ? `Список обновлен: ${{clients.length}} клиентов.`
+      : 'Список обновлен, но клиенты не найдены.';
+    setTrafficState(key, {{
+      loaded: true,
+      loading: false,
+      clients,
+      trafficSource: String(data.traffic_source || ''),
+      trafficSupported: Boolean(data.traffic_supported),
+      flowHits: Number(data.flow_hits || 0),
+      error: '',
+      message: silent ? (state.message || successMessage) : successMessage
+    }});
+  }} catch (err) {{
+    setTrafficState(key, {{
+      loaded: silent ? state.loaded : false,
+      loading: false,
+      clients: silent ? state.clients : [],
+      trafficSource: silent ? state.trafficSource : '',
+      trafficSupported: silent ? state.trafficSupported : false,
+      flowHits: silent ? state.flowHits : 0,
+      error: err && err.message ? err.message : 'Не удалось получить клиентов и трафик'
+    }});
+  }}
+  renderRouterView();
+}}
+
+async function resetTrafficClients(routerId) {{
+  const key = String(routerId || '');
+  const router = selectedRouter(key);
+  if (!router) return;
+  const state = getTrafficState(key);
+  if (state.loading) return;
+  const confirmed = window.confirm('Сбросить счётчики трафика на роутере? Это очистит conntrack и может оборвать текущие подключения.');
+  if (!confirmed) return;
+  setTrafficState(key, {{loading: true, error: '', message: 'Сбрасываю conntrack и трафик...'}});
+  renderRouterView();
+  try {{
+    const res = await fetch('/api/router/' + encodeURIComponent(key) + '/traffic/reset', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{
+        ssh_password: state.sshPassword || ''
+      }})
+    }});
+    const data = await res.json().catch(() => ({{ok: false, error: 'bad json'}}));
+    if (!res.ok || !data.ok) {{
+      throw new Error(data.error || 'Не удалось сбросить трафик');
+    }}
+    const zeroedClients = (Array.isArray(state.clients) ? state.clients : []).map((client) => Object.assign({{}}, client, {{
+      rx_bytes: 0,
+      tx_bytes: 0,
+      total_bytes: 0
+    }}));
+    setTrafficState(key, {{
+      loading: false,
+      loaded: true,
+      error: '',
+      message: data.message || 'Трафик сброшен. Новые счётчики начнут копиться с нуля.',
+      clients: zeroedClients,
+      flowHits: 0
+    }});
+  }} catch (err) {{
+    setTrafficState(key, {{
+      loading: false,
+      error: err && err.message ? err.message : 'Не удалось сбросить трафик'
     }});
   }}
   renderRouterView();
@@ -4927,13 +5713,15 @@ routerStats.addEventListener('click', (ev) => {{
 }});
 
 cards.addEventListener('input', (ev) => {{
-  const routerId = ev.target?.dataset?.wolPassword;
+  const routerId = ev.target?.dataset?.wolPassword || ev.target?.dataset?.trafficPassword;
   if (!routerId) return;
   const value = ev.target.value || '';
   ev.stopPropagation();
   saveWolPassword(routerId, value);
-  const state = getWolState(routerId);
-  wolStateByRouter.set(String(routerId), Object.assign({{}}, state, {{sshPassword: value, error: '', message: ''}}));
+  const wolState = getWolState(routerId);
+  wolStateByRouter.set(String(routerId), Object.assign({{}}, wolState, {{sshPassword: value, error: '', message: ''}}));
+  const trafficState = getTrafficState(routerId);
+  trafficStateByRouter.set(String(routerId), Object.assign({{}}, trafficState, {{sshPassword: value, error: '', message: ''}}));
 }});
 
 cards.addEventListener('change', (ev) => {{
@@ -4948,12 +5736,12 @@ cards.addEventListener('change', (ev) => {{
 }});
 
 cards.addEventListener('focusin', (ev) => {{
-  if (!ev.target?.matches?.('[data-wol-password],[data-wol-select]')) return;
+  if (!ev.target?.matches?.('[data-wol-password],[data-wol-select],[data-traffic-password]')) return;
   clearPendingWolBlurFlush();
 }});
 
 cards.addEventListener('focusout', (ev) => {{
-  if (!ev.target?.matches?.('[data-wol-password],[data-wol-select]')) return;
+  if (!ev.target?.matches?.('[data-wol-password],[data-wol-select],[data-traffic-password]')) return;
   scheduleWolBlurFlush();
 }});
 
@@ -4987,8 +5775,8 @@ cards.addEventListener('pointerup', (ev) => {{
 }});
 
 cards.addEventListener('click', async (ev) => {{
-  const wolPasswordField = ev.target.closest('[data-wol-password]');
-  if (wolPasswordField) {{
+  const secureField = ev.target.closest('[data-wol-password],[data-traffic-password]');
+  if (secureField) {{
     ev.stopPropagation();
     return;
   }}
@@ -5024,6 +5812,17 @@ cards.addEventListener('click', async (ev) => {{
     }}
     return;
   }}
+  const trafficToggleId = ev.target?.dataset?.trafficToggle;
+  if (trafficToggleId) {{
+    const state = getTrafficState(trafficToggleId);
+    const open = !state.open;
+    setTrafficState(trafficToggleId, {{open, error: '', message: open ? state.message : ''}});
+    renderRouterView();
+    if (open) {{
+      await loadTrafficClients(trafficToggleId, false);
+    }}
+    return;
+  }}
   const wolPickButton = ev.target.closest('[data-wol-pick]');
   if (wolPickButton) {{
     ev.preventDefault();
@@ -5052,6 +5851,16 @@ cards.addEventListener('click', async (ev) => {{
   const wolRefreshId = ev.target?.dataset?.wolRefresh;
   if (wolRefreshId) {{
     await loadWolDevices(wolRefreshId, true);
+    return;
+  }}
+  const trafficRefreshId = ev.target?.dataset?.trafficRefresh;
+  if (trafficRefreshId) {{
+    await loadTrafficClients(trafficRefreshId, true);
+    return;
+  }}
+  const trafficResetId = ev.target?.dataset?.trafficReset;
+  if (trafficResetId) {{
+    await resetTrafficClients(trafficResetId);
     return;
   }}
   const wolSendId = ev.target?.dataset?.wolSend;
@@ -5181,6 +5990,9 @@ authMenu.addEventListener('mouseleave', scheduleHideAuthMenu);
 authMenu.addEventListener('click', (ev) => ev.stopPropagation());
 document.addEventListener('click', () => {{
   closeAuthMenu();
+}});
+document.addEventListener('visibilitychange', () => {{
+  syncTrafficAutoRefresh();
 }});
 document.addEventListener('click', (ev) => {{
   if (!offlineStatsExpanded) return;
@@ -5646,6 +6458,9 @@ fillRouterForm(true);
 waitNotificationsLoop();
 setInterval(loadRouters, 5000);
 setInterval(() => loadNotifications(), 30000);
+window.addEventListener('beforeunload', () => {{
+  clearAllTrafficAutoRefresh();
+}});
 </script>
 </body>
 </html>"""
@@ -6969,6 +7784,419 @@ cat "$tmp"
             item["source"] = ", ".join(item.pop("sources", []))
         return ordered
 
+    def discover_router_client_traffic(self, row, ssh_password=""):
+        script = r"""
+set -eu
+tmp_clients="${TMPDIR:-/tmp}/owrt-clients.$$.txt"
+tmp_nft="${TMPDIR:-/tmp}/owrt-nft.$$.txt"
+tmp_conntrack="${TMPDIR:-/tmp}/owrt-conntrack.$$.txt"
+tmp_known_ips="${TMPDIR:-/tmp}/owrt-client-ips.$$.txt"
+tmp_rules="${TMPDIR:-/tmp}/owrt-client-rules.$$.txt"
+cleanup() {
+  rm -f "$tmp_clients" "$tmp_nft" "$tmp_conntrack" "$tmp_known_ips" "$tmp_rules"
+}
+trap cleanup EXIT INT TERM
+: >"$tmp_clients"
+: >"$tmp_nft"
+: >"$tmp_conntrack"
+: >"$tmp_known_ips"
+: >"$tmp_rules"
+
+if [ -f /tmp/dhcp.leases ]; then
+  while read -r lease_ts mac ip host client_id; do
+    [ -n "${mac:-}" ] || continue
+    [ "${mac:-}" = "*" ] && continue
+    [ "${host:-}" = "*" ] && host=""
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$mac" "${ip:-}" "${host:-}" "" "" "dhcp" >>"$tmp_clients"
+  done </tmp/dhcp.leases
+fi
+
+if command -v uci >/dev/null 2>&1; then
+  uci -q show dhcp | sed -n "s/^\(dhcp\.[^=]*\)=host$/\1/p" | while IFS= read -r section; do
+    [ -n "$section" ] || continue
+    mac_list="$(uci -q get "$section.mac" 2>/dev/null || true)"
+    ip_static="$(uci -q get "$section.ip" 2>/dev/null || true)"
+    host_static="$(uci -q get "$section.name" 2>/dev/null || true)"
+    [ -n "$mac_list" ] || continue
+    old_ifs="$IFS"
+    IFS=', '
+    for mac_item in $mac_list; do
+      [ -n "$mac_item" ] || continue
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$mac_item" "" "${host_static:-}" "${ip_static:-}" "" "static-dhcp" >>"$tmp_clients"
+    done
+    IFS="$old_ifs"
+  done
+fi
+
+if command -v ip >/dev/null 2>&1; then
+  ip neigh show 2>/dev/null | awk '
+    BEGIN { OFS="\t" }
+    {
+      ip="";
+      dev="";
+      mac="";
+      if (NF >= 1) ip=$1;
+      for (i = 1; i <= NF; i++) {
+        if ($i == "dev" && i < NF) dev=$(i + 1);
+        if ($i == "lladdr" && i < NF) mac=$(i + 1);
+      }
+      if (mac != "") print mac, ip, "", "", dev, "ip-neigh";
+    }
+  ' >>"$tmp_clients"
+fi
+
+if [ -r /proc/net/arp ]; then
+  awk 'NR > 1 && $4 != "" && $4 != "00:00:00:00:00:00" {
+    printf "%s\t%s\t\t\t%s\tarp\n", $4, $1, $6
+  }' /proc/net/arp >>"$tmp_clients"
+fi
+
+awk -F '\t' '
+{
+  if ($2 != "") print $2;
+  if ($4 != "") print $4;
+}
+' "$tmp_clients" | awk '!seen[$0]++ && $0 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ { print }' >"$tmp_known_ips"
+
+traffic_source="none"
+has_nft=0
+has_conntrack=0
+if command -v nft >/dev/null 2>&1; then
+  nft add table inet owrt_traffic >/dev/null 2>&1 || true
+  nft 'add chain inet owrt_traffic client_prerouting { type filter hook prerouting priority filter; policy accept; }' >/dev/null 2>&1 || true
+  nft 'add chain inet owrt_traffic client_postrouting { type filter hook postrouting priority filter; policy accept; }' >/dev/null 2>&1 || true
+  nft list table inet owrt_traffic >"$tmp_rules" 2>/dev/null || true
+  while IFS= read -r client_ip; do
+    [ -n "${client_ip:-}" ] || continue
+    grep -Fq "owrt-tx:$client_ip" "$tmp_rules" || nft add rule inet owrt_traffic client_prerouting ip saddr "$client_ip" counter comment "owrt-tx:$client_ip" >/dev/null 2>&1 || true
+    grep -Fq "owrt-rx:$client_ip" "$tmp_rules" || nft add rule inet owrt_traffic client_postrouting ip daddr "$client_ip" counter comment "owrt-rx:$client_ip" >/dev/null 2>&1 || true
+  done <"$tmp_known_ips"
+  if nft list table inet owrt_traffic >"$tmp_nft" 2>/dev/null; then
+    has_nft=1
+  fi
+fi
+
+if command -v conntrack >/dev/null 2>&1; then
+  if conntrack -L -o extended >"$tmp_conntrack" 2>/dev/null; then
+    has_conntrack=1
+    traffic_source="conntrack"
+  fi
+fi
+
+if [ "$has_conntrack" -eq 0 ]; then
+  for candidate in /proc/net/nf_conntrack /proc/net/ip_conntrack; do
+    if [ -r "$candidate" ]; then
+      cat "$candidate" >"$tmp_conntrack"
+      has_conntrack=1
+      traffic_source="$(basename "$candidate")"
+      break
+    fi
+  done
+fi
+
+if [ "$has_nft" -eq 1 ] && [ "$has_conntrack" -eq 1 ]; then
+  traffic_source="nftables+${traffic_source}"
+elif [ "$has_nft" -eq 1 ]; then
+  traffic_source="nftables"
+fi
+
+printf 'META\ttraffic_source\t%s\n' "${traffic_source:-none}"
+
+awk -F '\t' -v nft_file="$tmp_nft" -v conntrack_file="$tmp_conntrack" -v has_nft="$has_nft" -v has_conntrack="$has_conntrack" -v traffic_source="${traffic_source:-none}" '
+function append_unique(existing, value, arr, idx) {
+  if (value == "") return existing;
+  if (existing == "") return value;
+  split(existing, arr, /, /);
+  for (idx in arr) if (arr[idx] == value) return existing;
+  return existing ", " value;
+}
+FNR == NR {
+  mac=toupper($1);
+  ip=$2;
+  host=$3;
+  static_ip=$4;
+  iface=$5;
+  source=$6;
+  if (mac == "") next;
+  if (!(mac in seen)) {
+    order[++count]=mac;
+    seen[mac]=1;
+  }
+  if (ip != "" && ips[mac] == "") ips[mac]=ip;
+  if (host != "" && hosts[mac] == "") hosts[mac]=host;
+  if (static_ip != "" && statics[mac] == "") statics[mac]=static_ip;
+  if (iface != "" && ifaces[mac] == "") ifaces[mac]=iface;
+  sources[mac]=append_unique(sources[mac], source);
+  if (ip != "") mac_by_ip[ip]=mac;
+  if (static_ip != "") mac_by_ip[static_ip]=mac;
+  next;
+}
+END {
+  flow_hits=0;
+  if ((has_nft + 0) > 0) {
+    while ((getline line < nft_file) > 0) {
+      bytes=0;
+      ip="";
+      dir="";
+      quoted_count=split(line, quoted, "\"");
+      for (q=1; q<=quoted_count; q++) {
+        if (quoted[q] ~ /^owrt-(tx|rx):/) {
+          marker_count=split(quoted[q], marker, ":");
+          if (marker_count >= 2) {
+            if (marker[1] == "owrt-tx") dir="tx";
+            else if (marker[1] == "owrt-rx") dir="rx";
+            ip=marker[2];
+          }
+          break;
+        }
+      }
+      if (dir == "" || ip == "" || !(ip in mac_by_ip)) continue;
+      n=split(line, parts, /[[:space:]]+/);
+      for (i=1; i<=n; i++) {
+        if (parts[i] == "bytes" && i < n) {
+          bytes=parts[i + 1] + 0;
+          break;
+        }
+      }
+      if (dir == "tx") tx_nft[mac_by_ip[ip]] = bytes;
+      else if (dir == "rx") rx_nft[mac_by_ip[ip]] = bytes;
+      flow_hits++;
+    }
+    close(nft_file);
+  }
+  if ((has_conntrack + 0) > 0) {
+    while ((getline line < conntrack_file) > 0) {
+      src1=dst1=src2=dst2="";
+      bytes1=bytes2=0;
+      src_count=0;
+      dst_count=0;
+      bytes_count=0;
+      n=split(line, parts, /[[:space:]]+/);
+      for (i=1; i<=n; i++) {
+        token=parts[i];
+        if (token ~ /^src=/) {
+          src_count++;
+          if (src_count == 1) src1=substr(token, 5);
+          else if (src_count == 2) src2=substr(token, 5);
+        } else if (token ~ /^dst=/) {
+          dst_count++;
+          if (dst_count == 1) dst1=substr(token, 5);
+          else if (dst_count == 2) dst2=substr(token, 5);
+        } else if (token ~ /^bytes=/) {
+          bytes_count++;
+          if (bytes_count == 1) bytes1=substr(token, 7) + 0;
+          else if (bytes_count == 2) bytes2=substr(token, 7) + 0;
+        }
+      }
+      if (bytes1 > 0) {
+        if (src1 in mac_by_ip) tx_conntrack[mac_by_ip[src1]] += bytes1;
+        if (dst1 in mac_by_ip) rx_conntrack[mac_by_ip[dst1]] += bytes1;
+        flow_hits++;
+      }
+      if (bytes2 > 0) {
+        if (src2 in mac_by_ip) tx_conntrack[mac_by_ip[src2]] += bytes2;
+        if (dst2 in mac_by_ip) rx_conntrack[mac_by_ip[dst2]] += bytes2;
+        flow_hits++;
+      }
+    }
+    close(conntrack_file);
+  }
+  printf "META\tflow_hits\t%d\n", flow_hits + 0;
+  for (i=1; i<=count; i++) {
+    mac=order[i];
+    rx_value=rx_nft[mac] + 0;
+    tx_value=tx_nft[mac] + 0;
+    if ((rx_conntrack[mac] + 0) > rx_value) rx_value=rx_conntrack[mac] + 0;
+    if ((tx_conntrack[mac] + 0) > tx_value) tx_value=tx_conntrack[mac] + 0;
+    total=rx_value + tx_value;
+    printf "CLIENT\t%s\t%s\t%s\t%s\t%s\t%s\t%.0f\t%.0f\t%.0f\n",
+      mac, ips[mac], hosts[mac], statics[mac], ifaces[mac], sources[mac], rx_value, tx_value, total;
+  }
+}
+' "$tmp_clients"
+"""
+        raw = self.run_router_ssh_script(row, script, timeout=28, ssh_password=ssh_password)
+        clients = []
+        traffic_source = "none"
+        flow_hits = 0
+        for line in raw.splitlines():
+            if not line.strip():
+                continue
+            parts = [part.strip() for part in line.split("\t")]
+            if not parts:
+                continue
+            kind = parts[0]
+            if kind == "META" and len(parts) >= 3:
+                if parts[1] == "traffic_source":
+                    traffic_source = parts[2] or "none"
+                elif parts[1] == "flow_hits":
+                    try:
+                        flow_hits = int(parts[2] or 0)
+                    except ValueError:
+                        flow_hits = 0
+                continue
+            if kind != "CLIENT":
+                continue
+            while len(parts) < 10:
+                parts.append("")
+            mac = self.normalize_wol_mac(parts[1])
+            if not mac:
+                continue
+            ip_addr = parts[2]
+            name = parts[3]
+            static_ip = parts[4]
+            iface = parts[5]
+            source = parts[6]
+            try:
+                rx_bytes = int(float(parts[7] or 0))
+            except ValueError:
+                rx_bytes = 0
+            try:
+                tx_bytes = int(float(parts[8] or 0))
+            except ValueError:
+                tx_bytes = 0
+            try:
+                total_bytes = int(float(parts[9] or (rx_bytes + tx_bytes)))
+            except ValueError:
+                total_bytes = rx_bytes + tx_bytes
+            clients.append(
+                {
+                    "mac": mac,
+                    "ip": ip_addr,
+                    "name": name,
+                    "static_ip": static_ip,
+                    "iface": iface,
+                    "source": source,
+                    "rx_bytes": rx_bytes,
+                    "tx_bytes": tx_bytes,
+                    "total_bytes": total_bytes,
+                    "has_static": bool(static_ip),
+                }
+            )
+        clients = accumulate_traffic_clients(row["id"], clients)
+        clients.sort(
+            key=lambda item: (
+                -int(item.get("total_bytes") or 0),
+                str(item.get("name") or "").lower(),
+                str(item.get("ip") or ""),
+                str(item.get("mac") or ""),
+            )
+        )
+        return {
+            "clients": clients,
+            "traffic_source": traffic_source,
+            "traffic_supported": traffic_source != "none",
+            "flow_hits": flow_hits,
+        }
+
+    def reset_router_client_traffic(self, row, ssh_password=""):
+        script = r"""
+set -eu
+
+install_conntrack() {
+  pkg=""
+  if command -v opkg >/dev/null 2>&1; then
+    opkg update >/dev/null 2>&1 || true
+    for pkg in conntrack conntrack-tools; do
+      opkg install "$pkg" >/dev/null 2>&1 && return 0
+    done
+  fi
+  if command -v apk >/dev/null 2>&1; then
+    apk update >/dev/null 2>&1 || true
+    for pkg in conntrack conntrack-tools; do
+      apk add "$pkg" >/dev/null 2>&1 && return 0
+    done
+  fi
+  return 1
+}
+
+did_reset=0
+conntrack_failed=0
+
+if command -v nft >/dev/null 2>&1; then
+  nft delete table inet owrt_traffic >/dev/null 2>&1 || true
+  did_reset=1
+fi
+
+if ! command -v conntrack >/dev/null 2>&1; then
+  install_conntrack || true
+fi
+
+if ! command -v conntrack >/dev/null 2>&1; then
+  echo "Не удалось найти или установить conntrack на роутере. Попробуй вручную: opkg install conntrack" >&2
+  exit 127
+fi
+
+if ! conntrack -F >/dev/null 2>&1; then
+  echo "Команда conntrack найдена, но очистить таблицу не удалось." >&2
+  exit 1
+fi
+
+echo "Трафик сброшен. Conntrack очищен, новые счётчики начнут копиться заново."
+"""
+        output = self.run_router_ssh_script(row, script, timeout=75, ssh_password=ssh_password).strip()
+        return {
+            "message": output or "Трафик сброшен. Conntrack очищен, новые счётчики начнут копиться заново."
+        }
+
+    def reset_router_client_traffic(self, row, ssh_password=""):
+        script = r"""
+set -eu
+
+install_conntrack() {
+  pkg=""
+  if command -v opkg >/dev/null 2>&1; then
+    opkg update >/dev/null 2>&1 || true
+    for pkg in conntrack conntrack-tools; do
+      opkg install "$pkg" >/dev/null 2>&1 && return 0
+    done
+  fi
+  if command -v apk >/dev/null 2>&1; then
+    apk update >/dev/null 2>&1 || true
+    for pkg in conntrack conntrack-tools; do
+      apk add "$pkg" >/dev/null 2>&1 && return 0
+    done
+  fi
+  return 1
+}
+
+did_reset=0
+conntrack_failed=0
+
+if command -v nft >/dev/null 2>&1; then
+  nft delete table inet owrt_traffic >/dev/null 2>&1 || true
+  did_reset=1
+fi
+
+if ! command -v conntrack >/dev/null 2>&1; then
+  install_conntrack || true
+fi
+
+if command -v conntrack >/dev/null 2>&1; then
+  if conntrack -F >/dev/null 2>&1; then
+    did_reset=1
+  else
+    conntrack_failed=1
+  fi
+fi
+
+[ "$did_reset" -eq 1 ] || {
+  echo "Failed to reset traffic counters: neither conntrack nor nftables could be cleared." >&2
+  exit 1
+}
+
+if [ "$conntrack_failed" -eq 1 ]; then
+  echo "Traffic counters partially reset: nft client counters were cleared, but conntrack flush failed."
+else
+  echo "Traffic counters reset: conntrack flushed and nft client counters cleared."
+fi
+"""
+        output = self.run_router_ssh_script(row, script, timeout=75, ssh_password=ssh_password).strip()
+        clear_traffic_counters(row["id"])
+        return {
+            "message": output or "Traffic counters reset: conntrack flushed and nft client counters cleared."
+        }
+
     def ensure_router_wol_support(self, row, ssh_password=""):
         script = r"""
 set -eu
@@ -7797,6 +9025,53 @@ exit 127
                 self.send_json(200, {"ok": True, "router_id": router_id, "devices": devices})
             except Exception as exc:
                 self.send_json(400, {"ok": False, "error": str(exc), "router_id": router_id, "devices": []})
+            return
+        if path.startswith("/api/router/") and path.endswith("/traffic/clients"):
+            parts = path.strip("/").split("/")
+            if len(parts) != 5 or parts[0] != "api" or parts[1] != "router" or parts[3] != "traffic" or parts[4] != "clients":
+                self.send_text(404, "not found")
+                return
+            router_id = urllib.parse.unquote(parts[2])
+            try:
+                payload = self.read_payload()
+                with self.app.conn() as conn:
+                    row = get_active_router(conn, router_id)
+                if not row:
+                    self.send_json(404, {"ok": False, "error": "router not found"})
+                    return
+                result = self.discover_router_client_traffic(row, payload.get("ssh_password", ""))
+                self.send_json(200, {"ok": True, "router_id": router_id, **result})
+            except Exception as exc:
+                self.send_json(
+                    400,
+                    {
+                        "ok": False,
+                        "error": str(exc),
+                        "router_id": router_id,
+                        "clients": [],
+                        "traffic_source": "none",
+                        "traffic_supported": False,
+                        "flow_hits": 0,
+                    },
+                )
+            return
+        if path.startswith("/api/router/") and path.endswith("/traffic/reset"):
+            parts = path.strip("/").split("/")
+            if len(parts) != 5 or parts[0] != "api" or parts[1] != "router" or parts[3] != "traffic" or parts[4] != "reset":
+                self.send_text(404, "not found")
+                return
+            router_id = urllib.parse.unquote(parts[2])
+            try:
+                payload = self.read_payload()
+                with self.app.conn() as conn:
+                    row = get_active_router(conn, router_id)
+                if not row:
+                    self.send_json(404, {"ok": False, "error": "router not found"})
+                    return
+                result = self.reset_router_client_traffic(row, payload.get("ssh_password", ""))
+                self.send_json(200, {"ok": True, "router_id": router_id, **result})
+            except Exception as exc:
+                self.send_json(400, {"ok": False, "error": str(exc), "router_id": router_id})
             return
         if path.startswith("/api/router/") and path.endswith("/wol"):
             parts = path.strip("/").split("/")
