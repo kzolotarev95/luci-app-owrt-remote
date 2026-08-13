@@ -2,7 +2,7 @@
 set -u
 
 APP_NAME="OpenWrt Remote Hub"
-INSTALLER_VERSION="2026-07-03-web-push-v1"
+INSTALLER_VERSION="2026-08-13-passkey-v1"
 RAW_BASE="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 STATE_DIR="${OWRT_REMOTE_STATE_DIR:-/var/lib/owrt-remote}"
 HUB_LOGIN="${HUB_LOGIN:-admin}"
@@ -119,6 +119,23 @@ install_python_deps() {
 	fi
 }
 
+install_python_deps_v2() {
+	info "Ставлю Python-модули Hub: Web Push и Passkey/WebAuthn..."
+	if ! $SUDO python3 -m venv /opt/owrt-remote/venv; then
+		warn "Не смог создать Python venv. Hub запустится, но Web Push и Passkey/WebAuthn могут не работать."
+		return 0
+	fi
+	if ! $SUDO /opt/owrt-remote/venv/bin/python -m pip install --upgrade pip wheel >/dev/null; then
+		warn "Не смог обновить pip внутри venv."
+	fi
+	if ! $SUDO /opt/owrt-remote/venv/bin/python -m pip install --upgrade pywebpush >/dev/null; then
+		warn "Не смог поставить pywebpush. Проверь internet/DNS на VPS."
+	fi
+	if ! $SUDO /opt/owrt-remote/venv/bin/python -m pip install --upgrade fido2 >/dev/null; then
+		warn "Не смог поставить fido2 для Passkey/WebAuthn. Проверь internet/DNS на VPS."
+	fi
+}
+
 install_xray_service() {
 	xray_bin="$(command -v xray || command -v /usr/local/bin/xray || command -v /usr/bin/xray || true)"
 	[ -n "$xray_bin" ] || return 0
@@ -150,12 +167,12 @@ open_firewall() {
 }
 
 start_hub() {
-	$SUDO /opt/owrt-remote/owrt-remote-hub.py init >/tmp/owrt-remote-init.log 2>&1 || {
+	$SUDO /opt/owrt-remote/owrt-remote-run.sh init >/tmp/owrt-remote-init.log 2>&1 || {
 		cat /tmp/owrt-remote-init.log >&2
 		die "не смог создать базу Hub"
 	}
 	if [ "$RESET_LOGIN" = "1" ]; then
-		$SUDO /opt/owrt-remote/owrt-remote-hub.py set-login --username "$HUB_LOGIN" --password "$HUB_PASSWORD" >/dev/null
+		$SUDO /opt/owrt-remote/owrt-remote-run.sh set-login --username "$HUB_LOGIN" --password "$HUB_PASSWORD" >/dev/null
 	fi
 	$SUDO systemctl daemon-reload
 	$SUDO systemctl enable --now owrt-remote
@@ -257,7 +274,7 @@ main() {
 	info "IP/домен VPS: $host"
 	install_xray_binary
 	install_files
-	install_python_deps
+	install_python_deps_v2
 	install_xray_service
 	open_firewall
 	start_hub
