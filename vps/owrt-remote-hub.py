@@ -2109,6 +2109,28 @@ def rewrite_router_endpoints(conn, vps_host="", public_url="", preserve_vps_fall
     return rewritten
 
 
+def router_current_hub_bundle(router, app_public_url="", request_origin="", fallback_host=""):
+    row = dict(router or {})
+    router_public_url = public_url_origin(row.get("public_url", ""))
+    app_origin = public_url_origin(app_public_url)
+    request_origin = public_url_origin(request_origin)
+    public_url = router_public_url or app_origin
+    hub_url = public_url or request_origin or router_fallback_hub_url(row, fallback_host, 8088)
+    config_vps_host = (
+        vps_host_name(public_url or hub_url)
+        or str(row.get("vps_host") or "").strip()
+        or vps_host_name(app_origin or request_origin)
+        or vps_host_name(router_fallback_hub_url(row, fallback_host, 8088))
+        or ""
+    )
+    hub_update = {
+        "hub_url": hub_url,
+        "public_url": public_url,
+        "vps_host": config_vps_host,
+    }
+    return hub_update, hub_url, config_vps_host
+
+
 def restore_hub_backup(archive_path, db_path=DB_PATH, vps_host="", public_url=""):
     ensure_state()
     archive_path = Path(archive_path)
@@ -2625,7 +2647,7 @@ def maybe_restart_vps_xray_after_wan_reconnect(router_id):
     return result
 
 
-def make_openwrt_config(row, hub_url, vps_host_override="", public_url_override=""):
+def build_openwrt_config_payload(row, hub_url, vps_host_override="", public_url_override=""):
     reverse_tag = row_str_value(row, "reverse_tag", "reverse-in")
     ssh_reverse_tag = row_str_value(row, "ssh_reverse_tag", "") or f"{reverse_tag}-ssh"
     ssh_host = row_str_value(row, "ssh_host", "127.0.0.1")
@@ -2657,6 +2679,10 @@ def make_openwrt_config(row, hub_url, vps_host_override="", public_url_override=
         ),
         "public_url": effective_public_url,
     }
+    return payload
+
+
+def build_openwrt_config_lines(payload, mode="manual"):
     lines = [
         "uci -q delete owrtremote.main",
         "uci set owrtremote.main=remote",
@@ -2685,9 +2711,44 @@ def make_openwrt_config(row, hub_url, vps_host_override="", public_url_override=
         "uci commit owrtremote",
         "owrt-remote render-client",
         "/etc/init.d/owrt-remote enable",
-        "/etc/init.d/owrt-remote restart",
-        "owrt-remote heartbeat",
     ]
+    if mode == "ssh-apply":
+        lines.extend(
+            [
+                "owrt-remote heartbeat rebind >/dev/null 2>&1 || true",
+                "( sleep 1; /etc/init.d/owrt-remote restart >/dev/null 2>&1 ) >/dev/null 2>&1 &",
+                "echo 'owrt-remote rebind applied'",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "/etc/init.d/owrt-remote restart",
+                "owrt-remote heartbeat",
+            ]
+        )
+    return lines
+
+
+def make_openwrt_config(row, hub_url, vps_host_override="", public_url_override=""):
+    payload = build_openwrt_config_payload(
+        row,
+        hub_url,
+        vps_host_override=vps_host_override,
+        public_url_override=public_url_override,
+    )
+    lines = build_openwrt_config_lines(payload, mode="manual")
+    return "\n".join(lines) + "\n"
+
+
+def make_openwrt_ssh_apply_script(row, hub_url, vps_host_override="", public_url_override=""):
+    payload = build_openwrt_config_payload(
+        row,
+        hub_url,
+        vps_host_override=vps_host_override,
+        public_url_override=public_url_override,
+    )
+    lines = ["set -eu"] + build_openwrt_config_lines(payload, mode="ssh-apply")
     return "\n".join(lines) + "\n"
 
 
@@ -3239,6 +3300,7 @@ systemctl restart owrt-remote-xray</pre>
                   <input class="wide" id="backupFile" type="file" accept=".gz,.tgz,.tar.gz,application/gzip,application/x-gzip">
                   <input id="backupVpsHost" placeholder="Новый VPS host/IP">
                   <input id="backupPublicUrl" placeholder="Новый Public URL">
+                  <input id="backupSshPassword" type="password" placeholder="Общий SSH пароль роутеров, если нужен" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false">
                   <button class="primary wide" id="backupRestore" type="button">Восстановить из backup</button>
                   <button class="wide" id="backupRewrite" type="button">Перепривязать существующие роутеры</button>
                 </div>
@@ -6682,6 +6744,7 @@ const notifyClear = document.getElementById('notifyClear');
 const backupFile = document.getElementById('backupFile');
 const backupVpsHost = document.getElementById('backupVpsHost');
 const backupPublicUrl = document.getElementById('backupPublicUrl');
+const backupSshPassword = document.getElementById('backupSshPassword');
 const backupRestore = document.getElementById('backupRestore');
 const backupRewrite = document.getElementById('backupRewrite');
 const backupMsg = document.getElementById('backupMsg');
@@ -7464,13 +7527,14 @@ backupRestore.addEventListener('click', async () => {{
 backupRewrite.addEventListener('click', async () => {{
   const vpsHost = backupVpsHost.value.trim();
   const publicUrl = backupPublicUrl.value.trim();
+  const sshPassword = backupSshPassword ? backupSshPassword.value : '';
   if (!vpsHost && !publicUrl) {{
     setBackupMsg('Укажи новый VPS host/IP или Public URL для перепривязки роутеров.', true);
     return;
   }}
-  if (!confirm('Переписать endpoint-адреса у всех активных роутеров в Hub? Роутеры применят новые значения после следующего успешного heartbeat.')) return;
+  if (!confirm('Переписать endpoint-адреса у всех активных роутеров в Hub и сразу попытаться применить новый конфиг по SSH? Для роутеров с живым SSH-туннелем Hub попробует вернуть heartbeat сам.')) return;
   backupRewrite.disabled = true;
-  setBackupMsg('Переписываю endpoint-адреса роутеров в Hub...');
+  setBackupMsg('Переписываю endpoint-адреса роутеров в Hub и пытаюсь сразу применить новый конфиг по SSH...');
   try {{
     const res = await fetch('/api/routers/rewrite-endpoints', {{
       method: 'POST',
@@ -7478,7 +7542,9 @@ backupRewrite.addEventListener('click', async () => {{
       body: JSON.stringify({{
         vps_host: vpsHost,
         public_url: publicUrl,
-        preserve_vps_fallback: true
+        preserve_vps_fallback: true,
+        apply_live: true,
+        ssh_password: sshPassword
       }})
     }});
     const data = await res.json().catch(() => ({{}}));
@@ -7489,7 +7555,17 @@ backupRewrite.addEventListener('click', async () => {{
     const changed = Object.keys(data.rewritten || {{}}).length
       ? ' Переписано: ' + Object.entries(data.rewritten).map(([k, v]) => `${{k}}=${{v}}`).join(', ') + '.'
       : '';
-    setBackupMsg(`Роутеры перепривязаны в Hub.${{changed}} Активных роутеров: ${{Number(data.routers || 0)}}. После следующего успешного heartbeat они подтянут новые адреса сами. Если старый endpoint уже недоступен, открой OpenWrt config в карточке и перепримени его на роутере вручную.`);
+    const autoApply = data.auto_apply || {{}};
+    const total = Number(data.routers || 0);
+    const confirmed = Number(autoApply.confirmed || 0);
+    const applied = Number(autoApply.applied || 0);
+    const unreachable = Number(autoApply.unreachable || 0);
+    const failed = Number(autoApply.failed || 0);
+    let extra = ` Автоприменение по SSH: подтвержден heartbeat у ${{confirmed}}/${{total}}, конфиг отправлен на ${{applied}}/${{total}}.`;
+    if (unreachable) extra += ` Недоступны по SSH: ${{unreachable}}.`;
+    if (failed) extra += ` С ошибкой применения: ${{failed}}.`;
+    if (confirmed < total) extra += ' Для тех, кто не подтвердился, открой OpenWrt config в карточке и перепримени его вручную.';
+    setBackupMsg(`Роутеры перепривязаны в Hub.${{changed}} Активных роутеров: ${{total}}.${{extra}}`);
     if (preservedFallback) setBackupMsg(backupMsg.textContent + preservedFallback);
     await loadRouters();
   }} catch (e) {{
@@ -9648,6 +9724,17 @@ class Handler(BaseHTTPRequestHandler):
             args[1:1] = ["-o", "BatchMode=yes"]
         return env, args
 
+    def router_ssh_tcp_status(self, row, timeout=2):
+        port = int(row["ssh_entry_port"] or 0) if row else 0
+        if port <= 0:
+            return False, 0, "router has no ssh_entry_port"
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=float(timeout)):
+                pass
+            return True, port, ""
+        except Exception as exc:
+            return False, port, str(exc)
+
     def prepare_ssh_askpass(self, env, ssh_password):
         password = str(ssh_password or "")
         if not password:
@@ -9710,6 +9797,74 @@ class Handler(BaseHTTPRequestHandler):
             message = (result.stderr or result.stdout or "").strip()
             raise RuntimeError(message or f"ssh command exited with code {result.returncode}")
         return result.stdout
+
+    def wait_router_heartbeat(self, router_id, last_seen_before=0, timeout=6):
+        deadline = time.time() + max(float(timeout), 0.0)
+        seen_before = int(last_seen_before or 0)
+        while time.time() <= deadline:
+            with self.app.conn() as conn:
+                row = get_active_router(conn, router_id)
+            if row:
+                try:
+                    last_seen = int(row["last_seen"] or 0)
+                except (TypeError, ValueError):
+                    last_seen = 0
+                if last_seen > seen_before:
+                    return True, row
+            time.sleep(1)
+        with self.app.conn() as conn:
+            row = get_active_router(conn, router_id)
+        return False, row
+
+    def apply_router_rebind_via_ssh(self, row, ssh_password="", request_origin=""):
+        router_id = row_str_value(row, "id")
+        last_seen_before = row_int_value(row, "last_seen", 0)
+        tcp_ok, port, tcp_error = self.router_ssh_tcp_status(row)
+        result = {
+            "id": router_id,
+            "name": row_str_value(row, "name", router_id),
+            "port": port,
+            "tcp_ok": bool(tcp_ok),
+            "status": "pending",
+            "heartbeat_confirmed": False,
+            "error": "",
+        }
+        if not tcp_ok:
+            result["status"] = "unreachable"
+            result["error"] = tcp_error or "ssh tunnel is unreachable"
+            return result
+        hub_update, hub_url, config_vps_host = router_current_hub_bundle(
+            row,
+            self.app.public_url,
+            request_origin,
+            self.headers.get("Host", ""),
+        )
+        script = make_openwrt_ssh_apply_script(
+            row,
+            hub_url,
+            vps_host_override=config_vps_host,
+            public_url_override=hub_update.get("public_url", ""),
+        )
+        try:
+            output = self.run_router_ssh_script(
+                row,
+                script,
+                timeout=12,
+                ssh_password=ssh_password,
+            ).strip()
+            result["status"] = "applied"
+            if output:
+                result["output"] = output
+        except Exception as exc:
+            result["status"] = "failed"
+            result["error"] = str(exc)
+            return result
+        confirmed, fresh_row = self.wait_router_heartbeat(router_id, last_seen_before=last_seen_before, timeout=6)
+        result["heartbeat_confirmed"] = bool(confirmed)
+        result["status"] = "confirmed" if confirmed else "applied"
+        if fresh_row:
+            result["last_seen"] = row_int_value(fresh_row, "last_seen", 0)
+        return result
 
     def discover_router_wol_devices(self, row, ssh_password=""):
         script = r"""
@@ -10697,6 +10852,8 @@ exit 127
             payload = self.read_payload()
             vps_host = str(payload.get("vps_host") or "").strip()
             public_url = str(payload.get("public_url") or "").strip()
+            apply_live = bool(payload.get("apply_live", True))
+            ssh_password = str(payload.get("ssh_password") or "")
             if not vps_host and not public_url:
                 self.send_json(400, {"ok": False, "error": "vps_host or public_url is required"})
                 return
@@ -10707,16 +10864,47 @@ exit 127
                     public_url=public_url,
                     preserve_vps_fallback=bool(payload.get("preserve_vps_fallback", True)),
                 )
-                total = conn.execute("select count(*) from routers where deleted_at = 0").fetchone()[0]
+                rows = list_router_rows(conn)
+                total = len(rows)
+            auto_apply = {
+                "requested": bool(apply_live),
+                "attempted": 0,
+                "confirmed": 0,
+                "applied": 0,
+                "unreachable": 0,
+                "failed": 0,
+                "results": [],
+            }
+            if apply_live:
+                for row in rows:
+                    result = self.apply_router_rebind_via_ssh(row, ssh_password=ssh_password, request_origin=self.request_origin())
+                    auto_apply["results"].append(result)
+                    auto_apply["attempted"] += 1
+                    status = str(result.get("status") or "")
+                    if status == "confirmed":
+                        auto_apply["confirmed"] += 1
+                        auto_apply["applied"] += 1
+                    elif status == "applied":
+                        auto_apply["applied"] += 1
+                    elif status == "unreachable":
+                        auto_apply["unreachable"] += 1
+                    else:
+                        auto_apply["failed"] += 1
             add_notification(
                 "router-endpoints-rewrite",
                 "Router endpoints updated",
-                "Hub updated router endpoint settings. Routers will pick up new values on the next successful heartbeat/fallback.",
+                "Hub updated router endpoint settings and tried to push the new config over SSH to reachable routers.",
                 "warn",
-                [],
-                {"rewritten": rewritten, "routers": total},
+                [
+                    f"rewritten: {', '.join(f'{k}={v}' for k, v in rewritten.items()) or 'none'}",
+                    f"auto-apply confirmed: {auto_apply['confirmed']}/{total}",
+                    f"auto-apply applied: {auto_apply['applied']}/{total}",
+                    f"auto-apply unreachable: {auto_apply['unreachable']}/{total}",
+                    f"auto-apply failed: {auto_apply['failed']}/{total}",
+                ],
+                {"rewritten": rewritten, "routers": total, "auto_apply": auto_apply},
             )
-            self.send_json(200, {"ok": True, "rewritten": rewritten, "routers": total})
+            self.send_json(200, {"ok": True, "rewritten": rewritten, "routers": total, "auto_apply": auto_apply})
         except Exception as exc:
             self.send_json(400, {"ok": False, "error": str(exc)})
 
@@ -11247,9 +11435,12 @@ exit 127
         if not row:
             self.send_text(404, "router not found")
             return
-        hub_update = canonical_router_hub_update(dict(row), self.app.public_url, self.request_origin())
-        hub_url = hub_update.get("hub_url") or router_fallback_hub_url(row, self.headers.get("Host", ""), 8088)
-        config_vps_host = vps_host_name(hub_update.get("public_url") or hub_url) or hub_update.get("vps_host", "")
+        hub_update, hub_url, config_vps_host = router_current_hub_bundle(
+            row,
+            self.app.public_url,
+            self.request_origin(),
+            self.headers.get("Host", ""),
+        )
         if asset == "config":
             self.send_text(
                 200,
