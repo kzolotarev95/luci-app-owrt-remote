@@ -1923,8 +1923,9 @@ def row_to_router(row):
         data["name"] = custom_name
     last_seen = data.get("last_seen")
     service_enabled = str(status.get("service") or "").lower() != "disabled"
-    online = bool(last_seen and service_enabled and now_ts() - int(last_seen) <= ONLINE_AFTER_SECONDS)
+    online = bool(last_seen and now_ts() - int(last_seen) <= ONLINE_AFTER_SECONDS)
     data["status"] = status
+    data["service_enabled"] = service_enabled
     data["online"] = online
     data["last_seen_iso"] = iso_time(last_seen)
     data["access_url"] = f"/access/{urllib.parse.quote(data['id'])}/"
