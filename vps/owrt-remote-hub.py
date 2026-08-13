@@ -569,6 +569,29 @@ def public_url_rp_id(public_url):
         return ""
 
 
+def vps_host_name(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urllib.parse.urlsplit(raw if "://" in raw else f"//{raw}")
+        return parsed.hostname or ""
+    except Exception:
+        return ""
+
+
+def should_preserve_router_vps_fallback(vps_host="", public_url=""):
+    next_vps_host = vps_host_name(vps_host)
+    next_public_host = public_url_rp_id(public_url)
+    return bool(next_vps_host and next_public_host and next_vps_host == next_public_host)
+
+
+def router_fallback_hub_url(router, fallback_host="", port=8088):
+    host = str((router or {}).get("vps_host") or "").strip()
+    host = vps_host_name(host) or vps_host_name(fallback_host) or "127.0.0.1"
+    return f"http://{host}:{int(port or 8088)}"
+
+
 def canonical_router_hub_update(router, app_public_url="", request_origin=""):
     router = router or {}
     app_origin = public_url_origin(app_public_url)
@@ -2041,12 +2064,13 @@ def extract_hub_backup(archive_path, tmp_dir):
         tar.extractall(tmp_dir, members)
 
 
-def rewrite_router_endpoints(conn, vps_host="", public_url=""):
+def rewrite_router_endpoints(conn, vps_host="", public_url="", preserve_vps_fallback=False):
     rewritten = {}
     next_vps_host = str(vps_host or "").strip()
     next_public_url = str(public_url or "").strip()
     ts = now_ts()
-    if next_vps_host:
+    keep_vps_host = preserve_vps_fallback and should_preserve_router_vps_fallback(next_vps_host, next_public_url)
+    if next_vps_host and not keep_vps_host:
         conn.execute(
             "update routers set vps_host = ?, updated_at = ? where deleted_at = 0",
             (next_vps_host, ts),
@@ -7400,15 +7424,20 @@ backupRewrite.addEventListener('click', async () => {{
       headers: {{'Content-Type': 'application/json'}},
       body: JSON.stringify({{
         vps_host: vpsHost,
-        public_url: publicUrl
+        public_url: publicUrl,
+        preserve_vps_fallback: true
       }})
     }});
     const data = await res.json().catch(() => ({{}}));
     if (!res.ok || !data.ok) throw new Error(data.error || res.status);
+    const preservedFallback = vpsHost && publicUrl && !Object.prototype.hasOwnProperty.call(data.rewritten || {{}}, 'vps_host')
+      ? ' Текущий VPS host/IP у роутеров сохранен как fallback, чтобы переезд с IP на домен на этом же VPS не обрывал heartbeat.'
+      : '';
     const changed = Object.keys(data.rewritten || {{}}).length
       ? ' Переписано: ' + Object.entries(data.rewritten).map(([k, v]) => `${{k}}=${{v}}`).join(', ') + '.'
       : '';
     setBackupMsg(`Роутеры перепривязаны в Hub.${{changed}} Активных роутеров: ${{Number(data.routers || 0)}}. После следующего heartbeat они подтянут новые адреса сами.`);
+    if (preservedFallback) setBackupMsg(backupMsg.textContent + preservedFallback);
     await loadRouters();
   }} catch (e) {{
     setBackupMsg('Перепривязка роутеров не удалась: ' + (e.message || e), true);
@@ -10619,7 +10648,12 @@ exit 127
                 self.send_json(400, {"ok": False, "error": "vps_host or public_url is required"})
                 return
             with self.app.conn() as conn:
-                rewritten = rewrite_router_endpoints(conn, vps_host=vps_host, public_url=public_url)
+                rewritten = rewrite_router_endpoints(
+                    conn,
+                    vps_host=vps_host,
+                    public_url=public_url,
+                    preserve_vps_fallback=bool(payload.get("preserve_vps_fallback", True)),
+                )
                 total = conn.execute("select count(*) from routers where deleted_at = 0").fetchone()[0]
             add_notification(
                 "router-endpoints-rewrite",
@@ -11160,7 +11194,7 @@ exit 127
         if not row:
             self.send_text(404, "router not found")
             return
-        hub_url = self.app.public_url or f"http://{self.headers.get('Host')}"
+        hub_url = router_fallback_hub_url(row, self.headers.get("Host", ""), 8088)
         if asset == "config":
             self.send_text(200, make_openwrt_config(row, hub_url))
             return
@@ -11736,7 +11770,7 @@ def cmd_print_openwrt(args):
         row = get_router(conn, args.id)
     if not row:
         raise SystemExit(f"router not found: {args.id}")
-    hub_url = args.hub_url or os.environ.get("OWRT_REMOTE_PUBLIC_URL") or f"http://{args.vps_host}:{args.port}"
+    hub_url = args.hub_url or router_fallback_hub_url(row, args.vps_host, args.port)
     print(make_openwrt_config(row, hub_url), end="")
 
 
@@ -11755,7 +11789,12 @@ def cmd_restore(args):
 def cmd_rewrite_endpoints(args):
     with connect(args.db) as conn:
         init_db(conn)
-        rewritten = rewrite_router_endpoints(conn, args.vps_host, args.public_url)
+        rewritten = rewrite_router_endpoints(
+            conn,
+            args.vps_host,
+            args.public_url,
+            preserve_vps_fallback=bool(args.preserve_vps_fallback),
+        )
         total = conn.execute("select count(*) from routers where deleted_at = 0").fetchone()[0]
     print(json.dumps({"ok": True, "rewritten": rewritten, "routers": total}, ensure_ascii=False, indent=2))
 
@@ -11929,6 +11968,11 @@ def parser():
     rewrite = sub.add_parser("rewrite-endpoints", help="rewrite active router endpoint settings in Hub DB")
     rewrite.add_argument("--vps-host", default="", help="new VPS host/IP for active routers")
     rewrite.add_argument("--public-url", default="", help="new public Hub URL for active routers")
+    rewrite.add_argument(
+        "--preserve-vps-fallback",
+        action="store_true",
+        help="keep current router vps_host values when public_url and vps_host point to the same host, preserving old IP fallback during same-VPS domain migration",
+    )
     rewrite.set_defaults(func=cmd_rewrite_endpoints)
 
     serve = sub.add_parser("serve", help="run web dashboard")
