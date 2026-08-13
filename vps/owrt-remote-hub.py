@@ -3500,7 +3500,7 @@ function activeWolInteractiveField() {{
 }}
 
 function shouldDeferRouterRender() {{
-  return hasOpenWolPicker() || Boolean(activeWolInteractiveField());
+  return Boolean(activeWolInteractiveField());
 }}
 
 function clearPendingWolBlurFlush() {{
@@ -6429,7 +6429,7 @@ cards.addEventListener('click', async (ev) => {{
     ev.target.textContent = open ? 'Скрыть действия' : 'Открыть действия';
     return;
   }}
-  const wolToggleId = ev.target?.dataset?.wolToggle;
+  const wolToggleId = ev.target?.closest?.('[data-wol-toggle]')?.dataset?.wolToggle;
   if (wolToggleId) {{
     const state = getWolState(wolToggleId);
     const open = !state.open;
@@ -6441,7 +6441,7 @@ cards.addEventListener('click', async (ev) => {{
     }}
     return;
   }}
-  const trafficToggleId = ev.target?.dataset?.trafficToggle;
+  const trafficToggleId = ev.target?.closest?.('[data-traffic-toggle]')?.dataset?.trafficToggle;
   if (trafficToggleId) {{
     const state = getTrafficState(trafficToggleId);
     const open = !state.open;
@@ -6477,22 +6477,22 @@ cards.addEventListener('click', async (ev) => {{
     if (!pickerOpen) flushDeferredRouterRender();
     return;
   }}
-  const wolRefreshId = ev.target?.dataset?.wolRefresh;
+  const wolRefreshId = ev.target?.closest?.('[data-wol-refresh]')?.dataset?.wolRefresh;
   if (wolRefreshId) {{
     await loadWolDevices(wolRefreshId, true);
     return;
   }}
-  const trafficRefreshId = ev.target?.dataset?.trafficRefresh;
+  const trafficRefreshId = ev.target?.closest?.('[data-traffic-refresh]')?.dataset?.trafficRefresh;
   if (trafficRefreshId) {{
     await loadTrafficClients(trafficRefreshId, true);
     return;
   }}
-  const trafficResetId = ev.target?.dataset?.trafficReset;
+  const trafficResetId = ev.target?.closest?.('[data-traffic-reset]')?.dataset?.trafficReset;
   if (trafficResetId) {{
     await resetTrafficClients(trafficResetId);
     return;
   }}
-  const wolSendId = ev.target?.dataset?.wolSend;
+  const wolSendId = ev.target?.closest?.('[data-wol-send]')?.dataset?.wolSend;
   if (wolSendId) {{
     await wakeSelectedDevice(wolSendId);
     return;
