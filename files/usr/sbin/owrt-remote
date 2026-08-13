@@ -68,6 +68,38 @@ safe_id() {
 	printf '%s' "$1" | tr -cs 'A-Za-z0-9._-' '-'
 }
 
+normalize_url_base() {
+	local value
+	value="${1%/}"
+	printf '%s' "$value"
+}
+
+json_unescape_basic() {
+	printf '%s' "$1" | sed 's/\\"/"/g; s/\\\\/\\/g'
+}
+
+json_extract_object_string() {
+	local file object key compact value
+	file="$1"
+	object="$2"
+	key="$3"
+	compact="$(tr -d '\r\n' <"$file" 2>/dev/null || true)"
+	[ -n "$compact" ] || return 0
+	value="$(printf '%s' "$compact" | sed -n "s/.*\"$object\"[[:space:]]*:[[:space:]]*{[^}]*\"$key\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" | head -n 1)"
+	json_unescape_basic "$value"
+}
+
+uci_set_if_changed() {
+	local key next current
+	key="$1"
+	next="$2"
+	[ -n "$next" ] || return 1
+	current="$(uci_get "$key" '')"
+	[ "$current" = "$next" ] && return 1
+	uci -q set "$CONFIG.$SECTION.$key=$next" >/dev/null 2>&1 || return 1
+	return 0
+}
+
 host_model() {
 	if [ -r /tmp/sysinfo/model ]; then
 		cat /tmp/sysinfo/model
@@ -688,8 +720,69 @@ post_json() {
 	die "для heartbeat нужен uclient-fetch, wget или curl"
 }
 
+heartbeat_base_from_endpoint() {
+	printf '%s' "${1%/api/heartbeat}"
+}
+
+heartbeat_emit_endpoint() {
+	local base marker
+	base="$(normalize_url_base "$1")"
+	[ -n "$base" ] || return 0
+	marker="|$base|"
+	case "${HEARTBEAT_ENDPOINT_SEEN:-}" in
+		*"$marker"*) return 0 ;;
+	esac
+	HEARTBEAT_ENDPOINT_SEEN="${HEARTBEAT_ENDPOINT_SEEN:-}$marker"
+	printf '%s/api/heartbeat\n' "$base"
+}
+
+heartbeat_candidate_endpoints() {
+	local hub_url public_url vps_host
+	HEARTBEAT_ENDPOINT_SEEN='|'
+	hub_url="$(uci_get hub_url '')"
+	public_url="$(uci_get public_url '')"
+	vps_host="$(uci_get vps_host '')"
+	heartbeat_emit_endpoint "$hub_url"
+	heartbeat_emit_endpoint "$public_url"
+	case "$vps_host" in
+		'')
+			;;
+		http://*|https://*)
+			heartbeat_emit_endpoint "$vps_host"
+			;;
+		*)
+			heartbeat_emit_endpoint "https://$vps_host"
+			heartbeat_emit_endpoint "http://$vps_host"
+			heartbeat_emit_endpoint "http://$vps_host:8088"
+			;;
+	esac
+}
+
+heartbeat_apply_hub_update() {
+	local response_file fallback_base next_hub_url next_public_url next_vps_host changed
+	response_file="$1"
+	fallback_base="$2"
+	next_hub_url="$(json_extract_object_string "$response_file" hub_update hub_url)"
+	next_public_url="$(json_extract_object_string "$response_file" hub_update public_url)"
+	next_vps_host="$(json_extract_object_string "$response_file" hub_update vps_host)"
+	[ -n "$next_hub_url" ] || next_hub_url="$fallback_base"
+	changed=0
+	if uci_set_if_changed hub_url "$next_hub_url"; then
+		changed=1
+	fi
+	if uci_set_if_changed public_url "$next_public_url"; then
+		changed=1
+	fi
+	if uci_set_if_changed vps_host "$next_vps_host"; then
+		changed=1
+	fi
+	[ "$changed" = "1" ] || return 0
+	uci commit "$CONFIG" >/dev/null 2>&1 || true
+	log "heartbeat updated hub settings: hub_url=$(uci_get hub_url '') public_url=$(uci_get public_url '') vps_host=$(uci_get vps_host '')"
+}
+
 send_heartbeat() {
-	local hub_url token endpoint tmp event
+	local hub_url token endpoint tmp response event used fallback_base
 	event="${1:-}"
 	hub_url="$(uci_get hub_url '')"
 	token="$(uci_get hub_token '')"
@@ -698,9 +791,22 @@ send_heartbeat() {
 
 	endpoint="${hub_url%/}/api/heartbeat"
 	tmp="${TMPDIR:-/tmp}/owrt-remote-heartbeat.$$"
+	response="${TMPDIR:-/tmp}/owrt-remote-heartbeat.response.$$"
 	heartbeat_json "$event" >"$tmp"
-	post_json "$endpoint" "$token" "$tmp"
-	rm -f "$tmp"
+	used=0
+	for endpoint in $(heartbeat_candidate_endpoints); do
+		used=1
+		if post_json "$endpoint" "$token" "$tmp" >"$response"; then
+			fallback_base="$(heartbeat_base_from_endpoint "$endpoint")"
+			heartbeat_apply_hub_update "$response" "$fallback_base"
+			cat "$response"
+			rm -f "$tmp" "$response"
+			return 0
+		fi
+	done
+	rm -f "$tmp" "$response"
+	[ "$used" = "1" ] || die "hub_url/public_url/vps_host РїСѓСЃС‚С‹Рµ"
+	return 1
 }
 
 heartbeat_mark_ok() {

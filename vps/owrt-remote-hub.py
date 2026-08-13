@@ -569,6 +569,25 @@ def public_url_rp_id(public_url):
         return ""
 
 
+def canonical_router_hub_update(router, app_public_url="", request_origin=""):
+    router = router or {}
+    app_origin = public_url_origin(app_public_url)
+    request_origin = public_url_origin(request_origin)
+    public_url = app_origin or public_url_origin(router.get("public_url", ""))
+    hub_url = public_url or request_origin
+    vps_host = str(router.get("vps_host") or "").strip()
+    if not vps_host and hub_url:
+        try:
+            vps_host = urllib.parse.urlsplit(hub_url).hostname or ""
+        except Exception:
+            vps_host = ""
+    return {
+        "hub_url": hub_url,
+        "public_url": public_url,
+        "vps_host": vps_host,
+    }
+
+
 def verify_password_login(username, password, otp=""):
     auth = load_auth()
     if not verify_login(username, password):
@@ -2022,6 +2041,28 @@ def extract_hub_backup(archive_path, tmp_dir):
         tar.extractall(tmp_dir, members)
 
 
+def rewrite_router_endpoints(conn, vps_host="", public_url=""):
+    rewritten = {}
+    next_vps_host = str(vps_host or "").strip()
+    next_public_url = str(public_url or "").strip()
+    ts = now_ts()
+    if next_vps_host:
+        conn.execute(
+            "update routers set vps_host = ?, updated_at = ? where deleted_at = 0",
+            (next_vps_host, ts),
+        )
+        rewritten["vps_host"] = next_vps_host
+    if next_public_url:
+        conn.execute(
+            "update routers set public_url = ?, updated_at = ? where deleted_at = 0",
+            (next_public_url, ts),
+        )
+        rewritten["public_url"] = next_public_url
+    if rewritten:
+        conn.commit()
+    return rewritten
+
+
 def restore_hub_backup(archive_path, db_path=DB_PATH, vps_host="", public_url=""):
     ensure_state()
     archive_path = Path(archive_path)
@@ -2057,13 +2098,7 @@ def restore_hub_backup(archive_path, db_path=DB_PATH, vps_host="", public_url=""
     conn = connect(db_path)
     try:
         init_db(conn)
-        if vps_host:
-            conn.execute("update routers set vps_host = ?, updated_at = ?", (str(vps_host).strip(), now_ts()))
-            rewritten["vps_host"] = str(vps_host).strip()
-        if public_url:
-            conn.execute("update routers set public_url = ?, updated_at = ?", (str(public_url).strip(), now_ts()))
-            rewritten["public_url"] = str(public_url).strip()
-        conn.commit()
+        rewritten = rewrite_router_endpoints(conn, vps_host=vps_host, public_url=public_url)
     finally:
         conn.close()
     xray = None
@@ -3128,6 +3163,7 @@ systemctl restart owrt-remote-xray</pre>
                   <input id="backupVpsHost" placeholder="Новый VPS host/IP">
                   <input id="backupPublicUrl" placeholder="Новый Public URL">
                   <button class="primary wide" id="backupRestore" type="button">Восстановить из backup</button>
+                  <button class="wide" id="backupRewrite" type="button">Перепривязать существующие роутеры</button>
                 </div>
                 <div id="backupMsg" class="backupMsg" hidden></div>
                   </div>
@@ -6570,6 +6606,7 @@ const backupFile = document.getElementById('backupFile');
 const backupVpsHost = document.getElementById('backupVpsHost');
 const backupPublicUrl = document.getElementById('backupPublicUrl');
 const backupRestore = document.getElementById('backupRestore');
+const backupRewrite = document.getElementById('backupRewrite');
 const backupMsg = document.getElementById('backupMsg');
 const authForm = document.getElementById('authForm');
 const authUsernameField = authForm && authForm.elements ? authForm.elements.namedItem('username') : null;
@@ -7344,6 +7381,39 @@ backupRestore.addEventListener('click', async () => {{
     setBackupMsg('Restore не удался: ' + (e.message || e), true);
   }} finally {{
     backupRestore.disabled = false;
+  }}
+}});
+
+backupRewrite.addEventListener('click', async () => {{
+  const vpsHost = backupVpsHost.value.trim();
+  const publicUrl = backupPublicUrl.value.trim();
+  if (!vpsHost && !publicUrl) {{
+    setBackupMsg('Укажи новый VPS host/IP или Public URL для перепривязки роутеров.', true);
+    return;
+  }}
+  if (!confirm('Переписать endpoint-адреса у всех активных роутеров в Hub? Роутеры применят новые значения после следующего успешного heartbeat.')) return;
+  backupRewrite.disabled = true;
+  setBackupMsg('Переписываю endpoint-адреса роутеров в Hub...');
+  try {{
+    const res = await fetch('/api/routers/rewrite-endpoints', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{
+        vps_host: vpsHost,
+        public_url: publicUrl
+      }})
+    }});
+    const data = await res.json().catch(() => ({{}}));
+    if (!res.ok || !data.ok) throw new Error(data.error || res.status);
+    const changed = Object.keys(data.rewritten || {{}}).length
+      ? ' Переписано: ' + Object.entries(data.rewritten).map(([k, v]) => `${{k}}=${{v}}`).join(', ') + '.'
+      : '';
+    setBackupMsg(`Роутеры перепривязаны в Hub.${{changed}} Активных роутеров: ${{Number(data.routers || 0)}}. После следующего heartbeat они подтянут новые адреса сами.`);
+    await loadRouters();
+  }} catch (e) {{
+    setBackupMsg('Перепривязка роутеров не удалась: ' + (e.message || e), true);
+  }} finally {{
+    backupRewrite.disabled = false;
   }}
 }});
 
@@ -10540,6 +10610,29 @@ exit 127
         except Exception as exc:
             self.send_json(400, {"ok": False, "error": str(exc)})
 
+    def router_endpoints_rewrite(self):
+        try:
+            payload = self.read_payload()
+            vps_host = str(payload.get("vps_host") or "").strip()
+            public_url = str(payload.get("public_url") or "").strip()
+            if not vps_host and not public_url:
+                self.send_json(400, {"ok": False, "error": "vps_host or public_url is required"})
+                return
+            with self.app.conn() as conn:
+                rewritten = rewrite_router_endpoints(conn, vps_host=vps_host, public_url=public_url)
+                total = conn.execute("select count(*) from routers where deleted_at = 0").fetchone()[0]
+            add_notification(
+                "router-endpoints-rewrite",
+                "Router endpoints updated",
+                "Hub updated router endpoint settings. Routers will pick up new values on the next successful heartbeat/fallback.",
+                "warn",
+                [],
+                {"rewritten": rewritten, "routers": total},
+            )
+            self.send_json(200, {"ok": True, "rewritten": rewritten, "routers": total})
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+
     def do_GET(self):
         path = self.parsed().path
         if path == "/health":
@@ -10762,6 +10855,7 @@ exit 127
                     {
                         "ok": True,
                         "router": router,
+                        "hub_update": canonical_router_hub_update(router, self.app.public_url, self.request_origin()),
                         "xray_reload": xray_reload,
                         "xray_restart": xray_restart,
                     },
@@ -10840,6 +10934,9 @@ exit 127
             return
         if path == "/api/backup/restore":
             self.backup_restore()
+            return
+        if path == "/api/routers/rewrite-endpoints":
+            self.router_endpoints_rewrite()
             return
         if path == "/api/push/subscribe":
             try:
@@ -11655,6 +11752,14 @@ def cmd_restore(args):
     print("Restart Hub after restore: systemctl restart owrt-remote")
 
 
+def cmd_rewrite_endpoints(args):
+    with connect(args.db) as conn:
+        init_db(conn)
+        rewritten = rewrite_router_endpoints(conn, args.vps_host, args.public_url)
+        total = conn.execute("select count(*) from routers where deleted_at = 0").fetchone()[0]
+    print(json.dumps({"ok": True, "rewritten": rewritten, "routers": total}, ensure_ascii=False, indent=2))
+
+
 def parse_extra_ports(value):
     ports = []
     for item in str(value or "").replace(";", ",").split(","):
@@ -11820,6 +11925,11 @@ def parser():
     restore.add_argument("--vps-host", default="", help="rewrite routers to new VPS host/IP")
     restore.add_argument("--public-url", default="", help="rewrite routers to new public Hub URL")
     restore.set_defaults(func=cmd_restore)
+
+    rewrite = sub.add_parser("rewrite-endpoints", help="rewrite active router endpoint settings in Hub DB")
+    rewrite.add_argument("--vps-host", default="", help="new VPS host/IP for active routers")
+    rewrite.add_argument("--public-url", default="", help="new public Hub URL for active routers")
+    rewrite.set_defaults(func=cmd_rewrite_endpoints)
 
     serve = sub.add_parser("serve", help="run web dashboard")
     serve.add_argument("--host", default=os.environ.get("OWRT_REMOTE_BIND", "0.0.0.0"))
