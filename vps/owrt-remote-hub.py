@@ -592,6 +592,27 @@ def router_fallback_hub_url(router, fallback_host="", port=8088):
     return f"http://{host}:{int(port or 8088)}"
 
 
+def row_str_value(row, key, default=""):
+    try:
+        value = row[key]
+    except (TypeError, KeyError, IndexError):
+        value = None
+    if value in (None, ""):
+        return default
+    return str(value)
+
+
+def row_int_value(row, key, default=0):
+    try:
+        value = row[key]
+    except (TypeError, KeyError, IndexError):
+        value = None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
+
+
 def canonical_router_hub_update(router, app_public_url="", request_origin=""):
     router = router or {}
     app_origin = public_url_origin(app_public_url)
@@ -2604,31 +2625,58 @@ def maybe_restart_vps_xray_after_wan_reconnect(router_id):
 
 
 def make_openwrt_config(row, hub_url):
+    reverse_tag = row_str_value(row, "reverse_tag", "reverse-in")
+    ssh_reverse_tag = row_str_value(row, "ssh_reverse_tag", "") or f"{reverse_tag}-ssh"
+    ssh_host = row_str_value(row, "ssh_host", "127.0.0.1")
+    admin_host = row_str_value(row, "admin_host", "127.0.0.1")
+    payload = {
+        "id": row_str_value(row, "id"),
+        "name": row_str_value(row, "name"),
+        "role": row_str_value(row, "role", "node"),
+        "hub_url": str(hub_url or ""),
+        "vps_host": row_str_value(row, "vps_host", vps_host_name(hub_url) or "127.0.0.1"),
+        "vps_port": row_int_value(row, "vless_port", DEFAULT_VLESS_PORT),
+        "vless_uuid": row_str_value(row, "vless_uuid"),
+        "vless_encryption": row_str_value(row, "vless_encryption", "none"),
+        "vless_flow": row_str_value(row, "vless_flow", ""),
+        "reverse_tag": reverse_tag,
+        "ssh_vless_uuid": row_str_value(row, "ssh_vless_uuid"),
+        "ssh_reverse_tag": ssh_reverse_tag,
+        "admin_host": admin_host,
+        "admin_port": row_int_value(row, "admin_port", 80),
+        "ssh_host": ssh_host,
+        "ssh_port": normalize_internal_ssh_port(
+            row_int_value(row, "ssh_port", 22),
+            row_int_value(row, "entry_port", 0),
+            row_int_value(row, "ssh_entry_port", 0),
+        ),
+        "public_url": row_str_value(row, "public_url", ""),
+    }
     lines = [
         "uci -q delete owrtremote.main",
         "uci set owrtremote.main=remote",
         "uci set owrtremote.main.enabled='1'",
-        f"uci set owrtremote.main.router_id='{sh_quote(row['id'])}'",
-        f"uci set owrtremote.main.router_name='{sh_quote(row['name'])}'",
-        f"uci set owrtremote.main.role='{sh_quote(row['role'])}'",
-        f"uci set owrtremote.main.hub_url='{sh_quote(hub_url)}'",
+        f"uci set owrtremote.main.router_id='{sh_quote(payload['id'])}'",
+        f"uci set owrtremote.main.router_name='{sh_quote(payload['name'])}'",
+        f"uci set owrtremote.main.role='{sh_quote(payload['role'])}'",
+        f"uci set owrtremote.main.hub_url='{sh_quote(payload['hub_url'])}'",
         f"uci set owrtremote.main.hub_token='{sh_quote(agent_token())}'",
         "uci set owrtremote.main.heartbeat_interval='30'",
         "uci set owrtremote.main.xray_bin='/usr/bin/xray'",
         "uci set owrtremote.main.xray_config='/etc/xray/owrt-remote-client.json'",
-        f"uci set owrtremote.main.vps_host='{sh_quote(row['vps_host'])}'",
-        f"uci set owrtremote.main.vps_port='{int(row['vless_port'])}'",
-        f"uci set owrtremote.main.vless_uuid='{sh_quote(row['vless_uuid'])}'",
-        f"uci set owrtremote.main.vless_encryption='{sh_quote(row['vless_encryption'])}'",
-        f"uci set owrtremote.main.vless_flow='{sh_quote(row['vless_flow'])}'",
-        f"uci set owrtremote.main.reverse_tag='{sh_quote(row['reverse_tag'])}'",
-        f"uci set owrtremote.main.ssh_vless_uuid='{sh_quote(row['ssh_vless_uuid'])}'",
-        f"uci set owrtremote.main.ssh_reverse_tag='{sh_quote(row['ssh_reverse_tag'] or (row['reverse_tag'] + '-ssh'))}'",
-        f"uci set owrtremote.main.admin_host='{sh_quote(row['admin_host'])}'",
-        f"uci set owrtremote.main.admin_port='{int(row['admin_port'])}'",
-        f"uci set owrtremote.main.ssh_host='{sh_quote(row['ssh_host'] or '127.0.0.1')}'",
-        f"uci set owrtremote.main.ssh_port='{int(row['ssh_port'] or 22)}'",
-        f"uci set owrtremote.main.public_url='{sh_quote(row['public_url'])}'",
+        f"uci set owrtremote.main.vps_host='{sh_quote(payload['vps_host'])}'",
+        f"uci set owrtremote.main.vps_port='{payload['vps_port']}'",
+        f"uci set owrtremote.main.vless_uuid='{sh_quote(payload['vless_uuid'])}'",
+        f"uci set owrtremote.main.vless_encryption='{sh_quote(payload['vless_encryption'])}'",
+        f"uci set owrtremote.main.vless_flow='{sh_quote(payload['vless_flow'])}'",
+        f"uci set owrtremote.main.reverse_tag='{sh_quote(payload['reverse_tag'])}'",
+        f"uci set owrtremote.main.ssh_vless_uuid='{sh_quote(payload['ssh_vless_uuid'])}'",
+        f"uci set owrtremote.main.ssh_reverse_tag='{sh_quote(payload['ssh_reverse_tag'])}'",
+        f"uci set owrtremote.main.admin_host='{sh_quote(payload['admin_host'])}'",
+        f"uci set owrtremote.main.admin_port='{payload['admin_port']}'",
+        f"uci set owrtremote.main.ssh_host='{sh_quote(payload['ssh_host'])}'",
+        f"uci set owrtremote.main.ssh_port='{payload['ssh_port']}'",
+        f"uci set owrtremote.main.public_url='{sh_quote(payload['public_url'])}'",
         "uci commit owrtremote",
         "owrt-remote render-client",
         "/etc/init.d/owrt-remote enable",
