@@ -600,12 +600,36 @@ def build_ssh_auth_message(ticket, username="", host="", issued_at=0):
     return "\n".join(lines) + "\n"
 
 
+def ssh_auth_message_variants(message):
+    text = str(message or "")
+    variants = []
+    seen = set()
+
+    def add(value):
+        if value not in seen:
+            seen.add(value)
+            variants.append(value)
+
+    add(text)
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    add(normalized)
+    add(normalized.replace("\n", "\r\n"))
+    trimmed = normalized.rstrip("\r\n")
+    if trimmed:
+        add(trimmed)
+        add(trimmed + "\n")
+        add(trimmed.replace("\n", "\r\n"))
+        add(trimmed.replace("\n", "\r\n") + "\r\n")
+    return variants
+
+
 def verify_ssh_auth_signature(ssh_keys, username, message, signature_text):
     signature_text = str(signature_text or "").strip()
     if "BEGIN SSH SIGNATURE" not in signature_text:
         raise ValueError("Вставь ASCII SSH signature целиком")
     namespace = ssh_auth_namespace()
     principal = ssh_auth_principal(username)
+    message_variants = ssh_auth_message_variants(message)
     for item in [sanitize_ssh_key_record(row) for row in (ssh_keys or [])]:
         if not item:
             continue
@@ -615,32 +639,33 @@ def verify_ssh_auth_signature(ssh_keys, username, message, signature_text):
             sig_file = tmp_dir / "challenge.sig"
             allowed.write_text(f"{principal} {item['public_key']}\n", encoding="utf-8")
             sig_file.write_text(signature_text + "\n", encoding="utf-8")
-            try:
-                result = subprocess.run(
-                    [
-                        "ssh-keygen",
-                        "-Y",
-                        "verify",
-                        "-f",
-                        str(allowed),
-                        "-I",
-                        principal,
-                        "-n",
-                        namespace,
-                        "-s",
-                        str(sig_file),
-                    ],
-                    input=str(message or "").encode("utf-8"),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    timeout=10,
-                )
-            except FileNotFoundError as exc:
-                raise ValueError("ssh-keygen не найден на сервере") from exc
-            except subprocess.TimeoutExpired as exc:
-                raise ValueError("Проверка подписи ED25519 превысила таймаут") from exc
-            if result.returncode == 0:
-                return item
+            for candidate in message_variants:
+                try:
+                    result = subprocess.run(
+                        [
+                            "ssh-keygen",
+                            "-Y",
+                            "verify",
+                            "-f",
+                            str(allowed),
+                            "-I",
+                            principal,
+                            "-n",
+                            namespace,
+                            "-s",
+                            str(sig_file),
+                        ],
+                        input=candidate.encode("utf-8"),
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        timeout=10,
+                    )
+                except FileNotFoundError as exc:
+                    raise ValueError("ssh-keygen не найден на сервере") from exc
+                except subprocess.TimeoutExpired as exc:
+                    raise ValueError("Проверка подписи ED25519 превысила таймаут") from exc
+                if result.returncode == 0:
+                    return item
     raise ValueError("Подпись ED25519 не подошла ни к одному зарегистрированному ключу")
 
 
@@ -9266,8 +9291,13 @@ class Handler(BaseHTTPRequestHandler):
             if not ssh_keys:
                 raise ValueError("Для входа ED25519 пока нет зарегистрированных ключей")
             issued_at = now_ts()
-            ticket = put_auth_flow("ssh-login", {"username": auth.get("username", "admin"), "issued_at": issued_at})
-            challenge = build_ssh_auth_message(ticket, auth.get("username", "admin"), self.request_host(), issued_at)
+            host = self.request_host()
+            ticket = put_auth_flow("ssh-login", {"username": auth.get("username", "admin"), "issued_at": issued_at, "host": host})
+            challenge = build_ssh_auth_message(ticket, auth.get("username", "admin"), host, issued_at)
+            with AUTH_FLOW_LOCK:
+                state = AUTH_FLOW_STATE.get(ticket)
+                if state:
+                    state["challenge"] = challenge
             self.send_json(
                 200,
                 {
@@ -9290,7 +9320,14 @@ class Handler(BaseHTTPRequestHandler):
             if not flow:
                 raise ValueError("ED25519-челлендж истек, начни вход заново")
             auth = load_auth()
-            challenge = build_ssh_auth_message(ticket, auth.get("username", "admin"), self.request_host(), flow.get("issued_at", 0))
+            challenge = str(flow.get("challenge") or "")
+            if not challenge:
+                challenge = build_ssh_auth_message(
+                    ticket,
+                    auth.get("username", "admin"),
+                    flow.get("host", "") or self.request_host(),
+                    flow.get("issued_at", 0),
+                )
             matched = verify_ssh_auth_signature(auth.get("ssh_keys", []), auth.get("username", "admin"), challenge, payload.get("signature", ""))
 
             def mutator(current):
