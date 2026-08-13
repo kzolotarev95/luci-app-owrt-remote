@@ -2625,17 +2625,21 @@ def maybe_restart_vps_xray_after_wan_reconnect(router_id):
     return result
 
 
-def make_openwrt_config(row, hub_url):
+def make_openwrt_config(row, hub_url, vps_host_override="", public_url_override=""):
     reverse_tag = row_str_value(row, "reverse_tag", "reverse-in")
     ssh_reverse_tag = row_str_value(row, "ssh_reverse_tag", "") or f"{reverse_tag}-ssh"
     ssh_host = row_str_value(row, "ssh_host", "127.0.0.1")
     admin_host = row_str_value(row, "admin_host", "127.0.0.1")
+    effective_public_url = str(public_url_override or row_str_value(row, "public_url", "")).strip()
+    effective_vps_host = str(vps_host_override or row_str_value(row, "vps_host", "")).strip()
+    if not effective_vps_host:
+        effective_vps_host = vps_host_name(effective_public_url) or vps_host_name(hub_url) or "127.0.0.1"
     payload = {
         "id": row_str_value(row, "id"),
         "name": row_str_value(row, "name"),
         "role": row_str_value(row, "role", "node"),
         "hub_url": str(hub_url or ""),
-        "vps_host": row_str_value(row, "vps_host", vps_host_name(hub_url) or "127.0.0.1"),
+        "vps_host": effective_vps_host,
         "vps_port": row_int_value(row, "vless_port", DEFAULT_VLESS_PORT),
         "vless_uuid": row_str_value(row, "vless_uuid"),
         "vless_encryption": row_str_value(row, "vless_encryption", "none"),
@@ -2651,7 +2655,7 @@ def make_openwrt_config(row, hub_url):
             row_int_value(row, "entry_port", 0),
             row_int_value(row, "ssh_entry_port", 0),
         ),
-        "public_url": row_str_value(row, "public_url", ""),
+        "public_url": effective_public_url,
     }
     lines = [
         "uci -q delete owrtremote.main",
@@ -7485,7 +7489,7 @@ backupRewrite.addEventListener('click', async () => {{
     const changed = Object.keys(data.rewritten || {{}}).length
       ? ' Переписано: ' + Object.entries(data.rewritten).map(([k, v]) => `${{k}}=${{v}}`).join(', ') + '.'
       : '';
-    setBackupMsg(`Роутеры перепривязаны в Hub.${{changed}} Активных роутеров: ${{Number(data.routers || 0)}}. После следующего heartbeat они подтянут новые адреса сами.`);
+    setBackupMsg(`Роутеры перепривязаны в Hub.${{changed}} Активных роутеров: ${{Number(data.routers || 0)}}. После следующего успешного heartbeat они подтянут новые адреса сами. Если старый endpoint уже недоступен, открой OpenWrt config в карточке и перепримени его на роутере вручную.`);
     if (preservedFallback) setBackupMsg(backupMsg.textContent + preservedFallback);
     await loadRouters();
   }} catch (e) {{
@@ -11243,9 +11247,19 @@ exit 127
         if not row:
             self.send_text(404, "router not found")
             return
-        hub_url = router_fallback_hub_url(row, self.headers.get("Host", ""), 8088)
+        hub_update = canonical_router_hub_update(dict(row), self.app.public_url, self.request_origin())
+        hub_url = hub_update.get("hub_url") or router_fallback_hub_url(row, self.headers.get("Host", ""), 8088)
+        config_vps_host = vps_host_name(hub_update.get("public_url") or hub_url) or hub_update.get("vps_host", "")
         if asset == "config":
-            self.send_text(200, make_openwrt_config(row, hub_url))
+            self.send_text(
+                200,
+                make_openwrt_config(
+                    row,
+                    hub_url,
+                    vps_host_override=config_vps_host,
+                    public_url_override=hub_update.get("public_url", ""),
+                ),
+            )
             return
         if asset == "xray-client.json":
             self.send_json(200, make_router_xray_config(row))
