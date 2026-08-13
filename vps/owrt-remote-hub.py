@@ -2,6 +2,8 @@
 import argparse
 import base64
 import datetime as dt
+import dataclasses
+import enum
 import hmac
 import hashlib
 import html
@@ -33,6 +35,29 @@ except Exception:
     WebPushException = None
     webpush = None
 
+try:
+    from fido2.server import Fido2Server
+    from fido2.webauthn import (
+        AuthenticationResponse,
+        AttestedCredentialData,
+        PublicKeyCredentialDescriptor,
+        PublicKeyCredentialRpEntity,
+        PublicKeyCredentialType,
+        PublicKeyCredentialUserEntity,
+        ResidentKeyRequirement,
+        UserVerificationRequirement,
+    )
+except Exception:
+    Fido2Server = None
+    AuthenticationResponse = None
+    AttestedCredentialData = None
+    PublicKeyCredentialDescriptor = None
+    PublicKeyCredentialRpEntity = None
+    PublicKeyCredentialType = None
+    PublicKeyCredentialUserEntity = None
+    ResidentKeyRequirement = None
+    UserVerificationRequirement = None
+
 
 APP_NAME = "OpenWrt Remote Hub"
 RAW_REPO_BASE = "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main"
@@ -63,6 +88,9 @@ SESSION_COOKIE = "owrt_remote_session"
 ROUTER_COOKIE = "owrt_remote_router"
 SESSION_TTL_SECONDS = int(os.environ.get("OWRT_REMOTE_SESSION_TTL", str(30 * 24 * 60 * 60)))
 CAPTCHA_TTL_SECONDS = 600
+AUTH_CHALLENGE_TTL_SECONDS = 300
+TOTP_PERIOD_SECONDS = 30
+TOTP_DIGITS = 6
 NOTIFICATIONS_MAX = 220
 LUCI_ABSOLUTE_ROOTS = ("/ubus", "/cgi-bin/luci", "/luci-static")
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -76,8 +104,11 @@ NOTIFICATIONS_LOCK = threading.Lock()
 NOTIFICATIONS_COND = threading.Condition()
 PUSH_LOCK = threading.Lock()
 TRAFFIC_COUNTERS_LOCK = threading.Lock()
+AUTH_STATE_LOCK = threading.Lock()
+AUTH_FLOW_LOCK = threading.Lock()
 STATIC_CACHE = {}
 STATIC_CACHE_BYTES = 0
+AUTH_FLOW_STATE = {}
 BACKUP_VERSION = 1
 BACKUP_STATE_FILES = (
     AUTH_FILE,
@@ -244,6 +275,412 @@ def write_json_private(path, data):
         pass
 
 
+def b64url_decode(raw):
+    text = str(raw or "").strip()
+    if not text:
+        return b""
+    text += "=" * ((4 - len(text) % 4) % 4)
+    return base64.urlsafe_b64decode(text.encode("ascii"))
+
+
+def normalize_totp_secret(value):
+    text = re.sub(r"[^A-Z2-7]", "", str(value or "").upper())
+    if not text:
+        return ""
+    padded = text + ("=" * ((8 - len(text) % 8) % 8))
+    base64.b32decode(padded.encode("ascii"), casefold=True)
+    return text
+
+
+def generate_totp_secret():
+    return base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
+
+
+def totp_token(secret, counter, digits=TOTP_DIGITS):
+    clean_secret = normalize_totp_secret(secret)
+    padded = clean_secret + ("=" * ((8 - len(clean_secret) % 8) % 8))
+    key = base64.b32decode(padded.encode("ascii"), casefold=True)
+    msg = struct.pack(">Q", int(counter))
+    digest = hmac.new(key, msg, hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    value = struct.unpack(">I", digest[offset : offset + 4])[0] & 0x7FFFFFFF
+    return str(value % (10**digits)).zfill(digits)
+
+
+def verify_totp(secret, code, ts=None, window=1, digits=TOTP_DIGITS, period=TOTP_PERIOD_SECONDS):
+    clean_secret = normalize_totp_secret(secret)
+    clean_code = re.sub(r"\s+", "", str(code or ""))
+    if not clean_secret or not clean_code.isdigit():
+        return False
+    current_counter = int((ts or now_ts()) // max(1, int(period or TOTP_PERIOD_SECONDS)))
+    for shift in range(-max(0, int(window)), max(0, int(window)) + 1):
+        if secrets.compare_digest(totp_token(clean_secret, current_counter + shift, digits=digits), clean_code):
+            return True
+    return False
+
+
+def totp_otpauth_uri(username, secret, issuer=APP_NAME):
+    safe_user = urllib.parse.quote(str(username or "admin"))
+    safe_issuer = urllib.parse.quote(str(issuer or APP_NAME))
+    return f"otpauth://totp/{safe_issuer}:{safe_user}?secret={secret}&issuer={safe_issuer}&algorithm=SHA1&digits={TOTP_DIGITS}&period={TOTP_PERIOD_SECONDS}"
+
+
+def default_totp_state():
+    return {
+        "enabled": False,
+        "secret": "",
+        "digits": TOTP_DIGITS,
+        "period": TOTP_PERIOD_SECONDS,
+        "updated_at": 0,
+    }
+
+
+def normalize_ssh_public_key(value):
+    text = " ".join(str(value or "").strip().split())
+    if not text:
+        raise ValueError("SSH public key is empty")
+    if not (text.startswith("ssh-ed25519 ") or text.startswith("sk-ssh-ed25519@openssh.com ")):
+        raise ValueError("Only ED25519 SSH public keys are supported")
+    parts = text.split(" ", 2)
+    if len(parts) < 2:
+        raise ValueError("SSH public key format is invalid")
+    base64.b64decode(parts[1].encode("ascii"), validate=True)
+    return text
+
+
+def sanitize_passkey_record(item):
+    item = dict(item or {})
+    transports = item.get("transports", [])
+    if not isinstance(transports, list):
+        transports = []
+    return {
+        "id": str(item.get("id") or "").strip(),
+        "label": str(item.get("label") or "Passkey").strip()[:80] or "Passkey",
+        "credential_data": str(item.get("credential_data") or "").strip(),
+        "created_at": int(item.get("created_at") or 0),
+        "last_used_at": int(item.get("last_used_at") or 0),
+        "sign_count": int(item.get("sign_count") or 0),
+        "transports": [str(value).strip() for value in transports if str(value).strip()],
+    }
+
+
+def sanitize_ssh_key_record(item):
+    item = dict(item or {})
+    public_key = str(item.get("public_key") or "").strip()
+    if not public_key:
+        return None
+    try:
+        public_key = normalize_ssh_public_key(public_key)
+    except ValueError:
+        return None
+    return {
+        "id": str(item.get("id") or "").strip() or secrets.token_hex(8),
+        "label": str(item.get("label") or "SSH ED25519").strip()[:80] or "SSH ED25519",
+        "public_key": public_key,
+        "created_at": int(item.get("created_at") or now_ts()),
+        "last_used_at": int(item.get("last_used_at") or 0),
+    }
+
+
+def normalize_auth_state(data):
+    raw = dict(data or {})
+    state = {
+        "version": max(2, int(raw.get("version") or 2)),
+        "username": clean_username(raw.get("username", "admin")),
+        "password": raw.get("password") if isinstance(raw.get("password"), dict) else {},
+        "updated_at": int(raw.get("updated_at") or now_ts()),
+    }
+    totp = default_totp_state()
+    if isinstance(raw.get("totp"), dict):
+        totp.update(raw.get("totp") or {})
+    try:
+        totp["secret"] = normalize_totp_secret(totp.get("secret"))
+    except ValueError:
+        totp["secret"] = ""
+    totp["enabled"] = bool(totp.get("enabled") and totp.get("secret"))
+    totp["digits"] = TOTP_DIGITS
+    totp["period"] = TOTP_PERIOD_SECONDS
+    totp["updated_at"] = int(totp.get("updated_at") or 0)
+    state["totp"] = totp
+    seen_passkeys = set()
+    passkeys = []
+    for item in raw.get("passkeys", []) if isinstance(raw.get("passkeys"), list) else []:
+        clean = sanitize_passkey_record(item)
+        if not clean["id"] or not clean["credential_data"] or clean["id"] in seen_passkeys:
+            continue
+        seen_passkeys.add(clean["id"])
+        passkeys.append(clean)
+    seen_ssh_keys = set()
+    ssh_keys = []
+    for item in raw.get("ssh_keys", []) if isinstance(raw.get("ssh_keys"), list) else []:
+        clean = sanitize_ssh_key_record(item)
+        if not clean or clean["id"] in seen_ssh_keys:
+            continue
+        seen_ssh_keys.add(clean["id"])
+        ssh_keys.append(clean)
+    state["passkeys"] = passkeys
+    state["ssh_keys"] = ssh_keys
+    return state
+
+
+def public_auth_meta(auth=None):
+    auth = normalize_auth_state(auth or load_auth())
+    return {
+        "username": auth.get("username", "admin"),
+        "totp_enabled": bool(auth.get("totp", {}).get("enabled")),
+        "passkeys_supported": passkey_supported(),
+        "passkey_count": len(auth.get("passkeys", [])),
+        "ssh_key_count": len(auth.get("ssh_keys", [])),
+        "ed25519_enabled": bool(auth.get("ssh_keys", [])),
+        "ssh_keys": [{"id": item.get("id", ""), "label": item.get("label", "SSH ED25519")} for item in auth.get("ssh_keys", [])],
+    }
+
+
+def admin_auth_meta(auth=None):
+    auth = normalize_auth_state(auth or load_auth())
+    return {
+        **public_auth_meta(auth),
+        "passkeys": [
+            {
+                "id": item.get("id", ""),
+                "label": item.get("label", "Passkey"),
+                "created_at": int(item.get("created_at") or 0),
+                "last_used_at": int(item.get("last_used_at") or 0),
+            }
+            for item in auth.get("passkeys", [])
+        ],
+        "ssh_keys": [
+            {
+                "id": item.get("id", ""),
+                "label": item.get("label", "SSH ED25519"),
+                "created_at": int(item.get("created_at") or 0),
+                "last_used_at": int(item.get("last_used_at") or 0),
+                "public_key": item.get("public_key", ""),
+            }
+            for item in auth.get("ssh_keys", [])
+        ],
+    }
+
+
+def auth_method_label(value):
+    value = str(value or "").strip().lower()
+    if value == "passkey":
+        return "Passkey"
+    if value == "ed25519":
+        return "ED25519"
+    if value == "password+totp":
+        return "Password + 2FA"
+    if value == "password":
+        return "Password"
+    return "Auth"
+
+
+def passkey_supported():
+    return Fido2Server is not None and PublicKeyCredentialRpEntity is not None
+
+
+def webauthn_json(value):
+    if dataclasses.is_dataclass(value):
+        return {field.name: webauthn_json(getattr(value, field.name)) for field in dataclasses.fields(value)}
+    if isinstance(value, enum.Enum):
+        return value.value
+    if isinstance(value, bytes):
+        return b64url(value)
+    if isinstance(value, dict):
+        return {str(key): webauthn_json(item) for key, item in value.items() if item is not None}
+    if isinstance(value, (list, tuple, set)):
+        return [webauthn_json(item) for item in value if item is not None]
+    return value
+
+
+def save_auth_state(data):
+    clean = normalize_auth_state(data)
+    clean["updated_at"] = now_ts()
+    write_json_private(AUTH_FILE, clean)
+    return clean
+
+
+def update_auth_state(mutator):
+    with AUTH_STATE_LOCK:
+        current = normalize_auth_state(load_auth())
+        result = mutator(current)
+        return save_auth_state(result if isinstance(result, dict) else current)
+
+
+def passkey_credentials(auth=None):
+    auth = normalize_auth_state(auth or load_auth())
+    rows = []
+    for item in auth.get("passkeys", []):
+        try:
+            rows.append(AttestedCredentialData(b64url_decode(item.get("credential_data", ""))))
+        except Exception:
+            continue
+    return rows
+
+
+def find_passkey_record(auth, credential_id):
+    wanted = str(credential_id or "").strip()
+    for item in normalize_auth_state(auth).get("passkeys", []):
+        if item.get("id") == wanted:
+            return item
+    return None
+
+
+def find_ssh_key_record(auth, key_id):
+    wanted = str(key_id or "").strip()
+    for item in normalize_auth_state(auth).get("ssh_keys", []):
+        if item.get("id") == wanted:
+            return item
+    return None
+
+
+def origin_from_parts(scheme, host):
+    scheme = str(scheme or "").strip().lower()
+    host = str(host or "").strip()
+    if not scheme or not host:
+        return ""
+    parts = urllib.parse.urlsplit(f"{scheme}://{host}")
+    if not parts.scheme or not parts.hostname:
+        return ""
+    default_port = 443 if parts.scheme == "https" else 80 if parts.scheme == "http" else None
+    netloc = parts.hostname
+    if parts.port and parts.port != default_port:
+        netloc = f"{netloc}:{parts.port}"
+    return f"{parts.scheme}://{netloc}"
+
+
+def public_url_origin(public_url):
+    value = str(public_url or "").strip()
+    if not value:
+        return ""
+    parts = urllib.parse.urlsplit(value)
+    if not parts.scheme or not parts.netloc:
+        return ""
+    return origin_from_parts(parts.scheme, parts.netloc)
+
+
+def public_url_rp_id(public_url):
+    value = str(public_url or "").strip()
+    if not value:
+        return ""
+    try:
+        return urllib.parse.urlsplit(value).hostname or ""
+    except Exception:
+        return ""
+
+
+def verify_password_login(username, password, otp=""):
+    auth = load_auth()
+    if not verify_login(username, password):
+        return False, "Неверный логин или пароль", auth, "password"
+    totp = auth.get("totp", {})
+    if totp.get("enabled"):
+        if not verify_totp(totp.get("secret", ""), otp):
+            return False, "Неверный код 2FA", auth, "password+totp"
+        return True, "", auth, "password+totp"
+    return True, "", auth, "password"
+
+
+def ssh_auth_namespace():
+    return "owrt-remote-hub"
+
+
+def ssh_auth_principal(username=""):
+    return (clean_username(username or current_username()) or "admin").replace(" ", "_")
+
+
+def build_ssh_auth_message(ticket, username="", host="", issued_at=0):
+    lines = [
+        "OpenWrt Remote Hub ED25519 login",
+        f"ticket={ticket}",
+        f"user={clean_username(username or current_username())}",
+        f"host={host or '-'}",
+        f"issued_at={int(issued_at or now_ts())}",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def verify_ssh_auth_signature(ssh_keys, username, message, signature_text):
+    signature_text = str(signature_text or "").strip()
+    if "BEGIN SSH SIGNATURE" not in signature_text:
+        raise ValueError("Вставь ASCII SSH signature целиком")
+    namespace = ssh_auth_namespace()
+    principal = ssh_auth_principal(username)
+    for item in [sanitize_ssh_key_record(row) for row in (ssh_keys or [])]:
+        if not item:
+            continue
+        with tempfile.TemporaryDirectory(prefix="owrt-hub-ssh-auth-") as tmp_name:
+            tmp_dir = Path(tmp_name)
+            allowed = tmp_dir / "allowed_signers"
+            sig_file = tmp_dir / "challenge.sig"
+            allowed.write_text(f"{principal} {item['public_key']}\n", encoding="utf-8")
+            sig_file.write_text(signature_text + "\n", encoding="utf-8")
+            try:
+                result = subprocess.run(
+                    [
+                        "ssh-keygen",
+                        "-Y",
+                        "verify",
+                        "-f",
+                        str(allowed),
+                        "-I",
+                        principal,
+                        "-n",
+                        namespace,
+                        "-s",
+                        str(sig_file),
+                    ],
+                    input=str(message or "").encode("utf-8"),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=10,
+                )
+            except FileNotFoundError as exc:
+                raise ValueError("ssh-keygen не найден на сервере") from exc
+            except subprocess.TimeoutExpired as exc:
+                raise ValueError("Проверка подписи ED25519 превысила таймаут") from exc
+            if result.returncode == 0:
+                return item
+    raise ValueError("Подпись ED25519 не подошла ни к одному зарегистрированному ключу")
+
+
+def prune_auth_flows():
+    now = now_ts()
+    expired = [ticket for ticket, item in AUTH_FLOW_STATE.items() if now - int(item.get("created_at") or 0) > AUTH_CHALLENGE_TTL_SECONDS]
+    for ticket in expired:
+        AUTH_FLOW_STATE.pop(ticket, None)
+
+
+def put_auth_flow(kind, payload):
+    with AUTH_FLOW_LOCK:
+        prune_auth_flows()
+        ticket = secrets.token_urlsafe(24)
+        AUTH_FLOW_STATE[ticket] = {"kind": str(kind or ""), "created_at": now_ts(), **dict(payload or {})}
+        return ticket
+
+
+def get_auth_flow(ticket, kind=""):
+    with AUTH_FLOW_LOCK:
+        prune_auth_flows()
+        item = AUTH_FLOW_STATE.get(str(ticket or ""))
+        if not item:
+            return None
+        if kind and item.get("kind") != kind:
+            return None
+        return dict(item)
+
+
+def pop_auth_flow(ticket, kind=""):
+    with AUTH_FLOW_LOCK:
+        prune_auth_flows()
+        item = AUTH_FLOW_STATE.get(str(ticket or ""))
+        if not item:
+            return None
+        if kind and item.get("kind") != kind:
+            return None
+        return AUTH_FLOW_STATE.pop(str(ticket or ""), None)
+
+
 def clamp_nonnegative_int(value):
     try:
         return max(0, int(value))
@@ -342,11 +779,13 @@ def save_auth(username, password):
     username = clean_username(username)
     if len(password) < MIN_PASSWORD_LENGTH:
         raise ValueError(f"password must be at least {MIN_PASSWORD_LENGTH} characters")
-    data = {
-        "username": username,
-        "password": password_digest(password),
-        "updated_at": now_ts(),
-    }
+    try:
+        data = normalize_auth_state(load_auth())
+    except Exception:
+        data = normalize_auth_state({"username": username})
+    data["username"] = username
+    data["password"] = password_digest(password)
+    data["updated_at"] = now_ts()
     write_json_private(AUTH_FILE, data)
     return data
 
@@ -354,7 +793,11 @@ def save_auth(username, password):
 def load_auth():
     ensure_state()
     if AUTH_FILE.exists():
-        return json.loads(AUTH_FILE.read_text(encoding="utf-8"))
+        raw = json.loads(AUTH_FILE.read_text(encoding="utf-8"))
+        data = normalize_auth_state(raw)
+        if data != raw:
+            write_json_private(AUTH_FILE, data)
+        return data
     username = os.environ.get("OWRT_REMOTE_ADMIN_USER", "admin")
     password = os.environ.get("OWRT_REMOTE_ADMIN_PASSWORD") or "admin"
     data = save_auth(username, password)
@@ -472,7 +915,7 @@ def client_label(user_agent, client_hint=""):
     return f"{device} · {browser}"
 
 
-def make_hub_session(username, ip, user_agent):
+def make_hub_session(username, ip, user_agent, auth_method="password"):
     token = secrets.token_urlsafe(36)
     ts = now_ts()
     session = {
@@ -485,6 +928,7 @@ def make_hub_session(username, ip, user_agent):
         "created_at": ts,
         "last_seen": ts,
         "expires_at": ts + SESSION_TTL_SECONDS,
+        "auth_method": str(auth_method or "password"),
     }
     sessions = load_sessions()
     sessions.append(session)
@@ -622,6 +1066,7 @@ def list_hub_sessions(current_token=""):
                 "created_at": int(session.get("created_at") or 0),
                 "last_seen": int(session.get("last_seen") or 0),
                 "expires_at": int(session.get("expires_at") or 0),
+                "auth_method": str(session.get("auth_method") or "password"),
                 "current": bool(current_hash and secrets.compare_digest(session.get("token_hash", ""), current_hash)),
             }
         )
@@ -2367,7 +2812,8 @@ body::before{{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none
 .brand{{display:flex;align-items:center;gap:14px;width:100%;min-width:0}}
 h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10);overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.appBannerVersion{{color:#fb7185;text-shadow:0 0 12px rgba(251,113,133,.35)}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px}}.links{{margin-top:0;flex-wrap:nowrap}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-self:flex-start;justify-content:flex-start;align-content:flex-start;flex:1 1 auto;min-width:0;gap:8px;padding-top:0;max-width:none}}.headerActions .badge,.headerActions .btn{{width:100%;min-height:36px;min-width:0;padding:8px 10px;border-radius:999px;font-weight:800;font-size:12px;line-height:1;white-space:nowrap}}.headerActions .btn[href="/logout"]{{margin-left:0}}.badge{{background:rgba(255,255,255,.08);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.nethavenTop{{border-color:rgba(34,211,238,.46);background:linear-gradient(110deg,rgba(14,165,233,.20),rgba(168,85,247,.22),rgba(34,197,94,.14));color:#ecfeff;box-shadow:0 10px 24px rgba(14,165,233,.14),inset 0 1px 0 rgba(255,255,255,.10)}}.nethavenTop::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite;pointer-events:none}}.authToggle{{cursor:pointer}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
  .toolbar{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1.25fr) minmax(88px,.46fr) minmax(92px,.48fr) minmax(0,1.1fr) minmax(116px,.58fr);gap:8px;margin:18px 0;padding:14px 16px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px);width:100%;max-width:100%;box-sizing:border-box}}.toolbar>*{{width:100%;min-width:0}}.toolbar input,.toolbar select{{background:rgba(255,255,255,.08);border-color:var(--line);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}}.toolbar input::placeholder{{color:#b9adc9}}
-.authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:60;width:min(640px,calc(100vw - 44px));max-height:min(820px,calc(100svh - 120px));overflow:auto;padding:16px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px);scrollbar-width:thin}}.authMenu[hidden]{{display:none}}.authMenu>h2,.authMenu>p{{display:none}}.authMenuHead{{position:relative;display:block}}.authMenuHead>div{{min-width:0}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenuClose{{display:none;position:absolute;top:14px;right:14px;min-height:34px;padding:7px 12px;border-radius:999px;white-space:nowrap}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
+.authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:60;width:min(640px,calc(100vw - 44px));max-height:min(820px,calc(100svh - 120px));overflow:auto;padding:16px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px);scrollbar-width:thin}}.authMenu[hidden]{{display:none}}.authMenu>h2,.authMenu>p{{display:none}}.authMenuHead{{position:relative;display:block}}.authMenuHead>div{{min-width:0}}.authMenuHead p{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenuClose{{display:none;position:absolute;top:14px;right:14px;min-height:34px;padding:7px 12px;border-radius:999px;white-space:nowrap}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
+.authGroup{{margin-top:14px;border:1px solid rgba(34,211,238,.22);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03)),rgba(15,10,26,.78);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.authGroupSummary{{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;cursor:pointer;list-style:none}}.authGroupSummary::-webkit-details-marker{{display:none}}.authGroupTitle strong{{display:block;color:#f7f2ff;font-size:15px;font-weight:900;line-height:1.15}}.authGroupTitle span{{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35}}.authGroupChevron{{display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.08);color:#dbeafe;font-size:16px;line-height:1;transition:transform .18s ease,background .18s ease,border-color .18s ease}}.authGroup[open] .authGroupChevron{{transform:rotate(180deg);background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.24)}}.authGroupBody{{padding:0 14px 14px;border-top:1px solid rgba(255,255,255,.08)}}.authGroupBody>.authPasswordSection{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.authOverview{{margin-top:0;padding-top:14px;border-top:0}}.authGroupBody>.sessionBox{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.notifyBox{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.backupBox{{margin-top:14px;padding-top:0;border-top:0}}.authOverview{{display:grid;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.authPills{{display:flex;flex-wrap:wrap;gap:8px}}.authPill{{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.08);color:#dbeafe;font-size:12px;font-weight:850}}.authPill.off{{border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#c4b5fd}}.authSection{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.authSectionHead{{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}}.authSectionHead h3{{margin:0;font-size:15px}}.authSectionHead p{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.35}}.authSectionState{{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:6px 10px;border:1px solid rgba(34,197,94,.30);border-radius:999px;background:rgba(34,197,94,.12);color:#bbf7d0;font-size:12px;font-weight:850;white-space:nowrap}}.authSectionState.off{{border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#c4b5fd}}.authSectionState.warn{{border-color:rgba(251,191,36,.28);background:rgba(251,191,36,.11);color:#fde68a}}.authFields{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}.authFields .wide{{grid-column:1/-1}}.authFields input,.authFields textarea{{width:100%;min-width:0}}.authFields textarea{{min-height:92px;resize:vertical}}.authActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}}.authActions .sessionBtn,.authActions .btn,.authActions button{{flex:1 1 180px}}.authHint{{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.35}}.authSecretBox{{margin-top:10px;padding:10px;border:1px solid rgba(34,211,238,.24);border-radius:8px;background:rgba(34,211,238,.08)}}.authSecretBox strong{{display:block;margin-bottom:6px;font-size:12px;color:#f7f2ff}}.authSecretValue{{margin:0;padding:9px 10px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.18);color:#c4b5fd;font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word}}.authList{{display:grid;gap:8px;margin-top:10px}}.authRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.authRowTitle{{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:900}}.authRowMeta{{margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.authRowKey{{margin-top:7px;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-all}}.authEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}.authDanger{{color:#fecdd3}}
 .sessionBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.sessionHead{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}}.sessionHead h3{{margin:0;font-size:15px}}.sessionList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.sessionRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.sessionTitle{{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-weight:900}}.sessionMeta{{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.sessionCurrent{{border:1px solid rgba(34,197,94,.38);border-radius:999px;padding:2px 7px;color:#bbf7d0;background:rgba(34,197,94,.13);font-size:11px}}.sessionBtn{{padding:7px 9px;font-size:12px;border-radius:999px}}.sessionEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}
 .notifyBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.notifyActions{{display:flex;gap:7px;align-items:center;justify-content:flex-end;flex-wrap:wrap}}.notifyHint{{margin:-4px 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.notifyList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.notifyRow{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.notifyTitle{{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:950}}.notifyTitle span:first-child{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.notifyTime{{color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}}.notifyBody{{margin-top:4px;color:#ddd6fe;font-size:12px;line-height:1.35;word-break:break-word}}.notifyDetails{{margin:7px 0 0;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;max-height:92px;overflow:auto}}.notifyRow.warn{{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.08)}}.notifyRow.bad{{border-color:rgba(251,113,133,.38);background:rgba(251,113,133,.09)}}.notifyBtn.on{{border-color:rgba(34,197,94,.36);background:rgba(34,197,94,.15);color:#bbf7d0}}
 .backupBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.backupGrid{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}.backupGrid .wide{{grid-column:1/-1}}.backupGrid input[type=file]{{padding:8px;background:rgba(8,5,18,.72);border:1px solid var(--line);border-radius:8px;color:#ddd6fe;min-width:0}}.backupHint{{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.backupCmds{{display:grid;gap:8px;margin-top:10px}}.backupCmd{{border:1px solid rgba(255,255,255,.10);border-radius:8px;background:rgba(0,0,0,.18);padding:9px}}.backupCmd strong{{display:block;margin-bottom:5px;color:#f7f2ff;font-size:12px}}.backupCmd pre{{margin:0;white-space:pre-wrap;word-break:break-word;color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace}}.backupMsg{{margin-top:9px;color:#bbf7d0;font-size:12px;font-weight:800;line-height:1.35}}.backupMsg.bad{{color:#fecdd3}}
@@ -2385,7 +2831,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 .wolField input,.wolPickerToggle{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField input:focus,.wolPickerToggle:focus,.wolPickerToggle:focus-visible{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolDeviceField{{grid-column:1/-1;width:100%}}.wolPickerToggle{{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;cursor:pointer;touch-action:manipulation}}.wolPickerToggle[disabled]{{opacity:.55;cursor:not-allowed}}.wolPickerValue{{display:grid;gap:2px;min-width:0;flex:1}}.wolPickerValue strong{{display:block;min-width:0;color:#f5f3ff;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.wolPickerValue small{{display:block;min-width:0;color:#c4b5fd;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.wolPickerChevron{{flex:0 0 auto;color:#c4b5fd;font-size:15px;line-height:1}}.wolPickerList{{display:grid;gap:8px;max-height:240px;overflow:auto;padding:8px;border:1px solid rgba(34,211,238,.24);border-radius:12px;background:rgba(17,12,29,.88);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolDeviceBtn{{width:100%;display:grid;gap:3px;padding:10px 12px;border:1px solid rgba(167,139,250,.18);border-radius:10px;background:rgba(255,255,255,.04);color:#f5f3ff;text-align:left;cursor:pointer;touch-action:manipulation;transition:border-color .15s ease,background .15s ease,transform .15s ease}}.wolDeviceBtn:hover,.wolDeviceBtn:focus-visible{{border-color:rgba(34,211,238,.48);background:rgba(34,211,238,.12)}}.wolDeviceBtn:active{{transform:scale(.99)}}.wolDeviceBtn.active{{border-color:rgba(59,130,246,.62);background:rgba(59,130,246,.18);box-shadow:0 0 0 1px rgba(59,130,246,.16)}}.wolDeviceName{{display:block;color:#f5f3ff;font-size:13px;font-weight:800;line-height:1.3}}.wolDeviceMeta{{display:block;color:#c4b5fd;font-size:11px;line-height:1.35;word-break:break-word}}.wolPickerEmpty{{padding:14px 12px;border:1px dashed rgba(167,139,250,.20);border-radius:10px;background:rgba(255,255,255,.03);color:#c4b5fd;text-align:center}}.metric.memory-ok strong,.metric.flash-ok strong,.metric.memory-warn strong,.metric.flash-warn strong,.metric.memory-bad strong,.metric.flash-bad strong{{color:#f3e8ff}}.metric.memory-ok .metric-accent,.metric.flash-ok .metric-accent{{color:#bbf7d0}}.metric.memory-warn .metric-accent,.metric.flash-warn .metric-accent{{color:#fde68a}}.metric.memory-bad .metric-accent,.metric.flash-bad .metric-accent{{color:#fecdd3}}.metric-line{{display:block}}.metric-accent{{font-weight:inherit}}
 .seasonalFx{{position:fixed;inset:0;display:block;width:100vw;height:100vh;z-index:0;pointer-events:none;opacity:.9;mix-blend-mode:screen}}.desktopHeader{{--hdr-col-1:124px;--hdr-col-2:124px;--hdr-col-3:156px;--hdr-col-4:124px;--hdr-col-5:144px;--hdr-col-6:144px;--hdr-col-7:144px;--hdr-col-8:144px;--top-col-1:256px;--top-col-2:288px;--top-col-3:144px;display:grid;gap:8px;width:max-content;max-width:100%;margin-left:15px}}.desktopHeaderTop{{display:grid;grid-template-columns:var(--top-col-1) var(--top-col-2) var(--top-col-3);align-items:flex-start;gap:8px;width:max-content;max-width:100%;justify-self:start}}.desktopHeaderTop>.appBanner{{width:var(--top-col-1);min-width:var(--top-col-1);max-width:var(--top-col-1)}}.desktopHeaderTop>.routerSearchDock{{width:var(--top-col-2);min-width:var(--top-col-2);max-width:var(--top-col-2)}}.desktopHeaderTop>#seasonDock{{width:var(--top-col-3);min-width:var(--top-col-3);max-width:var(--top-col-3)}}.desktopHeaderBottom{{display:grid;grid-template-columns:var(--hdr-col-1) var(--hdr-col-2) var(--hdr-col-3) var(--hdr-col-4) var(--hdr-col-5) var(--hdr-col-6) var(--hdr-col-7) var(--hdr-col-8);gap:8px;width:max-content;max-width:100%;align-items:start;justify-self:start}}.desktopHeader .appBanner{{grid-column:auto;width:100%;min-width:0}}.desktopHeader .links{{display:grid;grid-column:1/span 3;grid-template-columns:var(--hdr-col-1) var(--hdr-col-2) var(--hdr-col-3);gap:8px;margin-top:0}}.desktopHeader .links a{{width:100%;min-width:0}}.routerSearchDock{{position:relative;display:block;grid-column:auto;width:100%;min-width:0;max-width:100%}}.mobileSearchDock{{display:none;width:100%;position:relative}}.routerSearchToggle{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;width:100%;padding:8px 14px;border:1px solid rgba(34,211,238,.30);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.12),rgba(124,58,237,.22),rgba(236,72,153,.12));color:#f3e8ff;font-size:13px;font-weight:800;line-height:1;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10)}}.routerSearchToggle[data-active="true"],.routerSearchToggle[aria-expanded="true"]{{border-color:rgba(34,211,238,.52);box-shadow:0 14px 30px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12)}}.routerSearchToggleIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.mobileSearchVersion{{display:inline-flex;align-items:center;justify-content:center;min-height:20px;padding:0 7px;border:1px solid rgba(251,113,133,.34);border-radius:999px;background:rgba(251,113,133,.14);color:#fecdd3;font-size:10px;font-weight:900;line-height:1;letter-spacing:.04em;box-shadow:0 0 14px rgba(251,113,133,.14)}}.mobileSearchDock>.mobileSearchVersion{{display:flex;width:fit-content;margin:0 auto 6px}}#routerSearchToggle,#seasonToggle{{border:1px solid var(--line);background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.06);color:#f3e8ff}}#routerSearchToggle[data-active="true"],#routerSearchToggle[aria-expanded="true"],#seasonToggle[data-open="true"],#seasonToggle[aria-expanded="true"]{{border-color:var(--line);background:rgba(255,255,255,.11);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}}#routerSearchToggle .routerSearchToggleIcon,#seasonToggle .routerSearchToggleIcon{{color:#ddd6fe}}.routerSearchPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:55;width:min(296px,calc(100vw - 24px))}}.routerSearchPanel[hidden]{{display:none!important}}.routerSearchCard{{display:grid;grid-template-rows:auto auto auto;align-content:start;gap:8px;width:100%;min-height:82px;padding:12px;border:1px solid rgba(34,211,238,.26);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.045)),rgba(19,14,32,.96);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}}.routerSearchHead{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.routerSearchTitle{{display:block;color:#f3e8ff;font-size:12px;font-weight:900;line-height:1.1}}.routerSearchClear{{min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.24);border-radius:999px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:11px;font-weight:850;cursor:pointer}}.routerSearchClear[disabled]{{opacity:.42;cursor:not-allowed}}.routerSearchField{{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.26);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.08),rgba(124,58,237,.14),rgba(236,72,153,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.routerSearchField:focus-within{{border-color:rgba(34,211,238,.54);box-shadow:0 0 0 3px rgba(34,211,238,.10),inset 0 1px 0 rgba(255,255,255,.08)}}.routerSearchField input{{width:100%;padding:0;border:0;background:transparent;color:#f7f2ff;box-shadow:none;outline:none;font-size:13px;font-weight:700}}.routerSearchField input::placeholder{{color:#b9adc9}}.routerSearchIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchMeta{{min-height:14px;color:#c4b5fd;font-size:11px;font-weight:800;line-height:1.2}}.seasonDock{{display:grid;gap:6px;width:100%;padding:9px 10px;border:1px solid rgba(251,191,36,.18);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.035)),rgba(19,14,32,.90);box-shadow:0 12px 28px rgba(0,0,0,.18);backdrop-filter:blur(10px)}}.seasonLabel{{display:flex;align-items:center;justify-content:center;text-align:center;gap:8px;color:#fde68a;font-size:11px;font-weight:900;line-height:1.1;text-transform:uppercase;letter-spacing:.04em}}.seasonSwitch{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}}.seasonBtn{{min-height:30px;padding:6px 8px;border:1px solid rgba(251,191,36,.22);border-radius:999px;background:rgba(255,255,255,.06);color:#f7f2ff;font-size:11px;font-weight:850;line-height:1;cursor:pointer;transition:transform .15s ease,border-color .15s ease,background .15s ease,box-shadow .15s ease,color .15s ease}}.seasonBtn:hover,.seasonBtn:focus-visible{{border-color:rgba(34,211,238,.50);background:rgba(34,211,238,.12);color:#ecfeff}}.seasonBtn[data-active="true"]{{border-color:rgba(251,191,36,.52);background:linear-gradient(110deg,rgba(251,191,36,.22),rgba(34,211,238,.10),rgba(168,85,247,.14));box-shadow:0 10px 20px rgba(251,191,36,.14),inset 0 1px 0 rgba(255,255,255,.08);color:#fff7cc}}.seasonBtn:active{{transform:scale(.98)}}#seasonDock{{position:relative;display:block;grid-column:auto;width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none;align-self:start}}.seasonToggle{{min-height:36px;padding:8px 12px;font-size:13px;line-height:1;white-space:normal;text-align:center}}.seasonToggleText{{display:block}}.seasonPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:56;width:min(320px,calc(100vw - 24px))}}.seasonPanel[hidden]{{display:none!important}}.seasonCard{{display:grid;gap:8px;width:100%;padding:12px;border:1px solid rgba(251,191,36,.18);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035)),rgba(19,14,32,.95);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(12px)}}.headerActions{{display:grid;grid-column:4/span 5;grid-template-columns:var(--hdr-col-4) var(--hdr-col-5) var(--hdr-col-6) var(--hdr-col-7) var(--hdr-col-8);align-self:flex-start;justify-content:flex-start;align-content:flex-start;min-width:0;gap:8px;padding-top:0;max-width:none}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:220px;min-height:34px;margin:0;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 1}}.top{{justify-items:stretch}}.desktopHeader,.desktopHeaderTop,.desktopHeaderBottom{{width:100%;max-width:none}}.desktopHeader{{--hdr-col-1:minmax(0,1fr);--hdr-col-2:minmax(0,1fr);--hdr-col-3:minmax(0,1.35fr);--hdr-col-4:minmax(0,1fr);--hdr-col-5:minmax(0,1fr);--hdr-col-6:minmax(0,1fr);--hdr-col-7:minmax(0,1fr);--hdr-col-8:minmax(0,1fr)}}.headerActions{{width:100%}}}}
-@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.headerStack{{margin-top:0;width:100%;min-width:0}}.headerStack .badge{{width:100%;min-width:0}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.authMenuHead{{padding-right:96px}}.authMenu h2{{margin-right:96px}}.authMenuClose{{display:inline-flex}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.seasonDock{{width:100%}}#mobileSeasonDock{{width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none}}.routerSearchToggle,.seasonToggle{{width:100%}}.routerSearchPanel,.seasonPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard,.seasonCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}.wolControls,.trafficControls{{grid-template-columns:1fr}}.wolField span,.wolMeta{{text-align:center}}.wolControls .btn,.wolControls button,.trafficControls .btn,.trafficControls button{{width:100%}}.trafficSummary{{justify-content:center}}.trafficViewport{{max-height:360px;padding-right:0}}.trafficRowTop{{grid-template-columns:1fr}}.trafficTotalBadge{{min-width:0;text-align:left}}}}
+@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.headerStack{{margin-top:0;width:100%;min-width:0}}.headerStack .badge{{width:100%;min-width:0}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.authMenuHead{{min-height:40px;padding:0 104px 8px 0}}.authMenu h2{{margin:2px 104px 0 0;line-height:1.2}}.authMenuClose{{display:inline-flex;top:0;right:0;min-height:32px;padding:6px 12px}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.seasonDock{{width:100%}}#mobileSeasonDock{{width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none}}.routerSearchToggle,.seasonToggle{{width:100%}}.routerSearchPanel,.seasonPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard,.seasonCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}.wolControls,.trafficControls{{grid-template-columns:1fr}}.wolField span,.wolMeta{{text-align:center}}.wolControls .btn,.wolControls button,.trafficControls .btn,.trafficControls button{{width:100%}}.trafficSummary{{justify-content:center}}.trafficViewport{{max-height:360px;padding-right:0}}.trafficRowTop{{grid-template-columns:1fr}}.trafficTotalBadge{{min-width:0;text-align:left}}}}
 @media(max-width:680px){{.desktopHeader{{display:none}}#hubMenuPanelHost{{display:block;width:100%}}#hubMenuPanelHost:empty{{display:none}}.top{{padding:6px 0 0;gap:0}}.mobileSearchDock{{display:block;margin:0}}.mobilePanelToggle,.routerFormToggle,.actionToggle{{width:100%;min-height:38px;margin:7px 0;padding:9px 12px;border-radius:999px;font-size:12px;line-height:1}}.actionToggle{{display:inline-flex}}body.preload-mobile-panels .headerActions,body.preload-mobile-panels .routerFormWrap,body.preload-mobile-panels .routerStats{{display:none!important}}.card .actions.mobileCollapsed:not(.open){{display:none}}.cardTop{{gap:0}}}}
 @media(max-width:680px){{.headerActions .badge,.headerActions .btn{{width:100%;min-width:0;max-width:none}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
@@ -2404,7 +2850,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <div class="brand">
       <div class="desktopHeader">
         <div class="desktopHeaderTop">
-          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v101</span></span></h1>
+          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v102</span></span></h1>
           <div class="routerSearchDock" id="routerSearchDock">
             <button class="routerSearchToggle" id="routerSearchToggle" type="button" aria-expanded="false" aria-controls="routerSearchPanel" data-active="false">
               <span>Поиск роутеров</span>
@@ -2473,6 +2919,22 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
                 </div>
                 <button class="sessionBtn authMenuClose" id="authMenuClose" type="button">Р—Р°РєСЂС‹С‚СЊ</button>
               </div>
+              <details class="authGroup" id="securityGroup">
+                <summary class="authGroupSummary">
+                  <div class="authGroupTitle">
+                    <strong id="securityGroupTitle">Безопасность</strong>
+                    <span id="securityGroupLead">Пароль, 2FA, Passkey и SSH ED25519 для входа в Hub.</span>
+                  </div>
+                  <span class="authGroupChevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div class="authGroupBody">
+                  <div class="authSection authPasswordSection">
+                    <div class="authSectionHead">
+                      <div>
+                        <h3 id="passwordSectionTitle">Пароль</h3>
+                        <p id="passwordSectionLead">Смена логина и пароля входа в панель Hub.</p>
+                      </div>
+                    </div>
               <form id="authForm" class="authGrid">
                 <input class="wide" name="username" value="{safe_username}" placeholder="Логин" autocomplete="username" required>
                 <input name="current_password" type="password" placeholder="Текущий пароль" autocomplete="current-password" required>
@@ -2481,14 +2943,111 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
                 <button class="primary wide">Сохранить</button>
               </form>
               <div id="authMsg" class="msg" hidden></div>
-              <div class="sessionBox">
+                  </div>
+              <div class="authOverview">
+                <div id="authSummary" class="authPills"></div>
+              </div>
+              <div class="authSection">
+                <div class="authSectionHead">
+                  <div>
+                    <h3>2FA</h3>
+                    <p>Р РµР·РµСЂРІРЅР°СЏ РІРµС‚РєР° РґРѕСЃС‚СѓРїР°: РїР°СЂРѕР»СЊ РѕСЃС‚Р°РµС‚СЃСЏ Р·Р°РїР°СЃРЅС‹Рј, Р° TOTP РјРѕР¶РЅРѕ РІРєР»СЋС‡РёС‚СЊ РєР°Рє РІС‚РѕСЂРѕР№ С„Р°РєС‚РѕСЂ.</p>
+                  </div>
+                  <div class="authSectionState off" id="totpState">2FA off</div>
+                </div>
+                <div class="authFields">
+                  <input id="totpCurrentPassword" class="wide" type="password" placeholder="РўРµРєСѓС‰РёР№ РїР°СЂРѕР»СЊ РґР»СЏ РЅР°СЃС‚СЂРѕР№РєРё 2FA" autocomplete="current-password">
+                </div>
+                <div class="authActions">
+                  <button class="sessionBtn" id="totpSetupBtn" type="button">РЎРѕР·РґР°С‚СЊ СЃРµРєСЂРµС‚ 2FA</button>
+                </div>
+                <div class="authSecretBox" id="totpSecretBox" hidden>
+                  <strong>TOTP secret</strong>
+                  <pre class="authSecretValue" id="totpSecretValue"></pre>
+                  <strong style="margin-top:10px">otpauth URI</strong>
+                  <pre class="authSecretValue" id="totpUriValue"></pre>
+                  <div class="authFields" style="margin-top:10px">
+                    <input id="totpCode" class="wide" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" placeholder="РљРѕРґ РёР· РїСЂРёР»РѕР¶РµРЅРёСЏ 2FA">
+                  </div>
+                  <div class="authActions">
+                    <button class="sessionBtn" id="totpEnableBtn" type="button">Р’РєР»СЋС‡РёС‚СЊ 2FA</button>
+                  </div>
+                </div>
+                <div class="authFields" style="margin-top:10px">
+                  <input id="totpDisableCurrentPassword" type="password" placeholder="РўРµРєСѓС‰РёР№ РїР°СЂРѕР»СЊ РґР»СЏ РѕС‚РєР»СЋС‡РµРЅРёСЏ 2FA" autocomplete="current-password">
+                  <input id="totpDisableCode" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" placeholder="РўРµРєСѓС‰РёР№ РєРѕРґ 2FA">
+                </div>
+                <div class="authActions">
+                  <button class="sessionBtn bad" id="totpDisableBtn" type="button">Р’С‹РєР»СЋС‡РёС‚СЊ 2FA</button>
+                </div>
+              </div>
+              <div class="authSection">
+                <div class="authSectionHead">
+                  <div>
+                    <h3>Passkey</h3>
+                    <p>РћСЃРЅРѕРІРЅР°СЏ РІРµС‚РєР° Р±РµР· РїР°СЂРѕР»СЏ: Android, Windows Hello, Face ID, Touch ID Рё РґСЂСѓРіРёРµ СЃРёСЃС‚РµРјРЅС‹Рµ РєР»СЋС‡Рё.</p>
+                  </div>
+                  <div class="authSectionState off" id="passkeySummary">0 passkey</div>
+                </div>
+                <div class="authFields">
+                  <input id="passkeyCurrentPassword" type="password" placeholder="РўРµРєСѓС‰РёР№ РїР°СЂРѕР»СЊ РґР»СЏ passkey" autocomplete="current-password">
+                  <input id="passkeyLabel" placeholder="РњРµС‚РєР° РєР»СЋС‡Р°: Pixel 9, Windows Hello">
+                </div>
+                <div class="authActions">
+                  <button class="sessionBtn" id="passkeyRegisterBtn" type="button">Р”РѕР±Р°РІРёС‚СЊ passkey</button>
+                </div>
+                <div class="authHint" id="passkeyClientHint">Passkey С‚СЂРµР±СѓРµС‚ HTTPS Рё РїРѕРґРґРµСЂР¶РєСѓ WebAuthn РІ Р±СЂР°СѓР·РµСЂРµ.</div>
+                <div id="passkeyList" class="authList"></div>
+              </div>
+              <div class="authSection">
+                <div class="authSectionHead">
+                  <div>
+                    <h3>SSH ED25519</h3>
+                    <p>Р’С…РѕРґ РїРѕ SSH ED25519 РєР»СЋС‡Сѓ. Р”РѕР±Р°РІСЊ РїСѓР±Р»РёС‡РЅС‹Р№ РєР»СЋС‡, Р° РЅР° СЌРєСЂР°РЅРµ РІС…РѕРґР° РїРѕС‚РѕРј РїРѕРґРїРёСЃС‹РІР°Р№ challenge.</p>
+                  </div>
+                  <div class="authSectionState off" id="sshKeySummary">0 keys</div>
+                </div>
+                <div class="authFields">
+                  <input id="sshKeyCurrentPassword" type="password" placeholder="РўРµРєСѓС‰РёР№ РїР°СЂРѕР»СЊ РґР»СЏ SSH РєР»СЋС‡РµР№" autocomplete="current-password">
+                  <input id="sshKeyLabel" placeholder="РњРµС‚РєР° РєР»СЋС‡Р°: MacBook, Workstation">
+                  <textarea id="sshKeyPublic" class="wide" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... user@host"></textarea>
+                </div>
+                <div class="authActions">
+                  <button class="sessionBtn" id="sshKeyAddBtn" type="button">Р”РѕР±Р°РІРёС‚СЊ SSH ED25519</button>
+                </div>
+                <div class="authHint">РџРѕРґРґРµСЂР¶РёРІР°РµС‚СЃСЏ С‚РѕР»СЊРєРѕ `ssh-ed25519`.</div>
+                <div id="sshKeyList" class="authList"></div>
+              </div>
+                </div>
+              </details>
+              <details class="authGroup" id="sessionGroup">
+                <summary class="authGroupSummary">
+                  <div class="authGroupTitle">
+                    <strong id="sessionGroupTitle">Управление сессиями</strong>
+                    <span id="sessionGroupLead">Активные входы в Hub и быстрое завершение лишних сессий.</span>
+                  </div>
+                  <span class="authGroupChevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div class="authGroupBody">
+                  <div class="sessionBox">
                 <div class="sessionHead">
                   <h3>Управление сессиями</h3>
                   <button class="sessionBtn bad" id="revokeOtherSessions" type="button">Завершить остальные</button>
                 </div>
                 <div id="sessionList" class="sessionList"></div>
-              </div>
-              <div class="notifyBox">
+                  </div>
+                </div>
+              </details>
+              <details class="authGroup" id="notifyGroup">
+                <summary class="authGroupSummary">
+                  <div class="authGroupTitle">
+                    <strong id="notifyGroupTitle">Уведомления</strong>
+                    <span id="notifyGroupLead">Web Push для входов, смены IP и событий VPS/Hub.</span>
+                  </div>
+                  <span class="authGroupChevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div class="authGroupBody">
+                  <div class="notifyBox">
                 <div class="sessionHead">
                   <h3>Уведомления</h3>
                   <div class="notifyActions">
@@ -2498,8 +3057,19 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
                 </div>
                 <div class="notifyHint">Web Push для входов в панель, смены IP и запуска VPS/Hub. На iOS включай из приложения Hub с экрана Домой.</div>
                 <div id="notifyList" class="notifyList"></div>
-              </div>
-              <div class="backupBox">
+                  </div>
+                </div>
+              </details>
+              <details class="authGroup" id="backupGroup">
+                <summary class="authGroupSummary">
+                  <div class="authGroupTitle">
+                    <strong id="backupGroupTitle">Резервная копия VPS</strong>
+                    <span id="backupGroupLead">Backup, restore и перенос Hub на новый VPS.</span>
+                  </div>
+                  <span class="authGroupChevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div class="authGroupBody">
+                  <div class="backupBox">
                 <div class="sessionHead">
                   <h3>Backup VPS</h3>
                   <a class="sessionBtn btn good" id="backupDownload" href="/api/backup/download">Скачать</a>
@@ -2535,14 +3105,16 @@ systemctl restart owrt-remote-xray</pre>
                   <button class="primary wide" id="backupRestore" type="button">Восстановить из backup</button>
                 </div>
                 <div id="backupMsg" class="backupMsg" hidden></div>
-              </div>
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
         </div>
       </div>
     </div>
     <div class="mobileSearchDock" id="mobileRouterSearchDock">
-      <span class="mobileSearchVersion">v101</span>
+      <span class="mobileSearchVersion">v102</span>
       <button class="routerSearchToggle mobilePanelToggle primary" id="mobileRouterSearchToggle" type="button" aria-expanded="false" aria-controls="mobileRouterSearchPanel" data-active="false">
         <span>Поиск роутеров</span>
       </button>
@@ -3208,6 +3780,20 @@ function syncRouterSearchClears() {{
   }});
 }}
 
+function routerSearchPanelForInput(input) {{
+  if (!input) return null;
+  if (input === mobileRouterSearchInput) return mobileRouterSearchPanel;
+  if (input === routerSearchInput) return routerSearchPanel;
+  return input.closest ? input.closest('.routerSearchPanel') : null;
+}}
+
+function isRouterSearchInputInteractive(input) {{
+  if (!input) return false;
+  if (document.activeElement === input) return true;
+  const panel = routerSearchPanelForInput(input);
+  return !!(panel && !panel.hidden);
+}}
+
 function setRouterSearchOpen(next, options = {{}}) {{
   if (!routerSearchPanels.length || !routerSearchToggles.length) return;
   const open = Boolean(next);
@@ -3218,6 +3804,11 @@ function setRouterSearchOpen(next, options = {{}}) {{
     toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   }});
   syncRouterSearchToggleState();
+  if (!open) {{
+    routerSearchInputs.forEach((input) => {{
+      if (document.activeElement === input) input.blur();
+    }});
+  }}
   if (open && options.focusInput !== false) {{
     const preferredInput = options.preferredInput && routerSearchInputs.includes(options.preferredInput)
       ? options.preferredInput
@@ -5528,6 +6119,10 @@ if (routerNameInput) {{
 }}
 routerSearchInputs.forEach((input) => {{
   input.addEventListener('input', () => {{
+    if (!isRouterSearchInputInteractive(input)) {{
+      if (input.value !== routerSearchQuery) input.value = routerSearchQuery;
+      return;
+    }}
     routerSearchQuery = input.value || '';
     syncRouterSearchInputs();
     syncRouterSearchClears();
@@ -5951,7 +6546,35 @@ const backupVpsHost = document.getElementById('backupVpsHost');
 const backupPublicUrl = document.getElementById('backupPublicUrl');
 const backupRestore = document.getElementById('backupRestore');
 const backupMsg = document.getElementById('backupMsg');
+const authForm = document.getElementById('authForm');
+const authMsg = document.getElementById('authMsg');
+const authSummary = document.getElementById('authSummary');
+const totpState = document.getElementById('totpState');
+const totpCurrentPassword = document.getElementById('totpCurrentPassword');
+const totpSetupBtn = document.getElementById('totpSetupBtn');
+const totpSecretBox = document.getElementById('totpSecretBox');
+const totpSecretValue = document.getElementById('totpSecretValue');
+const totpUriValue = document.getElementById('totpUriValue');
+const totpCode = document.getElementById('totpCode');
+const totpEnableBtn = document.getElementById('totpEnableBtn');
+const totpDisableCurrentPassword = document.getElementById('totpDisableCurrentPassword');
+const totpDisableCode = document.getElementById('totpDisableCode');
+const totpDisableBtn = document.getElementById('totpDisableBtn');
+const passkeySummary = document.getElementById('passkeySummary');
+const passkeyCurrentPassword = document.getElementById('passkeyCurrentPassword');
+const passkeyLabel = document.getElementById('passkeyLabel');
+const passkeyRegisterBtn = document.getElementById('passkeyRegisterBtn');
+const passkeyClientHint = document.getElementById('passkeyClientHint');
+const passkeyList = document.getElementById('passkeyList');
+const sshKeySummary = document.getElementById('sshKeySummary');
+const sshKeyCurrentPassword = document.getElementById('sshKeyCurrentPassword');
+const sshKeyLabel = document.getElementById('sshKeyLabel');
+const sshKeyPublic = document.getElementById('sshKeyPublic');
+const sshKeyAddBtn = document.getElementById('sshKeyAddBtn');
+const sshKeyList = document.getElementById('sshKeyList');
 let authHideTimer;
+let authMeta = null;
+let authTotpTicket = '';
 function hideOfflineStats() {{
   if (!offlineStatsExpanded) return;
   offlineStatsExpanded = false;
@@ -5963,12 +6586,123 @@ function closeAuthMenu(returnFocus = false) {{
   if (returnFocus && authToggle) authToggle.focus();
 }}
 if (authMenuHeadTitle) authMenuHeadTitle.textContent = '\u0414\u043e\u0441\u0442\u0443\u043f \u043a Hub';
-if (authMenuHeadLead) authMenuHeadLead.textContent = '\u0421\u043c\u0435\u043d\u0430 \u043b\u043e\u0433\u0438\u043d\u0430 \u0438 \u043f\u0430\u0440\u043e\u043b\u044f \u0432\u0445\u043e\u0434\u0430.';
+if (authMenuHeadLead) authMenuHeadLead.hidden = true;
 if (authMenuClose) authMenuClose.textContent = '\u0417\u0430\u043a\u0440\u044b\u0442\u044c';
+function localizeAuthUi() {{
+  const securityGroupTitle = document.getElementById('securityGroupTitle');
+  const securityGroupLead = document.getElementById('securityGroupLead');
+  const passwordSectionTitle = document.getElementById('passwordSectionTitle');
+  const passwordSectionLead = document.getElementById('passwordSectionLead');
+  const authForm = document.getElementById('authForm');
+  const authInputs = authForm ? authForm.querySelectorAll('input') : [];
+  if (securityGroupTitle) securityGroupTitle.textContent = '\u0411\u0435\u0437\u043e\u043f\u0430\u0441\u043d\u043e\u0441\u0442\u044c';
+  if (securityGroupLead) securityGroupLead.textContent = '\u041f\u0430\u0440\u043e\u043b\u044c, 2FA, Passkey \u0438 SSH ED25519 \u0434\u043b\u044f \u0432\u0445\u043e\u0434\u0430 \u0432 Hub.';
+  if (passwordSectionTitle) passwordSectionTitle.textContent = '\u041f\u0430\u0440\u043e\u043b\u044c';
+  if (passwordSectionLead) passwordSectionLead.textContent = '\u0421\u043c\u0435\u043d\u0430 \u043b\u043e\u0433\u0438\u043d\u0430 \u0438 \u043f\u0430\u0440\u043e\u043b\u044f \u0432\u0445\u043e\u0434\u0430 \u0432 \u043f\u0430\u043d\u0435\u043b\u044c Hub.';
+  if (authInputs[0]) authInputs[0].placeholder = 'Логин';
+  if (authInputs[1]) authInputs[1].placeholder = 'Текущий пароль';
+  if (authInputs[2]) authInputs[2].placeholder = 'Новый пароль';
+  if (authInputs[3]) authInputs[3].placeholder = 'Повтори пароль';
+  if (authForm) {{
+    const saveBtn = authForm.querySelector('button');
+    if (saveBtn) saveBtn.textContent = 'Сохранить';
+  }}
+
+  const setSectionCopy = (anchor, title, description) => {{
+    const section = anchor ? anchor.closest('.authSection') : null;
+    if (!section) return;
+    const head = section.querySelector('.authSectionHead > div');
+    if (!head) return;
+    const heading = head.querySelector('h3');
+    const lead = head.querySelector('p');
+    if (heading) heading.textContent = title;
+    if (lead) lead.textContent = description;
+  }};
+
+  setSectionCopy(
+    totpState,
+    'Пароль + 2FA',
+    'Резервный вход через пароль. Если включена 2FA, дополнительно нужен TOTP-код из приложения.'
+  );
+  if (totpCurrentPassword) totpCurrentPassword.placeholder = 'Текущий пароль для настройки 2FA';
+  if (totpSetupBtn) totpSetupBtn.textContent = 'Создать секрет 2FA';
+  if (totpCode) totpCode.placeholder = 'Код из приложения 2FA';
+  if (totpEnableBtn) totpEnableBtn.textContent = 'Включить 2FA';
+  if (totpDisableCurrentPassword) totpDisableCurrentPassword.placeholder = 'Текущий пароль для отключения 2FA';
+  if (totpDisableCode) totpDisableCode.placeholder = 'Текущий код 2FA';
+  if (totpDisableBtn) totpDisableBtn.textContent = 'Выключить 2FA';
+
+  const totpHeading = totpState ? totpState.parentElement?.querySelector('h3') : null;
+  if (totpHeading) totpHeading.textContent = '2FA';
+
+  setSectionCopy(
+    passkeySummary,
+    'Passkey',
+    'Основной вход без пароля: Android, Windows Hello, Face ID, Touch ID и другие системные ключи.'
+  );
+  if (passkeyCurrentPassword) passkeyCurrentPassword.placeholder = 'Текущий пароль для passkey';
+  if (passkeyLabel) passkeyLabel.placeholder = 'Метка ключа: Pixel 9, Windows Hello';
+  if (passkeyRegisterBtn) passkeyRegisterBtn.textContent = 'Добавить passkey';
+
+  setSectionCopy(
+    sshKeySummary,
+    'SSH ED25519',
+    'Вход по SSH ED25519 ключу. Добавь публичный ключ, а на экране входа потом подписывай challenge.'
+  );
+  if (sshKeyCurrentPassword) sshKeyCurrentPassword.placeholder = 'Текущий пароль для SSH ключей';
+  if (sshKeyLabel) sshKeyLabel.placeholder = 'Метка ключа: MacBook, Workstation';
+  if (sshKeyAddBtn) sshKeyAddBtn.textContent = 'Добавить SSH ED25519';
+  const sshSectionHint = sshKeyList ? sshKeyList.parentElement.querySelector('.authHint') : null;
+  if (sshSectionHint) sshSectionHint.textContent = 'Поддерживается только формат `ssh-ed25519`.';
+
+  const sessionGroupTitle = document.getElementById('sessionGroupTitle');
+  const sessionGroupLead = document.getElementById('sessionGroupLead');
+  if (sessionGroupTitle) sessionGroupTitle.textContent = '\u0423\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435 \u0441\u0435\u0441\u0441\u0438\u044f\u043c\u0438';
+  if (sessionGroupLead) sessionGroupLead.textContent = '\u0410\u043a\u0442\u0438\u0432\u043d\u044b\u0435 \u0432\u0445\u043e\u0434\u044b \u0432 Hub \u0438 \u0431\u044b\u0441\u0442\u0440\u043e\u0435 \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u0438\u0435 \u043b\u0438\u0448\u043d\u0438\u0445 \u0441\u0435\u0441\u0441\u0438\u0439.';
+  const sessionHead = document.getElementById('revokeOtherSessions')?.closest('.sessionHead');
+  if (sessionHead) {{
+    const heading = sessionHead.querySelector('h3');
+    if (heading) heading.textContent = 'Управление сессиями';
+  }}
+  const revokeBtn = document.getElementById('revokeOtherSessions');
+  if (revokeBtn) revokeBtn.textContent = 'Завершить остальные';
+
+  const notifyGroupTitle = document.getElementById('notifyGroupTitle');
+  const notifyGroupLead = document.getElementById('notifyGroupLead');
+  if (notifyGroupTitle) notifyGroupTitle.textContent = '\u0423\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u044f';
+  if (notifyGroupLead) notifyGroupLead.textContent = '\u0057\u0065\u0062\u0020\u0050\u0075\u0073\u0068 \u0434\u043b\u044f \u0432\u0445\u043e\u0434\u043e\u0432, \u0441\u043c\u0435\u043d\u044b IP \u0438 \u0441\u043e\u0431\u044b\u0442\u0438\u0439 VPS/Hub.';
+  const notifyBox = document.getElementById('notifyEnable')?.closest('.notifyBox');
+  if (notifyBox) {{
+    const heading = notifyBox.querySelector('.sessionHead h3');
+    const hint = notifyBox.querySelector('.notifyHint');
+    if (heading) heading.textContent = 'Уведомления';
+    if (hint) hint.textContent = 'Web Push для входов в панель, смены IP и запуска VPS/Hub. На iPhone включай из приложения Hub с экрана Домой.';
+  }}
+  const notifyEnableBtn = document.getElementById('notifyEnable');
+  const notifyClearBtn = document.getElementById('notifyClear');
+  if (notifyEnableBtn) notifyEnableBtn.textContent = 'Включить';
+  if (notifyClearBtn) notifyClearBtn.textContent = 'Очистить';
+
+  const backupGroupTitle = document.getElementById('backupGroupTitle');
+  const backupGroupLead = document.getElementById('backupGroupLead');
+  if (backupGroupTitle) backupGroupTitle.textContent = '\u0420\u0435\u0437\u0435\u0440\u0432\u043d\u0430\u044f \u043a\u043e\u043f\u0438\u044f VPS';
+  if (backupGroupLead) backupGroupLead.textContent = '\u0420\u0435\u0437\u0435\u0440\u0432\u043d\u0430\u044f \u043a\u043e\u043f\u0438\u044f, \u0432\u043e\u0441\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\u0438\u0435 \u0438 \u043f\u0435\u0440\u0435\u043d\u043e\u0441 Hub \u043d\u0430 \u043d\u043e\u0432\u044b\u0439 VPS.';
+  const backupBox = document.getElementById('backupDownload')?.closest('.backupBox');
+  if (backupBox) {{
+    const heading = backupBox.querySelector('.sessionHead h3');
+    const hint = backupBox.querySelector('.backupHint');
+    if (heading) heading.textContent = 'Резервная копия VPS';
+    if (hint) hint.textContent = 'Архив сохраняет базу роутеров, логин, токены Hub/агента, push-ключи и уведомления. Перед восстановлением на другом IP укажи новый VPS host или Public URL.';
+  }}
+  const backupDownload = document.getElementById('backupDownload');
+  if (backupDownload) backupDownload.textContent = 'Скачать';
+}}
+localizeAuthUi();
 function showAuthMenu() {{
   clearTimeout(authHideTimer);
   hideOfflineStats();
   authMenu.hidden = false;
+  loadAuthMeta({{silent: true}}).catch(() => {{}});
 }}
 function scheduleHideAuthMenu() {{
   clearTimeout(authHideTimer);
@@ -6014,6 +6748,164 @@ function formatSessionTime(ts) {{
   try {{ return new Date(Number(ts) * 1000).toLocaleString('ru-RU'); }} catch (e) {{ return '—'; }}
 }}
 
+function authMethodText(value) {{
+  const method = String(value || '').toLowerCase();
+  if (method === 'passkey') return 'Passkey';
+  if (method === 'ed25519') return 'SSH ED25519';
+  if (method === 'password+totp') return 'Пароль + 2FA';
+  if (method === 'password') return 'Пароль';
+  return 'Авторизация';
+}}
+
+function setAuthMessage(text, bad = false) {{
+  if (!authMsg) return;
+  authMsg.hidden = !text;
+  authMsg.className = 'msg' + (bad ? ' bad' : '');
+  authMsg.textContent = text || '';
+}}
+
+function resetTotpSetup() {{
+  authTotpTicket = '';
+  if (totpSecretBox) totpSecretBox.hidden = true;
+  if (totpSecretValue) totpSecretValue.textContent = '';
+  if (totpUriValue) totpUriValue.textContent = '';
+  if (totpCode) totpCode.value = '';
+}}
+
+function authB64urlToBytes(value) {{
+  const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}}
+
+function authBytesToB64url(buffer) {{
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer || []);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/g, '');
+}}
+
+function decodeCredentialCreationOptions(options) {{
+  const publicKey = Object.assign({{}}, options.publicKey || {{}});
+  publicKey.challenge = authB64urlToBytes(publicKey.challenge || '');
+  if (publicKey.user && publicKey.user.id) {{
+    publicKey.user = Object.assign({{}}, publicKey.user, {{id: authB64urlToBytes(publicKey.user.id)}});
+  }}
+  publicKey.excludeCredentials = Array.isArray(publicKey.excludeCredentials)
+    ? publicKey.excludeCredentials.map((item) => Object.assign({{}}, item, {{id: authB64urlToBytes(item.id || '')}}))
+    : [];
+  return {{publicKey}};
+}}
+
+function encodeAttestation(credential) {{
+  return {{
+    id: credential.id,
+    rawId: authBytesToB64url(credential.rawId),
+    type: credential.type,
+    authenticatorAttachment: credential.authenticatorAttachment || null,
+    clientExtensionResults: credential.getClientExtensionResults ? credential.getClientExtensionResults() : {{}},
+    response: {{
+      clientDataJSON: authBytesToB64url(credential.response.clientDataJSON),
+      attestationObject: authBytesToB64url(credential.response.attestationObject)
+    }}
+  }};
+}}
+
+function renderPasskeyRows(items) {{
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {{
+    passkeyList.innerHTML = '<div class="authEmpty">Passkey пока не добавлены</div>';
+    return;
+  }}
+  passkeyList.innerHTML = list.map((item) => `
+    <div class="authRow">
+      <div>
+        <div class="authRowTitle"><span>${{escapeHtml(item.label || 'Passkey')}}</span></div>
+        <div class="authRowMeta">
+          Добавлен: ${{formatSessionTime(item.created_at)}}<br>
+          Последнее использование: ${{formatSessionTime(item.last_used_at)}}
+        </div>
+      </div>
+      <button class="sessionBtn bad" type="button" data-passkey-remove="${{escapeAttr(item.id || '')}}">Удалить</button>
+    </div>
+  `).join('');
+}}
+
+function renderSshKeyRows(items) {{
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {{
+    sshKeyList.innerHTML = '<div class="authEmpty">SSH ED25519 ключи пока не добавлены</div>';
+    return;
+  }}
+  sshKeyList.innerHTML = list.map((item) => `
+    <div class="authRow">
+      <div>
+        <div class="authRowTitle"><span>${{escapeHtml(item.label || 'SSH ED25519')}}</span></div>
+        <div class="authRowMeta">
+          Добавлен: ${{formatSessionTime(item.created_at)}}<br>
+          Последнее использование: ${{formatSessionTime(item.last_used_at)}}
+        </div>
+        <div class="authRowKey">${{escapeHtml(item.public_key || '')}}</div>
+      </div>
+      <button class="sessionBtn bad" type="button" data-ssh-key-remove="${{escapeAttr(item.id || '')}}">Удалить</button>
+    </div>
+  `).join('');
+}}
+
+function renderAuthMeta() {{
+  const meta = authMeta || {{}};
+  const totpEnabled = !!meta.totp_enabled;
+  const passkeyCount = Number(meta.passkey_count || (Array.isArray(meta.passkeys) ? meta.passkeys.length : 0) || 0);
+  const sshCount = Array.isArray(meta.ssh_keys) ? meta.ssh_keys.length : 0;
+  authSummary.innerHTML = [
+    '<span class="authPill">Пароль</span>',
+    `<span class="authPill ${{totpEnabled ? '' : 'off'}}">${{totpEnabled ? '2FA включена' : '2FA выключена'}}</span>`,
+    `<span class="authPill ${{passkeyCount ? '' : 'off'}}">Passkey: ${{passkeyCount}}</span>`,
+    `<span class="authPill ${{sshCount ? '' : 'off'}}">ED25519: ${{sshCount}}</span>`
+  ].join('');
+  totpState.textContent = totpEnabled ? '2FA включена' : '2FA выключена';
+  totpState.className = 'authSectionState' + (totpEnabled ? '' : ' off');
+  passkeySummary.textContent = passkeyCount ? `Passkey: ${{passkeyCount}}` : '0 ключей';
+  passkeySummary.className = 'authSectionState' + (passkeyCount ? '' : ' off');
+  sshKeySummary.textContent = sshCount ? `ED25519: ${{sshCount}}` : '0 ключей';
+  sshKeySummary.className = 'authSectionState' + (sshCount ? '' : ' off');
+  if (!window.isSecureContext || !window.PublicKeyCredential) {{
+    passkeyClientHint.textContent = 'Passkey требует HTTPS и поддержку WebAuthn в браузере.';
+    passkeySummary.className = 'authSectionState warn';
+  }} else if (!meta.passkeys_supported) {{
+    passkeyClientHint.textContent = 'На сервере не установлен модуль WebAuthn. Запусти свежий install-vps.sh.';
+    passkeySummary.className = 'authSectionState warn';
+  }} else if (!passkeyCount) {{
+    passkeyClientHint.textContent = 'Можно зарегистрировать первый passkey прямо здесь.';
+  }} else {{
+    passkeyClientHint.textContent = 'Passkey готов к использованию на экране входа.';
+  }}
+  renderPasskeyRows(meta.passkeys || []);
+  renderSshKeyRows(meta.ssh_keys || []);
+}}
+
+async function loadAuthMeta({{silent = false}} = {{}}) {{
+  try {{
+    const res = await fetch('/api/auth/meta', {{cache: 'no-store'}});
+    const data = await res.json().catch(() => ({{}}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Не удалось получить статус авторизации');
+    authMeta = data.auth || {{}};
+    if (authForm && authForm.elements && authMeta.username) {{
+      const usernameField = authForm.elements.namedItem('username');
+      if (usernameField) usernameField.value = authMeta.username;
+    }}
+    if (authToggle && authMeta.username) authToggle.textContent = authMeta.username;
+    renderAuthMeta();
+    return authMeta;
+  }} catch (err) {{
+    if (!silent) setAuthMessage(err && err.message ? err.message : 'Не удалось получить статус авторизации', true);
+    throw err;
+  }}
+}}
+
 function renderSessions(list) {{
   const sessions = Array.isArray(list) ? list : [];
   if (!sessions.length) {{
@@ -6029,6 +6921,7 @@ function renderSessions(list) {{
         </div>
         <div class="sessionMeta">
           IP: ${{escapeHtml(s.ip || 'unknown')}}<br>
+          Авторизация: ${{escapeHtml(authMethodText(s.auth_method || 'password'))}}<br>
           Вход: ${{formatSessionTime(s.created_at)}}<br>
           Активность: ${{formatSessionTime(s.last_seen)}}<br>
           До: ${{formatSessionTime(s.expires_at)}}
@@ -6436,28 +7329,252 @@ revokeOtherSessions.addEventListener('click', async () => {{
   if (res.ok) await loadSessions();
 }});
 
-document.getElementById('authForm').addEventListener('submit', async (ev) => {{
+authMenu.addEventListener('click', async (ev) => {{
+  const passkeyId = ev.target?.dataset?.passkeyRemove;
+  if (passkeyId) {{
+    const currentPassword = passkeyCurrentPassword.value;
+    if (!currentPassword) {{
+      setAuthMessage('Введи текущий пароль в секции Passkey, чтобы удалить ключ.', true);
+      return;
+    }}
+    if (!confirm('Удалить этот passkey?')) return;
+    const res = await fetch('/api/auth/passkeys/remove', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{id: passkeyId, current_password: currentPassword}})
+    }});
+    const data = await res.json().catch(() => ({{}}));
+    if (!res.ok || !data.ok) {{
+      setAuthMessage(data.error || 'Не удалось удалить passkey', true);
+      return;
+    }}
+    passkeyCurrentPassword.value = '';
+    authMeta = data.auth || authMeta;
+    renderAuthMeta();
+    setAuthMessage(data.message || 'Passkey удален');
+    return;
+  }}
+  const sshKeyId = ev.target?.dataset?.sshKeyRemove;
+  if (sshKeyId) {{
+    const currentPassword = sshKeyCurrentPassword.value;
+    if (!currentPassword) {{
+      setAuthMessage('Введи текущий пароль в секции ED25519, чтобы удалить ключ.', true);
+      return;
+    }}
+    if (!confirm('Удалить этот SSH ED25519 ключ?')) return;
+    const res = await fetch('/api/auth/ssh-keys/remove', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{id: sshKeyId, current_password: currentPassword}})
+    }});
+    const data = await res.json().catch(() => ({{}}));
+    if (!res.ok || !data.ok) {{
+      setAuthMessage(data.error || 'Не удалось удалить SSH ключ', true);
+      return;
+    }}
+    sshKeyCurrentPassword.value = '';
+    authMeta = data.auth || authMeta;
+    renderAuthMeta();
+    setAuthMessage(data.message || 'SSH ключ удален');
+  }}
+}});
+
+authForm.addEventListener('submit', async (ev) => {{
   ev.preventDefault();
-  const msg = document.getElementById('authMsg');
-  msg.hidden = true;
-  msg.className = 'msg';
+  ev.stopImmediatePropagation();
+  setAuthMessage('');
   const body = new URLSearchParams(new FormData(ev.currentTarget));
   const res = await fetch('/api/auth', {{method: 'POST', body}});
   const text = await res.text();
-  msg.hidden = false;
   if (res.ok) {{
-    msg.textContent = text || 'Доступ обновлен';
+    setAuthMessage(text || 'Доступ обновлен');
     ev.currentTarget.current_password.value = '';
     ev.currentTarget.password.value = '';
     ev.currentTarget.password_confirm.value = '';
+    await loadAuthMeta({{silent: true}}).catch(() => {{}});
   }} else {{
-    msg.className = 'msg bad';
-    msg.textContent = text || 'Не удалось сохранить';
+    setAuthMessage(text || 'Не удалось сохранить', true);
   }}
+}}, true);
+
+totpSetupBtn.addEventListener('click', async () => {{
+  setAuthMessage('');
+  const currentPassword = totpCurrentPassword.value;
+  if (!currentPassword) {{
+    setAuthMessage('Введи текущий пароль для настройки 2FA.', true);
+    return;
+  }}
+  const res = await fetch('/api/auth/totp/setup', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{current_password: currentPassword}})
+  }});
+  const data = await res.json().catch(() => ({{}}));
+  if (!res.ok || !data.ok) {{
+    setAuthMessage(data.error || 'Не удалось создать секрет 2FA', true);
+    return;
+  }}
+  authTotpTicket = data.ticket || '';
+  totpSecretValue.textContent = data.secret || '';
+  totpUriValue.textContent = data.otpauth_uri || '';
+  totpSecretBox.hidden = false;
+  setAuthMessage('Секрет 2FA создан. Добавь его в приложение и подтверди кодом.');
+}});
+
+totpEnableBtn.addEventListener('click', async () => {{
+  setAuthMessage('');
+  if (!authTotpTicket) {{
+    setAuthMessage('Сначала создай секрет 2FA.', true);
+    return;
+  }}
+  if (!totpCurrentPassword.value) {{
+    setAuthMessage('Введи текущий пароль для включения 2FA.', true);
+    return;
+  }}
+  if (!totpCode.value.trim()) {{
+    setAuthMessage('Введи код из приложения 2FA.', true);
+    return;
+  }}
+  const res = await fetch('/api/auth/totp/enable', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{
+      current_password: totpCurrentPassword.value,
+      ticket: authTotpTicket,
+      code: totpCode.value.trim()
+    }})
+  }});
+  const data = await res.json().catch(() => ({{}}));
+  if (!res.ok || !data.ok) {{
+    setAuthMessage(data.error || 'Не удалось включить 2FA', true);
+    return;
+  }}
+  resetTotpSetup();
+  totpCurrentPassword.value = '';
+  authMeta = data.auth || authMeta;
+  renderAuthMeta();
+  setAuthMessage(data.message || '2FA включена');
+}});
+
+totpDisableBtn.addEventListener('click', async () => {{
+  setAuthMessage('');
+  if (!totpDisableCurrentPassword.value) {{
+    setAuthMessage('Введи текущий пароль для отключения 2FA.', true);
+    return;
+  }}
+  if (!totpDisableCode.value.trim()) {{
+    setAuthMessage('Введи текущий код 2FA для отключения.', true);
+    return;
+  }}
+  const res = await fetch('/api/auth/totp/disable', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{
+      current_password: totpDisableCurrentPassword.value,
+      code: totpDisableCode.value.trim()
+    }})
+  }});
+  const data = await res.json().catch(() => ({{}}));
+  if (!res.ok || !data.ok) {{
+    setAuthMessage(data.error || 'Не удалось отключить 2FA', true);
+    return;
+  }}
+  resetTotpSetup();
+  totpCurrentPassword.value = '';
+  totpDisableCurrentPassword.value = '';
+  totpDisableCode.value = '';
+  authMeta = data.auth || authMeta;
+  renderAuthMeta();
+  setAuthMessage(data.message || '2FA выключена');
+}});
+
+passkeyRegisterBtn.addEventListener('click', async () => {{
+  setAuthMessage('');
+  if (!window.isSecureContext || !window.PublicKeyCredential) {{
+    setAuthMessage('Passkey требует HTTPS и поддержку WebAuthn в браузере.', true);
+    return;
+  }}
+  if (!passkeyCurrentPassword.value) {{
+    setAuthMessage('Введи текущий пароль для регистрации passkey.', true);
+    return;
+  }}
+  const beginRes = await fetch('/api/auth/passkeys/begin', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{
+      current_password: passkeyCurrentPassword.value,
+      label: passkeyLabel.value.trim()
+    }})
+  }});
+  const beginData = await beginRes.json().catch(() => ({{}}));
+  if (!beginRes.ok || !beginData.ok) {{
+    setAuthMessage(beginData.error || 'Не удалось начать регистрацию passkey', true);
+    return;
+  }}
+  try {{
+    const credential = await navigator.credentials.create(decodeCredentialCreationOptions(beginData.options || {{}}));
+    const transports = credential && credential.response && typeof credential.response.getTransports === 'function'
+      ? credential.response.getTransports()
+      : [];
+    const finishRes = await fetch('/api/auth/passkeys/finish', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{
+        ticket: beginData.ticket,
+        credential: encodeAttestation(credential),
+        transports
+      }})
+    }});
+    const finishData = await finishRes.json().catch(() => ({{}}));
+    if (!finishRes.ok || !finishData.ok) {{
+      setAuthMessage(finishData.error || 'Не удалось завершить регистрацию passkey', true);
+      return;
+    }}
+    passkeyCurrentPassword.value = '';
+    passkeyLabel.value = '';
+    authMeta = finishData.auth || authMeta;
+    renderAuthMeta();
+    setAuthMessage(finishData.message || 'Passkey добавлен');
+  }} catch (err) {{
+    setAuthMessage(err && err.message ? err.message : 'Регистрация passkey была отменена или завершилась с ошибкой', true);
+  }}
+}});
+
+sshKeyAddBtn.addEventListener('click', async () => {{
+  setAuthMessage('');
+  if (!sshKeyCurrentPassword.value) {{
+    setAuthMessage('Введи текущий пароль для добавления SSH ключа.', true);
+    return;
+  }}
+  if (!sshKeyPublic.value.trim()) {{
+    setAuthMessage('Вставь публичный SSH ED25519 ключ.', true);
+    return;
+  }}
+  const res = await fetch('/api/auth/ssh-keys/add', {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{
+      current_password: sshKeyCurrentPassword.value,
+      label: sshKeyLabel.value.trim(),
+      public_key: sshKeyPublic.value.trim()
+    }})
+  }});
+  const data = await res.json().catch(() => ({{}}));
+  if (!res.ok || !data.ok) {{
+    setAuthMessage(data.error || 'Не удалось добавить SSH ED25519 ключ', true);
+    return;
+  }}
+  sshKeyCurrentPassword.value = '';
+  sshKeyLabel.value = '';
+  sshKeyPublic.value = '';
+  authMeta = data.auth || authMeta;
+  renderAuthMeta();
+  setAuthMessage(data.message || 'SSH ED25519 ключ добавлен');
 }});
 
 renderSessions(window.HUB_SESSIONS);
 renderNotifications(window.HUB_NOTIFICATIONS);
+loadAuthMeta({{silent: true}}).catch(() => {{}});
 reportClientHint();
 updateNotifyButton();
 initSeasonEffects();
@@ -7132,38 +8249,357 @@ def login_html(error=""):
 <style>
 :root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.9);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.28);--blue:#7c3aed;--cyan:#22d3ee;--red:#fb7185;--green:#22c55e;--grid:rgba(168,85,247,.13)}}
 *{{box-sizing:border-box}}
-body{{position:relative;min-height:100vh;margin:0;overflow:hidden;background-color:var(--bg);background-image:radial-gradient(circle at 16% 12%,rgba(168,85,247,.48),transparent 30%),radial-gradient(circle at 84% 8%,rgba(59,130,246,.34),transparent 32%),radial-gradient(circle at 55% 105%,rgba(236,72,153,.24),transparent 36%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-size:130% 130%,140% 140%,135% 135%,100% 100%,31px 31px,31px 31px;background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:grid;place-items:center;padding:18px;animation:bgFlow 28s ease-in-out infinite alternate}}
+body{{position:relative;min-height:100vh;margin:0;overflow-x:hidden;background-color:var(--bg);background-image:radial-gradient(circle at 16% 12%,rgba(168,85,247,.48),transparent 30%),radial-gradient(circle at 84% 8%,rgba(59,130,246,.34),transparent 32%),radial-gradient(circle at 55% 105%,rgba(236,72,153,.24),transparent 36%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-size:130% 130%,140% 140%,135% 135%,100% 100%,31px 31px,31px 31px;background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:grid;place-items:center;padding:18px;animation:bgFlow 28s ease-in-out infinite alternate}}
 body::before{{content:"";position:fixed;inset:-28%;pointer-events:none;background:conic-gradient(from 0deg at 50% 50%,rgba(168,85,247,.06),rgba(236,72,153,.30),rgba(59,130,246,.22),rgba(34,211,238,.16),rgba(168,85,247,.06));filter:blur(58px);opacity:.74;animation:auraSpin 40s linear infinite}}
 @keyframes bgFlow{{0%{{background-position:0% 0%,100% 0%,50% 100%,0 0,0 0,0 0}}50%{{background-position:24% 18%,62% 28%,38% 82%,0 0,15px 24px,24px 15px}}100%{{background-position:46% 30%,42% 42%,74% 62%,0 0,30px 0,0 30px}}}}
 @keyframes auraSpin{{from{{transform:rotate(0deg) scale(1)}}to{{transform:rotate(360deg) scale(1.08)}}}}
-.login{{position:relative;z-index:1;width:min(352px,100%);min-height:352px;padding:16px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.045)),var(--panel);box-shadow:0 22px 64px rgba(0,0,0,.40);backdrop-filter:blur(14px)}}
-.brand{{display:block;text-align:center;margin-bottom:14px}}
-h1{{margin:0;font-size:18px;line-height:1.1;letter-spacing:0}}.appBanner{{position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:54px;padding:10px 12px;border:1px solid rgba(34,211,238,.34);border-radius:8px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));box-shadow:0 10px 24px rgba(124,58,237,.18),inset 0 1px 0 rgba(255,255,255,.10);font-size:17px;overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}@keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
+.loginShell{{position:relative;z-index:1;width:min(760px,calc(100vw - 24px))}}
+.loginFrame{{position:relative;width:100%;padding:9px;border:1px solid rgba(169,126,255,.32);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.11),rgba(255,255,255,.045)),var(--panel);box-shadow:0 28px 72px rgba(0,0,0,.42);backdrop-filter:blur(16px)}}
+.loginMain{{display:grid;grid-template-columns:minmax(246px,270px) minmax(0,372px);gap:10px;align-items:start;justify-content:center}}
+.login{{position:relative;width:100%;min-height:100%;padding:10px;border:1px solid rgba(169,126,255,.22);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.025));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}}
+.brand{{display:block;text-align:center;margin-bottom:10px}}
+h1{{margin:0;font-size:13px;line-height:1.1;letter-spacing:0}}.appBanner{{position:relative;display:flex;align-items:center;justify-content:center;width:100%;min-height:42px;padding:9px 12px;border:1px solid rgba(34,211,238,.34);border-radius:8px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));box-shadow:0 10px 24px rgba(124,58,237,.18),inset 0 1px 0 rgba(255,255,255,.10);font-size:13px;font-weight:950;overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.18),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.appBannerVersion{{color:var(--red);text-shadow:0 0 12px rgba(251,113,133,.35)}}@keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 p{{margin:3px 0 0;color:var(--muted)}}
-label{{display:block;margin:10px 0 5px;font-weight:850;color:#ede9fe;text-align:center}}
-input{{width:100%;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.74);color:var(--text);outline:none;text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
+label{{display:block;margin:8px 0 4px;font-weight:850;color:#ede9fe;text-align:center}}
+input{{width:100%;min-height:42px;border:1px solid var(--line);border-radius:8px;padding:9px 12px;background:rgba(8,5,18,.74);color:var(--text);outline:none;text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
+textarea{{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 12px;background:rgba(8,5,18,.74);color:var(--text);outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);resize:vertical;min-height:62px;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace}}
 input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.04)}}
-.captcha{{width:100%;display:flex;align-items:center;justify-content:center;margin-top:0;border:1px solid var(--line);border-radius:8px;padding:11px 12px;background:rgba(8,5,18,.74);text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.captcha b{{display:block;color:#fde68a;font:950 23px/1 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:6px;text-indent:6px;text-shadow:0 0 18px rgba(251,191,36,.28)}}
-button{{width:100%;margin-top:13px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:11px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;cursor:pointer;box-shadow:0 14px 30px rgba(124,58,237,.28)}}
+textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.04)}}
+.captcha{{width:100%;display:flex;align-items:center;justify-content:center;min-height:42px;margin-top:0;border:1px solid var(--line);border-radius:8px;padding:9px 12px;background:rgba(8,5,18,.74);text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.captcha b{{display:block;color:#fde68a;font:950 21px/1 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:6px;text-indent:6px;text-shadow:0 0 18px rgba(251,191,36,.28)}}
+button{{width:100%;min-height:42px;margin-top:10px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:9px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;font-size:13px;line-height:1.1;cursor:pointer;box-shadow:0 14px 30px rgba(124,58,237,.28);white-space:nowrap}}
 button:hover{{filter:brightness(1.06)}}
 .err{{margin:0 0 12px;padding:11px 12px;border:1px solid rgba(251,113,133,.45);border-radius:8px;background:rgba(251,113,133,.14);color:#fecdd3;font-weight:800}}
-@media(max-width:520px){{body{{padding:14px}}.login{{padding:15px;min-height:0}}h1{{font-size:22px}}.login .brand .appBanner{{min-height:50px}}}}
+.hint{{margin:8px 0 0;color:var(--muted);text-align:center;font-size:11px;line-height:1.3}}.login>.hint{{display:none}}
+.otpCard{{margin-top:6px;padding:7px;border:1px solid rgba(34,211,238,.18);border-radius:8px;background:rgba(34,211,238,.06)}}
+.loginMethods{{display:grid;gap:10px;align-content:start;width:min(100%,372px);justify-self:center}}
+.methodGrid{{display:grid;gap:10px;align-content:start}}
+.methodCard{{padding:10px;border:1px solid rgba(169,126,255,.20);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.025));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}}
+.methodCard h2{{margin:0 0 5px;font-size:16px}}
+.methodCard p{{margin:0 0 8px;font-size:12px;line-height:1.45}}
+.methodMeta{{display:inline-flex;align-items:center;gap:8px;min-height:26px;padding:5px 9px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:11px;font-weight:800}}
+.methodStatus{{margin-top:9px;padding:10px 12px;border:1px solid rgba(34,197,94,.32);border-radius:8px;background:rgba(34,197,94,.10);color:#bbf7d0;font-weight:800;line-height:1.35}}
+.methodStatus.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.12);color:#fecdd3}}
+.methodRow{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:6px}}
+.methodRow .wide{{grid-column:1/-1;min-height:62px}}
+.methodBtnRow{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:6px}}
+.methodBtnRow button{{margin-top:0;min-height:42px}}
+.methodBtnRow button:only-child{{grid-column:1/-1}}
+.codeBlock{{margin-top:6px;padding:7px 9px;border:1px solid rgba(255,255,255,.09);border-radius:8px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word}}
+.authFlowCard{{display:none}}
+.authFlowBoard{{display:grid;gap:10px}}
+.flowStage{{display:grid;place-items:center;padding:11px 12px;border:1px solid rgba(34,211,238,.24);border-radius:12px;background:rgba(34,211,238,.08);text-align:center;font-weight:900}}
+.flowArrow{{text-align:center;color:#c4b5fd;font-size:18px;line-height:1}}
+.flowBranches{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}}
+.flowBranch{{display:grid;gap:8px;padding:12px;border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.05)}}
+.flowBranch strong{{font-size:15px}}
+.flowBranch small{{color:var(--muted);line-height:1.35}}
+.flowBadge{{display:inline-flex;align-items:center;justify-content:center;min-height:28px;padding:5px 9px;border:1px solid rgba(255,255,255,.10);border-radius:999px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:850}}
+.flowBadge.ready{{border-color:rgba(34,197,94,.30);background:rgba(34,197,94,.12);color:#bbf7d0}}
+.flowBadge.pending{{border-color:rgba(245,158,11,.24);background:rgba(245,158,11,.12);color:#fde68a}}
+.flowBadge.reserve{{border-color:rgba(34,211,238,.24);background:rgba(34,211,238,.08);color:#a5f3fc}}
+.flowBadge.off{{border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.05);color:#c4b5fd}}
+.flowFinal{{display:grid;place-items:center;padding:12px;border:1px solid rgba(34,197,94,.30);border-radius:12px;background:rgba(34,197,94,.11);color:#bbf7d0;font-weight:900;text-align:center}}
+@media(max-width:980px){{.loginMain{{grid-template-columns:1fr}}}}
+@media(max-width:720px){{.flowBranches{{grid-template-columns:1fr}}}}
+@media(max-width:520px){{body{{padding:12px;overflow:auto}}.loginShell{{width:min(100%,520px)}}.loginFrame{{padding:10px}}.login{{padding:12px;min-height:0}}h1{{font-size:22px}}.login .brand .appBanner{{min-height:50px}}.methodRow{{grid-template-columns:1fr}}}}
 </style>
 </head>
 <body>
-<form class="login" method="post" action="/login">
-  {error_html}
-  <label for="hubUsername">Логин</label>
-  <input id="hubUsername" name="username" autocomplete="username" autofocus required>
-  <label for="hubPassword">Пароль</label>
-  <input id="hubPassword" name="password" type="password" autocomplete="current-password" required>
-  <label for="hubCaptchaCode">Капча: введи эти цифры</label>
-  <div class="captcha" id="hubCaptchaCode" aria-live="polite"><b>{safe_captcha_code}</b></div>
-  <input name="captcha_token" type="hidden" value="{safe_captcha_token}">
-  <label for="hubCaptcha">Повтори капчу</label>
-  <input id="hubCaptcha" name="captcha_answer" inputmode="numeric" pattern="[0-9]*" autocomplete="off" required>
-  <button>Войти</button>
-</form>
+<main class="loginShell">
+  <section class="loginFrame">
+    <div class="loginMain">
+      <form class="login" method="post" action="/login">
+    {error_html}
+    <span class="brand">
+      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v102</span></span></h1>
+    </span>
+    <label for="hubUsername">Логин</label>
+    <input id="hubUsername" name="username" autocomplete="username" autofocus required>
+    <label for="hubPassword">Пароль</label>
+    <input id="hubPassword" name="password" type="password" autocomplete="current-password" required>
+    <div class="otpCard">
+      <label for="hubOtp">Код 2FA</label>
+      <input id="hubOtp" name="otp" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" placeholder="Код 2FA">
+      <div class="hint" id="passwordModeHint" hidden>Резервный вход через пароль. Когда 2FA включена, сюда нужен TOTP-код.</div>
+    </div>
+    <label for="hubCaptchaCode">Капча: введи эти цифры</label>
+    <div class="captcha" id="hubCaptchaCode" aria-live="polite"><b>{safe_captcha_code}</b></div>
+    <input name="captcha_token" type="hidden" value="{safe_captcha_token}">
+    <label for="hubCaptcha">Повтори капчу</label>
+    <input id="hubCaptcha" name="captcha_answer" inputmode="numeric" pattern="[0-9]*" autocomplete="off" required>
+    <button>Войти</button>
+    <div class="hint">Резервная ветка: `Password + 2FA`. Основные альтернативы справа: `Passkey` и `ED25519`.</div>
+      </form>
+      <section class="loginMethods">
+        <section class="methodGrid">
+    <section class="methodCard authFlowCard">
+      <div class="methodMeta">AUTH FLOW</div>
+      <h2>Схема доступа</h2>
+      <p>Основной вход можно увести в Passkey или ED25519, а пароль оставить как резервную ветку с 2FA.</p>
+      <div class="authFlowBoard">
+        <div class="flowStage">WEB-панель</div>
+        <div class="flowArrow">↓</div>
+        <div class="flowStage">Авторизация</div>
+        <div class="flowBranches">
+          <div class="flowBranch">
+            <span class="flowBadge off" id="flowPasskeyState">Passkey: off</span>
+            <strong>Passkey</strong>
+            <small>Android, iPhone, Windows Hello, Face ID, Touch ID и системные ключи.</small>
+          </div>
+          <div class="flowBranch">
+            <span class="flowBadge off" id="flowEd25519State">ED25519: off</span>
+            <strong>ED25519</strong>
+            <small>Вход по SSH challenge и ASCII signature без отправки приватного ключа.</small>
+          </div>
+          <div class="flowBranch">
+            <span class="flowBadge reserve" id="flowPasswordState">Password: reserve</span>
+            <strong>Резерв</strong>
+            <small>Пароль остается запасным методом и усиливается TOTP-кодом, когда 2FA включена.</small>
+          </div>
+        </div>
+        <div class="flowArrow">↓</div>
+        <div class="flowFinal" id="flowSessionState">Secure session</div>
+      </div>
+    </section>
+    <section class="methodCard">
+      <div class="methodMeta">PASSKEY</div>
+      <h2>Вход по Passkey</h2>
+      <p>Android, iPhone, Windows Hello, Touch ID и другие системные ключи могут входить без пароля.</p>
+      <div class="methodBtnRow">
+        <button id="passkeyLoginBtn" type="button">Войти через Passkey</button>
+      </div>
+      <div class="hint" id="passkeyHint">Сначала зарегистрируй passkey в меню доступа внутри панели.</div>
+      <div class="methodStatus" id="passkeyStatus" hidden></div>
+    </section>
+    <section class="methodCard">
+      <div class="methodMeta">ED25519</div>
+      <h2>Вход по SSH ED25519</h2>
+      <p>Запроси challenge, подпиши его своим SSH ED25519 ключом и вставь ASCII signature.</p>
+      <div class="methodBtnRow">
+        <button id="sshChallengeBtn" type="button">Получить challenge</button>
+        <button id="sshVerifyBtn" type="button">Проверить подпись</button>
+      </div>
+      <div class="methodRow">
+        <textarea class="wide" id="sshChallenge" readonly placeholder="Здесь появится challenge для подписи"></textarea>
+        <textarea class="wide" id="sshSignature" placeholder="Вставь блок -----BEGIN SSH SIGNATURE----- ... -----END SSH SIGNATURE-----"></textarea>
+      </div>
+      <div class="codeBlock">Пример:
+ssh-keygen -Y sign -f ~/.ssh/id_ed25519 -n owrt-remote-hub challenge.txt
+
+Подпиши текст challenge и вставь содержимое файла `.sig` сюда.</div>
+      <div class="hint" id="sshHint">Сначала добавь SSH ED25519 ключ в меню доступа внутри панели.</div>
+      <div class="methodStatus" id="sshStatus" hidden></div>
+    </section>
+        </section>
+      </section>
+    </div>
+  </section>
+</main>
+<script>
+const hubUsername = document.getElementById('hubUsername');
+const hubOtp = document.getElementById('hubOtp');
+const passwordModeHint = document.getElementById('passwordModeHint');
+const passkeyLoginBtn = document.getElementById('passkeyLoginBtn');
+const passkeyHint = document.getElementById('passkeyHint');
+const passkeyStatus = document.getElementById('passkeyStatus');
+const sshChallengeBtn = document.getElementById('sshChallengeBtn');
+const sshVerifyBtn = document.getElementById('sshVerifyBtn');
+const sshChallenge = document.getElementById('sshChallenge');
+const sshSignature = document.getElementById('sshSignature');
+const sshHint = document.getElementById('sshHint');
+const sshStatus = document.getElementById('sshStatus');
+const flowPasskeyState = document.getElementById('flowPasskeyState');
+const flowEd25519State = document.getElementById('flowEd25519State');
+const flowPasswordState = document.getElementById('flowPasswordState');
+const flowSessionState = document.getElementById('flowSessionState');
+let loginAuthMeta = {{}};
+let sshTicket = '';
+
+function normalizeLoginUi() {{
+  const authFlowCard = document.querySelector('.authFlowCard');
+  if (authFlowCard) authFlowCard.remove();
+  const reserveHint = document.querySelector('.login > .hint');
+  if (reserveHint) reserveHint.hidden = true;
+  if (passwordModeHint) passwordModeHint.hidden = true;
+}}
+
+function setMethodStatus(node, text, bad = false) {{
+  node.hidden = false;
+  node.className = 'methodStatus' + (bad ? ' bad' : '');
+  node.textContent = text;
+}}
+
+function setFlowBadge(node, text, mode = 'off') {{
+  if (!node) return;
+  node.textContent = text;
+  node.className = 'flowBadge ' + (mode || 'off');
+}}
+
+function b64urlToBytes(value) {{
+  const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}}
+
+function bytesToB64url(buffer) {{
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer || []);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/g, '');
+}}
+
+function decodeRequestOptions(options) {{
+  const publicKey = Object.assign({{}}, options.publicKey || {{}});
+  publicKey.challenge = b64urlToBytes(publicKey.challenge || '');
+  publicKey.allowCredentials = Array.isArray(publicKey.allowCredentials)
+    ? publicKey.allowCredentials.map((item) => Object.assign({{}}, item, {{id: b64urlToBytes(item.id || '')}}))
+    : [];
+  return {{publicKey}};
+}}
+
+function encodeAssertion(assertion) {{
+  return {{
+    id: assertion.id,
+    rawId: bytesToB64url(assertion.rawId),
+    type: assertion.type,
+    authenticatorAttachment: assertion.authenticatorAttachment || null,
+    clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {{}},
+    response: {{
+      clientDataJSON: bytesToB64url(assertion.response.clientDataJSON),
+      authenticatorData: bytesToB64url(assertion.response.authenticatorData),
+      signature: bytesToB64url(assertion.response.signature),
+      userHandle: assertion.response.userHandle ? bytesToB64url(assertion.response.userHandle) : null
+    }}
+  }};
+}}
+
+function updateLoginMeta() {{
+  if (loginAuthMeta.totp_enabled) {{
+    hubOtp.required = true;
+    passwordModeHint.textContent = '2FA включена: для входа по паролю обязателен TOTP-код.';
+  }} else {{
+    hubOtp.required = false;
+    passwordModeHint.textContent = 'Резервный вход через пароль. Когда 2FA включена, сюда нужен TOTP-код.';
+  }}
+  if (!window.PublicKeyCredential || !window.isSecureContext) {{
+    passkeyLoginBtn.disabled = true;
+    passkeyHint.textContent = 'Passkey требует secure context: HTTPS или localhost.';
+  }} else if (!loginAuthMeta.passkeys_supported) {{
+    passkeyLoginBtn.disabled = true;
+    passkeyHint.textContent = 'На сервере еще не установлен WebAuthn модуль. Запусти свежий install-vps.sh.';
+  }} else if (!Number(loginAuthMeta.passkey_count || 0)) {{
+    passkeyLoginBtn.disabled = true;
+    passkeyHint.textContent = 'Сначала зарегистрируй passkey в меню доступа внутри панели.';
+  }} else {{
+    passkeyLoginBtn.disabled = false;
+    passkeyHint.textContent = 'Готово: можно входить через системный passkey.';
+  }}
+}}
+
+function refreshLoginFlowMeta() {{
+  const passkeyCount = Number(loginAuthMeta.passkey_count || 0);
+  const sshCount = Number(loginAuthMeta.ssh_key_count || 0);
+  if (hubUsername && !hubUsername.value) hubUsername.value = loginAuthMeta.username || '';
+  setFlowBadge(flowPasswordState, loginAuthMeta.totp_enabled ? 'Password + 2FA' : 'Password reserve', loginAuthMeta.totp_enabled ? 'ready' : 'reserve');
+  if (!window.PublicKeyCredential || !window.isSecureContext) {{
+    setFlowBadge(flowPasskeyState, 'Passkey: secure context', 'pending');
+  }} else if (!loginAuthMeta.passkeys_supported) {{
+    setFlowBadge(flowPasskeyState, 'Passkey: server module', 'pending');
+  }} else if (!passkeyCount) {{
+    setFlowBadge(flowPasskeyState, 'Passkey: add first key', 'pending');
+  }} else {{
+    setFlowBadge(flowPasskeyState, `Passkey: ${{passkeyCount}}`, 'ready');
+  }}
+  if (!sshCount) {{
+    sshTicket = '';
+    sshChallenge.value = '';
+    sshSignature.value = '';
+    sshChallengeBtn.disabled = true;
+    sshVerifyBtn.disabled = true;
+    sshHint.textContent = 'Сначала добавь SSH ED25519 ключ в меню доступа внутри панели.';
+    setFlowBadge(flowEd25519State, 'ED25519: add key', 'pending');
+  }} else {{
+    sshChallengeBtn.disabled = false;
+    sshVerifyBtn.disabled = !sshTicket;
+    sshHint.textContent = 'Запроси challenge, подпиши его SSH ED25519 ключом и вставь ASCII signature.';
+    setFlowBadge(flowEd25519State, `ED25519: ${{sshCount}}`, 'ready');
+  }}
+  const readyMethods = 1 + (passkeyCount ? 1 : 0) + (sshCount ? 1 : 0);
+  if (flowSessionState) flowSessionState.textContent = `Secure session after auth • paths ready: ${{readyMethods}}`;
+}}
+
+async function loadLoginMeta() {{
+  try {{
+    const res = await fetch('/api/auth/meta', {{cache: 'no-store'}});
+    const data = await res.json();
+    loginAuthMeta = data.auth || {{}};
+    updateLoginMeta();
+    refreshLoginFlowMeta();
+  }} catch (err) {{
+    passwordModeHint.textContent = 'Не удалось получить статус 2FA/Passkey. Парольный вход все равно доступен.';
+  }}
+}}
+
+passkeyLoginBtn.addEventListener('click', async () => {{
+  passkeyStatus.hidden = true;
+  try {{
+    const beginRes = await fetch('/api/login/passkey/begin', {{method: 'POST'}});
+    const beginData = await beginRes.json().catch(() => ({{}}));
+    if (!beginRes.ok || !beginData.ok) throw new Error(beginData.error || 'Не удалось начать Passkey-вход');
+    const assertion = await navigator.credentials.get(decodeRequestOptions(beginData.options || {{}}));
+    const finishRes = await fetch('/api/login/passkey/finish', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{ticket: beginData.ticket, credential: encodeAssertion(assertion)}})
+    }});
+    const finishData = await finishRes.json().catch(() => ({{}}));
+    if (!finishRes.ok || !finishData.ok) throw new Error(finishData.error || 'Passkey-вход не подтвердился');
+    window.location.href = finishData.redirect || '/';
+  }} catch (err) {{
+    setMethodStatus(passkeyStatus, err && err.message ? err.message : 'Passkey-вход не удался', true);
+  }}
+}});
+
+sshChallengeBtn.addEventListener('click', async () => {{
+  sshStatus.hidden = true;
+  try {{
+    const res = await fetch('/api/login/ssh/begin', {{method: 'POST'}});
+    const data = await res.json().catch(() => ({{}}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Не удалось получить challenge');
+    sshTicket = data.ticket || '';
+    sshChallenge.value = data.challenge || '';
+    sshVerifyBtn.disabled = !sshTicket;
+    setMethodStatus(sshStatus, 'Challenge готов. Подпиши его SSH ED25519 ключом и вставь signature.');
+  }} catch (err) {{
+    sshVerifyBtn.disabled = true;
+    setMethodStatus(sshStatus, err && err.message ? err.message : 'Не удалось получить challenge', true);
+  }}
+}});
+
+sshVerifyBtn.addEventListener('click', async () => {{
+  sshStatus.hidden = true;
+  try {{
+    if (!sshTicket || !sshChallenge.value.trim()) throw new Error('Сначала запроси challenge');
+    if (!sshSignature.value.trim()) throw new Error('Вставь ASCII SSH signature');
+    const res = await fetch('/api/login/ssh/finish', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{ticket: sshTicket, signature: sshSignature.value}})
+    }});
+    const data = await res.json().catch(() => ({{}}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Подпись не прошла проверку');
+    window.location.href = data.redirect || '/';
+  }} catch (err) {{
+    setMethodStatus(sshStatus, err && err.message ? err.message : 'Подпись ED25519 не подошла', true);
+  }}
+}});
+
+normalizeLoginUi();
+loadLoginMeta();
+</script>
 </body>
 </html>"""
 
@@ -7397,6 +8833,90 @@ class Handler(BaseHTTPRequestHandler):
     def clear_session_cookie(self):
         return f"{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"
 
+    def request_scheme(self):
+        forwarded = str(self.headers.get("X-Forwarded-Proto", "")).split(",", 1)[0].strip().lower()
+        if forwarded in {"http", "https"}:
+            return forwarded
+        return "https" if isinstance(self.request, ssl.SSLSocket) else "http"
+
+    def request_host(self):
+        return str(self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "").split(",", 1)[0].strip()
+
+    def request_origin(self):
+        return origin_from_parts(self.request_scheme(), self.request_host())
+
+    def request_host_name(self):
+        try:
+            return urllib.parse.urlsplit(self.request_origin()).hostname or ""
+        except Exception:
+            return ""
+
+    def webauthn_rp_id(self):
+        return public_url_rp_id(self.app.public_url) or self.request_host_name()
+
+    def webauthn_allowed_origins(self):
+        values = []
+        for item in (public_url_origin(self.app.public_url), self.request_origin()):
+            if item and item not in values:
+                values.append(item)
+        return values
+
+    def build_webauthn_server(self):
+        if not passkey_supported():
+            raise ValueError("На сервере не установлен модуль Passkey/WebAuthn")
+        rp_id = self.webauthn_rp_id()
+        origins = set(self.webauthn_allowed_origins())
+        if not rp_id or not origins:
+            raise ValueError("Не удалось определить origin/RP ID для Passkey")
+
+        def verify_origin(origin):
+            try:
+                parts = urllib.parse.urlsplit(str(origin or ""))
+                return origin_from_parts(parts.scheme, parts.netloc) in origins
+            except Exception:
+                return False
+
+        return Fido2Server({"id": rp_id, "name": APP_NAME}, verify_origin=verify_origin)
+
+    def require_current_password(self, payload, auth=None):
+        auth = normalize_auth_state(auth or load_auth())
+        current_password = str((payload or {}).get("current_password") or "")
+        if not verify_login(auth.get("username", ""), current_password):
+            raise ValueError("Текущий пароль неверный")
+        return auth
+
+    def create_login_session(self, username="", auth_method="password"):
+        token, session = make_hub_session(
+            username or current_username(),
+            self.client_ip(),
+            self.headers.get("User-Agent", ""),
+            auth_method=auth_method,
+        )
+        add_notification(
+            "login",
+            "Вход в Hub",
+            f"{session.get('client', 'устройство')} · {auth_method_label(auth_method)} · IP {session.get('ip', 'unknown')}",
+            "warn",
+            [session.get("user_agent", "")],
+            {"session_id": session.get("id", ""), "ip": session.get("ip", ""), "auth_method": auth_method},
+        )
+        return token, session
+
+    def send_login_json(self, username="", auth_method="password"):
+        token, _ = self.create_login_session(username, auth_method)
+        body = {
+            "ok": True,
+            "redirect": "/",
+            "auth_method": auth_method,
+            "username": username or current_username(),
+        }
+        self.send_bytes(
+            200,
+            json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8"),
+            "application/json; charset=utf-8",
+            [("Set-Cookie", self.session_cookie(token))],
+        )
+
     def serve_acme_challenge(self, path):
         prefix = "/.well-known/acme-challenge/"
         token = urllib.parse.unquote(path[len(prefix):])
@@ -7426,24 +8946,18 @@ class Handler(BaseHTTPRequestHandler):
         payload = self.read_payload()
         username = payload.get("username", "")
         password = payload.get("password", "")
+        otp = payload.get("otp", "")
         captcha_token = payload.get("captcha_token", "")
         captcha_answer = payload.get("captcha_answer", "")
         if not verify_captcha(captcha_token, captcha_answer):
             self.send_bytes(401, login_html("Неверная капча").encode("utf-8"), "text/html; charset=utf-8")
             return
-        if verify_login(username, password):
-            token, session = make_hub_session(username, self.client_ip(), self.headers.get("User-Agent", ""))
-            add_notification(
-                "login",
-                "Вход в Hub",
-                f"{session.get('client', 'устройство')} · IP {session.get('ip', 'unknown')}",
-                "warn",
-                [session.get("user_agent", "")],
-                {"session_id": session.get("id", ""), "ip": session.get("ip", "")},
-            )
+        ok, error_text, auth, auth_method = verify_password_login(username, password, otp)
+        if ok:
+            token, _ = self.create_login_session(auth.get("username", username), auth_method)
             self.redirect("/", [("Set-Cookie", self.session_cookie(token))])
             return
-        self.send_bytes(401, login_html("Неверный логин или пароль").encode("utf-8"), "text/html; charset=utf-8")
+        self.send_bytes(401, login_html(error_text or "Неверный логин или пароль").encode("utf-8"), "text/html; charset=utf-8")
 
     def update_auth(self):
         payload = self.read_payload()
@@ -7466,9 +8980,309 @@ class Handler(BaseHTTPRequestHandler):
         else:
             clean = clean_username(username)
             auth["username"] = clean
-            auth["updated_at"] = now_ts()
-            write_json_private(AUTH_FILE, auth)
+            save_auth_state(auth)
         self.send_text(200, "Доступ к Hub обновлен")
+
+    def auth_meta(self):
+        if self.admin_ok():
+            self.send_json(200, {"ok": True, "auth": admin_auth_meta()})
+            return
+        self.send_json(200, {"ok": True, "auth": public_auth_meta()})
+
+    def totp_setup(self):
+        try:
+            payload = self.read_payload()
+            auth = self.require_current_password(payload)
+            secret = generate_totp_secret()
+            ticket = put_auth_flow("totp-setup", {"secret": secret, "username": auth.get("username", "admin")})
+            self.send_json(
+                200,
+                {
+                    "ok": True,
+                    "ticket": ticket,
+                    "secret": secret,
+                    "otpauth_uri": totp_otpauth_uri(auth.get("username", "admin"), secret),
+                    "digits": TOTP_DIGITS,
+                    "period": TOTP_PERIOD_SECONDS,
+                },
+            )
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+
+    def totp_enable(self):
+        try:
+            payload = self.read_payload()
+            self.require_current_password(payload)
+            ticket = payload.get("ticket", "")
+            flow = get_auth_flow(ticket, "totp-setup")
+            if not flow:
+                raise ValueError("Сессия настройки 2FA истекла, начни заново")
+            secret = flow.get("secret", "")
+            if not verify_totp(secret, payload.get("code", "")):
+                raise ValueError("Неверный код 2FA")
+            pop_auth_flow(ticket, "totp-setup")
+            auth = update_auth_state(
+                lambda current: {
+                    **current,
+                    "totp": {
+                        **default_totp_state(),
+                        "enabled": True,
+                        "secret": secret,
+                        "digits": TOTP_DIGITS,
+                        "period": TOTP_PERIOD_SECONDS,
+                        "updated_at": now_ts(),
+                    },
+                }
+            )
+            self.send_json(200, {"ok": True, "message": "2FA включена", "auth": admin_auth_meta(auth)})
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+
+    def totp_disable(self):
+        try:
+            payload = self.read_payload()
+            auth = self.require_current_password(payload)
+            if not auth.get("totp", {}).get("enabled"):
+                raise ValueError("2FA уже выключена")
+            if not verify_totp(auth.get("totp", {}).get("secret", ""), payload.get("code", "")):
+                raise ValueError("Неверный код 2FA")
+            auth = update_auth_state(
+                lambda current: {
+                    **current,
+                    "totp": {
+                        **default_totp_state(),
+                        "updated_at": now_ts(),
+                    },
+                }
+            )
+            self.send_json(200, {"ok": True, "message": "2FA выключена", "auth": admin_auth_meta(auth)})
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+
+    def begin_passkey_registration(self):
+        try:
+            payload = self.read_payload()
+            auth = self.require_current_password(payload)
+            server = self.build_webauthn_server()
+            label = str(payload.get("label") or f"Passkey {len(auth.get('passkeys', [])) + 1}").strip()[:80] or "Passkey"
+            options, state = server.register_begin(
+                {
+                    "id": auth.get("username", "admin").encode("utf-8"),
+                    "name": auth.get("username", "admin"),
+                    "displayName": auth.get("username", "admin"),
+                },
+                passkey_credentials(auth),
+                resident_key_requirement=ResidentKeyRequirement.PREFERRED if ResidentKeyRequirement else None,
+                user_verification=UserVerificationRequirement.PREFERRED if UserVerificationRequirement else None,
+            )
+            ticket = put_auth_flow(
+                "passkey-register",
+                {"state": state, "label": label, "username": auth.get("username", "admin")},
+            )
+            self.send_json(200, {"ok": True, "ticket": ticket, "options": webauthn_json(dict(options))})
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+
+    def finish_passkey_registration(self):
+        try:
+            payload = self.read_payload()
+            ticket = payload.get("ticket", "")
+            response = payload.get("credential") if isinstance(payload.get("credential"), dict) else payload
+            flow = pop_auth_flow(ticket, "passkey-register")
+            if not flow:
+                raise ValueError("Passkey-регистрация истекла, начни заново")
+            server = self.build_webauthn_server()
+            auth_data = server.register_complete(flow.get("state"), response)
+            credential_data = auth_data.credential_data
+            if not credential_data:
+                raise ValueError("Не удалось прочитать credential data")
+            key_id = b64url(credential_data.credential_id)
+            label = str(flow.get("label") or "Passkey").strip()[:80] or "Passkey"
+
+            def mutator(current):
+                current = normalize_auth_state(current)
+                rows = [item for item in current.get("passkeys", []) if item.get("id") != key_id]
+                rows.append(
+                    {
+                        "id": key_id,
+                        "label": label,
+                        "credential_data": b64url(bytes(credential_data)),
+                        "created_at": now_ts(),
+                        "last_used_at": 0,
+                        "sign_count": int(auth_data.counter or 0),
+                        "transports": [str(value).strip() for value in payload.get("transports", []) if str(value).strip()],
+                    }
+                )
+                current["passkeys"] = rows
+                return current
+
+            auth = update_auth_state(mutator)
+            self.send_json(200, {"ok": True, "message": "Passkey добавлен", "auth": admin_auth_meta(auth)})
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+
+    def remove_passkey(self):
+        try:
+            payload = self.read_payload()
+            self.require_current_password(payload)
+            credential_id = str(payload.get("id") or "").strip()
+            if not credential_id:
+                raise ValueError("id passkey пустой")
+
+            def mutator(current):
+                current = normalize_auth_state(current)
+                current["passkeys"] = [item for item in current.get("passkeys", []) if item.get("id") != credential_id]
+                return current
+
+            auth = update_auth_state(mutator)
+            self.send_json(200, {"ok": True, "message": "Passkey удален", "auth": admin_auth_meta(auth)})
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+
+    def begin_passkey_login(self):
+        try:
+            auth = load_auth()
+            credentials = passkey_credentials(auth)
+            if not credentials:
+                raise ValueError("Для входа Passkey пока не зарегистрирован")
+            server = self.build_webauthn_server()
+            options, state = server.authenticate_begin(
+                credentials,
+                user_verification=UserVerificationRequirement.PREFERRED if UserVerificationRequirement else None,
+            )
+            ticket = put_auth_flow("passkey-login", {"state": state, "username": auth.get("username", "admin")})
+            self.send_json(200, {"ok": True, "ticket": ticket, "options": webauthn_json(dict(options))})
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+
+    def finish_passkey_login(self):
+        try:
+            payload = self.read_payload()
+            ticket = payload.get("ticket", "")
+            response = payload.get("credential") if isinstance(payload.get("credential"), dict) else payload
+            flow = pop_auth_flow(ticket, "passkey-login")
+            if not flow:
+                raise ValueError("Passkey-челлендж истек, начни вход заново")
+            auth = load_auth()
+            credentials = passkey_credentials(auth)
+            if not credentials:
+                raise ValueError("Passkey не зарегистрирован")
+            server = self.build_webauthn_server()
+            credential = server.authenticate_complete(flow.get("state"), credentials, response)
+            key_id = b64url(credential.credential_id)
+            counter = 0
+            if AuthenticationResponse is not None:
+                try:
+                    auth_response = AuthenticationResponse.from_dict(response)
+                    counter = int(auth_response.response.authenticator_data.counter or 0)
+                except Exception:
+                    counter = 0
+
+            def mutator(current):
+                current = normalize_auth_state(current)
+                for item in current.get("passkeys", []):
+                    if item.get("id") == key_id:
+                        item["last_used_at"] = now_ts()
+                        item["sign_count"] = max(int(item.get("sign_count") or 0), counter)
+                        break
+                return current
+
+            update_auth_state(mutator)
+            self.send_login_json(auth.get("username", "admin"), "passkey")
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+
+    def add_ssh_key(self):
+        try:
+            payload = self.read_payload()
+            self.require_current_password(payload)
+            key = sanitize_ssh_key_record(
+                {
+                    "id": payload.get("id", ""),
+                    "label": payload.get("label", ""),
+                    "public_key": payload.get("public_key", ""),
+                    "created_at": now_ts(),
+                }
+            )
+            if not key:
+                raise ValueError("SSH ED25519 ключ не распознан")
+
+            def mutator(current):
+                current = normalize_auth_state(current)
+                rows = [item for item in current.get("ssh_keys", []) if item.get("public_key") != key.get("public_key")]
+                rows.append(key)
+                current["ssh_keys"] = rows
+                return current
+
+            auth = update_auth_state(mutator)
+            self.send_json(200, {"ok": True, "message": "SSH ED25519 ключ добавлен", "auth": admin_auth_meta(auth)})
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+
+    def remove_ssh_key(self):
+        try:
+            payload = self.read_payload()
+            self.require_current_password(payload)
+            key_id = str(payload.get("id") or "").strip()
+            if not key_id:
+                raise ValueError("id SSH ключа пустой")
+
+            def mutator(current):
+                current = normalize_auth_state(current)
+                current["ssh_keys"] = [item for item in current.get("ssh_keys", []) if item.get("id") != key_id]
+                return current
+
+            auth = update_auth_state(mutator)
+            self.send_json(200, {"ok": True, "message": "SSH ключ удален", "auth": admin_auth_meta(auth)})
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+
+    def begin_ssh_login(self):
+        try:
+            auth = load_auth()
+            ssh_keys = auth.get("ssh_keys", [])
+            if not ssh_keys:
+                raise ValueError("Для входа ED25519 пока нет зарегистрированных ключей")
+            issued_at = now_ts()
+            ticket = put_auth_flow("ssh-login", {"username": auth.get("username", "admin"), "issued_at": issued_at})
+            challenge = build_ssh_auth_message(ticket, auth.get("username", "admin"), self.request_host(), issued_at)
+            self.send_json(
+                200,
+                {
+                    "ok": True,
+                    "ticket": ticket,
+                    "challenge": challenge,
+                    "namespace": ssh_auth_namespace(),
+                    "principal": ssh_auth_principal(auth.get("username", "admin")),
+                    "keys": public_auth_meta(auth).get("ssh_keys", []),
+                },
+            )
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+
+    def finish_ssh_login(self):
+        try:
+            payload = self.read_payload()
+            ticket = str(payload.get("ticket") or "").strip()
+            flow = pop_auth_flow(ticket, "ssh-login")
+            if not flow:
+                raise ValueError("ED25519-челлендж истек, начни вход заново")
+            auth = load_auth()
+            challenge = build_ssh_auth_message(ticket, auth.get("username", "admin"), self.request_host(), flow.get("issued_at", 0))
+            matched = verify_ssh_auth_signature(auth.get("ssh_keys", []), auth.get("username", "admin"), challenge, payload.get("signature", ""))
+
+            def mutator(current):
+                current = normalize_auth_state(current)
+                for item in current.get("ssh_keys", []):
+                    if item.get("id") == matched.get("id"):
+                        item["last_used_at"] = now_ts()
+                        break
+                return current
+
+            update_auth_state(mutator)
+            self.send_login_json(auth.get("username", "admin"), "ed25519")
+        except Exception as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
 
     def router_id_from_path(self, prefix):
         suffix = self.parsed().path[len(prefix):].strip("/")
@@ -8691,6 +10505,9 @@ exit 127
         if path == "/manifest.webmanifest":
             self.send_bytes(200, web_manifest_json().encode("utf-8"), "application/manifest+json; charset=utf-8")
             return
+        if path == "/api/auth/meta":
+            self.auth_meta()
+            return
         if path.startswith("/.well-known/acme-challenge/"):
             self.serve_acme_challenge(path)
             return
@@ -8839,6 +10656,18 @@ exit 127
         if path == "/login":
             self.login()
             return
+        if path == "/api/login/passkey/begin":
+            self.begin_passkey_login()
+            return
+        if path == "/api/login/passkey/finish":
+            self.finish_passkey_login()
+            return
+        if path == "/api/login/ssh/begin":
+            self.begin_ssh_login()
+            return
+        if path == "/api/login/ssh/finish":
+            self.finish_ssh_login()
+            return
         if path == "/api/ssh-session-write":
             self.ssh_http_write_short()
             return
@@ -8891,6 +10720,30 @@ exit 127
             return
         if path == "/api/auth":
             self.update_auth()
+            return
+        if path == "/api/auth/totp/setup":
+            self.totp_setup()
+            return
+        if path == "/api/auth/totp/enable":
+            self.totp_enable()
+            return
+        if path == "/api/auth/totp/disable":
+            self.totp_disable()
+            return
+        if path == "/api/auth/passkeys/begin":
+            self.begin_passkey_registration()
+            return
+        if path == "/api/auth/passkeys/finish":
+            self.finish_passkey_registration()
+            return
+        if path == "/api/auth/passkeys/remove":
+            self.remove_passkey()
+            return
+        if path == "/api/auth/ssh-keys/add":
+            self.add_ssh_key()
+            return
+        if path == "/api/auth/ssh-keys/remove":
+            self.remove_ssh_key()
             return
         if path == "/api/session/client-hint":
             payload = self.read_payload()
