@@ -6547,6 +6547,7 @@ const backupPublicUrl = document.getElementById('backupPublicUrl');
 const backupRestore = document.getElementById('backupRestore');
 const backupMsg = document.getElementById('backupMsg');
 const authForm = document.getElementById('authForm');
+const authUsernameField = authForm && authForm.elements ? authForm.elements.namedItem('username') : null;
 const authMsg = document.getElementById('authMsg');
 const authSummary = document.getElementById('authSummary');
 const totpState = document.getElementById('totpState');
@@ -6575,6 +6576,8 @@ const sshKeyList = document.getElementById('sshKeyList');
 let authHideTimer;
 let authMeta = null;
 let authTotpTicket = '';
+let authUsernameDraftDirty = false;
+let authUsernameServerValue = authUsernameField && 'value' in authUsernameField ? String(authUsernameField.value || '') : '';
 function hideOfflineStats() {{
   if (!offlineStatsExpanded) return;
   offlineStatsExpanded = false;
@@ -6588,6 +6591,26 @@ function closeAuthMenu(returnFocus = false) {{
 if (authMenuHeadTitle) authMenuHeadTitle.textContent = '\u0414\u043e\u0441\u0442\u0443\u043f \u043a Hub';
 if (authMenuHeadLead) authMenuHeadLead.hidden = true;
 if (authMenuClose) authMenuClose.textContent = '\u0417\u0430\u043a\u0440\u044b\u0442\u044c';
+function syncAuthUsernameField(force = false) {{
+  if (!authUsernameField || !authMeta || !authMeta.username) return;
+  const serverValue = String(authMeta.username || '');
+  const isEditing = document.activeElement === authUsernameField;
+  if (!force && (isEditing || authUsernameDraftDirty)) {{
+    authUsernameServerValue = serverValue;
+    return;
+  }}
+  authUsernameField.value = serverValue;
+  authUsernameServerValue = serverValue;
+  authUsernameDraftDirty = false;
+}}
+if (authUsernameField) {{
+  const updateAuthUsernameDraftState = () => {{
+    authUsernameDraftDirty = String(authUsernameField.value || '') !== authUsernameServerValue;
+  }};
+  authUsernameField.addEventListener('input', updateAuthUsernameDraftState);
+  authUsernameField.addEventListener('change', updateAuthUsernameDraftState);
+  authUsernameField.addEventListener('blur', updateAuthUsernameDraftState);
+}}
 function localizeAuthUi() {{
   const securityGroupTitle = document.getElementById('securityGroupTitle');
   const securityGroupLead = document.getElementById('securityGroupLead');
@@ -6701,8 +6724,9 @@ localizeAuthUi();
 function showAuthMenu() {{
   clearTimeout(authHideTimer);
   hideOfflineStats();
+  const wasHidden = authMenu.hidden;
   authMenu.hidden = false;
-  loadAuthMeta({{silent: true}}).catch(() => {{}});
+  if (wasHidden) loadAuthMeta({{silent: true}}).catch(() => {{}});
 }}
 function scheduleHideAuthMenu() {{
   clearTimeout(authHideTimer);
@@ -6887,16 +6911,13 @@ function renderAuthMeta() {{
   renderSshKeyRows(meta.ssh_keys || []);
 }}
 
-async function loadAuthMeta({{silent = false}} = {{}}) {{
+async function loadAuthMeta({{silent = false, forceUsername = false}} = {{}}) {{
   try {{
     const res = await fetch('/api/auth/meta', {{cache: 'no-store'}});
     const data = await res.json().catch(() => ({{}}));
     if (!res.ok || !data.ok) throw new Error(data.error || 'Не удалось получить статус авторизации');
     authMeta = data.auth || {{}};
-    if (authForm && authForm.elements && authMeta.username) {{
-      const usernameField = authForm.elements.namedItem('username');
-      if (usernameField) usernameField.value = authMeta.username;
-    }}
+    syncAuthUsernameField(forceUsername);
     if (authToggle && authMeta.username) authToggle.textContent = authMeta.username;
     renderAuthMeta();
     return authMeta;
@@ -7391,7 +7412,8 @@ authForm.addEventListener('submit', async (ev) => {{
     ev.currentTarget.current_password.value = '';
     ev.currentTarget.password.value = '';
     ev.currentTarget.password_confirm.value = '';
-    await loadAuthMeta({{silent: true}}).catch(() => {{}});
+    authUsernameDraftDirty = false;
+    await loadAuthMeta({{silent: true, forceUsername: true}}).catch(() => {{}});
   }} else {{
     setAuthMessage(text || 'Не удалось сохранить', true);
   }}
