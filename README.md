@@ -38,7 +38,8 @@
 Роутер сам подключается к VPS изнутри сети, а ты заходишь в Hub-панель и открываешь нужный роутер, LuCI или SSH Web Terminal.
 </p>
 
-<img width="1920" height="1670" alt="KVWwSQg7uB" src="https://github.com/user-attachments/assets/429cbb02-0235-48f0-a449-b2c4b81b15cc" />
+<img width="1920" height="1852" alt="FireShot Capture 056 - OpenWrt Remote Hub -  wrthub developer li" src="https://github.com/user-attachments/assets/88a8a019-a4b0-4764-aeec-ab50330a0ca0" />
+
 
 <table>
 <tr>
