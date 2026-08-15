@@ -100,6 +100,12 @@ SESSION_TTL_SECONDS = int(os.environ.get("OWRT_REMOTE_SESSION_TTL", str(30 * 24 
 CAPTCHA_TTL_SECONDS = 600
 CAPTCHA_MODE_DIGITS = "digits"
 CAPTCHA_MODE_RECAPTCHA = "recaptcha"
+ROUTER_ACCESS_FLAGS = ("A", "B", "G")
+ROUTER_ACCESS_LABELS = {
+    "A": "Web only",
+    "B": "Web + SSH",
+    "G": "Full router access",
+}
 RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
 AUTH_CHALLENGE_TTL_SECONDS = 300
 TOTP_PERIOD_SECONDS = 30
@@ -581,12 +587,296 @@ def normalize_auth_state(data):
     state["passkeys"] = passkeys
     state["ssh_keys"] = ssh_keys
     state["captcha"] = sanitize_captcha_state(raw.get("captcha"))
+    delegated_users = []
+    seen_delegated_usernames = {state["username"]}
+    for item in raw.get("delegated_users", []) if isinstance(raw.get("delegated_users"), list) else []:
+        clean = sanitize_delegated_user_record(item)
+        if not clean:
+            continue
+        username = clean.get("username", "")
+        if not username or username in seen_delegated_usernames:
+            continue
+        seen_delegated_usernames.add(username)
+        delegated_users.append(clean)
+    delegated_users.sort(key=lambda item: str(item.get("username") or "").lower())
+    state["delegated_users"] = delegated_users
     social_state = {}
     raw_social = raw.get("social") if isinstance(raw.get("social"), dict) else {}
     for provider in SOCIAL_PROVIDERS:
         social_state[provider] = sanitize_social_provider_state(provider, raw_social.get(provider))
     state["social"] = social_state
     return state
+
+
+def normalize_router_access_flags(value):
+    flags = set()
+    if isinstance(value, (list, tuple, set)):
+        items = value
+    else:
+        items = re.findall(r"[ABG]", str(value or "").upper())
+    for item in items:
+        token = str(item or "").strip().upper()
+        if token in ROUTER_ACCESS_FLAGS:
+            flags.add(token)
+    if "G" in flags:
+        return ["G"]
+    if "B" in flags:
+        return ["A", "B"]
+    if "A" in flags:
+        return ["A"]
+    return []
+
+
+def expand_router_access_flags(value):
+    flags = normalize_router_access_flags(value)
+    if "G" in flags:
+        return {"A", "B", "G"}
+    if "B" in flags:
+        return {"A", "B"}
+    if "A" in flags:
+        return {"A"}
+    return set()
+
+
+def sanitize_router_access_map(value):
+    if not isinstance(value, dict):
+        return {}
+    clean = {}
+    for router_id, flags in value.items():
+        try:
+            router_key = clean_router_id(router_id)
+        except Exception:
+            continue
+        normalized = normalize_router_access_flags(flags)
+        if normalized:
+            clean[router_key] = normalized
+    return dict(sorted(clean.items(), key=lambda item: item[0].lower()))
+
+
+def sanitize_delegated_user_record(item):
+    if not isinstance(item, dict):
+        return None
+    try:
+        username = clean_username(item.get("username", ""))
+    except Exception:
+        return None
+    password = item.get("password") if isinstance(item.get("password"), dict) else {}
+    if not str(password.get("hash") or "").strip():
+        return None
+    ts = now_ts()
+    return {
+        "id": str(item.get("id") or secrets.token_hex(8)).strip()[:64] or secrets.token_hex(8),
+        "username": username,
+        "password": password,
+        "enabled": bool(item.get("enabled", True)),
+        "router_flags": sanitize_router_access_map(item.get("router_flags")),
+        "created_at": int(item.get("created_at") or ts),
+        "updated_at": int(item.get("updated_at") or ts),
+    }
+
+
+def auth_password_matches(stored, password):
+    stored = stored if isinstance(stored, dict) else {}
+    digest = password_digest(password or "", stored.get("salt"), stored.get("iterations", PBKDF2_ITERATIONS))
+    return secrets.compare_digest(digest["hash"], str(stored.get("hash") or ""))
+
+
+def find_delegated_user(auth, username):
+    wanted = str(username or "").strip()
+    if not wanted:
+        return None
+    for item in normalize_auth_state(auth).get("delegated_users", []):
+        if secrets.compare_digest(item.get("username", ""), wanted):
+            return item
+    return None
+
+
+def effective_router_access_map(user):
+    if not isinstance(user, dict):
+        return {}
+    result = {}
+    for router_id, flags in (user.get("router_flags") or {}).items():
+        expanded = sorted(expand_router_access_flags(flags))
+        if expanded:
+            result[str(router_id)] = expanded
+    return result
+
+
+def account_profile(auth, username):
+    auth = normalize_auth_state(auth or load_auth())
+    wanted = str(username or "").strip()
+    owner_username = auth.get("username", "admin")
+    if wanted and secrets.compare_digest(wanted, owner_username):
+        return {
+            "username": owner_username,
+            "is_owner": True,
+            "enabled": True,
+            "router_flags": {},
+            "router_ids": [],
+        }
+    delegated = find_delegated_user(auth, wanted)
+    if not delegated or not delegated.get("enabled"):
+        return None
+    router_map = effective_router_access_map(delegated)
+    return {
+        "id": delegated.get("id", ""),
+        "username": delegated.get("username", ""),
+        "is_owner": False,
+        "enabled": True,
+        "router_flags": router_map,
+        "router_ids": sorted(router_map.keys()),
+    }
+
+
+def router_flags_for_account(account, router_id):
+    if not isinstance(account, dict):
+        return set()
+    if account.get("is_owner"):
+        return {"A", "B", "G"}
+    return set((account.get("router_flags") or {}).get(str(router_id or ""), []))
+
+
+def account_has_router_flag(account, router_id, flag):
+    token = str(flag or "").strip().upper()
+    if token == "A":
+        return bool(router_flags_for_account(account, router_id) & {"A", "B", "G"})
+    if token == "B":
+        return bool(router_flags_for_account(account, router_id) & {"B", "G"})
+    if token == "G":
+        return "G" in router_flags_for_account(account, router_id)
+    return False
+
+
+def account_can_add_router(account):
+    if not isinstance(account, dict):
+        return False
+    if account.get("is_owner"):
+        return True
+    for flags in (account.get("router_flags") or {}).values():
+        if "G" in set(flags or []):
+            return True
+    return False
+
+
+def grant_delegated_router_flag(auth, username, router_id, flag="G"):
+    auth = normalize_auth_state(auth or load_auth())
+    wanted_user = str(username or "").strip()
+    wanted_router = str(router_id or "").strip()
+    token = str(flag or "").strip().upper()
+    if not wanted_user or not wanted_router or token not in ROUTER_ACCESS_FLAGS:
+        return auth
+    updated_users = []
+    changed = False
+    for item in auth.get("delegated_users", []):
+        current_username = str(item.get("username") or "").strip()
+        if not secrets.compare_digest(current_username, wanted_user):
+            updated_users.append(item)
+            continue
+        router_flags = sanitize_router_access_map(item.get("router_flags"))
+        next_flags = set(router_flags.get(wanted_router, []))
+        if token not in next_flags:
+            next_flags.add(token)
+            router_flags[wanted_router] = [candidate for candidate in ROUTER_ACCESS_FLAGS if candidate in next_flags]
+            item = {**item, "router_flags": router_flags, "updated_at": now_ts()}
+            changed = True
+        updated_users.append(item)
+    if not changed:
+        return auth
+    return save_auth_state({**auth, "delegated_users": updated_users})
+
+
+def delegated_user_session_snapshot(session_rows=None):
+    rows = [item for item in (session_rows or []) if isinstance(item, dict)]
+    if not rows:
+        return {
+            "count": 0,
+            "created_at": 0,
+            "last_seen": 0,
+            "ip": "",
+            "client": "",
+            "auth_method": "",
+        }
+    rows.sort(key=lambda item: (int(item.get("last_seen") or 0), int(item.get("created_at") or 0)), reverse=True)
+    latest = rows[0]
+    return {
+        "count": len(rows),
+        "created_at": int(latest.get("created_at") or 0),
+        "last_seen": int(latest.get("last_seen") or 0),
+        "ip": str(latest.get("ip") or ""),
+        "client": str(latest.get("client") or ""),
+        "auth_method": str(latest.get("auth_method") or ""),
+    }
+
+
+def delegated_user_login_snapshot(login_rows=None):
+    rows = [item for item in (login_rows or []) if isinstance(item, dict)]
+    if not rows:
+        return {
+            "count": 0,
+            "ts": 0,
+            "ip": "",
+            "client": "",
+            "auth_method": "",
+        }
+    rows.sort(key=lambda item: int(item.get("ts") or 0), reverse=True)
+    latest = rows[0]
+    return {
+        "count": len(rows),
+        "ts": int(latest.get("ts") or 0),
+        "ip": str(latest.get("ip") or ""),
+        "client": str(latest.get("client") or ""),
+        "auth_method": str(latest.get("auth_method") or ""),
+    }
+
+
+def serialize_delegated_user(auth, user, router_rows=None, session_rows=None, login_rows=None):
+    auth = normalize_auth_state(auth or load_auth())
+    user = sanitize_delegated_user_record(user)
+    if not user:
+        return None
+    session = delegated_user_session_snapshot(session_rows)
+    login = delegated_user_login_snapshot(login_rows)
+    active_session_count = int(session.get("count") or 0)
+    login_count = int(login.get("count") or 0)
+    last_login_at = int(login.get("ts") or session.get("created_at") or 0)
+    last_seen_at = int(session.get("last_seen") or login.get("ts") or 0)
+    last_ip = session.get("ip") or login.get("ip") or ""
+    last_client = session.get("client") or login.get("client") or ""
+    last_auth_method = session.get("auth_method") or login.get("auth_method") or ""
+    router_name_map = {}
+    for row in router_rows or []:
+        router = row_to_router(row)
+        router_name_map[str(router.get("id") or "")] = str(router.get("name") or router.get("id") or "")
+    router_access = []
+    for router_id, flags in effective_router_access_map(user).items():
+        label = "".join(flag for flag in ROUTER_ACCESS_FLAGS if flag in flags)
+        router_access.append(
+            {
+                "id": router_id,
+                "name": router_name_map.get(router_id, router_id),
+                "flags": flags,
+                "flag_label": label or "-",
+            }
+        )
+    router_access.sort(key=lambda item: str(item.get("name") or item.get("id") or "").lower())
+    return {
+        "id": user.get("id", ""),
+        "username": user.get("username", ""),
+        "enabled": bool(user.get("enabled")),
+        "created_at": int(user.get("created_at") or 0),
+        "updated_at": int(user.get("updated_at") or 0),
+        "router_flags": effective_router_access_map(user),
+        "router_access": router_access,
+        "router_count": len(router_access),
+        "session_count": active_session_count,
+        "login_count": login_count,
+        "online": bool(active_session_count),
+        "last_login_at": last_login_at,
+        "last_seen_at": last_seen_at,
+        "last_ip": last_ip,
+        "last_client": last_client,
+        "last_auth_method": last_auth_method,
+    }
 
 
 def public_auth_meta(auth=None):
@@ -934,14 +1224,20 @@ def canonical_router_hub_update(router, app_public_url="", request_origin=""):
 
 def verify_password_login(username, password, otp=""):
     auth = load_auth()
+    profile = account_profile(auth, username)
+    if not profile:
+        return False, "Неверный логин или пароль", {}, "password"
     if not verify_login(username, password):
         return False, "Неверный логин или пароль", auth, "password"
-    totp = auth.get("totp", {})
+    if profile.get("is_owner"):
+        totp = auth.get("totp", {})
+    else:
+        totp = {}
     if totp.get("enabled"):
         if not verify_totp(totp.get("secret", ""), otp):
             return False, "Неверный код 2FA", auth, "password+totp"
-        return True, "", auth, "password+totp"
-    return True, "", auth, "password"
+        return True, "", profile, "password+totp"
+    return True, "", profile, "password"
 
 
 def ssh_auth_namespace():
@@ -1214,15 +1510,17 @@ def clean_username(value):
 def verify_login(username, password):
     try:
         auth = load_auth()
-        stored_user = auth.get("username", "")
-        stored = auth.get("password", {})
-        digest = password_digest(password or "", stored.get("salt"), stored.get("iterations", PBKDF2_ITERATIONS))
     except Exception:
         return False
-    return secrets.compare_digest(username or "", stored_user) and secrets.compare_digest(
-        digest["hash"],
-        stored.get("hash", ""),
-    )
+    wanted = str(username or "").strip()
+    if not wanted:
+        return False
+    if secrets.compare_digest(wanted, auth.get("username", "")):
+        return auth_password_matches(auth.get("password", {}), password)
+    delegated = find_delegated_user(auth, wanted)
+    if not delegated or not delegated.get("enabled"):
+        return False
+    return auth_password_matches(delegated.get("password", {}), password)
 
 
 def current_username():
@@ -1440,14 +1738,35 @@ def revoke_hub_session(session_id="", token=""):
     return removed
 
 
-def list_hub_sessions(current_token=""):
+def revoke_hub_sessions_for_username(username=""):
+    wanted_user = str(username or "").strip()
+    if not wanted_user:
+        return 0
+    revoke_ids = {
+        str(session.get("id") or "")
+        for session in load_sessions()
+        if str(session.get("username") or "").strip() == wanted_user
+    }
+    removed = 0
+    for session_id in revoke_ids:
+        if not session_id:
+            continue
+        removed += revoke_hub_session(session_id=session_id)
+    return removed
+
+
+def list_hub_sessions(current_token="", username=""):
     current_hash = session_hash(current_token) if current_token else ""
+    wanted_user = str(username or "").strip()
     rows = []
     for session in sorted(load_sessions(), key=lambda item: int(item.get("last_seen") or 0), reverse=True):
+        session_username = str(session.get("username") or "")
+        if wanted_user and not secrets.compare_digest(session_username, wanted_user):
+            continue
         rows.append(
             {
                 "id": session.get("id", ""),
-                "username": session.get("username", ""),
+                "username": session_username,
                 "ip": session.get("ip", ""),
                 "client": session.get("client") or client_label(session.get("user_agent", "")),
                 "user_agent": session.get("user_agent", ""),
@@ -1458,6 +1777,33 @@ def list_hub_sessions(current_token=""):
                 "current": bool(current_hash and secrets.compare_digest(session.get("token_hash", ""), current_hash)),
             }
         )
+    return rows
+
+
+def list_login_events(username=""):
+    wanted_user = str(username or "").strip()
+    rows = []
+    for item in load_notifications():
+        if str(item.get("kind") or "") != "login":
+            continue
+        data = item.get("data") if isinstance(item.get("data"), dict) else {}
+        event_username = str(data.get("username") or "").strip()
+        if wanted_user and not event_username:
+            continue
+        if wanted_user and not secrets.compare_digest(event_username, wanted_user):
+            continue
+        rows.append(
+            {
+                "id": item.get("id", ""),
+                "username": event_username,
+                "ip": str(data.get("ip") or ""),
+                "client": str(data.get("client") or ""),
+                "user_agent": str(data.get("user_agent") or ""),
+                "ts": int(item.get("ts") or 0),
+                "auth_method": str(data.get("auth_method") or "password"),
+            }
+        )
+    rows.sort(key=lambda item: int(item.get("ts") or 0), reverse=True)
     return rows
 
 
@@ -2364,6 +2710,62 @@ def row_to_router(row):
     data["xray_client_url"] = f"/router/{urllib.parse.quote(data['id'])}/xray-client.json"
     data.pop("status_json", None)
     return data
+
+
+def router_with_access(router, account):
+    router = dict(router or {})
+    router_id = str(router.get("id") or "")
+    can_admin = account_has_router_flag(account, router_id, "A")
+    can_ssh = account_has_router_flag(account, router_id, "B")
+    can_manage = account_has_router_flag(account, router_id, "G")
+    router["access_flags"] = sorted(router_flags_for_account(account, router_id))
+    router["permissions"] = {
+        "owner": bool(account and account.get("is_owner")),
+        "admin": bool(can_admin),
+        "ssh": bool(can_ssh),
+        "manage": bool(can_manage),
+        "config": bool(can_manage),
+        "wol": bool(can_manage),
+        "traffic": bool(can_manage),
+        "delete": bool(account and account.get("is_owner")),
+        "diagnose": bool(can_manage),
+    }
+    return router
+
+
+def delegated_auth_meta(auth=None, account=None, router_rows=None):
+    auth = normalize_auth_state(auth or load_auth())
+    account = account or account_profile(auth, "")
+    router_rows = list(router_rows or [])
+    router_name_map = {}
+    for row in router_rows:
+        router = row_to_router(row)
+        router_name_map[str(router.get("id") or "")] = str(router.get("name") or router.get("id") or "")
+    assigned = []
+    for router_id in sorted((account or {}).get("router_ids", []), key=str.lower):
+        flags = sorted(router_flags_for_account(account, router_id))
+        if not flags:
+            continue
+        assigned.append(
+            {
+                "id": router_id,
+                "name": router_name_map.get(router_id, router_id),
+                "flags": flags,
+                "flag_label": "".join(flag for flag in ROUTER_ACCESS_FLAGS if flag in flags) or "-",
+            }
+        )
+    return {
+        "username": (account or {}).get("username") or auth.get("username", "admin"),
+        "is_owner": False,
+        "can_add_router": bool(account_can_add_router(account)),
+        "current_user": {
+            "username": (account or {}).get("username") or auth.get("username", "admin"),
+            "is_owner": False,
+        },
+        "assigned_routers": assigned,
+        "router_access": {item.get("id", ""): item.get("flags", []) for item in assigned},
+        "passkeys_supported": passkey_supported(),
+    }
 
 
 def router_notification_label(router):
@@ -3416,10 +3818,12 @@ def parse_resize_payload(payload):
     return message.get("rows"), message.get("cols")
 
 
-def dashboard_html(routers, username, sessions=None, notifications=None):
+def dashboard_html(routers, username, sessions=None, notifications=None, auth_bootstrap=None):
     routers_json = json.dumps(routers, ensure_ascii=False)
     sessions_json = json.dumps(sessions or [], ensure_ascii=False)
     notifications_json = json.dumps(notifications or [], ensure_ascii=False)
+    auth_bootstrap_json = json.dumps(auth_bootstrap or {}, ensure_ascii=False)
+    is_owner = bool((auth_bootstrap or {}).get("is_owner"))
     safe_username = html.escape(username, quote=True)
     return f"""<!doctype html>
 <html lang="ru">
@@ -3439,7 +3843,7 @@ body::before{{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none
 h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10);overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.appBannerVersion{{color:#fb7185;text-shadow:0 0 12px rgba(251,113,133,.35)}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px}}.links{{margin-top:0;flex-wrap:nowrap}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-self:flex-start;justify-content:flex-start;align-content:flex-start;flex:1 1 auto;min-width:0;gap:8px;padding-top:0;max-width:none}}.headerActions .badge,.headerActions .btn{{width:100%;min-height:36px;min-width:0;padding:8px 10px;border-radius:999px;font-weight:800;font-size:12px;line-height:1;white-space:nowrap}}.headerActions .btn[href="/logout"]{{margin-left:0}}.badge{{background:rgba(255,255,255,.08);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.nethavenTop{{border-color:rgba(34,211,238,.46);background:linear-gradient(110deg,rgba(14,165,233,.20),rgba(168,85,247,.22),rgba(34,197,94,.14));color:#ecfeff;box-shadow:0 10px 24px rgba(14,165,233,.14),inset 0 1px 0 rgba(255,255,255,.10)}}.nethavenTop::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite;pointer-events:none}}.authToggle{{cursor:pointer}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
  .toolbar{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1.25fr) minmax(88px,.46fr) minmax(92px,.48fr) minmax(0,1.1fr) minmax(116px,.58fr);gap:8px;margin:18px 0;padding:14px 16px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px);width:100%;max-width:100%;box-sizing:border-box}}.toolbar>*{{width:100%;min-width:0}}.toolbar input,.toolbar select{{background:rgba(255,255,255,.08);border-color:var(--line);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}}.toolbar input::placeholder{{color:#b9adc9}}
 .authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:60;width:min(640px,calc(100vw - 44px));max-height:min(820px,calc(100svh - 120px));overflow:auto;padding:16px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px);scrollbar-width:thin}}.authMenu[hidden]{{display:none}}.authMenu>h2,.authMenu>p{{display:none}}.authMenuHead{{position:relative;display:block}}.authMenuHead>div{{min-width:0}}.authMenuHead p{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenuClose{{display:none;position:absolute;top:14px;right:14px;min-height:34px;padding:7px 12px;border-radius:999px;white-space:nowrap}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
-.authGroup{{margin-top:14px;border:1px solid rgba(34,211,238,.22);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03)),rgba(15,10,26,.78);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.authGroupSummary{{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;cursor:pointer;list-style:none}}.authGroupSummary::-webkit-details-marker{{display:none}}.authGroupTitle strong{{display:block;color:#f7f2ff;font-size:15px;font-weight:900;line-height:1.15}}.authGroupTitle span{{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35}}.authGroupChevron{{display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.08);color:#dbeafe;font-size:16px;line-height:1;transition:transform .18s ease,background .18s ease,border-color .18s ease}}.authGroup[open] .authGroupChevron{{transform:rotate(180deg);background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.24)}}.authGroupBody{{padding:0 14px 14px;border-top:1px solid rgba(255,255,255,.08)}}.authGroupBody>.authPasswordSection{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.authOverview{{margin-top:0;padding-top:14px;border-top:0}}.authGroupBody>.sessionBox{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.notifyBox{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.backupBox{{margin-top:14px;padding-top:0;border-top:0}}.authOverview{{display:grid;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.authPills{{display:flex;flex-wrap:wrap;gap:8px}}.authPill{{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.08);color:#dbeafe;font-size:12px;font-weight:850}}.authPill.off{{border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#c4b5fd}}.authSection{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.authSectionHead{{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}}.authSectionHead h3{{margin:0;font-size:15px}}.authSectionHead p{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.35}}.authSectionState{{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:6px 10px;border:1px solid rgba(34,197,94,.30);border-radius:999px;background:rgba(34,197,94,.12);color:#bbf7d0;font-size:12px;font-weight:850;white-space:nowrap}}.authSectionState.off{{border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#c4b5fd}}.authSectionState.warn{{border-color:rgba(251,191,36,.28);background:rgba(251,191,36,.11);color:#fde68a}}.authFields{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}.authFields .wide{{grid-column:1/-1}}.authFields input,.authFields textarea{{width:100%;min-width:0}}.authFields textarea{{min-height:92px;resize:vertical}}.authActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}}.authActions .sessionBtn,.authActions .btn,.authActions button{{flex:1 1 180px}}.authHint{{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.35}}.authSecretBox{{margin-top:10px;padding:10px;border:1px solid rgba(34,211,238,.24);border-radius:8px;background:rgba(34,211,238,.08)}}.authSecretBox strong{{display:block;margin-bottom:6px;font-size:12px;color:#f7f2ff}}.authSecretValue{{margin:0;padding:9px 10px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.18);color:#c4b5fd;font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word}}.authList{{display:grid;gap:8px;margin-top:10px}}.authRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.authRowTitle{{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:900}}.authRowMeta{{margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.authRowKey{{margin-top:7px;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-all}}.authEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}.authDanger{{color:#fecdd3}}.authSocialIdentity{{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center}}.authSocialAvatar{{width:38px;height:38px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.05);display:grid;place-items:center;color:#dbeafe;font-size:15px;font-weight:900}}.authSocialAvatar img{{display:block;width:100%;height:100%;object-fit:cover}}.authSocialName{{font-weight:900;color:#f7f2ff}}.authSocialHandle{{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}
+.authGroup{{margin-top:14px;border:1px solid rgba(34,211,238,.22);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03)),rgba(15,10,26,.78);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.authGroupSummary{{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;cursor:pointer;list-style:none}}.authGroupSummary::-webkit-details-marker{{display:none}}.authGroupTitle strong{{display:block;color:#f7f2ff;font-size:15px;font-weight:900;line-height:1.15}}.authGroupTitle span{{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35}}.authGroupChevron{{display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.08);color:#dbeafe;font-size:16px;line-height:1;transition:transform .18s ease,background .18s ease,border-color .18s ease}}.authGroup[open] .authGroupChevron{{transform:rotate(180deg);background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.24)}}.authGroupBody{{padding:0 14px 14px;border-top:1px solid rgba(255,255,255,.08)}}.authGroupBody>.authPasswordSection{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.authOverview{{margin-top:0;padding-top:14px;border-top:0}}.authGroupBody>.sessionBox{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.notifyBox{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.backupBox{{margin-top:14px;padding-top:0;border-top:0}}.authOverview{{display:grid;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.authPills{{display:flex;flex-wrap:wrap;gap:8px}}.authPill{{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.08);color:#dbeafe;font-size:12px;font-weight:850}}.authPill.off{{border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#c4b5fd}}.authSection{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.authSectionHead{{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}}.authSectionHead h3{{margin:0;font-size:15px}}.authSectionHead p{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.35}}.authSectionState{{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:6px 10px;border:1px solid rgba(34,197,94,.30);border-radius:999px;background:rgba(34,197,94,.12);color:#bbf7d0;font-size:12px;font-weight:850;white-space:nowrap}}.authSectionState.off{{border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#c4b5fd}}.authSectionState.warn{{border-color:rgba(251,191,36,.28);background:rgba(251,191,36,.11);color:#fde68a}}.authFields{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}.authFields .wide{{grid-column:1/-1}}.authFields input,.authFields textarea{{width:100%;min-width:0}}.authFields textarea{{min-height:92px;resize:vertical}}.authActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}}.authActions .sessionBtn,.authActions .btn,.authActions button{{flex:1 1 180px}}.authHint{{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.35}}.authRememberToggle{{display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:7px 11px;border:1px solid rgba(255,255,255,.10);border-radius:999px;background:rgba(255,255,255,.05);color:var(--muted);font-size:12px;font-weight:750;cursor:pointer;user-select:none}}.authRememberToggle input{{width:14px;height:14px;margin:0;flex:0 0 14px;accent-color:#22c55e}}.authSecretBox{{margin-top:10px;padding:10px;border:1px solid rgba(34,211,238,.24);border-radius:8px;background:rgba(34,211,238,.08)}}.authSecretBox strong{{display:block;margin-bottom:6px;font-size:12px;color:#f7f2ff}}.authSecretValue{{margin:0;padding:9px 10px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.18);color:#c4b5fd;font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word}}.authList{{display:grid;gap:8px;margin-top:10px}}.authRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.authRowAll{{border-style:dashed;background:linear-gradient(135deg,rgba(34,211,238,.10),rgba(34,197,94,.08),rgba(255,255,255,.04))}}.authRowTitle{{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:900}}.authRowMeta{{margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.authRowKey{{margin-top:7px;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-all}}.authRouterFlags{{justify-content:flex-end}}.authFlagPill{{gap:6px;min-height:30px;padding:5px 8px;cursor:pointer;user-select:none;touch-action:manipulation}}.authFlagPill input{{width:14px;height:14px;margin:0;flex:0 0 14px;accent-color:#22c55e}}.authFlagPill span{{font-size:11px;font-weight:900;line-height:1}}.authEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}.authDanger{{color:#fecdd3}}.authSocialIdentity{{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center}}.authSocialAvatar{{width:38px;height:38px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.05);display:grid;place-items:center;color:#dbeafe;font-size:15px;font-weight:900}}.authSocialAvatar img{{display:block;width:100%;height:100%;object-fit:cover}}.authSocialName{{font-weight:900;color:#f7f2ff}}.authSocialHandle{{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}
 .sessionBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.sessionHead{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}}.sessionHead h3{{margin:0;font-size:15px}}.sessionList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.sessionRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.sessionTitle{{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-weight:900}}.sessionMeta{{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.sessionCurrent{{border:1px solid rgba(34,197,94,.38);border-radius:999px;padding:2px 7px;color:#bbf7d0;background:rgba(34,197,94,.13);font-size:11px}}.sessionBtn{{padding:7px 9px;font-size:12px;border-radius:999px}}.sessionEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}
 .notifyBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.notifyActions{{display:flex;gap:7px;align-items:center;justify-content:flex-end;flex-wrap:wrap}}.notifyHint{{margin:-4px 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.notifyList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.notifyRow{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.notifyTitle{{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:950}}.notifyTitle span:first-child{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.notifyTime{{color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}}.notifyBody{{margin-top:4px;color:#ddd6fe;font-size:12px;line-height:1.35;word-break:break-word}}.notifyDetails{{margin:7px 0 0;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;max-height:92px;overflow:auto}}.notifyRow.warn{{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.08)}}.notifyRow.bad{{border-color:rgba(251,113,133,.38);background:rgba(251,113,133,.09)}}.notifyBtn.on{{border-color:rgba(34,197,94,.36);background:rgba(34,197,94,.15);color:#bbf7d0}}
 .backupBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.backupGrid{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}.backupGrid .wide{{grid-column:1/-1}}.backupGrid input[type=file]{{padding:8px;background:rgba(8,5,18,.72);border:1px solid var(--line);border-radius:8px;color:#ddd6fe;min-width:0}}.backupHint{{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.backupCmds{{display:grid;gap:8px;margin-top:10px}}.backupCmd{{border:1px solid rgba(255,255,255,.10);border-radius:8px;background:rgba(0,0,0,.18);padding:9px}}.backupCmd strong{{display:block;margin-bottom:5px;color:#f7f2ff;font-size:12px}}.backupCmd pre{{margin:0;white-space:pre-wrap;word-break:break-word;color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace}}#backupRewrite{{border-color:rgba(251,191,36,.42);background:linear-gradient(135deg,rgba(251,191,36,.28),rgba(245,158,11,.22));color:#fff7cc;box-shadow:0 10px 24px rgba(245,158,11,.14),inset 0 1px 0 rgba(255,255,255,.12)}}#backupRewrite:hover{{border-color:rgba(251,191,36,.56);background:linear-gradient(135deg,rgba(251,191,36,.34),rgba(245,158,11,.28))}}.backupMsg{{margin-top:9px;color:#bbf7d0;font-size:12px;font-weight:800;line-height:1.35}}.backupMsg.bad{{color:#fecdd3}}
@@ -3450,14 +3854,14 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 @keyframes onlineGlow{{0%,100%{{transform:scale(.9);opacity:.55}}50%{{transform:scale(1.08);opacity:1}}}}@keyframes offlineGlow{{0%,100%{{transform:scale(.88);opacity:.34}}50%{{transform:scale(1.08);opacity:.9}}}}
 @keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}
-.status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.nameRow{{display:inline-flex;align-items:center;justify-content:center;gap:8px;max-width:100%;margin-top:12px;vertical-align:top}}.nameRow::before{{content:"";display:block;flex:0 0 28px;width:28px;height:28px}}.name{{margin:0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}}.nameEditBtn{{position:static;display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;padding:0;border:1px solid rgba(251,191,36,.38);border-radius:999px;background:rgba(251,191,36,.12);color:#fde68a;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);cursor:pointer;opacity:.5;transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,opacity .15s ease}}.nameEditBtn:hover,.nameEditBtn:focus-visible{{opacity:1;border-color:rgba(34,211,238,.55);background:rgba(34,211,238,.14);color:#cffafe}}.nameEditBtn:active{{transform:scale(.96)}}.nameEditBtn svg{{width:13px;height:13px;display:block}}.mobilePanelToggle,.routerFormToggle{{display:none;width:100%;margin:14px 0 10px;border-radius:999px}}.routerFormWrap{{display:block}}[hidden],.headerActions[hidden],.routerStats[hidden],.routerFormWrap[hidden]{{display:none!important}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
+.status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.nameRow{{display:inline-flex;align-items:center;justify-content:center;gap:8px;max-width:100%;margin-top:12px;vertical-align:top}}.nameRow::before{{content:"";display:block;flex:0 0 28px;width:28px;height:28px}}.name{{margin:0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}}.nameEditBtn{{position:static;display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;padding:0;border:1px solid rgba(251,191,36,.38);border-radius:999px;background:rgba(251,191,36,.12);color:#fde68a;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);cursor:pointer;opacity:.5;transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,opacity .15s ease}}.nameEditBtn:hover,.nameEditBtn:focus-visible{{opacity:1;border-color:rgba(34,211,238,.55);background:rgba(34,211,238,.14);color:#cffafe}}.nameEditBtn:active{{transform:scale(.96)}}.nameEditBtn svg{{width:13px;height:13px;display:block}}.nameEditBtn.disabled{{cursor:default;pointer-events:none;opacity:.22;border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.05);color:rgba(255,255,255,.32)}}.mobilePanelToggle,.routerFormToggle{{display:none;width:100%;margin:14px 0 10px;border-radius:999px}}.routerFormWrap{{display:block}}[hidden],.headerActions[hidden],.routerStats[hidden],.routerFormWrap[hidden]{{display:none!important}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
 .metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong,.metric.memory-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong,.metric.memory-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong,.metric.memory-bad strong{{color:#fecdd3}}.metric>span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.metric.temp-unavailable strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal;color:#f3e8ff}}.metric.model-metric strong{{margin-top:5px}}.modelMetricValue{{position:relative;display:flex;align-items:center;justify-content:center;width:100%;max-width:100%}}.modelLegendSpacer{{display:none}}.modelMetricName{{display:block;max-width:calc(100% - 72px);min-width:0;color:#ffffff;font-size:14px;line-height:1.2;text-align:center;white-space:nowrap}}.modelLegendBadge{{position:absolute;right:0;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;min-height:20px;min-width:62px;padding:0 8px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(120deg,rgba(34,211,238,.24),rgba(59,130,246,.16),rgba(168,85,247,.14));color:#e0f7ff;font-size:8px;font-weight:900;line-height:1;letter-spacing:.10em;text-transform:uppercase;box-shadow:0 8px 18px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12);overflow:hidden;white-space:nowrap}}.modelLegendBadge::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.modelLegendBadge span{{position:relative;display:block}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.wolPanel,.trafficPanel{{display:grid;gap:10px;margin-top:12px;padding:12px;border:1px solid rgba(34,211,238,.20);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),rgba(18,14,30,.82);text-align:left}}.trafficPanel{{gap:12px}}.wolPanel[hidden],.trafficPanel[hidden]{{display:none!important}}.wolHeader{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.wolTitle{{margin:0;color:#f3e8ff;font-size:13px;font-weight:900}}.wolMeta{{min-height:16px;color:#c4b5fd;font-size:12px;line-height:1.35}}.wolMeta.bad{{color:#fecdd3}}.wolControls,.trafficControls{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.95fr) auto;gap:8px;align-items:end}}.wolField{{display:grid;gap:6px;min-width:0;color:#ddd6fe;font-size:11px;font-weight:850}}.wolField select,.wolField input{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField select option{{background:#221a34;color:#f5f3ff}}.wolField select option:checked{{background:#3b82f6;color:#ffffff}}.wolField select:focus,.wolField input:focus{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolField input::placeholder{{color:rgba(221,214,254,.52)}}.wolControls .btn,.wolControls button,.trafficControls .btn,.trafficControls button{{min-height:38px}}.trafficSummary{{display:flex;flex-wrap:wrap;gap:6px}}.trafficSummaryChip{{display:inline-flex;align-items:center;min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.20);border-radius:999px;background:rgba(255,255,255,.05);color:#ddd6fe;font-size:10px;font-weight:850;letter-spacing:.03em;text-transform:uppercase}}.trafficSummaryChip.accent{{border-color:rgba(34,211,238,.34);background:rgba(34,211,238,.12);color:#cffafe}}.trafficSummaryChip.muted{{border-color:rgba(245,158,11,.24);background:rgba(245,158,11,.10);color:#fde68a}}.trafficViewport{{max-height:min(46vh,420px);overflow:auto;padding:8px 4px 0 0;border-top:1px solid rgba(167,139,250,.14);scrollbar-width:thin;overscroll-behavior:contain}}.trafficViewport::-webkit-scrollbar{{width:8px}}.trafficViewport::-webkit-scrollbar-thumb{{background:rgba(167,139,250,.24);border-radius:999px}}.trafficViewport::-webkit-scrollbar-track{{background:transparent}}.trafficList{{display:grid;gap:7px}}.trafficRow{{display:grid;gap:7px;padding:10px;border:1px solid rgba(167,139,250,.16);border-radius:10px;background:linear-gradient(180deg,rgba(57,43,82,.45),rgba(33,26,48,.70));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.trafficRowTop{{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:10px}}.trafficIdentity{{min-width:0}}.trafficName{{margin:0;color:#f5f3ff;font-size:13px;font-weight:900;line-height:1.35}}.trafficMetaLine{{margin:3px 0 0;color:#c4b5fd;font-size:10.5px;line-height:1.4;word-break:break-word}}.trafficTotalBadge{{display:grid;gap:2px;min-width:84px;padding:7px 9px;border:1px solid rgba(34,211,238,.22);border-radius:10px;background:linear-gradient(180deg,rgba(34,211,238,.12),rgba(34,211,238,.04));text-align:right}}.trafficTotalBadge span{{color:#a5f3fc;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}}.trafficTotalBadge strong{{color:#ecfeff;font-size:12px;line-height:1.25;word-break:break-word}}.trafficTagRow{{display:flex;flex-wrap:wrap;gap:5px}}.trafficTag{{display:inline-flex;align-items:center;min-height:20px;padding:0 7px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.10);color:#cffafe;font-size:9px;font-weight:850;letter-spacing:.03em;text-transform:uppercase}}.trafficStats{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}}.trafficStat{{display:grid;gap:2px;padding:7px 8px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.04);text-align:center}}.trafficStat span{{color:#c4b5fd;font-size:9px;font-weight:800;letter-spacing:.02em;text-transform:uppercase}}.trafficStat strong{{color:#f5f3ff;font-size:11px;line-height:1.35;word-break:break-word}}.trafficStatTotal{{display:none}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 .wolControls .btn[disabled],.wolControls button[disabled]{{opacity:.48;cursor:not-allowed;filter:saturate(.62)}}
 .trafficControls{{grid-template-columns:repeat(2,minmax(0,1fr))}}.trafficPasswordField{{grid-column:1}}.trafficStatusField{{grid-column:2}}.trafficActionBtn{{width:100%;min-width:0;padding:8px 8px;font-size:10px;letter-spacing:.01em;white-space:nowrap}}.trafficStatusField .wolMeta{{font-size:10px;line-height:1.22}}.trafficDangerBtn{{border-color:rgba(251,113,133,.34)!important;background:linear-gradient(180deg,rgba(251,113,133,.18),rgba(251,113,133,.08))!important;color:#ffe4e6!important}}.trafficDangerBtn:hover{{border-color:rgba(251,113,133,.54)!important;background:linear-gradient(180deg,rgba(251,113,133,.24),rgba(251,113,133,.12))!important}}
 .wolField input,.wolPickerToggle{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField input:focus,.wolPickerToggle:focus,.wolPickerToggle:focus-visible{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolDeviceField{{grid-column:1/-1;width:100%}}.wolPickerToggle{{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;cursor:pointer;touch-action:manipulation}}.wolPickerToggle[disabled]{{opacity:.55;cursor:not-allowed}}.wolPickerValue{{display:grid;gap:2px;min-width:0;flex:1}}.wolPickerValue strong{{display:block;min-width:0;color:#f5f3ff;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.wolPickerValue small{{display:block;min-width:0;color:#c4b5fd;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.wolPickerChevron{{flex:0 0 auto;color:#c4b5fd;font-size:15px;line-height:1}}.wolPickerList{{display:grid;gap:8px;max-height:240px;overflow:auto;padding:8px;border:1px solid rgba(34,211,238,.24);border-radius:12px;background:rgba(17,12,29,.88);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolDeviceBtn{{width:100%;display:grid;gap:3px;padding:10px 12px;border:1px solid rgba(167,139,250,.18);border-radius:10px;background:rgba(255,255,255,.04);color:#f5f3ff;text-align:left;cursor:pointer;touch-action:manipulation;transition:border-color .15s ease,background .15s ease,transform .15s ease}}.wolDeviceBtn:hover,.wolDeviceBtn:focus-visible{{border-color:rgba(34,211,238,.48);background:rgba(34,211,238,.12)}}.wolDeviceBtn:active{{transform:scale(.99)}}.wolDeviceBtn.active{{border-color:rgba(59,130,246,.62);background:rgba(59,130,246,.18);box-shadow:0 0 0 1px rgba(59,130,246,.16)}}.wolDeviceName{{display:block;color:#f5f3ff;font-size:13px;font-weight:800;line-height:1.3}}.wolDeviceMeta{{display:block;color:#c4b5fd;font-size:11px;line-height:1.35;word-break:break-word}}.wolPickerEmpty{{padding:14px 12px;border:1px dashed rgba(167,139,250,.20);border-radius:10px;background:rgba(255,255,255,.03);color:#c4b5fd;text-align:center}}.metric.memory-ok strong,.metric.flash-ok strong,.metric.memory-warn strong,.metric.flash-warn strong,.metric.memory-bad strong,.metric.flash-bad strong{{color:#f3e8ff}}.metric.memory-ok .metric-accent,.metric.flash-ok .metric-accent{{color:#bbf7d0}}.metric.memory-warn .metric-accent,.metric.flash-warn .metric-accent{{color:#fde68a}}.metric.memory-bad .metric-accent,.metric.flash-bad .metric-accent{{color:#fecdd3}}.metric-line{{display:block}}.metric-accent{{font-weight:inherit}}
 .seasonalFx{{position:fixed;inset:0;display:block;width:100vw;height:100vh;z-index:0;pointer-events:none;opacity:.9;mix-blend-mode:screen}}.desktopHeader{{--hdr-col-1:124px;--hdr-col-2:124px;--hdr-col-3:156px;--hdr-col-4:124px;--hdr-col-5:144px;--hdr-col-6:144px;--hdr-col-7:144px;--hdr-col-8:144px;--top-col-1:256px;--top-col-2:288px;--top-col-3:144px;display:grid;gap:8px;width:max-content;max-width:100%;margin-left:15px}}.desktopHeaderTop{{display:grid;grid-template-columns:var(--top-col-1) var(--top-col-2) var(--top-col-3);align-items:flex-start;gap:8px;width:max-content;max-width:100%;justify-self:start}}.desktopHeaderTop>.appBanner{{width:var(--top-col-1);min-width:var(--top-col-1);max-width:var(--top-col-1)}}.desktopHeaderTop>.routerSearchDock{{width:var(--top-col-2);min-width:var(--top-col-2);max-width:var(--top-col-2)}}.desktopHeaderTop>#seasonDock{{width:var(--top-col-3);min-width:var(--top-col-3);max-width:var(--top-col-3)}}.desktopHeaderBottom{{display:grid;grid-template-columns:var(--hdr-col-1) var(--hdr-col-2) var(--hdr-col-3) var(--hdr-col-4) var(--hdr-col-5) var(--hdr-col-6) var(--hdr-col-7) var(--hdr-col-8);gap:8px;width:max-content;max-width:100%;align-items:start;justify-self:start}}.desktopHeader .appBanner{{grid-column:auto;width:100%;min-width:0}}.desktopHeader .links{{display:grid;grid-column:1/span 3;grid-template-columns:var(--hdr-col-1) var(--hdr-col-2) var(--hdr-col-3);gap:8px;margin-top:0}}.desktopHeader .links a{{width:100%;min-width:0}}.routerSearchDock{{position:relative;display:block;grid-column:auto;width:100%;min-width:0;max-width:100%}}.mobileSearchDock{{display:none;width:100%;position:relative}}.routerSearchToggle{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;width:100%;padding:8px 14px;border:1px solid rgba(34,211,238,.30);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.12),rgba(124,58,237,.22),rgba(236,72,153,.12));color:#f3e8ff;font-size:13px;font-weight:800;line-height:1;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10)}}.routerSearchToggle[data-active="true"],.routerSearchToggle[aria-expanded="true"]{{border-color:rgba(34,211,238,.52);box-shadow:0 14px 30px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12)}}.routerSearchToggleIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.mobileSearchVersion{{display:inline-flex;align-items:center;justify-content:center;min-height:20px;padding:0 7px;border:1px solid rgba(251,113,133,.34);border-radius:999px;background:rgba(251,113,133,.14);color:#fecdd3;font-size:10px;font-weight:900;line-height:1;letter-spacing:.04em;box-shadow:0 0 14px rgba(251,113,133,.14)}}.mobileSearchDock>.mobileSearchVersion{{display:flex;width:fit-content;margin:0 auto 6px}}#routerSearchToggle,#seasonToggle{{border:1px solid var(--line);background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.06);color:#f3e8ff}}#routerSearchToggle[data-active="true"],#routerSearchToggle[aria-expanded="true"],#seasonToggle[data-open="true"],#seasonToggle[aria-expanded="true"]{{border-color:var(--line);background:rgba(255,255,255,.11);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}}#routerSearchToggle .routerSearchToggleIcon,#seasonToggle .routerSearchToggleIcon{{color:#ddd6fe}}.routerSearchPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:55;width:min(296px,calc(100vw - 24px))}}.routerSearchPanel[hidden]{{display:none!important}}.routerSearchCard{{display:grid;grid-template-rows:auto auto auto;align-content:start;gap:8px;width:100%;min-height:82px;padding:12px;border:1px solid rgba(34,211,238,.26);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.045)),rgba(19,14,32,.96);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}}.routerSearchHead{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.routerSearchTitle{{display:block;color:#f3e8ff;font-size:12px;font-weight:900;line-height:1.1}}.routerSearchClear{{min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.24);border-radius:999px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:11px;font-weight:850;cursor:pointer}}.routerSearchClear[disabled]{{opacity:.42;cursor:not-allowed}}.routerSearchField{{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.26);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.08),rgba(124,58,237,.14),rgba(236,72,153,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.routerSearchField:focus-within{{border-color:rgba(34,211,238,.54);box-shadow:0 0 0 3px rgba(34,211,238,.10),inset 0 1px 0 rgba(255,255,255,.08)}}.routerSearchField input{{width:100%;padding:0;border:0;background:transparent;color:#f7f2ff;box-shadow:none;outline:none;font-size:13px;font-weight:700}}.routerSearchField input::placeholder{{color:#b9adc9}}.routerSearchIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchMeta{{min-height:14px;color:#c4b5fd;font-size:11px;font-weight:800;line-height:1.2}}.seasonDock{{display:grid;gap:6px;width:100%;padding:9px 10px;border:1px solid rgba(251,191,36,.18);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.035)),rgba(19,14,32,.90);box-shadow:0 12px 28px rgba(0,0,0,.18);backdrop-filter:blur(10px)}}.seasonLabel{{display:flex;align-items:center;justify-content:center;text-align:center;gap:8px;color:#fde68a;font-size:11px;font-weight:900;line-height:1.1;text-transform:uppercase;letter-spacing:.04em}}.seasonSwitch{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}}.seasonBtn{{min-height:30px;padding:6px 8px;border:1px solid rgba(251,191,36,.22);border-radius:999px;background:rgba(255,255,255,.06);color:#f7f2ff;font-size:11px;font-weight:850;line-height:1;cursor:pointer;transition:transform .15s ease,border-color .15s ease,background .15s ease,box-shadow .15s ease,color .15s ease}}.seasonBtn:hover,.seasonBtn:focus-visible{{border-color:rgba(34,211,238,.50);background:rgba(34,211,238,.12);color:#ecfeff}}.seasonBtn[data-active="true"]{{border-color:rgba(251,191,36,.52);background:linear-gradient(110deg,rgba(251,191,36,.22),rgba(34,211,238,.10),rgba(168,85,247,.14));box-shadow:0 10px 20px rgba(251,191,36,.14),inset 0 1px 0 rgba(255,255,255,.08);color:#fff7cc}}.seasonBtn:active{{transform:scale(.98)}}#seasonDock{{position:relative;display:block;grid-column:auto;width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none;align-self:start}}.seasonToggle{{min-height:36px;padding:8px 12px;font-size:13px;line-height:1;white-space:normal;text-align:center}}.seasonToggleText{{display:block}}.seasonPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:56;width:min(320px,calc(100vw - 24px))}}.seasonPanel[hidden]{{display:none!important}}.seasonCard{{display:grid;gap:8px;width:100%;padding:12px;border:1px solid rgba(251,191,36,.18);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035)),rgba(19,14,32,.95);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(12px)}}.headerActions{{display:grid;grid-column:4/span 5;grid-template-columns:var(--hdr-col-4) var(--hdr-col-5) var(--hdr-col-6) var(--hdr-col-7) var(--hdr-col-8);align-self:flex-start;justify-content:flex-start;align-content:flex-start;min-width:0;gap:8px;padding-top:0;max-width:none}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:220px;min-height:34px;margin:0;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 1}}.top{{justify-items:stretch}}.desktopHeader,.desktopHeaderTop,.desktopHeaderBottom{{width:100%;max-width:none}}.desktopHeader{{--hdr-col-1:minmax(0,1fr);--hdr-col-2:minmax(0,1fr);--hdr-col-3:minmax(0,1.35fr);--hdr-col-4:minmax(0,1fr);--hdr-col-5:minmax(0,1fr);--hdr-col-6:minmax(0,1fr);--hdr-col-7:minmax(0,1fr);--hdr-col-8:minmax(0,1fr)}}.headerActions{{width:100%}}}}
-@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.headerStack{{margin-top:0;width:100%;min-width:0}}.headerStack .badge{{width:100%;min-width:0}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.authMenuHead{{min-height:40px;padding:0 104px 8px 0}}.authMenu h2{{margin:2px 104px 0 0;line-height:1.2}}.authMenuClose{{display:inline-flex;top:0;right:0;min-height:32px;padding:6px 12px}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.seasonDock{{width:100%}}#mobileSeasonDock{{width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none}}.routerSearchToggle,.seasonToggle{{width:100%}}.routerSearchPanel,.seasonPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard,.seasonCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}.wolControls,.trafficControls{{grid-template-columns:1fr}}.wolField span,.wolMeta{{text-align:center}}.wolControls .btn,.wolControls button,.trafficControls .btn,.trafficControls button{{width:100%}}.trafficSummary{{justify-content:center}}.trafficViewport{{max-height:360px;padding-right:0}}.trafficRowTop{{grid-template-columns:1fr}}.trafficTotalBadge{{min-width:0;text-align:left}}}}
+@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.headerStack{{margin-top:0;width:100%;min-width:0}}.headerStack .badge{{width:100%;min-width:0}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.authMenuHead{{min-height:40px;padding:0 104px 8px 0}}.authMenu h2{{margin:2px 104px 0 0;line-height:1.2}}.authMenuClose{{display:inline-flex;top:0;right:0;min-height:32px;padding:6px 12px}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.authRow{{grid-template-columns:1fr;gap:7px;padding:8px}}.authRowTitle{{font-size:13px}}.authRowMeta{{font-size:11px;line-height:1.3}}.authRouterFlags{{justify-content:flex-start;gap:6px}}.authFlagPill{{min-height:25px;padding:3px 7px;gap:5px}}.authFlagPill input{{width:12px;height:12px;flex-basis:12px}}.authFlagPill span{{font-size:10px}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.seasonDock{{width:100%}}#mobileSeasonDock{{width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none}}.routerSearchToggle,.seasonToggle{{width:100%}}.routerSearchPanel,.seasonPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard,.seasonCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}.wolControls,.trafficControls{{grid-template-columns:1fr}}.wolField span,.wolMeta{{text-align:center}}.wolControls .btn,.wolControls button,.trafficControls .btn,.trafficControls button{{width:100%}}.trafficSummary{{justify-content:center}}.trafficViewport{{max-height:360px;padding-right:0}}.trafficRowTop{{grid-template-columns:1fr}}.trafficTotalBadge{{min-width:0;text-align:left}}}}
 @media(max-width:680px){{.desktopHeader{{display:none}}#hubMenuPanelHost{{display:block;width:100%}}#hubMenuPanelHost:empty{{display:none}}.top{{padding:6px 0 0;gap:0}}.mobileSearchDock{{display:block;margin:0}}.mobilePanelToggle,.routerFormToggle,.actionToggle{{width:100%;min-height:38px;margin:7px 0;padding:9px 12px;border-radius:999px;font-size:12px;line-height:1}}.actionToggle{{display:inline-flex}}body.preload-mobile-panels .headerActions,body.preload-mobile-panels .routerFormWrap,body.preload-mobile-panels .routerStats{{display:none!important}}.card .actions.mobileCollapsed:not(.open){{display:none}}.cardTop{{gap:0}}}}
 @media(max-width:680px){{.headerActions .badge,.headerActions .btn{{width:100%;min-width:0;max-width:none}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
@@ -3530,9 +3934,9 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
             <a class="nethavenTop" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">NetHaven VPN</a>
           </div>
           <div class="headerActions">
-            <a class="badge" href="/vps-terminal/" target="_blank" rel="noopener noreferrer">Терминал VPS</a>
-            <button class="badge" id="xrayReload" type="button">Обновить Xray CFG</button>
-            <button class="badge" id="xrayRestart" type="button">Рестарт Xray VPS</button>
+            <a class="badge" href="/vps-terminal/" target="_blank" rel="noopener noreferrer" {'hidden' if not is_owner else ''}>Терминал VPS</a>
+            <button class="badge" id="xrayReload" type="button" {'hidden' if not is_owner else ''}>Обновить Xray CFG</button>
+            <button class="badge" id="xrayRestart" type="button" {'hidden' if not is_owner else ''}>Рестарт Xray VPS</button>
             <button class="badge authToggle" id="authToggle" type="button">{safe_username}</button>
             <a class="btn" href="/logout">Выйти</a>
             <div class="authMenu" id="authMenu" hidden>
@@ -3712,6 +4116,39 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
                   <button class="sessionBtn bad" id="revokeOtherSessions" type="button">Завершить остальные</button>
                 </div>
                 <div id="sessionList" class="sessionList"></div>
+                  </div>
+                </div>
+              </details>
+              <details class="authGroup" id="delegatedUsersGroup">
+                <summary class="authGroupSummary">
+                  <div class="authGroupTitle">
+                    <strong id="delegatedUsersGroupTitle">Ограниченные пользователи</strong>
+                    <span id="delegatedUsersGroupLead">Учётки с флагами A, B и G только на выбранные роутеры.</span>
+                  </div>
+                  <span class="authGroupChevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div class="authGroupBody">
+                  <div class="authSection">
+                    <div class="authSectionHead">
+                      <div>
+                        <h3 id="delegatedUsersSectionTitle">Доступ к роутерам</h3>
+                        <p id="delegatedUsersSectionLead">A = только LuCI, B = SSH к роутеру, G = полный доступ к панели этого роутера без VPS/Xray/backup.</p>
+                      </div>
+                    </div>
+                    <form id="delegatedUserForm" class="authFields">
+                      <input type="hidden" name="id" value="">
+                      <input class="wide" name="username" placeholder="Логин пользователя" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" required>
+                      <label class="wide"><input name="enabled" type="checkbox" checked> Учётка активна</label>
+                      <input name="password" type="password" placeholder="Новый пароль" autocomplete="new-password">
+                      <input name="password_confirm" type="password" placeholder="Повтори пароль" autocomplete="new-password">
+                      <input class="wide" name="current_password" type="password" placeholder="Текущий пароль владельца" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" required>
+                      <div class="wide" id="delegatedRouterAccess"></div>
+                      <div class="authActions">
+                        <button class="sessionBtn" type="submit">Сохранить пользователя</button>
+                      </div>
+                    </form>
+                    <div id="delegatedUserMsg" class="msg" hidden></div>
+                    <div id="delegatedUserList" class="authList"></div>
                   </div>
                 </div>
               </details>
@@ -6210,6 +6647,7 @@ function render(list) {{
     return;
   }}
   cards.innerHTML = list.map(r => {{
+    const permissions = r.permissions && typeof r.permissions === 'object' ? r.permissions : {{}};
     const role = String(r.role || 'node');
     const isMain = role === 'main';
     const online = Boolean(r.online);
@@ -6226,17 +6664,18 @@ function render(list) {{
     const flashDisplay = formatFlash(flash);
     const temperature = temperatureValueForRouter(r);
     const access = r.access_url || r.public_url;
-    const adminButton = online
+    const adminButton = online && !!permissions.admin
       ? `<a class="btn" href="${{escapeAttr(access)}}">Админка</a>`
       : `<span class="btn disabled">Админка</span>`;
     const sshReady = online && ssh === 'running' && Number(r.ssh_entry_port || 0) > 0;
     const sshButton = sshReady
+      && !!permissions.ssh
       ? `<a class="btn" href="${{escapeAttr(r.ssh_url || ('/ssh/' + encodeURIComponent(r.id) + '/'))}}" target="_blank" rel="noopener noreferrer">SSH</a>`
       : `<span class="btn disabled">SSH</span>`;
-    const wolReady = routerSupportsWol(r);
+    const wolReady = routerSupportsWol(r) && !!permissions.wol;
     const wolState = getWolState(r.id);
     const trafficState = getTrafficState(r.id);
-    const trafficReady = sshReady;
+    const trafficReady = sshReady && !!permissions.traffic;
     const wolButton = wolReady
       ? `<button class="btn" data-wol-toggle="${{escapeAttr(r.id)}}" type="button">${{wolState.open ? 'Скрыть Wake-on-LAN' : 'Wake-on-LAN'}}</button>`
       : `<span class="btn disabled">Wake-on-LAN</span>`;
@@ -6244,7 +6683,9 @@ function render(list) {{
       ? `<button class="btn" data-traffic-toggle="${{escapeAttr(r.id)}}" type="button">${{trafficState.open ? 'Скрыть Клиенты Traffic' : 'Клиенты Traffic'}}</button>`
       : `<span class="btn disabled">Клиенты Traffic</span>`;
     const renameLabel = 'Переименовать ' + (r.name || r.id || 'роутер');
-    const renameButton = `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`;
+    const renameButton = !!permissions.manage
+      ? `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`
+      : `<span class="nameEditBtn disabled" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></span>`;
     const actionsId = actionPanelId(r.id);
     const actionsOpen = expandedActionPanels.has(actionsId);
     const metricsHtml = [
@@ -6275,9 +6716,8 @@ function render(list) {{
         ${{sshButton}}
         ${{wolButton}}
         ${{trafficButton}}
-        <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
-        <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
-        <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
+        ${{permissions.config ? `<a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>` : '<span class="btn disabled">OpenWrt config</span>'}}
+        ${{permissions.delete ? `<button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>` : '<span class="btn disabled">Удалить</span>'}}
       </div>
       ${{wolReady ? renderWolPanelResponsive(r) : ''}}
       ${{trafficReady ? renderTrafficPanel(r) : ''}}
@@ -6340,6 +6780,7 @@ render = function(list) {{
     return;
   }}
   cards.innerHTML = list.map(r => {{
+    const permissions = r.permissions && typeof r.permissions === 'object' ? r.permissions : {{}};
     const role = String(r.role || 'node');
     const isMain = role === 'main';
     const online = Boolean(r.online);
@@ -6356,17 +6797,18 @@ render = function(list) {{
     const flashDisplay = formatFlash(flash);
     const temperature = temperatureValueForRouter(r);
     const access = r.access_url || r.public_url;
-    const adminButton = online
+    const adminButton = online && !!permissions.admin
       ? `<a class="btn" href="${{escapeAttr(access)}}">Админка</a>`
       : `<span class="btn disabled">Админка</span>`;
     const sshReady = online && ssh === 'running' && Number(r.ssh_entry_port || 0) > 0;
     const sshButton = sshReady
+      && !!permissions.ssh
       ? `<a class="btn" href="${{escapeAttr(r.ssh_url || ('/ssh/' + encodeURIComponent(r.id) + '/'))}}" target="_blank" rel="noopener noreferrer">SSH</a>`
       : `<span class="btn disabled">SSH</span>`;
-    const wolReady = routerSupportsWol(r);
+    const wolReady = routerSupportsWol(r) && !!permissions.wol;
     const wolState = getWolState(r.id);
     const trafficState = getTrafficState(r.id);
-    const trafficReady = sshReady;
+    const trafficReady = sshReady && !!permissions.traffic;
     const wolButton = wolReady
       ? `<button class="btn" data-wol-toggle="${{escapeAttr(r.id)}}" type="button">${{wolState.open ? 'Скрыть Wake-on-LAN' : 'Wake-on-LAN'}}</button>`
       : `<span class="btn disabled">Wake-on-LAN</span>`;
@@ -6374,7 +6816,9 @@ render = function(list) {{
       ? `<button class="btn" data-traffic-toggle="${{escapeAttr(r.id)}}" type="button">${{trafficState.open ? 'Скрыть Клиенты Traffic' : 'Клиенты Traffic'}}</button>`
       : `<span class="btn disabled">Клиенты Traffic</span>`;
     const renameLabel = 'Переименовать ' + (r.name || r.id || 'роутер');
-    const renameButton = `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`;
+    const renameButton = !!permissions.manage
+      ? `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`
+      : `<span class="nameEditBtn disabled" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></span>`;
     const actionsId = actionPanelId(r.id);
     const actionsOpen = expandedActionPanels.has(actionsId);
     const metricsHtml = [
@@ -6403,9 +6847,8 @@ render = function(list) {{
         ${{sshButton}}
         ${{wolButton}}
         ${{trafficButton}}
-        <a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>
-        <button class="btn" data-diagnose="${{escapeAttr(r.id)}}" type="button">Запустить диагностику</button>
-        <button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>
+        ${{permissions.config ? `<a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>` : '<span class="btn disabled">OpenWrt config</span>'}}
+        ${{permissions.delete ? `<button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>` : '<span class="btn disabled">Удалить</span>'}}
       </div>
       ${{wolReady ? renderWolPanelResponsive(r) : ''}}
       ${{trafficReady ? renderTrafficPanel(r) : ''}}
@@ -6976,8 +7419,12 @@ routerForm.addEventListener('submit', async (ev) => {{
   }}
   const res = await fetch('/api/router', {{method: 'POST', body}});
   if (res.ok) {{
+    const data = await res.json().catch(() => ({{}}));
     ev.currentTarget.reset();
     if (routerNameInput) routerNameInput.dataset.touched = '';
+    authMeta = data.auth || authMeta;
+    renderAuthMeta();
+    syncOwnerChrome();
     await loadRouters();
     fillRouterForm(true);
     showRouterMsg('Роутер добавлен. Теперь открой OpenWrt config в его карточке и вставь команды на роутер.');
@@ -7175,11 +7622,6 @@ cards.addEventListener('click', async (ev) => {{
     showRouterMsg('Имя роутера обновлено.');
     return;
   }}
-  const diagnoseId = ev.target?.dataset?.diagnose;
-  if (diagnoseId) {{
-    openDiagnosticPanel(diagnoseId);
-    return;
-  }}
   const id = ev.target?.dataset?.delete;
   if (!id) return;
   if (!confirm('Удалить роутер ' + id + '?')) return;
@@ -7217,6 +7659,12 @@ const authMenuHeadTitle = authMenu ? authMenu.querySelector('.authMenuHead h2') 
 const authMenuHeadLead = authMenu ? authMenu.querySelector('.authMenuHead p') : null;
 const sessionList = document.getElementById('sessionList');
 const revokeOtherSessions = document.getElementById('revokeOtherSessions');
+const delegatedUsersGroup = document.getElementById('delegatedUsersGroup');
+const delegatedUserForm = document.getElementById('delegatedUserForm');
+const delegatedRouterAccess = document.getElementById('delegatedRouterAccess');
+const delegatedUserList = document.getElementById('delegatedUserList');
+const delegatedUserMsg = document.getElementById('delegatedUserMsg');
+const delegatedUserReset = document.getElementById('delegatedUserReset');
 const notifyList = document.getElementById('notifyList');
 const notifyEnable = document.getElementById('notifyEnable');
 const notifyClear = document.getElementById('notifyClear');
@@ -7286,11 +7734,14 @@ const socialProviderUi = {{
   }}
 }};
 let authHideTimer;
-let authMeta = null;
+let authMeta = {auth_bootstrap_json};
 let authTotpTicket = '';
 let authUsernameDraftDirty = false;
 let authUsernameServerValue = authUsernameField && 'value' in authUsernameField ? String(authUsernameField.value || '') : '';
 let socialLinkPopup = null;
+let delegatedUserDraftId = '';
+const OWNER_PASSWORD_REMEMBER_KEY = 'hub.owner-password.remember';
+const OWNER_PASSWORD_STORAGE_KEY = 'hub.owner-password.value';
 function hideOfflineStats() {{
   if (!offlineStatsExpanded) return;
   offlineStatsExpanded = false;
@@ -7435,6 +7886,347 @@ function localizeAuthUi() {{
   if (backupDownload) backupDownload.textContent = 'Скачать';
 }}
 localizeAuthUi();
+function authIsOwner() {{
+  return !!(authMeta && authMeta.is_owner);
+}}
+function ownerPasswordRememberEnabled() {{
+  try {{
+    return window.localStorage.getItem(OWNER_PASSWORD_REMEMBER_KEY) === '1';
+  }} catch (err) {{
+    return false;
+  }}
+}}
+function readRememberedOwnerPassword() {{
+  if (!ownerPasswordRememberEnabled()) return '';
+  try {{
+    return String(window.localStorage.getItem(OWNER_PASSWORD_STORAGE_KEY) || '');
+  }} catch (err) {{
+    return '';
+  }}
+}}
+function writeRememberedOwnerPassword(value) {{
+  if (!ownerPasswordRememberEnabled()) return;
+  try {{
+    window.localStorage.setItem(OWNER_PASSWORD_STORAGE_KEY, String(value || ''));
+  }} catch (err) {{}}
+}}
+function ownerPasswordInputs() {{
+  const seen = new Set();
+  const fields = [
+    authForm && authForm.elements ? authForm.elements.namedItem('current_password') : null,
+    delegatedUserForm && delegatedUserForm.elements ? delegatedUserForm.elements.namedItem('current_password') : null,
+    totpCurrentPassword,
+    totpDisableCurrentPassword,
+    passkeyCurrentPassword,
+    sshKeyCurrentPassword,
+    ...Object.values(socialProviderUi || {{}}).map((ui) => ui && ui.currentPassword)
+  ];
+  return fields.filter((field) => {{
+    if (!(field instanceof HTMLInputElement)) return false;
+    if (seen.has(field)) return false;
+    seen.add(field);
+    return true;
+  }});
+}}
+function ownerPasswordRememberCheckboxes() {{
+  return Array.from(document.querySelectorAll('input[data-owner-password-remember]')).filter((field) => field instanceof HTMLInputElement);
+}}
+function syncOwnerPasswordRememberCheckboxes(enabled = ownerPasswordRememberEnabled()) {{
+  ownerPasswordRememberCheckboxes().forEach((field) => {{
+    field.checked = enabled;
+  }});
+}}
+function syncOwnerPasswordInputs(value = null, source = null) {{
+  const nextValue = value === null ? readRememberedOwnerPassword() : String(value || '');
+  ownerPasswordInputs().forEach((field) => {{
+    if (!(field instanceof HTMLInputElement) || field === source) return;
+    if (field.value !== nextValue) field.value = nextValue;
+  }});
+}}
+function currentOwnerPasswordSnapshot() {{
+  for (const field of ownerPasswordInputs()) {{
+    if (field.value) return String(field.value);
+  }}
+  return readRememberedOwnerPassword();
+}}
+function restoreOwnerPasswordInput(field, nextValue = null) {{
+  if (!(field instanceof HTMLInputElement)) return;
+  if (!ownerPasswordRememberEnabled()) {{
+    field.value = '';
+    return;
+  }}
+  const value = nextValue === null ? readRememberedOwnerPassword() : String(nextValue || '');
+  writeRememberedOwnerPassword(value);
+  field.value = value;
+  syncOwnerPasswordInputs(value, field);
+}}
+function setOwnerPasswordRememberEnabled(enabled, preferredValue = '') {{
+  if (!enabled) {{
+    try {{
+      window.localStorage.removeItem(OWNER_PASSWORD_REMEMBER_KEY);
+      window.localStorage.removeItem(OWNER_PASSWORD_STORAGE_KEY);
+    }} catch (err) {{}}
+    syncOwnerPasswordRememberCheckboxes(false);
+    syncOwnerPasswordInputs('');
+    return;
+  }}
+  const nextValue = String(preferredValue || currentOwnerPasswordSnapshot() || '');
+  try {{
+    window.localStorage.setItem(OWNER_PASSWORD_REMEMBER_KEY, '1');
+    window.localStorage.setItem(OWNER_PASSWORD_STORAGE_KEY, nextValue);
+  }} catch (err) {{}}
+  syncOwnerPasswordRememberCheckboxes(true);
+  syncOwnerPasswordInputs(nextValue);
+}}
+function installOwnerPasswordRememberUi() {{
+  ownerPasswordInputs().forEach((field) => {{
+    if (!(field instanceof HTMLInputElement) || field.dataset.ownerPasswordRememberReady === '1') return;
+    field.dataset.ownerPasswordRememberReady = '1';
+    const toggle = document.createElement('label');
+    toggle.className = 'wide authRememberToggle';
+    toggle.innerHTML = '<input type="checkbox" data-owner-password-remember> Запомнить на этом устройстве';
+    field.insertAdjacentElement('afterend', toggle);
+    const checkbox = toggle.querySelector('input[data-owner-password-remember]');
+    if (checkbox instanceof HTMLInputElement) {{
+      checkbox.checked = ownerPasswordRememberEnabled();
+      checkbox.addEventListener('change', () => {{
+        if (checkbox.checked) {{
+          setOwnerPasswordRememberEnabled(true, field.value || currentOwnerPasswordSnapshot());
+          return;
+        }}
+        setOwnerPasswordRememberEnabled(false);
+      }});
+    }}
+    field.addEventListener('input', () => {{
+      if (!ownerPasswordRememberEnabled()) return;
+      writeRememberedOwnerPassword(field.value || '');
+      syncOwnerPasswordInputs(field.value || '', field);
+    }});
+    field.addEventListener('focus', () => {{
+      if (!field.value && ownerPasswordRememberEnabled()) restoreOwnerPasswordInput(field);
+    }});
+  }});
+  syncOwnerPasswordRememberCheckboxes();
+  if (ownerPasswordRememberEnabled()) syncOwnerPasswordInputs();
+}}
+function authCanAddRouter() {{
+  if (authIsOwner()) return true;
+  if (authMeta && Object.prototype.hasOwnProperty.call(authMeta, 'can_add_router')) {{
+    return !!authMeta.can_add_router;
+  }}
+  const assigned = Array.isArray(authMeta && authMeta.assigned_routers) ? authMeta.assigned_routers : [];
+  return assigned.some((item) => Array.isArray(item && item.flags) && item.flags.includes('G'));
+}}
+function setDelegatedUserMessage(text, bad = false) {{
+  if (!delegatedUserMsg) return;
+  delegatedUserMsg.hidden = !text;
+  delegatedUserMsg.className = 'msg' + (bad ? ' bad' : '');
+  delegatedUserMsg.textContent = text || '';
+}}
+function delegatedUserFormData() {{
+  if (!delegatedUserForm || !delegatedUserForm.elements) return null;
+  return {{
+    id: delegatedUserForm.elements.namedItem('id'),
+    username: delegatedUserForm.elements.namedItem('username'),
+    enabled: delegatedUserForm.elements.namedItem('enabled'),
+    password: delegatedUserForm.elements.namedItem('password'),
+    passwordConfirm: delegatedUserForm.elements.namedItem('password_confirm'),
+    currentPassword: delegatedUserForm.elements.namedItem('current_password')
+  }};
+}}
+function clearDelegatedUserAutofill({{preserveUsername = false}} = {{}}) {{
+  const fields = delegatedUserFormData();
+  if (!fields) return;
+  if (!preserveUsername && fields.username) fields.username.value = '';
+  if (fields.password) fields.password.value = '';
+  if (fields.passwordConfirm) fields.passwordConfirm.value = '';
+  if (fields.currentPassword) restoreOwnerPasswordInput(fields.currentPassword);
+}}
+function scheduleDelegatedUserAutofillCleanup(options = {{}}) {{
+  clearDelegatedUserAutofill(options);
+  window.requestAnimationFrame(() => clearDelegatedUserAutofill(options));
+  window.setTimeout(() => clearDelegatedUserAutofill(options), 80);
+  window.setTimeout(() => clearDelegatedUserAutofill(options), 260);
+}}
+function collectDelegatedRouterFlags() {{
+  const routerFlags = {{}};
+  if (!delegatedRouterAccess) return routerFlags;
+  delegatedRouterAccess.querySelectorAll('input[data-router-flag]').forEach((input) => {{
+    if (!input.checked) return;
+    const routerId = String(input.dataset.routerFlag || '');
+    const flag = String(input.value || '').toUpperCase();
+    if (!routerId || !flag) return;
+    if (!routerFlags[routerId]) routerFlags[routerId] = [];
+    if (!routerFlags[routerId].includes(flag)) routerFlags[routerId].push(flag);
+  }});
+  Object.keys(routerFlags).forEach((routerId) => routerFlags[routerId].sort());
+  return routerFlags;
+}}
+function syncDelegatedRouterAccessMasterFlags() {{
+  if (!delegatedRouterAccess) return;
+  ['A', 'B', 'G'].forEach((flag) => {{
+    const master = delegatedRouterAccess.querySelector(`input[data-router-all-flag="${{flag}}"]`);
+    if (!master) return;
+    const inputs = Array.from(delegatedRouterAccess.querySelectorAll(`input[data-router-flag][value="${{flag}}"]`));
+    if (!inputs.length) {{
+      master.checked = false;
+      master.indeterminate = false;
+      return;
+    }}
+    const checkedCount = inputs.filter((input) => input.checked).length;
+    master.checked = checkedCount === inputs.length;
+    master.indeterminate = checkedCount > 0 && checkedCount < inputs.length;
+  }});
+}}
+function renderDelegatedRouterAccess(selectedMap = null) {{
+  if (!delegatedRouterAccess) return;
+  const routerOptions = Array.isArray(authMeta && authMeta.router_options) ? authMeta.router_options : [];
+  const selected = selectedMap && typeof selectedMap === 'object' ? selectedMap : {{}};
+  if (!routerOptions.length) {{
+    delegatedRouterAccess.innerHTML = '<div class="authEmpty">Сначала добавь роутеры в Hub, потом можно выдавать права пользователям.</div>';
+    return;
+  }}
+  const allRoutersRow = `
+    <div class="authRow authRowAll">
+      <div>
+        <div class="authRowTitle"><span>Все роутеры</span></div>
+        <div class="authRowMeta">Массово включает или снимает права A/B/G сразу для всех роутеров ниже.</div>
+      </div>
+      <div class="authPills authRouterFlags">
+        ${{['A', 'B', 'G'].map((flag) => `
+          <label class="authPill authFlagPill">
+            <input type="checkbox" data-router-all-flag="${{flag}}" value="${{flag}}">
+            <span>${{flag}}</span>
+          </label>
+        `).join('')}}
+      </div>
+    </div>
+  `;
+  delegatedRouterAccess.innerHTML = allRoutersRow + routerOptions.map((router) => {{
+    const routerId = String(router.id || '');
+    const routerName = String(router.name || routerId || 'router');
+    const flags = Array.isArray(selected[routerId]) ? selected[routerId] : [];
+    return `
+      <div class="authRow">
+        <div>
+          <div class="authRowTitle"><span>${{escapeHtml(routerName)}}</span></div>
+          <div class="authRowMeta">${{escapeHtml(routerId)}}${{router.role ? ' · ' + escapeHtml(router.role) : ''}}</div>
+        </div>
+        <div class="authPills authRouterFlags">
+          ${{['A', 'B', 'G'].map((flag) => `
+            <label class="authPill authFlagPill">
+              <input type="checkbox" data-router-flag="${{escapeAttr(routerId)}}" value="${{flag}}" ${{flags.includes(flag) ? 'checked' : ''}}>
+              <span>${{flag}}</span>
+            </label>
+          `).join('')}}
+        </div>
+      </div>
+    `;
+  }}).join('');
+  syncDelegatedRouterAccessMasterFlags();
+}}
+if (delegatedRouterAccess) {{
+  delegatedRouterAccess.addEventListener('change', (event) => {{
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    if (target.matches('input[data-router-all-flag]')) {{
+      const flag = String(target.value || '').toUpperCase();
+      delegatedRouterAccess.querySelectorAll(`input[data-router-flag][value="${{flag}}"]`).forEach((input) => {{
+        input.checked = target.checked;
+      }});
+      target.indeterminate = false;
+    }}
+    syncDelegatedRouterAccessMasterFlags();
+  }});
+}}
+function resetDelegatedUserForm(clearMessage = true) {{
+  if (!delegatedUserForm) return;
+  delegatedUserDraftId = '';
+  delegatedUserForm.reset();
+  const fields = delegatedUserFormData();
+  if (fields && fields.id) fields.id.value = '';
+  if (fields && fields.username) fields.username.value = '';
+  if (fields && fields.enabled) fields.enabled.checked = true;
+  renderDelegatedRouterAccess();
+  scheduleDelegatedUserAutofillCleanup();
+  if (clearMessage) setDelegatedUserMessage('');
+}}
+function fillDelegatedUserForm(user) {{
+  const fields = delegatedUserFormData();
+  if (!fields || !user) return;
+  delegatedUserDraftId = String(user.id || '');
+  fields.id.value = delegatedUserDraftId;
+  fields.username.value = String(user.username || '');
+  fields.enabled.checked = !!user.enabled;
+  fields.password.value = '';
+  fields.passwordConfirm.value = '';
+  restoreOwnerPasswordInput(fields.currentPassword);
+  renderDelegatedRouterAccess(user.router_flags || {{}});
+  scheduleDelegatedUserAutofillCleanup({{preserveUsername: true}});
+  setDelegatedUserMessage('Редактируется пользователь ' + String(user.username || ''));
+}}
+function renderDelegatedUsers(items) {{
+  if (!delegatedUserList) return;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {{
+    delegatedUserList.innerHTML = '<div class="authEmpty">Ограниченные пользователи пока не созданы</div>';
+    return;
+  }}
+  delegatedUserList.innerHTML = list.map((item) => {{
+    const access = Array.isArray(item.router_access) ? item.router_access : [];
+    const accessText = access.length
+      ? access.map((row) => `${{row.name || row.id}} [${{row.flag_label || '-'}}]`).join(' · ')
+      : 'Без выданных роутеров';
+    const statusText = item.online ? 'Сейчас в Hub' : (item.enabled ? 'Активен' : 'Выключен');
+    const lastSeenText = Number(item.last_seen_at || 0) > 0 ? formatSessionTime(item.last_seen_at) : 'Ещё не заходил';
+    const lastLoginText = Number(item.last_login_at || 0) > 0 ? formatSessionTime(item.last_login_at) : 'Ещё не заходил';
+    const lastIpText = String(item.last_ip || '').trim() || 'Неизвестно';
+    const lastClientText = String(item.last_client || '').trim() || 'Неизвестно';
+    return `
+      <div class="authRow">
+        <div>
+          <div class="authRowTitle"><span>${{escapeHtml(item.username || 'user')}}</span></div>
+          <div class="authRowMeta">${{escapeHtml(statusText)}}<br>Роутеров: ${{Number(item.router_count || 0)}}<br>Входов: ${{Number(item.login_count || 0)}}<br>Активных сессий: ${{Number(item.session_count || 0)}}<br>Последний вход: ${{escapeHtml(lastLoginText)}}<br>Последняя активность: ${{escapeHtml(lastSeenText)}}<br>IP: ${{escapeHtml(lastIpText)}}<br>Клиент: ${{escapeHtml(lastClientText)}}<br>${{escapeHtml(accessText)}}</div>
+        </div>
+        <div class="notifyActions">
+          <button class="sessionBtn" type="button" data-delegated-edit="${{escapeAttr(item.id || '')}}">Изменить</button>
+          <button class="sessionBtn bad" type="button" data-delegated-revoke="${{escapeAttr(item.id || '')}}">Завершить</button>
+          <button class="sessionBtn bad" type="button" data-delegated-delete="${{escapeAttr(item.id || '')}}">Удалить</button>
+        </div>
+      </div>
+    `;
+  }}).join('');
+}}
+function renderDelegatedOverview(meta) {{
+  const assigned = Array.isArray(meta.assigned_routers) ? meta.assigned_routers : [];
+  authSummary.innerHTML = assigned.length
+    ? assigned.map((item) => `<span class="authPill">${{escapeHtml((item.name || item.id) + ' [' + (item.flag_label || '-') + ']')}}</span>`).join('')
+    : '<span class="authPill off">Роутеры не назначены</span>';
+  ['securityGroup', 'socialGroup', 'notifyGroup', 'backupGroup', 'delegatedUsersGroup'].forEach((id) => {{
+    const node = document.getElementById(id);
+    if (node) node.hidden = true;
+  }});
+  const sessionGroup = document.getElementById('sessionGroup');
+  if (sessionGroup) sessionGroup.hidden = false;
+  if (authMenuHeadLead) {{
+    authMenuHeadLead.hidden = false;
+    authMenuHeadLead.textContent = assigned.length
+      ? 'Доступ только к выбранным роутерам. Глобальные функции Hub и VPS скрыты.'
+      : 'Для этой учётки пока не выданы роутеры.';
+  }}
+}}
+function syncOwnerChrome() {{
+  const owner = authIsOwner();
+  const canAddRouter = authCanAddRouter();
+  ['xrayReload', 'xrayRestart'].forEach((id) => {{
+    const node = document.getElementById(id);
+    if (node) node.hidden = !owner;
+  }});
+  const vpsTerminalLink = document.querySelector('.headerActions a[href="/vps-terminal/"]');
+  if (vpsTerminalLink) vpsTerminalLink.hidden = !owner;
+  if (routerFormToggle) routerFormToggle.hidden = !canAddRouter;
+  if (!canAddRouter && routerFormWrap) routerFormWrap.hidden = true;
+}}
 function showAuthMenu() {{
   clearTimeout(authHideTimer);
   hideOfflineStats();
@@ -7721,6 +8513,16 @@ function renderAuthMeta() {{
 
 function renderAuthMeta() {{
   const meta = authMeta || {{}};
+  if (!meta.is_owner) {{
+    renderDelegatedOverview(meta);
+    syncOwnerChrome();
+    return;
+  }}
+  ['securityGroup', 'socialGroup', 'notifyGroup', 'backupGroup', 'delegatedUsersGroup'].forEach((id) => {{
+    const node = document.getElementById(id);
+    if (node) node.hidden = false;
+  }});
+  if (authMenuHeadLead) authMenuHeadLead.hidden = true;
   ensureCaptchaSettingsFields();
   const totpEnabled = !!meta.totp_enabled;
   const passkeyCount = Number(meta.passkey_count || (Array.isArray(meta.passkeys) ? meta.passkeys.length : 0) || 0);
@@ -7769,6 +8571,9 @@ function renderAuthMeta() {{
   renderPasskeyRows(meta.passkeys || []);
   renderSshKeyRows(meta.ssh_keys || []);
   Object.keys(socialProviderUi).forEach((provider) => renderSocialProvider(provider, meta.social && meta.social[provider]));
+  renderDelegatedRouterAccess();
+  renderDelegatedUsers(meta.delegated_users || []);
+  resetDelegatedUserForm(false);
 }}
 
 async function loadAuthMeta({{silent = false, forceUsername = false}} = {{}}) {{
@@ -7780,6 +8585,7 @@ async function loadAuthMeta({{silent = false, forceUsername = false}} = {{}}) {{
     syncAuthUsernameField(forceUsername);
     if (authToggle && authMeta.username) authToggle.textContent = authMeta.username;
     renderAuthMeta();
+    syncOwnerChrome();
     return authMeta;
   }} catch (err) {{
     if (!silent) setAuthMessage(err && err.message ? err.message : 'Не удалось получить статус авторизации', true);
@@ -7818,7 +8624,7 @@ async function saveSocialProvider(provider) {{
     setAuthMessage(data.error || `Не удалось сохранить настройки ${{ui.label}}`, true);
     return;
   }}
-  if (ui.currentPassword) ui.currentPassword.value = '';
+  if (ui.currentPassword) restoreOwnerPasswordInput(ui.currentPassword);
   authMeta = data.auth || authMeta;
   renderAuthMeta();
   setAuthMessage(data.message || `${{ui.label}} OAuth сохранён`);
@@ -7871,7 +8677,7 @@ async function unlinkSocialAccount(provider, accountId) {{
     setAuthMessage(data.error || `Не удалось отвязать аккаунт ${{ui.label}}`, true);
     return;
   }}
-  if (ui.currentPassword) ui.currentPassword.value = '';
+  if (ui.currentPassword) restoreOwnerPasswordInput(ui.currentPassword);
   authMeta = data.auth || authMeta;
   renderAuthMeta();
   setAuthMessage(data.message || `Аккаунт ${{ui.label}} отвязан`);
@@ -8004,6 +8810,10 @@ function notificationPermissionText() {{
 }}
 
 function updateNotifyButton() {{
+  if (!authIsOwner()) {{
+    notifyEnable.hidden = true;
+    return;
+  }}
   syncNotificationFlags();
   notifyEnable.textContent = notificationPermissionText();
   notifyEnable.classList.toggle('on', Notification.permission === 'granted' && (localStorage.getItem('owrtNotifyEnabled') === '1' || localStorage.getItem('owrtPushEnabled') === '1'));
@@ -8063,6 +8873,7 @@ async function registerPushSubscription() {{
 }}
 
 async function enableNotifications() {{
+  if (!authIsOwner()) return;
   if (!webPushSupported()) {{
     localStorage.setItem('owrtNotifyEnabled', notificationGranted() ? '1' : '0');
     localStorage.setItem('owrtPushEnabled', '0');
@@ -8171,6 +8982,7 @@ function applyNotificationItems(items, {{initial = false}} = {{}}) {{
 }}
 
 async function loadNotifications({{initial = false}} = {{}}) {{
+  if (!authIsOwner()) return;
   const params = new URLSearchParams();
   if (!initial && lastNotificationSerial > 0) params.set('after_serial', String(lastNotificationSerial));
   else if (!initial && lastNotificationTs > 0) params.set('after', String(lastNotificationTs));
@@ -8188,6 +9000,7 @@ async function loadNotifications({{initial = false}} = {{}}) {{
 }}
 
 async function waitNotificationsLoop() {{
+  if (!authIsOwner()) return;
   if (notificationWaitRunning || notificationWaitAbort) return;
   notificationWaitRunning = true;
   try {{
@@ -8376,6 +9189,61 @@ window.addEventListener('message', async (ev) => {{
 }});
 
 authMenu.addEventListener('click', async (ev) => {{
+  const delegatedEditId = ev.target?.dataset?.delegatedEdit;
+  if (delegatedEditId) {{
+    const user = (authMeta && Array.isArray(authMeta.delegated_users) ? authMeta.delegated_users : []).find((item) => String(item.id || '') === String(delegatedEditId));
+    if (user) fillDelegatedUserForm(user);
+    return;
+  }}
+  const delegatedRevokeId = ev.target?.dataset?.delegatedRevoke;
+  if (delegatedRevokeId) {{
+    const fields = delegatedUserFormData();
+    const currentPassword = String(fields && fields.currentPassword ? fields.currentPassword.value || '' : '').trim();
+    if (!currentPassword) {{
+      setDelegatedUserMessage('Введи текущий пароль владельца, чтобы завершить сессии пользователя.', true);
+      return;
+    }}
+    if (!confirm('Завершить все активные сессии этого пользователя?')) return;
+    const res = await fetch('/api/auth/users/revoke-sessions', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{id: delegatedRevokeId, current_password: currentPassword}})
+    }});
+    const data = await res.json().catch(() => ({{}}));
+    if (!res.ok || !data.ok) {{
+      setDelegatedUserMessage(data.error || 'Не удалось завершить сессии пользователя.', true);
+      return;
+    }}
+    authMeta = data.auth || authMeta;
+    renderAuthMeta();
+    setDelegatedUserMessage(data.message || 'Сессии пользователя завершены');
+    return;
+  }}
+  const delegatedDeleteId = ev.target?.dataset?.delegatedDelete;
+  if (delegatedDeleteId) {{
+    const fields = delegatedUserFormData();
+    const currentPassword = String(fields && fields.currentPassword ? fields.currentPassword.value || '' : '').trim();
+    if (!currentPassword) {{
+      setDelegatedUserMessage('Введи текущий пароль владельца, чтобы удалить пользователя.', true);
+      return;
+    }}
+    if (!confirm('Удалить этого ограниченного пользователя?')) return;
+    const res = await fetch('/api/auth/users/delete', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{id: delegatedDeleteId, current_password: currentPassword}})
+    }});
+    const data = await res.json().catch(() => ({{}}));
+    if (!res.ok || !data.ok) {{
+      setDelegatedUserMessage(data.error || 'Не удалось удалить пользователя.', true);
+      return;
+    }}
+    authMeta = data.auth || authMeta;
+    resetDelegatedUserForm(false);
+    renderAuthMeta();
+    setDelegatedUserMessage(data.message || 'Пользователь удалён');
+    return;
+  }}
   const passkeyId = ev.target?.dataset?.passkeyRemove;
   if (passkeyId) {{
     const currentPassword = passkeyCurrentPassword.value;
@@ -8394,7 +9262,7 @@ authMenu.addEventListener('click', async (ev) => {{
       setAuthMessage(data.error || 'Не удалось удалить passkey', true);
       return;
     }}
-    passkeyCurrentPassword.value = '';
+    restoreOwnerPasswordInput(passkeyCurrentPassword);
     authMeta = data.auth || authMeta;
     renderAuthMeta();
     setAuthMessage(data.message || 'Passkey удален');
@@ -8418,7 +9286,7 @@ authMenu.addEventListener('click', async (ev) => {{
       setAuthMessage(data.error || 'Не удалось удалить SSH ключ', true);
       return;
     }}
-    sshKeyCurrentPassword.value = '';
+    restoreOwnerPasswordInput(sshKeyCurrentPassword);
     authMeta = data.auth || authMeta;
     renderAuthMeta();
     setAuthMessage(data.message || 'SSH ключ удален');
@@ -8439,8 +9307,10 @@ authForm.addEventListener('submit', async (ev) => {{
   const res = await fetch('/api/auth', {{method: 'POST', body}});
   const text = await res.text();
   if (res.ok) {{
+    const nextCurrentPassword = ev.currentTarget.password.value ? String(ev.currentTarget.password.value || '') : String(ev.currentTarget.current_password.value || '');
+    if (ownerPasswordRememberEnabled()) setOwnerPasswordRememberEnabled(true, nextCurrentPassword);
     setAuthMessage(text || 'Доступ обновлен');
-    ev.currentTarget.current_password.value = '';
+    restoreOwnerPasswordInput(ev.currentTarget.current_password, nextCurrentPassword);
     ev.currentTarget.password.value = '';
     ev.currentTarget.password_confirm.value = '';
     authUsernameDraftDirty = false;
@@ -8449,6 +9319,49 @@ authForm.addEventListener('submit', async (ev) => {{
     setAuthMessage(text || 'Не удалось сохранить', true);
   }}
 }}, true);
+
+if (delegatedUserReset) {{
+  delegatedUserReset.addEventListener('click', () => resetDelegatedUserForm());
+}}
+
+if (delegatedUsersGroup) {{
+  delegatedUsersGroup.addEventListener('toggle', () => {{
+    if (delegatedUsersGroup.open) resetDelegatedUserForm(false);
+  }});
+}}
+
+if (delegatedUserForm) {{
+  delegatedUserForm.addEventListener('submit', async (ev) => {{
+    ev.preventDefault();
+    if (!authIsOwner()) return;
+    const fields = delegatedUserFormData();
+    if (!fields) return;
+    setDelegatedUserMessage('');
+    const payload = {{
+      id: String(fields.id.value || '').trim(),
+      username: String(fields.username.value || '').trim(),
+      enabled: !!fields.enabled.checked,
+      password: String(fields.password.value || ''),
+      password_confirm: String(fields.passwordConfirm.value || ''),
+      current_password: String(fields.currentPassword.value || ''),
+      router_flags: collectDelegatedRouterFlags()
+    }};
+    const res = await fetch('/api/auth/users/save', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify(payload)
+    }});
+    const data = await res.json().catch(() => ({{}}));
+    if (!res.ok || !data.ok) {{
+      setDelegatedUserMessage(data.error || 'Не удалось сохранить пользователя.', true);
+      return;
+    }}
+    authMeta = data.auth || authMeta;
+    resetDelegatedUserForm(false);
+    renderAuthMeta();
+    setDelegatedUserMessage(data.message || 'Пользователь сохранён');
+  }});
+}}
 
 totpSetupBtn.addEventListener('click', async () => {{
   setAuthMessage('');
@@ -8503,7 +9416,7 @@ totpEnableBtn.addEventListener('click', async () => {{
     return;
   }}
   resetTotpSetup();
-  totpCurrentPassword.value = '';
+  restoreOwnerPasswordInput(totpCurrentPassword);
   authMeta = data.auth || authMeta;
   renderAuthMeta();
   setAuthMessage(data.message || '2FA включена');
@@ -8533,8 +9446,8 @@ totpDisableBtn.addEventListener('click', async () => {{
     return;
   }}
   resetTotpSetup();
-  totpCurrentPassword.value = '';
-  totpDisableCurrentPassword.value = '';
+  restoreOwnerPasswordInput(totpCurrentPassword);
+  restoreOwnerPasswordInput(totpDisableCurrentPassword);
   totpDisableCode.value = '';
   authMeta = data.auth || authMeta;
   renderAuthMeta();
@@ -8583,7 +9496,7 @@ passkeyRegisterBtn.addEventListener('click', async () => {{
       setAuthMessage(finishData.error || 'Не удалось завершить регистрацию passkey', true);
       return;
     }}
-    passkeyCurrentPassword.value = '';
+    restoreOwnerPasswordInput(passkeyCurrentPassword);
     passkeyLabel.value = '';
     authMeta = finishData.auth || authMeta;
     renderAuthMeta();
@@ -8617,7 +9530,7 @@ sshKeyAddBtn.addEventListener('click', async () => {{
     setAuthMessage(data.error || 'Не удалось добавить SSH ED25519 ключ', true);
     return;
   }}
-  sshKeyCurrentPassword.value = '';
+  restoreOwnerPasswordInput(sshKeyCurrentPassword);
   sshKeyLabel.value = '';
   sshKeyPublic.value = '';
   authMeta = data.auth || authMeta;
@@ -8627,6 +9540,11 @@ sshKeyAddBtn.addEventListener('click', async () => {{
 
 renderSessions(window.HUB_SESSIONS);
 renderNotifications(window.HUB_NOTIFICATIONS);
+installOwnerPasswordRememberUi();
+if (authMeta && typeof authMeta === 'object' && Object.keys(authMeta).length) {{
+  renderAuthMeta();
+  syncOwnerChrome();
+}}
 loadAuthMeta({{silent: true}}).catch(() => {{}});
 reportClientHint();
 updateNotifyButton();
@@ -10724,6 +11642,86 @@ class Handler(BaseHTTPRequestHandler):
     def admin_ok(self):
         return bool(self.current_hub_session()) or self.legacy_admin_ok()
 
+    def current_account_profile(self, touch=True):
+        auth = normalize_auth_state(load_auth())
+        if self.legacy_admin_ok():
+            return account_profile(auth, auth.get("username", "admin"))
+        session = self.current_hub_session(touch=touch)
+        if not session:
+            return None
+        return account_profile(auth, session.get("username", ""))
+
+    def owner_ok(self):
+        profile = self.current_account_profile(touch=False)
+        return bool(profile and profile.get("is_owner"))
+
+    def can_add_router(self):
+        profile = self.current_account_profile(touch=False)
+        return bool(profile and account_can_add_router(profile))
+
+    def require_owner(self, json_mode=False):
+        if self.owner_ok():
+            return True
+        if not self.admin_ok():
+            if json_mode:
+                self.send_json(401, {"ok": False, "error": "not authorized"})
+            else:
+                self.send_bytes(401, login_html().encode("utf-8"), "text/html; charset=utf-8")
+            return False
+        if json_mode:
+            self.send_json(403, {"ok": False, "error": "Недостаточно прав"})
+        else:
+            self.send_text(403, "Недостаточно прав")
+        return False
+
+    def require_add_router(self, json_mode=False):
+        if self.can_add_router():
+            return True
+        if not self.admin_ok():
+            if json_mode:
+                self.send_json(401, {"ok": False, "error": "not authorized"})
+            else:
+                self.send_bytes(401, login_html().encode("utf-8"), "text/html; charset=utf-8")
+            return False
+        if json_mode:
+            self.send_json(403, {"ok": False, "error": "Недостаточно прав для добавления роутера"})
+        else:
+            self.send_text(403, "Недостаточно прав для добавления роутера")
+        return False
+
+    def router_access_allowed(self, router_id, flag):
+        profile = self.current_account_profile()
+        return bool(profile and account_has_router_flag(profile, router_id, flag))
+
+    def require_router_access(self, router_id, flag, json_mode=False):
+        if self.router_access_allowed(router_id, flag):
+            return True
+        if not self.admin_ok():
+            if json_mode:
+                self.send_json(401, {"ok": False, "error": "not authorized"})
+            else:
+                self.send_bytes(401, login_html().encode("utf-8"), "text/html; charset=utf-8")
+            return False
+        if json_mode:
+            self.send_json(403, {"ok": False, "error": "Недостаточно прав для этого роутера"})
+        else:
+            self.send_text(403, "Недостаточно прав для этого роутера")
+        return False
+
+    def current_or_owner_session_scope(self):
+        profile = self.current_account_profile(touch=False)
+        if not profile or profile.get("is_owner"):
+            return ""
+        return str(profile.get("username") or "")
+
+    def visible_routers(self, conn, account=None):
+        profile = account or self.current_account_profile()
+        routers = [row_to_router(r) for r in list_router_rows(conn)]
+        if profile and not profile.get("is_owner"):
+            allowed = set(profile.get("router_ids") or [])
+            routers = [router for router in routers if str(router.get("id") or "") in allowed]
+        return [router_with_access(router, profile) for router in routers]
+
     def ssh_token_ok(self, router_id):
         token = self.query().get("t", [""])[0]
         if not token:
@@ -10912,8 +11910,9 @@ class Handler(BaseHTTPRequestHandler):
         return False, "РќРµРІРµСЂРЅР°СЏ РєР°РїС‡Р°"
 
     def create_login_session(self, username="", auth_method="password"):
+        session_username = str(username or current_username()).strip()
         token, session = make_hub_session(
-            username or current_username(),
+            session_username,
             self.client_ip(),
             self.headers.get("User-Agent", ""),
             auth_method=auth_method,
@@ -10924,7 +11923,14 @@ class Handler(BaseHTTPRequestHandler):
             f"{session.get('client', 'устройство')} · {auth_method_label(auth_method)} · IP {session.get('ip', 'unknown')}",
             "warn",
             [session.get("user_agent", "")],
-            {"session_id": session.get("id", ""), "ip": session.get("ip", ""), "auth_method": auth_method},
+            {
+                "session_id": session.get("id", ""),
+                "username": session_username,
+                "ip": session.get("ip", ""),
+                "client": session.get("client", ""),
+                "user_agent": session.get("user_agent", ""),
+                "auth_method": auth_method,
+            },
         )
         return token, session
 
@@ -11207,7 +12213,7 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
             return
         ok, error_text, auth, auth_method = verify_password_login(username, password, otp)
         if ok:
-            token, _ = self.create_login_session(auth.get("username", username), auth_method)
+            token, _ = self.create_login_session((auth or {}).get("username", username), auth_method)
             self.redirect("/", [("Set-Cookie", self.session_cookie(token))])
             return
         self.send_bytes(401, login_html(error_text or "Неверный логин или пароль").encode("utf-8"), "text/html; charset=utf-8")
@@ -11223,7 +12229,7 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
             return
         ok, error_text, auth, auth_method = verify_password_login(username, password, otp)
         if ok:
-            token, _ = self.create_login_session(auth.get("username", username), auth_method)
+            token, _ = self.create_login_session((auth or {}).get("username", username), auth_method)
             self.redirect("/", [("Set-Cookie", self.session_cookie(token))])
             return
         self.send_bytes(401, login_html(error_text or "РќРµРІРµСЂРЅС‹Р№ Р»РѕРіРёРЅ РёР»Рё РїР°СЂРѕР»СЊ").encode("utf-8"), "text/html; charset=utf-8")
@@ -11289,8 +12295,61 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
         save_auth_state(auth)
         self.send_text(200, "Доступ к Hub обновлен")
 
-    def build_auth_meta(self, admin=False):
-        meta = admin_auth_meta() if admin else public_auth_meta()
+    def build_auth_meta(self):
+        auth = normalize_auth_state(load_auth())
+        current = self.current_account_profile(touch=False) if self.admin_ok() else None
+        if current and current.get("is_owner"):
+            meta = admin_auth_meta(auth)
+            with self.app.conn() as conn:
+                router_rows = list_router_rows(conn)
+            session_rows_by_username = {}
+            for session in list_hub_sessions("", ""):
+                username = str(session.get("username") or "")
+                if not username:
+                    continue
+                session_rows_by_username.setdefault(username, []).append(session)
+            login_rows_by_username = {}
+            for event in list_login_events(""):
+                username = str(event.get("username") or "")
+                if not username:
+                    continue
+                login_rows_by_username.setdefault(username, []).append(event)
+            meta["username"] = current.get("username", auth.get("username", "admin"))
+            meta["is_owner"] = True
+            meta["can_add_router"] = True
+            meta["current_user"] = {
+                "username": current.get("username", auth.get("username", "admin")),
+                "is_owner": True,
+            }
+            meta["router_options"] = [
+                {
+                    "id": router.get("id", ""),
+                    "name": router.get("name", ""),
+                    "role": router.get("role", "node"),
+                }
+                for router in [row_to_router(row) for row in router_rows]
+            ]
+            meta["delegated_users"] = [
+                item
+                for item in (
+                    serialize_delegated_user(
+                        auth,
+                        user,
+                        router_rows,
+                        session_rows_by_username.get(str((user or {}).get("username") or ""), []),
+                        login_rows_by_username.get(str((user or {}).get("username") or ""), []),
+                    )
+                    for user in auth.get("delegated_users", [])
+                )
+                if item
+            ]
+        elif current:
+            with self.app.conn() as conn:
+                router_rows = list_router_rows(conn)
+            meta = delegated_auth_meta(auth, current, router_rows)
+        else:
+            meta = public_auth_meta(auth)
+            meta["can_add_router"] = False
         social = meta.get("social") if isinstance(meta.get("social"), dict) else {}
         for provider, item in social.items():
             if not isinstance(item, dict):
@@ -11299,10 +12358,127 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
         return meta
 
     def auth_meta(self):
-        if self.admin_ok():
-            self.send_json(200, {"ok": True, "auth": self.build_auth_meta(admin=True)})
-            return
-        self.send_json(200, {"ok": True, "auth": self.build_auth_meta(admin=False)})
+        self.send_json(200, {"ok": True, "auth": self.build_auth_meta()})
+
+    def save_delegated_user(self):
+        try:
+            payload = self.read_payload()
+            auth = self.require_current_password(payload)
+            username = clean_username(payload.get("username", ""))
+            if secrets.compare_digest(username, auth.get("username", "")):
+                raise ValueError("Главный аккаунт нельзя превратить в ограниченный")
+            user_id = str(payload.get("id") or "").strip()
+            password = str(payload.get("password") or "")
+            password_confirm = str(payload.get("password_confirm") or "")
+            if password:
+                if password != password_confirm:
+                    raise ValueError("Пароль и повтор не совпадают")
+                if len(password) < MIN_PASSWORD_LENGTH:
+                    raise ValueError(f"Пароль должен быть минимум {MIN_PASSWORD_LENGTH} символа")
+                next_password = password_digest(password)
+            else:
+                next_password = None
+            router_flags = sanitize_router_access_map(payload.get("router_flags"))
+            enabled = bool(payload.get("enabled", True))
+            existing = None
+            for item in auth.get("delegated_users", []):
+                if user_id and item.get("id") == user_id:
+                    existing = item
+                    break
+            for item in auth.get("delegated_users", []):
+                if existing and item.get("id") == existing.get("id"):
+                    continue
+                if secrets.compare_digest(item.get("username", ""), username):
+                    raise ValueError("Пользователь с таким логином уже существует")
+            if existing is None and next_password is None:
+                raise ValueError("Для нового пользователя нужен пароль")
+            updated_users = []
+            replaced = False
+            for item in auth.get("delegated_users", []):
+                if existing and item.get("id") == existing.get("id"):
+                    updated_users.append(
+                        {
+                            **item,
+                            "username": username,
+                            "password": next_password or item.get("password", {}),
+                            "enabled": enabled,
+                            "router_flags": router_flags,
+                            "updated_at": now_ts(),
+                        }
+                    )
+                    replaced = True
+                    continue
+                updated_users.append(item)
+            if not replaced:
+                updated_users.append(
+                    {
+                        "id": user_id or secrets.token_hex(8),
+                        "username": username,
+                        "password": next_password,
+                        "enabled": enabled,
+                        "router_flags": router_flags,
+                        "created_at": now_ts(),
+                        "updated_at": now_ts(),
+                    }
+                )
+            auth = save_auth_state({**auth, "delegated_users": updated_users})
+            self.send_json(200, {"ok": True, "message": "Пользователь сохранен", "auth": self.build_auth_meta()})
+        except ValueError as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+        except Exception as exc:
+            self.send_json(500, {"ok": False, "error": str(exc)})
+
+    def delete_delegated_user(self):
+        try:
+            payload = self.read_payload()
+            auth = self.require_current_password(payload)
+            user_id = str(payload.get("id") or "").strip()
+            if not user_id:
+                raise ValueError("Не указан пользователь")
+            removed = 0
+            removed_username = ""
+            kept = []
+            for item in auth.get("delegated_users", []):
+                if item.get("id") == user_id:
+                    removed += 1
+                    removed_username = str(item.get("username") or "")
+                    continue
+                kept.append(item)
+            if not removed:
+                raise ValueError("Пользователь уже удален")
+            revoke_hub_sessions_for_username(removed_username)
+            auth = save_auth_state({**auth, "delegated_users": kept})
+            self.send_json(200, {"ok": True, "message": "Пользователь удален", "auth": self.build_auth_meta()})
+        except ValueError as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+        except Exception as exc:
+            self.send_json(500, {"ok": False, "error": str(exc)})
+
+    def revoke_delegated_user_sessions(self):
+        try:
+            payload = self.read_payload()
+            auth = self.require_current_password(payload)
+            user_id = str(payload.get("id") or "").strip()
+            if not user_id:
+                raise ValueError("Не указан пользователь")
+            target = next((item for item in auth.get("delegated_users", []) if item.get("id") == user_id), None)
+            if not target:
+                raise ValueError("Пользователь не найден")
+            target_username = str(target.get("username") or "").strip()
+            removed = revoke_hub_sessions_for_username(target_username)
+            self.send_json(
+                200,
+                {
+                    "ok": True,
+                    "removed": removed,
+                    "message": "Сессии пользователя завершены" if removed else "У пользователя нет активных сессий",
+                    "auth": self.build_auth_meta(),
+                },
+            )
+        except ValueError as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+        except Exception as exc:
+            self.send_json(500, {"ok": False, "error": str(exc)})
 
     def save_social_provider_config(self, provider):
         try:
@@ -11783,9 +12959,9 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
         return urllib.parse.unquote(suffix.split("/", 1)[0])
 
     def ssh_page(self):
-        if not self.require_admin():
-            return
         router_id = self.router_id_from_path("/ssh/")
+        if not self.require_router_access(router_id, "B"):
+            return
         with self.app.conn() as conn:
             row = get_active_router(conn, router_id)
         if not row:
@@ -11803,7 +12979,7 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
         )
 
     def vps_terminal_page(self):
-        if not self.require_admin():
+        if not self.require_owner():
             return
         row = vps_terminal_row()
         ws_token = ssh_ws_token(self.app.session_token, row["id"])
@@ -11819,8 +12995,14 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
         except OSError:
             pass
         router_id = self.router_id_from_path("/ssh-ws/")
-        if not (self.admin_ok() or self.ssh_token_ok(router_id)):
-            self.send_response(403)
+        if self.ssh_token_ok(router_id):
+            allowed = True
+        elif is_vps_terminal_id(router_id):
+            allowed = self.owner_ok()
+        else:
+            allowed = self.router_access_allowed(router_id, "B")
+        if not allowed:
+            self.send_response(403 if self.admin_ok() else 401)
             self.end_headers()
             return
         if not is_vps_terminal_id(router_id):
@@ -11855,7 +13037,13 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
         router_id = self.router_id_from_path("/api/ssh/")
         if router_id.endswith("/check"):
             router_id = router_id[:-6].rstrip("/")
-        if not (self.admin_ok() or self.ssh_token_ok(router_id)):
+        if self.ssh_token_ok(router_id):
+            allowed = True
+        elif is_vps_terminal_id(router_id):
+            allowed = self.owner_ok()
+        else:
+            allowed = self.router_access_allowed(router_id, "B")
+        if not allowed:
             self.send_json(403, {"ok": False, "error": "not authorized", "tcp_ok": False})
             return
         if is_vps_terminal_id(router_id):
@@ -12821,7 +14009,13 @@ exit 127
 
     def ssh_http_session(self):
         router_id = self.router_id_from_path("/api/ssh/")
-        if not (self.admin_ok() or self.ssh_token_ok(router_id)):
+        if self.ssh_token_ok(router_id):
+            allowed = True
+        elif is_vps_terminal_id(router_id):
+            allowed = self.owner_ok()
+        else:
+            allowed = self.router_access_allowed(router_id, "B")
+        if not allowed:
             self.send_json(403, {"ok": False, "error": "not authorized"})
             return
         if is_vps_terminal_id(router_id):
@@ -12928,6 +14122,19 @@ exit 127
             return
         sid = urllib.parse.unquote(parts[2])
         action = parts[3]
+        with SSH_HTTP_LOCK:
+            session = SSH_HTTP_SESSIONS.get(sid)
+        if not session:
+            self.send_json(404, {"ok": False, "error": "terminal session not found"})
+            return
+        router_id = str(session.get("router_id") or "")
+        if is_vps_terminal_id(router_id):
+            allowed = self.owner_ok()
+        else:
+            allowed = self.router_access_allowed(router_id, "B")
+        if not allowed:
+            self.send_json(403, {"ok": False, "error": "not authorized"})
+            return
         if action == "read":
             self.ssh_http_read(sid)
             return
@@ -13209,6 +14416,7 @@ exit 127
         if path == "/" or path == "":
             extra_headers = []
             session_token_value = self.current_session_token()
+            profile = self.current_account_profile(touch=False)
             if self.legacy_admin_ok() and not self.current_hub_session(touch=False):
                 session_token_value, session = make_hub_session(current_username(), self.client_ip(), self.headers.get("User-Agent", ""))
                 add_notification(
@@ -13221,14 +14429,14 @@ exit 127
                 )
                 extra_headers.append(("Set-Cookie", self.session_cookie(session_token_value)))
             with self.app.conn() as conn:
-                routers = [row_to_router(r) for r in list_router_rows(conn)]
+                routers = self.visible_routers(conn, profile)
             self.send_bytes(
                 200,
                 dashboard_html(
                     routers,
-                    current_username(),
-                    list_hub_sessions(session_token_value),
-                    list_notifications(0, 40),
+                    (profile or {}).get("username") or current_username(),
+                    list_hub_sessions(session_token_value, self.current_or_owner_session_scope()),
+                    list_notifications(0, 40) if not profile or profile.get("is_owner") else [],
                 ).encode("utf-8"),
                 "text/html; charset=utf-8",
                 extra_headers,
@@ -13236,16 +14444,20 @@ exit 127
             return
         if path == "/api/routers":
             with self.app.conn() as conn:
-                routers = [row_to_router(r) for r in list_router_rows(conn)]
+                routers = self.visible_routers(conn)
             self.send_json(200, {"routers": routers})
             return
         if path == "/api/backup/download":
+            if not self.require_owner():
+                return
             self.backup_download()
             return
         if path == "/api/sessions":
-            self.send_json(200, {"sessions": list_hub_sessions(self.current_session_token())})
+            self.send_json(200, {"sessions": list_hub_sessions(self.current_session_token(), self.current_or_owner_session_scope())})
             return
         if path == "/api/notifications":
+            if not self.require_owner(json_mode=True):
+                return
             query = self.query()
             self.send_json(
                 200,
@@ -13260,6 +14472,8 @@ exit 127
             )
             return
         if path == "/api/notifications/wait":
+            if not self.require_owner(json_mode=True):
+                return
             query = self.query()
             self.send_json(
                 200,
@@ -13274,6 +14488,8 @@ exit 127
             )
             return
         if path == "/api/push/vapid-public-key":
+            if not self.require_owner(json_mode=True):
+                return
             public_key = vapid_public_key()
             if not webpush:
                 self.send_json(503, {"ok": False, "error": "На VPS не установлен Web Push модуль. Запусти свежий install-vps.sh.", "publicKey": public_key})
@@ -13289,6 +14505,8 @@ exit 127
                 self.send_text(404, "not found")
                 return
             router_id = urllib.parse.unquote(parts[2])
+            if not self.require_router_access(router_id, "G", json_mode=True):
+                return
             with self.app.conn() as conn:
                 row = get_active_router(conn, router_id)
             if not row:
@@ -13377,48 +14595,93 @@ exit 127
         if not self.require_admin():
             return
         if path == "/api/auth":
+            if not self.require_owner():
+                return
             self.update_auth()
             return
+        if path == "/api/auth/users/save":
+            if not self.require_owner(json_mode=True):
+                return
+            self.save_delegated_user()
+            return
+        if path == "/api/auth/users/delete":
+            if not self.require_owner(json_mode=True):
+                return
+            self.delete_delegated_user()
+            return
+        if path == "/api/auth/users/revoke-sessions":
+            if not self.require_owner(json_mode=True):
+                return
+            self.revoke_delegated_user_sessions()
+            return
         if path == "/api/auth/totp/setup":
+            if not self.require_owner(json_mode=True):
+                return
             self.totp_setup()
             return
         if path == "/api/auth/totp/enable":
+            if not self.require_owner(json_mode=True):
+                return
             self.totp_enable()
             return
         if path == "/api/auth/totp/disable":
+            if not self.require_owner(json_mode=True):
+                return
             self.totp_disable()
             return
         if path == "/api/auth/passkeys/begin":
+            if not self.require_owner(json_mode=True):
+                return
             self.begin_passkey_registration()
             return
         if path == "/api/auth/passkeys/finish":
+            if not self.require_owner(json_mode=True):
+                return
             self.finish_passkey_registration()
             return
         if path == "/api/auth/passkeys/remove":
+            if not self.require_owner(json_mode=True):
+                return
             self.remove_passkey()
             return
         if path == "/api/auth/ssh-keys/add":
+            if not self.require_owner(json_mode=True):
+                return
             self.add_ssh_key()
             return
         if path == "/api/auth/ssh-keys/remove":
+            if not self.require_owner(json_mode=True):
+                return
             self.remove_ssh_key()
             return
         if path == "/api/auth/social/github/save":
+            if not self.require_owner(json_mode=True):
+                return
             self.save_social_provider_config("github")
             return
         if path == "/api/auth/social/vk/save":
+            if not self.require_owner(json_mode=True):
+                return
             self.save_social_provider_config("vk")
             return
         if path == "/api/auth/social/github/link":
+            if not self.require_owner(json_mode=True):
+                return
             self.begin_social_link("github")
             return
         if path == "/api/auth/social/vk/link":
+            if not self.require_owner(json_mode=True):
+                return
             self.begin_social_link("vk")
             return
         if path == "/api/auth/social/github/unlink":
+            if not self.require_owner(json_mode=True):
+                return
             self.unlink_social_account("github")
             return
         if path == "/api/auth/social/vk/unlink":
+            if not self.require_owner(json_mode=True):
+                return
             self.unlink_social_account("vk")
             return
         if path == "/api/session/client-hint":
@@ -13439,6 +14702,18 @@ exit 127
             if current and session_id == current.get("id"):
                 self.send_text(400, "Текущую сессию заверши кнопкой Выйти")
                 return
+            if not self.owner_ok():
+                session_allowed = next(
+                    (
+                        session
+                        for session in list_hub_sessions(self.current_session_token(), self.current_or_owner_session_scope())
+                        if session.get("id") == session_id
+                    ),
+                    None,
+                )
+                if not session_allowed:
+                    self.send_json(403, {"ok": False, "error": "not authorized"})
+                    return
             removed = revoke_hub_session(session_id=session_id)
             self.send_json(200, {"ok": True, "removed": removed})
             return
@@ -13446,22 +14721,30 @@ exit 127
             current = self.current_hub_session(touch=False)
             current_id = current.get("id", "") if current else ""
             removed = 0
-            for session in list_hub_sessions(self.current_session_token()):
+            for session in list_hub_sessions(self.current_session_token(), self.current_or_owner_session_scope()):
                 if session.get("id") != current_id:
                     removed += revoke_hub_session(session_id=session.get("id", ""))
             self.send_json(200, {"ok": True, "removed": removed})
             return
         if path == "/api/notifications/clear":
+            if not self.require_owner(json_mode=True):
+                return
             clear_notifications()
             self.send_json(200, {"ok": True})
             return
         if path == "/api/backup/restore":
+            if not self.require_owner(json_mode=True):
+                return
             self.backup_restore()
             return
         if path == "/api/routers/rewrite-endpoints":
+            if not self.require_owner(json_mode=True):
+                return
             self.router_endpoints_rewrite()
             return
         if path == "/api/push/subscribe":
+            if not self.require_owner(json_mode=True):
+                return
             try:
                 payload = self.read_payload()
                 session = self.current_hub_session(touch=False) or {}
@@ -13490,6 +14773,8 @@ exit 127
                 self.send_json(400, {"ok": False, "error": str(exc)})
             return
         if path == "/api/push/unsubscribe":
+            if not self.require_owner(json_mode=True):
+                return
             try:
                 payload = self.read_payload()
                 removed = remove_push_subscription(payload.get("endpoint", ""))
@@ -13498,6 +14783,8 @@ exit 127
                 self.send_json(400, {"ok": False, "error": str(exc)})
             return
         if path == "/api/xray/reload":
+            if not self.require_owner(json_mode=True):
+                return
             try:
                 result = reload_vps_xray(self.app.db_path)
                 self.send_json(200, {"ok": True, **result})
@@ -13505,6 +14792,8 @@ exit 127
                 self.send_text(500, str(exc))
             return
         if path == "/api/xray/restart":
+            if not self.require_owner(json_mode=True):
+                return
             try:
                 result = restart_vps_xray()
                 self.send_json(200, {"ok": True, **result})
@@ -13512,7 +14801,10 @@ exit 127
                 self.send_text(500, str(exc))
             return
         if path == "/api/router":
+            if not self.require_add_router(json_mode=True):
+                return
             try:
+                current = self.current_account_profile(touch=False) or {}
                 payload = self.read_payload()
                 router_id = clean_router_id(payload.get("id"))
                 entry_port = int(payload.get("entry_port") or 0)
@@ -13545,7 +14837,9 @@ exit 127
                     payload["ssh_entry_port"] = ssh_entry_port
                     row = upsert_router(conn, payload)
                     router = row_to_router(row)
-                self.send_json(200, {"ok": True, "router": router})
+                if current and not current.get("is_owner"):
+                    grant_delegated_router_flag(load_auth(), current.get("username", ""), router_id, "G")
+                self.send_json(200, {"ok": True, "router": router, "auth": self.build_auth_meta()})
             except Exception as exc:
                 self.send_text(400, str(exc))
             return
@@ -13555,6 +14849,8 @@ exit 127
                 self.send_text(404, "not found")
                 return
             router_id = urllib.parse.unquote(parts[2])
+            if not self.require_router_access(router_id, "G", json_mode=True):
+                return
             try:
                 payload = self.read_payload()
                 with self.app.conn() as conn:
@@ -13573,6 +14869,8 @@ exit 127
                 self.send_text(404, "not found")
                 return
             router_id = urllib.parse.unquote(parts[2])
+            if not self.require_router_access(router_id, "G", json_mode=True):
+                return
             try:
                 payload = self.read_payload()
                 with self.app.conn() as conn:
@@ -13602,6 +14900,8 @@ exit 127
                 self.send_text(404, "not found")
                 return
             router_id = urllib.parse.unquote(parts[2])
+            if not self.require_router_access(router_id, "G", json_mode=True):
+                return
             try:
                 payload = self.read_payload()
                 with self.app.conn() as conn:
@@ -13620,6 +14920,8 @@ exit 127
                 self.send_text(404, "not found")
                 return
             router_id = urllib.parse.unquote(parts[2])
+            if not self.require_router_access(router_id, "G", json_mode=True):
+                return
             try:
                 payload = self.read_payload()
                 with self.app.conn() as conn:
@@ -13640,6 +14942,8 @@ exit 127
         if path.startswith("/api/router/") and path.endswith("/rename"):
             try:
                 router_id = urllib.parse.unquote(path.split("/")[3])
+                if not self.require_router_access(router_id, "G", json_mode=True):
+                    return
                 payload = self.read_payload()
                 with self.app.conn() as conn:
                     row = rename_router(conn, router_id, payload.get("name"))
@@ -13649,6 +14953,8 @@ exit 127
             return
         if path.startswith("/api/router/") and path.endswith("/delete"):
             router_id = urllib.parse.unquote(path.split("/")[3])
+            if not self.require_owner(json_mode=True):
+                return
             deleted = False
             xray_result = None
             warnings = []
@@ -13678,6 +14984,15 @@ exit 127
             return
         _, router_id, asset = parts
         router_id = urllib.parse.unquote(router_id)
+        if asset == "config":
+            if not self.require_router_access(router_id, "G"):
+                return
+        elif asset == "xray-client.json":
+            if not self.require_router_access(router_id, "G", json_mode=True):
+                return
+        else:
+            self.send_text(404, "not found")
+            return
         with self.app.conn() as conn:
             row = get_active_router(conn, router_id)
         if not row:
@@ -13706,13 +15021,13 @@ exit 127
         self.send_text(404, "not found")
 
     def proxy_access(self, path):
-        if not self.require_admin():
-            return
         parts = path.split("/", 3)
         if len(parts) < 3 or not parts[2]:
             self.redirect("/")
             return
         router_id = urllib.parse.unquote(parts[2])
+        if not self.require_router_access(router_id, "A"):
+            return
         rest = "/" + parts[3] if len(parts) == 4 else "/"
         with self.app.conn() as conn:
             row = get_active_router(conn, router_id)
