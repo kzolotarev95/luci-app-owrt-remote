@@ -2,7 +2,7 @@
 set -u
 
 APP_NAME="OpenWrt Remote Hub"
-INSTALLER_VERSION="2026-08-13-passkey-v1"
+INSTALLER_VERSION="2026-08-15-branding-v1"
 RAW_BASE="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 STATE_DIR="${OWRT_REMOTE_STATE_DIR:-/var/lib/owrt-remote}"
 HUB_LOGIN="${HUB_LOGIN:-admin}"
@@ -97,11 +97,16 @@ install_xray_binary() {
 
 install_files() {
 	cache_bust="$(date +%s)"
-	$SUDO mkdir -p /opt/owrt-remote "$STATE_DIR" /etc/xray
+	$SUDO mkdir -p /opt/owrt-remote/static "$STATE_DIR" /etc/xray
 	$SUDO wget -O /opt/owrt-remote/owrt-remote-hub.py "$RAW_BASE/vps/owrt-remote-hub.py?v=$cache_bust"
 	$SUDO wget -O /opt/owrt-remote/owrt-remote-run.sh "$RAW_BASE/vps/owrt-remote-run.sh?v=$cache_bust"
 	$SUDO wget -O /etc/systemd/system/owrt-remote.service "$RAW_BASE/vps/owrt-remote.service?v=$cache_bust"
 	$SUDO wget -O /opt/owrt-remote/enable-https.sh "$RAW_BASE/vps/enable-https.sh?v=$cache_bust"
+	$SUDO wget -O /opt/owrt-remote/static/favicon.ico "$RAW_BASE/vps/static/favicon.ico?v=$cache_bust"
+	$SUDO wget -O /opt/owrt-remote/static/favicon-32.png "$RAW_BASE/vps/static/favicon-32.png?v=$cache_bust"
+	$SUDO wget -O /opt/owrt-remote/static/favicon-192.png "$RAW_BASE/vps/static/favicon-192.png?v=$cache_bust"
+	$SUDO wget -O /opt/owrt-remote/static/favicon-512.png "$RAW_BASE/vps/static/favicon-512.png?v=$cache_bust"
+	$SUDO wget -O /opt/owrt-remote/static/apple-touch-icon.png "$RAW_BASE/vps/static/apple-touch-icon.png?v=$cache_bust"
 	$SUDO chmod +x /opt/owrt-remote/owrt-remote-hub.py /opt/owrt-remote/owrt-remote-run.sh /opt/owrt-remote/enable-https.sh
 }
 

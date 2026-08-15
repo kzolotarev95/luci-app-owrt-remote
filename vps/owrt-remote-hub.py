@@ -24,7 +24,9 @@ import tarfile
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.parse
+import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -61,6 +63,14 @@ except Exception:
 
 APP_NAME = "OpenWrt Remote Hub"
 RAW_REPO_BASE = "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main"
+APP_DIR = Path(__file__).resolve().parent
+STATIC_DIR = APP_DIR / "static"
+BRAND_THEME_COLOR = "#24192f"
+FAVICON_ICO_FILE = STATIC_DIR / "favicon.ico"
+FAVICON_PNG_32_FILE = STATIC_DIR / "favicon-32.png"
+FAVICON_PNG_192_FILE = STATIC_DIR / "favicon-192.png"
+FAVICON_PNG_512_FILE = STATIC_DIR / "favicon-512.png"
+APPLE_TOUCH_ICON_FILE = STATIC_DIR / "apple-touch-icon.png"
 STATE_DIR = Path(os.environ.get("OWRT_REMOTE_STATE_DIR", "/var/lib/owrt-remote"))
 DB_PATH = Path(os.environ.get("OWRT_REMOTE_DB", str(STATE_DIR / "hub.db")))
 AUTH_FILE = STATE_DIR / "hub-auth.json"
@@ -88,6 +98,9 @@ SESSION_COOKIE = "owrt_remote_session"
 ROUTER_COOKIE = "owrt_remote_router"
 SESSION_TTL_SECONDS = int(os.environ.get("OWRT_REMOTE_SESSION_TTL", str(30 * 24 * 60 * 60)))
 CAPTCHA_TTL_SECONDS = 600
+CAPTCHA_MODE_DIGITS = "digits"
+CAPTCHA_MODE_RECAPTCHA = "recaptcha"
+RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
 AUTH_CHALLENGE_TTL_SECONDS = 300
 TOTP_PERIOD_SECONDS = 30
 TOTP_DIGITS = 6
@@ -123,6 +136,19 @@ BACKUP_STATE_FILES = (
     XRAY_WAN_RECONNECT_FILE,
     TRAFFIC_COUNTERS_FILE,
 )
+SOCIAL_PROVIDERS = {
+    "github": {
+        "label": "GitHub",
+        "authorize_url": "https://github.com/login/oauth/authorize",
+        "token_url": "https://github.com/login/oauth/access_token",
+    },
+    "vk": {
+        "label": "VK ID",
+        "authorize_url": "https://id.vk.ru/authorize",
+        "token_url": "https://id.vk.ru/oauth2/auth",
+        "api_url": "https://id.vk.ru/oauth2/user_info",
+    },
+}
 
 
 def now_ts():
@@ -382,6 +408,140 @@ def sanitize_ssh_key_record(item):
     }
 
 
+def social_provider_label(provider):
+    return SOCIAL_PROVIDERS.get(str(provider or "").strip().lower(), {}).get("label", "OAuth")
+
+
+def default_social_provider_state(provider=""):
+    return {
+        "client_id": "",
+        "client_secret": "",
+        "accounts": [],
+    }
+
+
+def social_provider_secret_label(provider):
+    provider = str(provider or "").strip().lower()
+    if provider == "vk":
+        return "Service Token"
+    return "Client Secret"
+
+
+def social_provider_secret_required(provider):
+    provider = str(provider or "").strip().lower()
+    return provider != "vk"
+
+
+def social_provider_configured(provider, item):
+    provider = str(provider or "").strip().lower()
+    item = dict(item or {})
+    if not item.get("client_id"):
+        return False
+    if social_provider_secret_required(provider):
+        return bool(item.get("client_secret"))
+    return True
+
+
+def social_provider_setup_message(provider):
+    label = social_provider_label(provider)
+    if social_provider_secret_required(provider):
+        return f"Сначала сохрани client_id и {social_provider_secret_label(provider).lower()} для {label}"
+    return f"Сначала сохрани client_id для {label}"
+
+
+def sanitize_social_account_record(provider, item):
+    item = dict(item or {})
+    account_id = str(item.get("id") or "").strip()
+    if not account_id:
+        return None
+    login = str(item.get("login") or "").strip()[:120]
+    name = str(item.get("name") or "").strip()[:160]
+    email = str(item.get("email") or "").strip()[:160]
+    label = str(item.get("label") or "").strip()[:160]
+    if not label:
+        label = name or login or email or f"{social_provider_label(provider)} #{account_id}"
+    return {
+        "id": account_id,
+        "label": label,
+        "login": login,
+        "name": name,
+        "email": email,
+        "profile_url": str(item.get("profile_url") or "").strip()[:500],
+        "avatar_url": str(item.get("avatar_url") or "").strip()[:500],
+        "linked_at": int(item.get("linked_at") or now_ts()),
+        "last_used_at": int(item.get("last_used_at") or 0),
+    }
+
+
+def sanitize_social_provider_state(provider, item):
+    clean = default_social_provider_state(provider)
+    item = dict(item or {})
+    clean["client_id"] = str(item.get("client_id") or "").strip()[:240]
+    clean["client_secret"] = str(item.get("client_secret") or "").strip()[:512]
+    seen = set()
+    accounts = []
+    for row in item.get("accounts", []) if isinstance(item.get("accounts"), list) else []:
+        account = sanitize_social_account_record(provider, row)
+        if not account or account["id"] in seen:
+            continue
+        seen.add(account["id"])
+        accounts.append(account)
+    clean["accounts"] = accounts
+    return clean
+
+
+def social_provider_enabled(provider, item):
+    item = dict(item or {})
+    return bool(social_provider_configured(provider, item) and item.get("accounts"))
+
+
+def social_public_meta(auth=None):
+    auth = normalize_auth_state(auth or load_auth())
+    social = auth.get("social", {})
+    result = {}
+    for provider in SOCIAL_PROVIDERS:
+        item = sanitize_social_provider_state(provider, social.get(provider))
+        result[provider] = {
+            "label": social_provider_label(provider),
+            "configured": social_provider_configured(provider, item),
+            "linked_count": len(item.get("accounts", [])),
+            "enabled": social_provider_enabled(provider, item),
+        }
+    return result
+
+
+def default_captcha_state():
+    return {
+        "mode": CAPTCHA_MODE_DIGITS,
+        "site_key": "",
+        "secret_key": "",
+    }
+
+
+def sanitize_captcha_mode(value):
+    value = str(value or "").strip().lower()
+    return CAPTCHA_MODE_RECAPTCHA if value == CAPTCHA_MODE_RECAPTCHA else CAPTCHA_MODE_DIGITS
+
+
+def sanitize_captcha_state(item):
+    clean = default_captcha_state()
+    item = dict(item or {})
+    clean["mode"] = sanitize_captcha_mode(item.get("mode"))
+    clean["site_key"] = str(item.get("site_key") or "").strip()[:240]
+    clean["secret_key"] = str(item.get("secret_key") or "").strip()[:512]
+    return clean
+
+
+def effective_captcha_state(auth=None):
+    auth = normalize_auth_state(auth or load_auth())
+    state = sanitize_captcha_state(auth.get("captcha"))
+    configured = bool(state.get("site_key") and state.get("secret_key"))
+    effective_mode = CAPTCHA_MODE_RECAPTCHA if state.get("mode") == CAPTCHA_MODE_RECAPTCHA and configured else CAPTCHA_MODE_DIGITS
+    state["configured"] = configured
+    state["effective_mode"] = effective_mode
+    return state
+
+
 def normalize_auth_state(data):
     raw = dict(data or {})
     state = {
@@ -420,26 +580,49 @@ def normalize_auth_state(data):
         ssh_keys.append(clean)
     state["passkeys"] = passkeys
     state["ssh_keys"] = ssh_keys
+    state["captcha"] = sanitize_captcha_state(raw.get("captcha"))
+    social_state = {}
+    raw_social = raw.get("social") if isinstance(raw.get("social"), dict) else {}
+    for provider in SOCIAL_PROVIDERS:
+        social_state[provider] = sanitize_social_provider_state(provider, raw_social.get(provider))
+    state["social"] = social_state
     return state
 
 
 def public_auth_meta(auth=None):
     auth = normalize_auth_state(auth or load_auth())
+    captcha = effective_captcha_state(auth)
+    passkey_info = passkey_inventory(auth)
     return {
         "username": auth.get("username", "admin"),
         "totp_enabled": bool(auth.get("totp", {}).get("enabled")),
         "passkeys_supported": passkey_supported(),
-        "passkey_count": len(auth.get("passkeys", [])),
+        "passkey_count": len(passkey_info.get("credentials", [])),
+        "passkey_invalid_count": int(passkey_info.get("invalid_count", 0)),
         "ssh_key_count": len(auth.get("ssh_keys", [])),
         "ed25519_enabled": bool(auth.get("ssh_keys", [])),
         "ssh_keys": [{"id": item.get("id", ""), "label": item.get("label", "SSH ED25519")} for item in auth.get("ssh_keys", [])],
+        "captcha": {
+            "mode": captcha.get("effective_mode", CAPTCHA_MODE_DIGITS),
+            "configured": bool(captcha.get("configured")),
+            "site_key": captcha.get("site_key", "") if captcha.get("configured") else "",
+        },
+        "social": social_public_meta(auth),
     }
 
 
 def admin_auth_meta(auth=None):
     auth = normalize_auth_state(auth or load_auth())
+    captcha = effective_captcha_state(auth)
     return {
         **public_auth_meta(auth),
+        "captcha": {
+            "mode": sanitize_captcha_mode(auth.get("captcha", {}).get("mode")),
+            "effective_mode": captcha.get("effective_mode", CAPTCHA_MODE_DIGITS),
+            "configured": bool(captcha.get("configured")),
+            "site_key": auth.get("captcha", {}).get("site_key", ""),
+            "secret_key": auth.get("captcha", {}).get("secret_key", ""),
+        },
         "passkeys": [
             {
                 "id": item.get("id", ""),
@@ -459,6 +642,18 @@ def admin_auth_meta(auth=None):
             }
             for item in auth.get("ssh_keys", [])
         ],
+        "social": {
+            provider: {
+                "label": social_provider_label(provider),
+                "client_id": auth.get("social", {}).get(provider, {}).get("client_id", ""),
+                "client_secret": auth.get("social", {}).get(provider, {}).get("client_secret", ""),
+                "configured": social_provider_configured(provider, auth.get("social", {}).get(provider, {})),
+                "linked_count": len(auth.get("social", {}).get(provider, {}).get("accounts", [])),
+                "enabled": social_provider_enabled(provider, auth.get("social", {}).get(provider, {})),
+                "accounts": list(auth.get("social", {}).get(provider, {}).get("accounts", [])),
+            }
+            for provider in SOCIAL_PROVIDERS
+        },
     }
 
 
@@ -472,6 +667,10 @@ def auth_method_label(value):
         return "Password + 2FA"
     if value == "password":
         return "Password"
+    if value == "github":
+        return "GitHub"
+    if value == "vk":
+        return "VK ID"
     return "Auth"
 
 
@@ -507,15 +706,24 @@ def update_auth_state(mutator):
         return save_auth_state(result if isinstance(result, dict) else current)
 
 
-def passkey_credentials(auth=None):
+def passkey_inventory(auth=None):
     auth = normalize_auth_state(auth or load_auth())
-    rows = []
+    credentials = []
+    invalid_count = 0
     for item in auth.get("passkeys", []):
         try:
-            rows.append(AttestedCredentialData(b64url_decode(item.get("credential_data", ""))))
+            credentials.append(AttestedCredentialData(b64url_decode(item.get("credential_data", ""))))
         except Exception:
-            continue
-    return rows
+            invalid_count += 1
+    return {
+        "credentials": credentials,
+        "stored_count": len(auth.get("passkeys", [])),
+        "invalid_count": invalid_count,
+    }
+
+
+def passkey_credentials(auth=None):
+    return passkey_inventory(auth).get("credentials", [])
 
 
 def find_passkey_record(auth, credential_id):
@@ -532,6 +740,98 @@ def find_ssh_key_record(auth, key_id):
         if item.get("id") == wanted:
             return item
     return None
+
+
+def find_social_account_record(auth, provider, account_id):
+    wanted = str(account_id or "").strip()
+    if not wanted:
+        return None
+    social = normalize_auth_state(auth).get("social", {})
+    for item in social.get(str(provider or "").strip().lower(), {}).get("accounts", []):
+        if item.get("id") == wanted:
+            return item
+    return None
+
+
+def upsert_social_account(auth, provider, account):
+    clean = normalize_auth_state(auth)
+    provider = str(provider or "").strip().lower()
+    if provider not in SOCIAL_PROVIDERS:
+        raise ValueError("unknown provider")
+    account_row = sanitize_social_account_record(provider, account)
+    if not account_row:
+        raise ValueError("account is empty")
+    items = []
+    replaced = False
+    for current in clean.get("social", {}).get(provider, {}).get("accounts", []):
+        if current.get("id") == account_row["id"]:
+            merged = dict(current)
+            merged.update(account_row)
+            merged["linked_at"] = int(current.get("linked_at") or account_row.get("linked_at") or now_ts())
+            merged["last_used_at"] = int(current.get("last_used_at") or account_row.get("last_used_at") or 0)
+            items.append(sanitize_social_account_record(provider, merged))
+            replaced = True
+        else:
+            items.append(current)
+    if not replaced:
+        items.append(account_row)
+    clean["social"][provider]["accounts"] = [item for item in items if item]
+    return clean
+
+
+def remove_social_account(auth, provider, account_id):
+    clean = normalize_auth_state(auth)
+    provider = str(provider or "").strip().lower()
+    clean["social"][provider]["accounts"] = [
+        item for item in clean.get("social", {}).get(provider, {}).get("accounts", []) if item.get("id") != str(account_id or "").strip()
+    ]
+    return clean
+
+
+def touch_social_account_last_used(auth, provider, account_id):
+    clean = normalize_auth_state(auth)
+    provider = str(provider or "").strip().lower()
+    now = now_ts()
+    for item in clean.get("social", {}).get(provider, {}).get("accounts", []):
+        if item.get("id") == str(account_id or "").strip():
+            item["last_used_at"] = now
+            break
+    return clean
+
+
+def oauth_fetch_json(url, method="GET", headers=None, data=None):
+    payload = None
+    header_map = {str(key): str(value) for key, value in dict(headers or {}).items()}
+    if data is not None:
+        if isinstance(data, (bytes, bytearray)):
+            payload = bytes(data)
+        elif isinstance(data, dict):
+            payload = urllib.parse.urlencode(data).encode("utf-8")
+            if not any(str(key).lower() == "content-type" for key in header_map):
+                header_map["Content-Type"] = "application/x-www-form-urlencoded"
+        else:
+            payload = str(data).encode("utf-8")
+    request = urllib.request.Request(url, data=payload, method=str(method or "GET").upper())
+    base_headers = {"User-Agent": f"{APP_NAME}/1.0", "Accept": "application/json"}
+    for key, value in header_map.items():
+        request.add_header(str(key), str(value))
+    for key, value in base_headers.items():
+        if not request.has_header(key):
+            request.add_header(key, value)
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            body = response.read().decode("utf-8", "replace")
+            return json.loads(body or "{}")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", "replace")
+        try:
+            detail = json.loads(body or "{}")
+        except Exception:
+            detail = {"error": body[:400] or exc.reason}
+        message = detail.get("error_description") or detail.get("error") or detail.get("message") or exc.reason
+        raise ValueError(str(message or "OAuth HTTP error"))
+    except Exception as exc:
+        raise ValueError(str(exc))
 
 
 def origin_from_parts(scheme, host):
@@ -1306,6 +1606,15 @@ def b64url(raw):
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
+def make_pkce_verifier():
+    verifier = secrets.token_urlsafe(64)
+    return verifier[:96]
+
+
+def make_pkce_challenge(verifier):
+    return b64url(hashlib.sha256(str(verifier or "").encode("utf-8")).digest())
+
+
 def load_push_subscriptions():
     ensure_state()
     if not PUSH_SUBSCRIPTIONS_FILE.exists():
@@ -1588,14 +1897,26 @@ def web_manifest_json():
             "start_url": "/",
             "scope": "/",
             "display": "standalone",
-            "background_color": "#10081c",
-            "theme_color": "#7c3aed",
+            "background_color": BRAND_THEME_COLOR,
+            "theme_color": BRAND_THEME_COLOR,
             "description": "Удаленный доступ к OpenWrt через свой VPS",
             "icons": [
                 {
-                    "src": "/favicon.svg",
-                    "sizes": "any",
-                    "type": "image/svg+xml",
+                    "src": "/favicon-192.png",
+                    "sizes": "192x192",
+                    "type": "image/png",
+                    "purpose": "any maskable",
+                },
+                {
+                    "src": "/favicon-512.png",
+                    "sizes": "512x512",
+                    "type": "image/png",
+                    "purpose": "any maskable",
+                },
+                {
+                    "src": "/apple-touch-icon.png",
+                    "sizes": "180x180",
+                    "type": "image/png",
                     "purpose": "any maskable",
                 }
             ],
@@ -1603,6 +1924,25 @@ def web_manifest_json():
         ensure_ascii=False,
         separators=(",", ":"),
     )
+
+
+def branding_head_tags(include_manifest=True):
+    parts = [
+        '<link rel="icon" href="/favicon.ico" sizes="any">',
+        '<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">',
+        '<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">',
+    ]
+    if include_manifest:
+        parts.append('<link rel="manifest" href="/manifest.webmanifest">')
+    parts.extend(
+        [
+            f'<meta name="theme-color" content="{BRAND_THEME_COLOR}">',
+            '<meta name="mobile-web-app-capable" content="yes">',
+            '<meta name="apple-mobile-web-app-capable" content="yes">',
+            '<meta name="apple-mobile-web-app-title" content="Wrt Hub">',
+        ]
+    )
+    return "\n".join(parts)
 
 
 def favicon_svg():
@@ -1766,6 +2106,96 @@ def verify_captcha(token, answer):
         return secrets.compare_digest(str(answer or "").strip(), code)
     except Exception:
         return False
+
+
+def verify_recaptcha_token(secret_key, response_token, remote_ip="", expected_hostname=""):
+    secret_key = str(secret_key or "").strip()
+    response_token = str(response_token or "").strip()
+    if not secret_key or not response_token:
+        return False, "Подтверди Google reCAPTCHA"
+    payload = {
+        "secret": secret_key,
+        "response": response_token,
+    }
+    if remote_ip:
+        payload["remoteip"] = str(remote_ip).strip()
+    try:
+        result = oauth_fetch_json(RECAPTCHA_VERIFY_URL, method="POST", data=payload)
+    except Exception as exc:
+        return False, f"Не удалось проверить Google reCAPTCHA: {exc}"
+    if not result.get("success"):
+        errors = result.get("error-codes", [])
+        detail = ", ".join(str(item) for item in errors if str(item).strip())
+        if "timeout-or-duplicate" in errors:
+            return False, "Google reCAPTCHA устарела, попробуй еще раз"
+        return False, f"Google reCAPTCHA отклонена{': ' + detail if detail else ''}"
+    actual_hostname = str(result.get("hostname") or "").strip().lower()
+    expected_hostname = str(expected_hostname or "").strip().lower()
+    if expected_hostname and actual_hostname and actual_hostname != expected_hostname:
+        return False, f"Google reCAPTCHA выдана для другого хоста: {actual_hostname}"
+    return True, ""
+
+
+def login_recaptcha_script(auth=None):
+    state = effective_captcha_state(auth)
+    if state.get("effective_mode") != CAPTCHA_MODE_RECAPTCHA:
+        return ""
+    return '<script src="https://www.google.com/recaptcha/api.js" async defer></script>'
+
+
+def legacy_login_captcha_html(auth=None):
+    state = effective_captcha_state(auth)
+    if state.get("effective_mode") == CAPTCHA_MODE_RECAPTCHA:
+        safe_site_key = html.escape(state.get("site_key", ""), quote=True)
+        return f"""
+    <label for="hubRecaptcha">Капча: подтверди вход через Google reCAPTCHA</label>
+    <div class="captcha recaptchaWrap" id="hubRecaptcha"><div class="g-recaptcha" data-sitekey="{safe_site_key}" data-theme="dark"></div></div>
+    <div class="hint">Google reCAPTCHA проверяется на сервере после отправки формы.</div>"""
+    captcha_code, captcha_token = captcha_challenge()
+    safe_captcha_token = html.escape(captcha_token, quote=True)
+    safe_captcha_code = html.escape(captcha_code, quote=True)
+    return f"""
+    <label for="hubCaptchaCode">Капча: введи эти цифры</label>
+    <div class="captcha" id="hubCaptchaCode" aria-live="polite"><b>{safe_captcha_code}</b></div>
+    <input name="captcha_token" type="hidden" value="{safe_captcha_token}">
+    <label for="hubCaptcha">Повтори капчу</label>
+    <input id="hubCaptcha" name="captcha_answer" inputmode="numeric" pattern="[0-9]*" autocomplete="off" required>"""
+
+
+def modern_login_captcha_html(auth=None):
+    state = effective_captcha_state(auth)
+    if state.get("effective_mode") == CAPTCHA_MODE_RECAPTCHA:
+        safe_site_key = html.escape(state.get("site_key", ""), quote=True)
+        return f"""
+                  <div class="captchaSection captchaSectionRecaptcha">
+                    <div class="captchaHeading">Капча: подтверди, что ты не робот</div>
+                    <div class="recaptchaBox"><div class="g-recaptcha" data-sitekey="{safe_site_key}" data-theme="dark"></div></div>
+                  </div>"""
+    captcha_code, captcha_token = captcha_challenge()
+    safe_captcha_token = html.escape(captcha_token, quote=True)
+    safe_captcha_code = html.escape(captcha_code, quote=True)
+    return f"""
+                  <div class="captchaSection">
+                    <div class="captchaHeading">Капча: введи эти цифры</div>
+                    <div class="captchaTopRow">
+                      <button class="captchaRefresh" id="captchaRefreshBtn" type="button" aria-label="Обновить капчу">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M20 11a8 8 0 1 0 2.2 5.5"></path>
+                          <path d="M20 4v7h-7"></path>
+                        </svg>
+                      </button>
+                      <div class="captcha" id="hubCaptchaCode" aria-live="polite"><b>{safe_captcha_code}</b></div>
+                    </div>
+                    <div class="inputShell captchaAnswerShell">
+                      <input id="hubCaptcha" name="captcha_answer" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Повтори капчу" required>
+                      <span class="captchaInputMark" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M7 12.5 10.5 16 17 9"></path>
+                        </svg>
+                      </span>
+                    </div>
+                  </div>
+                  <input name="captcha_token" type="hidden" value="{safe_captcha_token}">"""
 
 
 def clean_router_id(value):
@@ -2996,9 +3426,7 @@ def dashboard_html(routers, username, sessions=None, notifications=None):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#7c3aed">
+{branding_head_tags()}
 <title>{APP_NAME}</title>
 <style>
 :root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.88);--panel2:rgba(255,255,255,.07);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.25);--blue:#7c3aed;--green:#22c55e;--red:#fb7185;--amber:#f59e0b;--cyan:#22d3ee;--teal:#a855f7;--grid:rgba(168,85,247,.14)}}
@@ -3011,10 +3439,10 @@ body::before{{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none
 h1{{margin:0;font-size:29px;line-height:1.2;letter-spacing:0}}.appBanner{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10);overflow:hidden}}.appBanner::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.20),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.appBanner span{{position:relative}}.appBannerVersion{{color:#fb7185;text-shadow:0 0 12px rgba(251,113,133,.35)}}.muted{{color:var(--muted)}}.top p{{margin:4px 0 0}}.links,.headerActions{{display:flex;align-items:center;gap:8px}}.links{{margin-top:0;flex-wrap:nowrap}}.links a,.badge{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;padding:8px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.08);color:#f3e8ff;text-decoration:none;font-weight:800;font-size:13px;line-height:1;white-space:nowrap;overflow:hidden}}.headerActions{{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-self:flex-start;justify-content:flex-start;align-content:flex-start;flex:1 1 auto;min-width:0;gap:8px;padding-top:0;max-width:none}}.headerActions .badge,.headerActions .btn{{width:100%;min-height:36px;min-width:0;padding:8px 10px;border-radius:999px;font-weight:800;font-size:12px;line-height:1;white-space:nowrap}}.headerActions .btn[href="/logout"]{{margin-left:0}}.badge{{background:rgba(255,255,255,.08);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.nethavenTop{{border-color:rgba(34,211,238,.46);background:linear-gradient(110deg,rgba(14,165,233,.20),rgba(168,85,247,.22),rgba(34,197,94,.14));color:#ecfeff;box-shadow:0 10px 24px rgba(14,165,233,.14),inset 0 1px 0 rgba(255,255,255,.10)}}.nethavenTop::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite;pointer-events:none}}.authToggle{{cursor:pointer}}.dot{{width:9px;height:9px;border-radius:999px;background:var(--red);box-shadow:0 0 13px rgba(251,113,133,.72)}}.dot.on{{background:var(--green);box-shadow:0 0 13px rgba(34,197,94,.75)}}.dot.warn{{background:var(--amber);box-shadow:0 0 13px rgba(245,158,11,.75)}}
  .toolbar{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1.25fr) minmax(88px,.46fr) minmax(92px,.48fr) minmax(0,1.1fr) minmax(116px,.58fr);gap:8px;margin:18px 0;padding:14px 16px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 18px 46px rgba(0,0,0,.20);backdrop-filter:blur(10px);width:100%;max-width:100%;box-sizing:border-box}}.toolbar>*{{width:100%;min-width:0}}.toolbar input,.toolbar select{{background:rgba(255,255,255,.08);border-color:var(--line);color:#f3e8ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}}.toolbar input::placeholder{{color:#b9adc9}}
 .authMenu{{position:absolute;right:0;top:calc(100% + 10px);z-index:60;width:min(640px,calc(100vw - 44px));max-height:min(820px,calc(100svh - 120px));overflow:auto;padding:16px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.05)),rgba(19,14,32,.96);border:1px solid var(--line);border-radius:8px;box-shadow:0 24px 70px rgba(0,0,0,.36);backdrop-filter:blur(12px);scrollbar-width:thin}}.authMenu[hidden]{{display:none}}.authMenu>h2,.authMenu>p{{display:none}}.authMenuHead{{position:relative;display:block}}.authMenuHead>div{{min-width:0}}.authMenuHead p{{display:none}}.authMenu h2{{margin:0 0 4px;font-size:18px}}.authMenuClose{{display:none;position:absolute;top:14px;right:14px;min-height:34px;padding:7px 12px;border-radius:999px;white-space:nowrap}}.authMenu p{{margin:0 0 12px;color:var(--muted)}}.authGrid{{display:grid;grid-template-columns:1fr;gap:10px}}.authGrid .wide{{grid-column:1/-1}}.msg{{margin-top:10px;color:#bbf7d0;font-weight:750}}.msg.bad{{color:#fecdd3}}.formMsg{{margin:-8px 0 18px;padding:10px 12px;border:1px solid rgba(34,197,94,.34);border-radius:8px;background:rgba(34,197,94,.12);color:#bbf7d0;font-weight:800}}.formMsg.bad{{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.13);color:#fecdd3}}
-.authGroup{{margin-top:14px;border:1px solid rgba(34,211,238,.22);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03)),rgba(15,10,26,.78);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.authGroupSummary{{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;cursor:pointer;list-style:none}}.authGroupSummary::-webkit-details-marker{{display:none}}.authGroupTitle strong{{display:block;color:#f7f2ff;font-size:15px;font-weight:900;line-height:1.15}}.authGroupTitle span{{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35}}.authGroupChevron{{display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.08);color:#dbeafe;font-size:16px;line-height:1;transition:transform .18s ease,background .18s ease,border-color .18s ease}}.authGroup[open] .authGroupChevron{{transform:rotate(180deg);background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.24)}}.authGroupBody{{padding:0 14px 14px;border-top:1px solid rgba(255,255,255,.08)}}.authGroupBody>.authPasswordSection{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.authOverview{{margin-top:0;padding-top:14px;border-top:0}}.authGroupBody>.sessionBox{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.notifyBox{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.backupBox{{margin-top:14px;padding-top:0;border-top:0}}.authOverview{{display:grid;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.authPills{{display:flex;flex-wrap:wrap;gap:8px}}.authPill{{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.08);color:#dbeafe;font-size:12px;font-weight:850}}.authPill.off{{border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#c4b5fd}}.authSection{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.authSectionHead{{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}}.authSectionHead h3{{margin:0;font-size:15px}}.authSectionHead p{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.35}}.authSectionState{{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:6px 10px;border:1px solid rgba(34,197,94,.30);border-radius:999px;background:rgba(34,197,94,.12);color:#bbf7d0;font-size:12px;font-weight:850;white-space:nowrap}}.authSectionState.off{{border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#c4b5fd}}.authSectionState.warn{{border-color:rgba(251,191,36,.28);background:rgba(251,191,36,.11);color:#fde68a}}.authFields{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}.authFields .wide{{grid-column:1/-1}}.authFields input,.authFields textarea{{width:100%;min-width:0}}.authFields textarea{{min-height:92px;resize:vertical}}.authActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}}.authActions .sessionBtn,.authActions .btn,.authActions button{{flex:1 1 180px}}.authHint{{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.35}}.authSecretBox{{margin-top:10px;padding:10px;border:1px solid rgba(34,211,238,.24);border-radius:8px;background:rgba(34,211,238,.08)}}.authSecretBox strong{{display:block;margin-bottom:6px;font-size:12px;color:#f7f2ff}}.authSecretValue{{margin:0;padding:9px 10px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.18);color:#c4b5fd;font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word}}.authList{{display:grid;gap:8px;margin-top:10px}}.authRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.authRowTitle{{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:900}}.authRowMeta{{margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.authRowKey{{margin-top:7px;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-all}}.authEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}.authDanger{{color:#fecdd3}}
+.authGroup{{margin-top:14px;border:1px solid rgba(34,211,238,.22);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03)),rgba(15,10,26,.78);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.authGroupSummary{{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;cursor:pointer;list-style:none}}.authGroupSummary::-webkit-details-marker{{display:none}}.authGroupTitle strong{{display:block;color:#f7f2ff;font-size:15px;font-weight:900;line-height:1.15}}.authGroupTitle span{{display:block;margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35}}.authGroupChevron{{display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.08);color:#dbeafe;font-size:16px;line-height:1;transition:transform .18s ease,background .18s ease,border-color .18s ease}}.authGroup[open] .authGroupChevron{{transform:rotate(180deg);background:rgba(34,197,94,.12);border-color:rgba(34,197,94,.24)}}.authGroupBody{{padding:0 14px 14px;border-top:1px solid rgba(255,255,255,.08)}}.authGroupBody>.authPasswordSection{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.authOverview{{margin-top:0;padding-top:14px;border-top:0}}.authGroupBody>.sessionBox{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.notifyBox{{margin-top:14px;padding-top:0;border-top:0}}.authGroupBody>.backupBox{{margin-top:14px;padding-top:0;border-top:0}}.authOverview{{display:grid;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.authPills{{display:flex;flex-wrap:wrap;gap:8px}}.authPill{{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.08);color:#dbeafe;font-size:12px;font-weight:850}}.authPill.off{{border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#c4b5fd}}.authSection{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.authSectionHead{{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:8px}}.authSectionHead h3{{margin:0;font-size:15px}}.authSectionHead p{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.35}}.authSectionState{{display:inline-flex;align-items:center;justify-content:center;min-height:30px;padding:6px 10px;border:1px solid rgba(34,197,94,.30);border-radius:999px;background:rgba(34,197,94,.12);color:#bbf7d0;font-size:12px;font-weight:850;white-space:nowrap}}.authSectionState.off{{border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.06);color:#c4b5fd}}.authSectionState.warn{{border-color:rgba(251,191,36,.28);background:rgba(251,191,36,.11);color:#fde68a}}.authFields{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}.authFields .wide{{grid-column:1/-1}}.authFields input,.authFields textarea{{width:100%;min-width:0}}.authFields textarea{{min-height:92px;resize:vertical}}.authActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}}.authActions .sessionBtn,.authActions .btn,.authActions button{{flex:1 1 180px}}.authHint{{margin:8px 0 0;color:var(--muted);font-size:12px;line-height:1.35}}.authSecretBox{{margin-top:10px;padding:10px;border:1px solid rgba(34,211,238,.24);border-radius:8px;background:rgba(34,211,238,.08)}}.authSecretBox strong{{display:block;margin-bottom:6px;font-size:12px;color:#f7f2ff}}.authSecretValue{{margin:0;padding:9px 10px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.18);color:#c4b5fd;font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word}}.authList{{display:grid;gap:8px;margin-top:10px}}.authRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.authRowTitle{{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:900}}.authRowMeta{{margin-top:4px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.authRowKey{{margin-top:7px;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-all}}.authEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}.authDanger{{color:#fecdd3}}.authSocialIdentity{{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center}}.authSocialAvatar{{width:38px;height:38px;border-radius:12px;overflow:hidden;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.05);display:grid;place-items:center;color:#dbeafe;font-size:15px;font-weight:900}}.authSocialAvatar img{{display:block;width:100%;height:100%;object-fit:cover}}.authSocialName{{font-weight:900;color:#f7f2ff}}.authSocialHandle{{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}
 .sessionBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.sessionHead{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}}.sessionHead h3{{margin:0;font-size:15px}}.sessionList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.sessionRow{{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.sessionTitle{{display:flex;gap:7px;align-items:center;flex-wrap:wrap;font-weight:900}}.sessionMeta{{margin-top:3px;color:var(--muted);font-size:12px;line-height:1.35;word-break:break-word}}.sessionCurrent{{border:1px solid rgba(34,197,94,.38);border-radius:999px;padding:2px 7px;color:#bbf7d0;background:rgba(34,197,94,.13);font-size:11px}}.sessionBtn{{padding:7px 9px;font-size:12px;border-radius:999px}}.sessionEmpty{{padding:10px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center}}
 .notifyBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.notifyActions{{display:flex;gap:7px;align-items:center;justify-content:flex-end;flex-wrap:wrap}}.notifyHint{{margin:-4px 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.notifyList{{display:grid;gap:8px;max-height:260px;overflow:auto;padding-right:2px}}.notifyRow{{border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px;text-align:left}}.notifyTitle{{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:950}}.notifyTitle span:first-child{{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.notifyTime{{color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}}.notifyBody{{margin-top:4px;color:#ddd6fe;font-size:12px;line-height:1.35;word-break:break-word}}.notifyDetails{{margin:7px 0 0;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:7px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;max-height:92px;overflow:auto}}.notifyRow.warn{{border-color:rgba(245,158,11,.34);background:rgba(245,158,11,.08)}}.notifyRow.bad{{border-color:rgba(251,113,133,.38);background:rgba(251,113,133,.09)}}.notifyBtn.on{{border-color:rgba(34,197,94,.36);background:rgba(34,197,94,.15);color:#bbf7d0}}
-.backupBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.backupGrid{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}.backupGrid .wide{{grid-column:1/-1}}.backupGrid input[type=file]{{padding:8px;background:rgba(8,5,18,.72);border:1px solid var(--line);border-radius:8px;color:#ddd6fe;min-width:0}}.backupHint{{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.backupCmds{{display:grid;gap:8px;margin-top:10px}}.backupCmd{{border:1px solid rgba(255,255,255,.10);border-radius:8px;background:rgba(0,0,0,.18);padding:9px}}.backupCmd strong{{display:block;margin-bottom:5px;color:#f7f2ff;font-size:12px}}.backupCmd pre{{margin:0;white-space:pre-wrap;word-break:break-word;color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace}}.backupMsg{{margin-top:9px;color:#bbf7d0;font-size:12px;font-weight:800;line-height:1.35}}.backupMsg.bad{{color:#fecdd3}}
+.backupBox{{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}}.backupGrid{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}.backupGrid .wide{{grid-column:1/-1}}.backupGrid input[type=file]{{padding:8px;background:rgba(8,5,18,.72);border:1px solid var(--line);border-radius:8px;color:#ddd6fe;min-width:0}}.backupHint{{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.35}}.backupCmds{{display:grid;gap:8px;margin-top:10px}}.backupCmd{{border:1px solid rgba(255,255,255,.10);border-radius:8px;background:rgba(0,0,0,.18);padding:9px}}.backupCmd strong{{display:block;margin-bottom:5px;color:#f7f2ff;font-size:12px}}.backupCmd pre{{margin:0;white-space:pre-wrap;word-break:break-word;color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace}}#backupRewrite{{border-color:rgba(251,191,36,.42);background:linear-gradient(135deg,rgba(251,191,36,.28),rgba(245,158,11,.22));color:#fff7cc;box-shadow:0 10px 24px rgba(245,158,11,.14),inset 0 1px 0 rgba(255,255,255,.12)}}#backupRewrite:hover{{border-color:rgba(251,191,36,.56);background:linear-gradient(135deg,rgba(251,191,36,.34),rgba(245,158,11,.28))}}.backupMsg{{margin-top:9px;color:#bbf7d0;font-size:12px;font-weight:800;line-height:1.35}}.backupMsg.bad{{color:#fecdd3}}
 input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:rgba(8,5,18,.72);color:var(--text)}}button,.btn{{border:1px solid rgba(255,255,255,.10);border-radius:8px;padding:10px 13px;background:rgba(255,255,255,.10);color:#f7f2ff;font-weight:850;text-decoration:none;cursor:pointer;display:inline-flex;justify-content:center;align-items:center}}.authToggle{{border-radius:999px;padding:8px 14px;background:rgba(255,255,255,.08);color:#f3e8ff}}button.primary,.btn.primary{{background:var(--blue);color:#fff;box-shadow:0 10px 22px rgba(124,58,237,.22)}}button.bad,.btn.bad{{background:rgba(251,113,133,.16);color:#fecdd3}}.btn.good{{background:rgba(34,197,94,.16);color:#bbf7d0}}.btn.disabled{{opacity:.45;cursor:not-allowed}}
 .summary{{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}}.miniStat{{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;min-width:132px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.07);padding:8px 12px;color:#ddd6fe;font-weight:800;font-size:13px;line-height:1;white-space:nowrap}}
 .routerStats{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:start;gap:8px;margin:0 0 10px}}.statCard{{position:relative;min-height:54px;overflow:hidden;border:1px solid var(--line);border-radius:8px;padding:8px 10px 7px;background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.04)),var(--panel);box-shadow:0 8px 20px rgba(0,0,0,.14);text-align:center;box-sizing:border-box}}.statCard::before{{content:"";position:absolute;inset:0 0 auto 0;height:2px;background:var(--cyan)}}.statCard span{{display:block;color:var(--muted);font-size:10px;font-weight:850;text-transform:uppercase;letter-spacing:.035em}}.statCard strong{{display:block;margin-top:0;font-size:22px;line-height:1;color:#f7f2ff}}.statCard em{{display:block;min-width:0;margin-top:2px;padding:0 2px;color:#c4b5fd;font-style:normal;font-size:10px;line-height:1.15}}.statCard.online::before{{background:var(--green)}}.statCard.online strong{{color:#bbf7d0}}.statCard.offline::before{{background:var(--red)}}.statCard.offline strong{{color:#fecdd3}}.statCard.total::before{{background:var(--cyan)}}.statCard.total strong{{color:#a5f3fc}}.statCardHead{{display:flex;align-items:center;justify-content:center;min-height:14px}}.statCard.has-popover{{overflow:visible;z-index:12}}.statValueRow,.offlineStatRow{{position:relative;display:flex;align-items:center;justify-content:center;min-height:20px;margin-top:3px}}.offlineMoreBtn{{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;min-height:22px;padding:0 8px;border:1px solid rgba(251,113,133,.34);border-radius:999px;background:rgba(251,113,133,.12);color:#fecdd3;font-size:10px;font-weight:900;line-height:1;cursor:pointer;white-space:nowrap}}.offlineMoreBtn[aria-expanded="true"]{{background:rgba(251,113,133,.18);border-color:rgba(251,113,133,.48)}}.offlinePopover{{position:absolute;top:calc(100% + 8px);right:6px;width:min(340px,calc(100vw - 30px));padding:10px;border:1px solid rgba(251,113,133,.28);border-radius:12px;background:linear-gradient(180deg,rgba(49,28,44,.98),rgba(30,18,40,.98));box-shadow:0 22px 50px rgba(0,0,0,.34);text-align:left;z-index:25}}.offlinePopover[hidden]{{display:none!important}}.offlineList{{display:grid;gap:6px;max-height:170px;overflow:auto;padding-right:2px}}.offlineItem{{border:1px solid rgba(251,113,133,.18);border-radius:8px;padding:7px 8px;background:rgba(251,113,133,.08)}}.offlineName{{display:block;color:#fdf2f8;font-size:11px;font-weight:900;line-height:1.25;text-transform:none;letter-spacing:0}}
@@ -3048,7 +3476,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <div class="brand">
       <div class="desktopHeader">
         <div class="desktopHeaderTop">
-          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v102</span></span></h1>
+          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v103</span></span></h1>
           <div class="routerSearchDock" id="routerSearchDock">
             <button class="routerSearchToggle" id="routerSearchToggle" type="button" aria-expanded="false" aria-controls="routerSearchPanel" data-active="false">
               <span>Поиск роутеров</span>
@@ -3218,6 +3646,57 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
               </div>
                 </div>
               </details>
+              <details class="authGroup" id="socialGroup">
+                <summary class="authGroupSummary">
+                  <div class="authGroupTitle">
+                    <strong id="socialGroupTitle">Привязанные сервисы</strong>
+                    <span id="socialGroupLead">GitHub и VK ID для входа без отдельного пароля приложения. На экране входа показываются только реально привязанные аккаунты.</span>
+                  </div>
+                  <span class="authGroupChevron" aria-hidden="true">⌄</span>
+                </summary>
+                <div class="authGroupBody">
+                  <div class="authSection">
+                    <div class="authSectionHead">
+                      <div>
+                        <h3>GitHub</h3>
+                        <p>Сохрани OAuth Client ID/Secret, затем привяжи тот GitHub-аккаунт, которому разрешён вход в Hub.</p>
+                      </div>
+                      <div class="authSectionState off" id="githubSummary">Не настроен</div>
+                    </div>
+                    <div class="authFields">
+                      <input id="githubClientId" placeholder="GitHub Client ID" autocomplete="off">
+                      <input id="githubClientSecret" type="password" placeholder="GitHub Client Secret" autocomplete="off">
+                      <input id="githubCurrentPassword" class="wide" type="password" placeholder="Текущий пароль Hub для сохранения и привязки" autocomplete="current-password">
+                    </div>
+                    <div class="authActions">
+                      <button class="sessionBtn" id="githubSaveBtn" type="button">Сохранить OAuth</button>
+                      <button class="sessionBtn" id="githubLinkBtn" type="button">Привязать аккаунт</button>
+                    </div>
+                    <div class="authHint" id="githubHint">Появится на странице входа только после успешной привязки хотя бы одного GitHub-аккаунта.</div>
+                    <div id="githubAccountList" class="authList"></div>
+                  </div>
+                  <div class="authSection">
+                    <div class="authSectionHead">
+                      <div>
+                        <h3>VK ID</h3>
+                        <p>Современный VK ID OAuth 2.1 flow с PKCE: сохрани Client ID, при confidential-приложении добавь Service Token, затем привяжи конкретный VK ID.</p>
+                      </div>
+                      <div class="authSectionState off" id="vkSummary">Не настроен</div>
+                    </div>
+                    <div class="authFields">
+                      <input id="vkClientId" placeholder="VK ID Client ID" autocomplete="off">
+                      <input id="vkClientSecret" type="password" placeholder="VK ID Service Token (optional for public app)" autocomplete="off">
+                      <input id="vkCurrentPassword" class="wide" type="password" placeholder="Текущий пароль Hub для сохранения и привязки" autocomplete="current-password">
+                    </div>
+                    <div class="authActions">
+                      <button class="sessionBtn" id="vkSaveBtn" type="button">Сохранить OAuth</button>
+                      <button class="sessionBtn" id="vkLinkBtn" type="button">Привязать аккаунт</button>
+                    </div>
+                    <div class="authHint" id="vkHint">На странице входа будут видны только привязанные VK ID. Для confidential-приложения VK ID во втором поле нужен Service Token.</div>
+                    <div id="vkAccountList" class="authList"></div>
+                  </div>
+                </div>
+              </details>
               <details class="authGroup" id="sessionGroup">
                 <summary class="authGroupSummary">
                   <div class="authGroupTitle">
@@ -3314,7 +3793,7 @@ systemctl restart owrt-remote-xray</pre>
       </div>
     </div>
     <div class="mobileSearchDock" id="mobileRouterSearchDock">
-      <span class="mobileSearchVersion">v102</span>
+      <span class="mobileSearchVersion">v103</span>
       <button class="routerSearchToggle mobilePanelToggle primary" id="mobileRouterSearchToggle" type="button" aria-expanded="false" aria-controls="mobileRouterSearchPanel" data-active="false">
         <span>Поиск роутеров</span>
       </button>
@@ -6750,6 +7229,9 @@ const backupRewrite = document.getElementById('backupRewrite');
 const backupMsg = document.getElementById('backupMsg');
 const authForm = document.getElementById('authForm');
 const authUsernameField = authForm && authForm.elements ? authForm.elements.namedItem('username') : null;
+let authCaptchaModeField = null;
+let authCaptchaSiteKeyField = null;
+let authCaptchaSecretKeyField = null;
 const authMsg = document.getElementById('authMsg');
 const authSummary = document.getElementById('authSummary');
 const totpState = document.getElementById('totpState');
@@ -6775,11 +7257,40 @@ const sshKeyLabel = document.getElementById('sshKeyLabel');
 const sshKeyPublic = document.getElementById('sshKeyPublic');
 const sshKeyAddBtn = document.getElementById('sshKeyAddBtn');
 const sshKeyList = document.getElementById('sshKeyList');
+const socialProviderUi = {{
+  github: {{
+    label: 'GitHub',
+    secretLabel: 'Client Secret',
+    requiresSecret: true,
+    clientId: document.getElementById('githubClientId'),
+    clientSecret: document.getElementById('githubClientSecret'),
+    currentPassword: document.getElementById('githubCurrentPassword'),
+    saveBtn: document.getElementById('githubSaveBtn'),
+    linkBtn: document.getElementById('githubLinkBtn'),
+    summary: document.getElementById('githubSummary'),
+    hint: document.getElementById('githubHint'),
+    accountList: document.getElementById('githubAccountList')
+  }},
+  vk: {{
+    label: 'VK ID',
+    secretLabel: 'Service Token',
+    requiresSecret: false,
+    clientId: document.getElementById('vkClientId'),
+    clientSecret: document.getElementById('vkClientSecret'),
+    currentPassword: document.getElementById('vkCurrentPassword'),
+    saveBtn: document.getElementById('vkSaveBtn'),
+    linkBtn: document.getElementById('vkLinkBtn'),
+    summary: document.getElementById('vkSummary'),
+    hint: document.getElementById('vkHint'),
+    accountList: document.getElementById('vkAccountList')
+  }}
+}};
 let authHideTimer;
 let authMeta = null;
 let authTotpTicket = '';
 let authUsernameDraftDirty = false;
 let authUsernameServerValue = authUsernameField && 'value' in authUsernameField ? String(authUsernameField.value || '') : '';
+let socialLinkPopup = null;
 function hideOfflineStats() {{
   if (!offlineStatsExpanded) return;
   offlineStatsExpanded = false;
@@ -6788,6 +7299,7 @@ function hideOfflineStats() {{
 function closeAuthMenu(returnFocus = false) {{
   clearTimeout(authHideTimer);
   authMenu.hidden = true;
+  if (authToggle) authToggle.setAttribute('aria-expanded', 'false');
   if (returnFocus && authToggle) authToggle.focus();
 }}
 if (authMenuHeadTitle) authMenuHeadTitle.textContent = '\u0414\u043e\u0441\u0442\u0443\u043f \u043a Hub';
@@ -6928,13 +7440,8 @@ function showAuthMenu() {{
   hideOfflineStats();
   const wasHidden = authMenu.hidden;
   authMenu.hidden = false;
+  if (authToggle) authToggle.setAttribute('aria-expanded', 'true');
   if (wasHidden) loadAuthMeta({{silent: true}}).catch(() => {{}});
-}}
-function scheduleHideAuthMenu() {{
-  clearTimeout(authHideTimer);
-  authHideTimer = setTimeout(() => {{
-    closeAuthMenu();
-  }}, 180);
 }}
 authToggle.addEventListener('click', (ev) => {{
   ev.stopPropagation();
@@ -6947,18 +7454,18 @@ authToggle.addEventListener('click', (ev) => {{
 if (authMenuClose) {{
   authMenuClose.addEventListener('click', (ev) => {{
     ev.stopPropagation();
-    closeAuthMenu();
+    closeAuthMenu(true);
   }});
 }}
-authToggle.addEventListener('mouseenter', showAuthMenu);
-authToggle.addEventListener('focus', showAuthMenu);
-authToggle.addEventListener('mouseleave', scheduleHideAuthMenu);
-authMenu.addEventListener('mouseenter', showAuthMenu);
-authMenu.addEventListener('focusin', showAuthMenu);
-authMenu.addEventListener('mouseleave', scheduleHideAuthMenu);
 authMenu.addEventListener('click', (ev) => ev.stopPropagation());
 document.addEventListener('click', () => {{
   closeAuthMenu();
+}});
+document.addEventListener('keydown', (ev) => {{
+  if (ev.key === 'Escape' && authMenu && !authMenu.hidden) {{
+    ev.stopPropagation();
+    closeAuthMenu(true);
+  }}
 }});
 document.addEventListener('visibilitychange', () => {{
   syncTrafficAutoRefresh();
@@ -6996,6 +7503,32 @@ function resetTotpSetup() {{
   if (totpSecretValue) totpSecretValue.textContent = '';
   if (totpUriValue) totpUriValue.textContent = '';
   if (totpCode) totpCode.value = '';
+}}
+
+function ensureCaptchaSettingsFields() {{
+  if (!authForm) return;
+  if (!authForm.querySelector('[data-captcha-config]')) {{
+    const wrap = document.createElement('div');
+    wrap.className = 'wide';
+    wrap.dataset.captchaConfig = 'true';
+    wrap.innerHTML = `
+      <div style="display:grid;gap:8px;padding:10px 12px;border:1px solid rgba(148,163,184,.18);border-radius:8px;background:rgba(255,255,255,.03)">
+        <strong style="font-size:13px">Капча на экране входа</strong>
+        <span style="color:var(--muted);font-size:12px;line-height:1.45">Можно оставить цифровую капчу или переключить вход на Google reCAPTCHA.</span>
+        <select class="wide" name="captcha_mode">
+          <option value="{CAPTCHA_MODE_DIGITS}">Капча: цифры</option>
+          <option value="{CAPTCHA_MODE_RECAPTCHA}">Капча: Google reCAPTCHA</option>
+        </select>
+        <input class="wide" name="captcha_site_key" placeholder="reCAPTCHA Site Key">
+        <input class="wide" name="captcha_secret_key" placeholder="reCAPTCHA Secret Key">
+      </div>
+    `;
+    const saveBtn = authForm.querySelector('button');
+    authForm.insertBefore(wrap, saveBtn || null);
+  }}
+  authCaptchaModeField = authForm.elements ? authForm.elements.namedItem('captcha_mode') : null;
+  authCaptchaSiteKeyField = authForm.elements ? authForm.elements.namedItem('captcha_site_key') : null;
+  authCaptchaSecretKeyField = authForm.elements ? authForm.elements.namedItem('captcha_secret_key') : null;
 }}
 
 function authB64urlToBytes(value) {{
@@ -7081,16 +7614,88 @@ function renderSshKeyRows(items) {{
   `).join('');
 }}
 
+function renderSocialAccountRows(provider, items) {{
+  const ui = socialProviderUi[provider];
+  if (!ui || !ui.accountList) return;
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length) {{
+    ui.accountList.innerHTML = `<div class="authEmpty">Пока нет привязанных аккаунтов ${{escapeHtml(ui.label)}}</div>`;
+    return;
+  }}
+  ui.accountList.innerHTML = list.map((item) => {{
+    const name = item.label || item.name || item.login || item.email || `${{ui.label}}`;
+    const handleParts = [item.login ? `@${{item.login}}` : '', item.email || '', item.profile_url || ''].filter(Boolean);
+    const avatar = item.avatar_url
+      ? `<img src="${{escapeAttr(item.avatar_url)}}" alt="">`
+      : escapeHtml((name || ui.label).trim().slice(0, 1).toUpperCase() || ui.label.slice(0, 1));
+    return `
+      <div class="authRow">
+        <div class="authSocialIdentity">
+          <div class="authSocialAvatar">${{avatar}}</div>
+          <div>
+            <div class="authSocialName">${{escapeHtml(name)}}</div>
+            <div class="authSocialHandle">${{handleParts.length ? escapeHtml(handleParts.join(' • ')) : 'Профиль привязан к Hub'}}</div>
+            <div class="authRowMeta">
+              Привязан: ${{formatSessionTime(item.linked_at)}}<br>
+              Последний вход: ${{formatSessionTime(item.last_used_at)}}
+            </div>
+          </div>
+        </div>
+        <button class="sessionBtn bad" type="button" data-social-unlink="${{escapeAttr(item.id || '')}}" data-social-provider="${{escapeAttr(provider)}}">Отвязать</button>
+      </div>
+    `;
+  }}).join('');
+}}
+
+function renderSocialProvider(provider, info) {{
+  const ui = socialProviderUi[provider];
+  if (!ui) return;
+  const meta = info && typeof info === 'object' ? info : {{}};
+  const configured = !!meta.configured;
+  const linkedCount = Number(meta.linked_count || (Array.isArray(meta.accounts) ? meta.accounts.length : 0) || 0);
+  const enabled = !!meta.enabled;
+  const setupHint = ui.requiresSecret
+    ? `Сначала сохрани Client ID и ${{ui.secretLabel}} для ${{ui.label}}.`
+    : `Сначала сохрани Client ID для ${{ui.label}}. Если приложение confidential, во втором поле нужен ${{ui.secretLabel}}.`;
+  if (ui.clientId && document.activeElement !== ui.clientId) ui.clientId.value = meta.client_id || '';
+  if (ui.clientSecret && document.activeElement !== ui.clientSecret) ui.clientSecret.value = meta.client_secret || '';
+  if (ui.summary) {{
+    if (enabled) {{
+      ui.summary.textContent = `${{ui.label}}: ${{linkedCount}}`;
+      ui.summary.className = 'authSectionState';
+    }} else if (configured) {{
+      ui.summary.textContent = 'Ждёт привязку';
+      ui.summary.className = 'authSectionState warn';
+    }} else {{
+      ui.summary.textContent = 'Не настроен';
+      ui.summary.className = 'authSectionState off';
+    }}
+  }}
+  if (ui.linkBtn) ui.linkBtn.disabled = !configured;
+  if (ui.hint) {{
+    ui.hint.textContent = enabled
+      ? `На странице входа показывается ${{linkedCount}} привяз. аккаунт(ов) ${{ui.label}}.`
+      : configured
+        ? `OAuth настроен, но для входа нужен хотя бы один привязанный аккаунт ${{ui.label}}.`
+        : setupHint;
+  }}
+  renderSocialAccountRows(provider, meta.accounts || []);
+}}
+
 function renderAuthMeta() {{
   const meta = authMeta || {{}};
   const totpEnabled = !!meta.totp_enabled;
   const passkeyCount = Number(meta.passkey_count || (Array.isArray(meta.passkeys) ? meta.passkeys.length : 0) || 0);
   const sshCount = Array.isArray(meta.ssh_keys) ? meta.ssh_keys.length : 0;
+  const socialEntries = Object.entries(meta.social || {{}})
+    .filter(([, item]) => Number(item && item.linked_count || 0) > 0)
+    .map(([provider, item]) => `<span class="authPill">${{escapeHtml((item && item.label) || socialProviderUi[provider]?.label || 'OAuth')}}: ${{Number(item && item.linked_count || 0)}}</span>`);
   authSummary.innerHTML = [
     '<span class="authPill">Пароль</span>',
     `<span class="authPill ${{totpEnabled ? '' : 'off'}}">${{totpEnabled ? '2FA включена' : '2FA выключена'}}</span>`,
     `<span class="authPill ${{passkeyCount ? '' : 'off'}}">Passkey: ${{passkeyCount}}</span>`,
-    `<span class="authPill ${{sshCount ? '' : 'off'}}">ED25519: ${{sshCount}}</span>`
+    `<span class="authPill ${{sshCount ? '' : 'off'}}">ED25519: ${{sshCount}}</span>`,
+    ...socialEntries
   ].join('');
   totpState.textContent = totpEnabled ? '2FA включена' : '2FA выключена';
   totpState.className = 'authSectionState' + (totpEnabled ? '' : ' off');
@@ -7111,6 +7716,59 @@ function renderAuthMeta() {{
   }}
   renderPasskeyRows(meta.passkeys || []);
   renderSshKeyRows(meta.ssh_keys || []);
+  Object.keys(socialProviderUi).forEach((provider) => renderSocialProvider(provider, meta.social && meta.social[provider]));
+}}
+
+function renderAuthMeta() {{
+  const meta = authMeta || {{}};
+  ensureCaptchaSettingsFields();
+  const totpEnabled = !!meta.totp_enabled;
+  const passkeyCount = Number(meta.passkey_count || (Array.isArray(meta.passkeys) ? meta.passkeys.length : 0) || 0);
+  const invalidPasskeyCount = Number(meta.passkey_invalid_count || 0);
+  const sshCount = Array.isArray(meta.ssh_keys) ? meta.ssh_keys.length : 0;
+  const captchaMeta = meta.captcha && typeof meta.captcha === 'object' ? meta.captcha : {{}};
+  const captchaMode = String(captchaMeta.mode || '{CAPTCHA_MODE_DIGITS}');
+  const captchaConfigured = !!captchaMeta.configured;
+  const captchaPillText = captchaMode === '{CAPTCHA_MODE_RECAPTCHA}'
+    ? (captchaConfigured ? 'Google reCAPTCHA' : 'reCAPTCHA без ключей')
+    : 'Капча: цифры';
+  const socialEntries = Object.entries(meta.social || {{}})
+    .filter(([, item]) => Number(item && item.linked_count || 0) > 0)
+    .map(([provider, item]) => `<span class="authPill">${{escapeHtml((item && item.label) || socialProviderUi[provider]?.label || 'OAuth')}}: ${{Number(item && item.linked_count || 0)}}</span>`);
+  authSummary.innerHTML = [
+    '<span class="authPill">Пароль</span>',
+    `<span class="authPill ${{captchaMode === '{CAPTCHA_MODE_RECAPTCHA}' && !captchaConfigured ? 'off' : ''}}">${{captchaPillText}}</span>`,
+    `<span class="authPill ${{totpEnabled ? '' : 'off'}}">${{totpEnabled ? '2FA включена' : '2FA выключена'}}</span>`,
+    `<span class="authPill ${{passkeyCount ? '' : 'off'}}">Passkey: ${{passkeyCount}}</span>`,
+    `<span class="authPill ${{sshCount ? '' : 'off'}}">ED25519: ${{sshCount}}</span>`,
+    ...socialEntries
+  ].join('');
+  if (authCaptchaModeField) authCaptchaModeField.value = captchaMode === '{CAPTCHA_MODE_RECAPTCHA}' ? '{CAPTCHA_MODE_RECAPTCHA}' : '{CAPTCHA_MODE_DIGITS}';
+  if (authCaptchaSiteKeyField && document.activeElement !== authCaptchaSiteKeyField) authCaptchaSiteKeyField.value = captchaMeta.site_key || '';
+  if (authCaptchaSecretKeyField && document.activeElement !== authCaptchaSecretKeyField) authCaptchaSecretKeyField.value = captchaMeta.secret_key || '';
+  totpState.textContent = totpEnabled ? '2FA включена' : '2FA выключена';
+  totpState.className = 'authSectionState' + (totpEnabled ? '' : ' off');
+  passkeySummary.textContent = passkeyCount ? `Passkey: ${{passkeyCount}}` : '0 ключей';
+  passkeySummary.className = 'authSectionState' + (passkeyCount ? '' : ' off');
+  sshKeySummary.textContent = sshCount ? `ED25519: ${{sshCount}}` : '0 ключей';
+  sshKeySummary.className = 'authSectionState' + (sshCount ? '' : ' off');
+  if (!window.isSecureContext || !window.PublicKeyCredential) {{
+    passkeyClientHint.textContent = 'Passkey требует HTTPS и поддержку WebAuthn в браузере.';
+    passkeySummary.className = 'authSectionState warn';
+  }} else if (!meta.passkeys_supported) {{
+    passkeyClientHint.textContent = 'На сервере не установлен модуль WebAuthn. Запусти свежий install-vps.sh.';
+    passkeySummary.className = 'authSectionState warn';
+  }} else if (!passkeyCount && invalidPasskeyCount) {{
+    passkeyClientHint.textContent = 'Есть сохранённый passkey в старом или битом формате. Удали его и зарегистрируй заново.';
+    passkeySummary.className = 'authSectionState warn';
+  }} else if (!passkeyCount) {{
+    passkeyClientHint.textContent = 'Можно зарегистрировать первый passkey прямо здесь.';
+  }} else {{
+    passkeyClientHint.textContent = 'Passkey готов к использованию на экране входа.';
+  }}
+  renderPasskeyRows(meta.passkeys || []);
+  renderSshKeyRows(meta.ssh_keys || []);
+  Object.keys(socialProviderUi).forEach((provider) => renderSocialProvider(provider, meta.social && meta.social[provider]));
 }}
 
 async function loadAuthMeta({{silent = false, forceUsername = false}} = {{}}) {{
@@ -7127,6 +7785,96 @@ async function loadAuthMeta({{silent = false, forceUsername = false}} = {{}}) {{
     if (!silent) setAuthMessage(err && err.message ? err.message : 'Не удалось получить статус авторизации', true);
     throw err;
   }}
+}}
+
+function openCenteredPopup(url, title) {{
+  const width = 720;
+  const height = 760;
+  const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+  const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+  return window.open(url, title, `popup=yes,width=${{width}},height=${{height}},left=${{left}},top=${{top}},resizable=yes,scrollbars=yes`);
+}}
+
+async function saveSocialProvider(provider) {{
+  const ui = socialProviderUi[provider];
+  if (!ui) return;
+  setAuthMessage('');
+  const currentPassword = String(ui.currentPassword && ui.currentPassword.value || '').trim();
+  if (!currentPassword) {{
+    setAuthMessage(`Введи текущий пароль Hub в секции ${{ui.label}}, чтобы сохранить OAuth-настройки.`, true);
+    return;
+  }}
+  const res = await fetch(`/api/auth/social/${{encodeURIComponent(provider)}}/save`, {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{
+      current_password: currentPassword,
+      client_id: ui.clientId ? ui.clientId.value : '',
+      client_secret: ui.clientSecret ? ui.clientSecret.value : ''
+    }})
+  }});
+  const data = await res.json().catch(() => ({{}}));
+  if (!res.ok || !data.ok) {{
+    setAuthMessage(data.error || `Не удалось сохранить настройки ${{ui.label}}`, true);
+    return;
+  }}
+  if (ui.currentPassword) ui.currentPassword.value = '';
+  authMeta = data.auth || authMeta;
+  renderAuthMeta();
+  setAuthMessage(data.message || `${{ui.label}} OAuth сохранён`);
+}}
+
+async function beginSocialLink(provider) {{
+  const ui = socialProviderUi[provider];
+  if (!ui) return;
+  setAuthMessage('');
+  const currentPassword = String(ui.currentPassword && ui.currentPassword.value || '').trim();
+  if (!currentPassword) {{
+    setAuthMessage(`Введи текущий пароль Hub в секции ${{ui.label}}, чтобы запустить привязку.`, true);
+    return;
+  }}
+  const res = await fetch(`/api/auth/social/${{encodeURIComponent(provider)}}/link`, {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{current_password: currentPassword}})
+  }});
+  const data = await res.json().catch(() => ({{}}));
+  if (!res.ok || !data.ok || !data.url) {{
+    setAuthMessage(data.error || `Не удалось начать привязку ${{ui.label}}`, true);
+    return;
+  }}
+  socialLinkPopup = openCenteredPopup(data.url, `${{ui.label}} Link`);
+  if (!socialLinkPopup) {{
+    setAuthMessage(`Браузер заблокировал popup для ${{ui.label}}. Разреши всплывающее окно и повтори.`, true);
+    return;
+  }}
+  socialLinkPopup.focus();
+  setAuthMessage(`Продолжаем в окне ${{ui.label}}. После успешной привязки список обновится автоматически.`);
+}}
+
+async function unlinkSocialAccount(provider, accountId) {{
+  const ui = socialProviderUi[provider];
+  if (!ui) return;
+  const currentPassword = String(ui.currentPassword && ui.currentPassword.value || '').trim();
+  if (!currentPassword) {{
+    setAuthMessage(`Введи текущий пароль Hub в секции ${{ui.label}}, чтобы отвязать аккаунт.`, true);
+    return;
+  }}
+  if (!confirm(`Отвязать этот аккаунт ${{ui.label}} от Hub?`)) return;
+  const res = await fetch(`/api/auth/social/${{encodeURIComponent(provider)}}/unlink`, {{
+    method: 'POST',
+    headers: {{'Content-Type': 'application/json'}},
+    body: JSON.stringify({{id: accountId, current_password: currentPassword}})
+  }});
+  const data = await res.json().catch(() => ({{}}));
+  if (!res.ok || !data.ok) {{
+    setAuthMessage(data.error || `Не удалось отвязать аккаунт ${{ui.label}}`, true);
+    return;
+  }}
+  if (ui.currentPassword) ui.currentPassword.value = '';
+  authMeta = data.auth || authMeta;
+  renderAuthMeta();
+  setAuthMessage(data.message || `Аккаунт ${{ui.label}} отвязан`);
 }}
 
 function renderSessions(list) {{
@@ -7603,6 +8351,30 @@ revokeOtherSessions.addEventListener('click', async () => {{
   if (res.ok) await loadSessions();
 }});
 
+Object.entries(socialProviderUi).forEach(([provider, ui]) => {{
+  if (ui.saveBtn) ui.saveBtn.addEventListener('click', () => saveSocialProvider(provider));
+  if (ui.linkBtn) ui.linkBtn.addEventListener('click', () => beginSocialLink(provider));
+}});
+
+window.addEventListener('message', async (ev) => {{
+  if (ev.origin !== window.location.origin) return;
+  const data = ev.data || {{}};
+  if (data.type !== 'owrt-social-linked') return;
+  if (socialLinkPopup && !socialLinkPopup.closed) {{
+    try {{
+      socialLinkPopup.close();
+    }} catch (err) {{}}
+  }}
+  socialLinkPopup = null;
+  if (!data.ok) {{
+    setAuthMessage('Привязка сервиса завершилась с ошибкой.', true);
+    return;
+  }}
+  await loadAuthMeta({{silent: true}}).catch(() => {{}});
+  const label = socialProviderUi[data.provider]?.label || 'OAuth';
+  setAuthMessage(`${{label}} успешно привязан.`);
+}});
+
 authMenu.addEventListener('click', async (ev) => {{
   const passkeyId = ev.target?.dataset?.passkeyRemove;
   if (passkeyId) {{
@@ -7650,6 +8422,12 @@ authMenu.addEventListener('click', async (ev) => {{
     authMeta = data.auth || authMeta;
     renderAuthMeta();
     setAuthMessage(data.message || 'SSH ключ удален');
+    return;
+  }}
+  const socialAccountId = ev.target?.dataset?.socialUnlink;
+  const socialProvider = ev.target?.dataset?.socialProvider;
+  if (socialAccountId && socialProvider) {{
+    await unlinkSocialAccount(socialProvider, socialAccountId);
   }}
 }});
 
@@ -7881,7 +8659,7 @@ def ssh_terminal_html(row, ws_token):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+{branding_head_tags(include_manifest=False)}
 <title>SSH {safe_name}</title>
 <style>
 :root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.92);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.28);--green:#22c55e;--blue:#7c3aed;--red:#fb7185;--grid:rgba(168,85,247,.13)}}
@@ -8365,7 +9143,7 @@ def ssh_terminal_html_v2(row, ws_token, quick_commands_html=""):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+{branding_head_tags(include_manifest=False)}
 <title>SSH __SAFE_NAME__</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
@@ -8491,6 +9269,7 @@ window.addEventListener('load',()=>{initTerminal();});
 </html>"""
     return (
         page.replace("__SAFE_NAME__", safe_name)
+        .replace("{branding_head_tags(include_manifest=False)}", branding_head_tags(include_manifest=False))
         .replace("__WS_PATH_JSON__", json.dumps(ws_path))
         .replace("__CHECK_PATH_JSON__", json.dumps(check_path))
         .replace("__SESSION_PATH_JSON__", json.dumps(session_path))
@@ -8507,19 +9286,17 @@ window.addEventListener('load',()=>{initTerminal();});
     )
 
 
-def login_html(error=""):
+def _legacy_login_html(error=""):
     error_html = f"<div class=\"err\">{html.escape(error)}</div>" if error else ""
-    captcha_code, captcha_token = captcha_challenge()
-    safe_captcha_token = html.escape(captcha_token, quote=True)
-    safe_captcha_code = html.escape(captcha_code, quote=True)
+    auth = normalize_auth_state(load_auth())
+    captcha_html = legacy_login_captcha_html(auth)
+    recaptcha_script = login_recaptcha_script(auth)
     return f"""<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<link rel="manifest" href="/manifest.webmanifest">
-<meta name="theme-color" content="#7c3aed">
+{branding_head_tags()}
 <title>OpenWrt Remote Hub</title>
 <style>
 :root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.9);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.28);--blue:#7c3aed;--cyan:#22d3ee;--red:#fb7185;--green:#22c55e;--grid:rgba(168,85,247,.13)}}
@@ -8541,6 +9318,7 @@ textarea{{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 
 input:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.04)}}
 textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.04)}}
 .captcha{{width:100%;display:flex;align-items:center;justify-content:center;min-height:42px;margin-top:0;border:1px solid var(--line);border-radius:8px;padding:9px 12px;background:rgba(8,5,18,.74);text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.captcha b{{display:block;color:#fde68a;font:950 21px/1 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:6px;text-indent:6px;text-shadow:0 0 18px rgba(251,191,36,.28)}}
+.recaptchaWrap{{padding:12px;overflow-x:auto}}
 button{{width:100%;min-height:42px;margin-top:10px;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:9px 12px;background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;font-weight:950;font-size:13px;line-height:1.1;cursor:pointer;box-shadow:0 14px 30px rgba(124,58,237,.28);white-space:nowrap}}
 button:hover{{filter:brightness(1.06)}}
 .err{{margin:0 0 12px;padding:11px 12px;border:1px solid rgba(251,113,133,.45);border-radius:8px;background:rgba(251,113,133,.14);color:#fecdd3;font-weight:800}}
@@ -8560,6 +9338,8 @@ button:hover{{filter:brightness(1.06)}}
 .methodBtnRow button{{margin-top:0;min-height:42px}}
 .methodBtnRow button:only-child{{grid-column:1/-1}}
 .codeBlock{{margin-top:6px;padding:7px 9px;border:1px solid rgba(255,255,255,.09);border-radius:8px;background:rgba(0,0,0,.18);color:#c4b5fd;font:11px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word}}
+.manualGuideLink{{display:inline-flex;align-items:center;justify-content:center;min-height:38px;margin-top:8px;padding:8px 14px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.08);color:#dbeafe;text-decoration:none;font-size:12px;font-weight:850}}
+.manualGuideLink:hover{{background:rgba(34,211,238,.14)}}
 .authFlowCard{{display:none}}
 .authFlowBoard{{display:grid;gap:10px}}
 .flowStage{{display:grid;place-items:center;padding:11px 12px;border:1px solid rgba(34,211,238,.24);border-radius:12px;background:rgba(34,211,238,.08);text-align:center;font-weight:900}}
@@ -8576,8 +9356,9 @@ button:hover{{filter:brightness(1.06)}}
 .flowFinal{{display:grid;place-items:center;padding:12px;border:1px solid rgba(34,197,94,.30);border-radius:12px;background:rgba(34,197,94,.11);color:#bbf7d0;font-weight:900;text-align:center}}
 @media(max-width:980px){{.loginMain{{grid-template-columns:1fr}}}}
 @media(max-width:720px){{.flowBranches{{grid-template-columns:1fr}}}}
-@media(max-width:520px){{body{{padding:12px;overflow:auto}}.loginShell{{width:min(100%,520px)}}.loginFrame{{padding:10px}}.login{{padding:12px;min-height:0}}h1{{font-size:22px}}.login .brand .appBanner{{min-height:50px}}.methodRow{{grid-template-columns:1fr}}}}
+@media(max-width:520px){{body{{padding:12px;overflow:auto}}.loginShell{{width:min(100%,520px)}}.loginFrame{{padding:10px}}.login{{padding:12px;min-height:0}}h1{{font-size:22px}}.login .brand .appBanner{{min-height:50px}}.methodRow{{grid-template-columns:1fr}}.manualGuideLink{{width:100%}}}}
 </style>
+{recaptcha_script}
 </head>
 <body>
 <main class="loginShell">
@@ -8586,7 +9367,7 @@ button:hover{{filter:brightness(1.06)}}
       <form class="login" method="post" action="/login">
     {error_html}
     <span class="brand">
-      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v102</span></span></h1>
+      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v103</span></span></h1>
     </span>
     <label for="hubUsername">Логин</label>
     <input id="hubUsername" name="username" autocomplete="username" autofocus required>
@@ -8597,11 +9378,7 @@ button:hover{{filter:brightness(1.06)}}
       <input id="hubOtp" name="otp" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" placeholder="Код 2FA">
       <div class="hint" id="passwordModeHint" hidden>Резервный вход через пароль. Когда 2FA включена, сюда нужен TOTP-код.</div>
     </div>
-    <label for="hubCaptchaCode">Капча: введи эти цифры</label>
-    <div class="captcha" id="hubCaptchaCode" aria-live="polite"><b>{safe_captcha_code}</b></div>
-    <input name="captcha_token" type="hidden" value="{safe_captcha_token}">
-    <label for="hubCaptcha">Повтори капчу</label>
-    <input id="hubCaptcha" name="captcha_answer" inputmode="numeric" pattern="[0-9]*" autocomplete="off" required>
+    {captcha_html}
     <button>Войти</button>
     <div class="hint">Резервная ветка: `Password + 2FA`. Основные альтернативы справа: `Passkey` и `ED25519`.</div>
       </form>
@@ -8649,7 +9426,6 @@ button:hover{{filter:brightness(1.06)}}
     <section class="methodCard">
       <div class="methodMeta">ED25519</div>
       <h2>Вход по SSH ED25519</h2>
-      <p>Запроси challenge, подпиши его своим SSH ED25519 ключом и вставь ASCII signature.</p>
       <div class="methodBtnRow">
         <button id="sshChallengeBtn" type="button">Получить challenge</button>
         <button id="sshVerifyBtn" type="button">Проверить подпись</button>
@@ -8658,10 +9434,7 @@ button:hover{{filter:brightness(1.06)}}
         <textarea class="wide" id="sshChallenge" readonly placeholder="Здесь появится challenge для подписи"></textarea>
         <textarea class="wide" id="sshSignature" placeholder="Вставь блок -----BEGIN SSH SIGNATURE----- ... -----END SSH SIGNATURE-----"></textarea>
       </div>
-      <div class="codeBlock">Пример:
-ssh-keygen -Y sign -f ~/.ssh/id_ed25519 -n owrt-remote-hub challenge.txt
-
-Подпиши текст challenge и вставь содержимое файла `.sig` сюда.</div>
+      <a class="manualGuideLink" href="/ssh-key-manual/" target="_blank" rel="noopener noreferrer">Мануал как создать Ssh key</a>
       <div class="hint" id="sshHint">Сначала добавь SSH ED25519 ключ в меню доступа внутри панели.</div>
       <div class="methodStatus" id="sshStatus" hidden></div>
     </section>
@@ -8687,7 +9460,7 @@ const flowPasskeyState = document.getElementById('flowPasskeyState');
 const flowEd25519State = document.getElementById('flowEd25519State');
 const flowPasswordState = document.getElementById('flowPasswordState');
 const flowSessionState = document.getElementById('flowSessionState');
-let loginAuthMeta = {{}};
+let loginAuthMeta = {initial_login_meta_json};
 let sshTicket = '';
 
 function normalizeLoginUi() {{
@@ -8751,6 +9524,21 @@ function encodeAssertion(assertion) {{
   }};
 }}
 
+function isCompactSshLogin() {{
+  return window.matchMedia ? window.matchMedia('(max-width: 760px)').matches : window.innerWidth <= 760;
+}}
+
+function updateSshHintText(sshCount) {{
+  if (!sshHint) return;
+  if (!sshCount) {{
+    sshHint.textContent = 'Сначала добавь SSH ED25519 ключ в меню доступа внутри панели.';
+    return;
+  }}
+  sshHint.textContent = isCompactSshLogin()
+    ? 'SSH ED25519 вход доступен на полном экране. На телефоне здесь оставлена только подсказка.'
+    : 'Нажми Получить challenge, затем вставь подпись и нажми Проверить подпись.';
+}}
+
 function updateLoginMeta() {{
   if (loginAuthMeta.totp_enabled) {{
     hubOtp.required = true;
@@ -8799,7 +9587,7 @@ function refreshLoginFlowMeta() {{
   }} else {{
     sshChallengeBtn.disabled = false;
     sshVerifyBtn.disabled = !sshTicket;
-    sshHint.textContent = 'Запроси challenge, подпиши его SSH ED25519 ключом и вставь ASCII signature.';
+    sshHint.textContent = 'Нажми Получить challenge, затем вставь подпись и нажми Проверить подпись.';
     setFlowBadge(flowEd25519State, `ED25519: ${{sshCount}}`, 'ready');
   }}
   const readyMethods = 1 + (passkeyCount ? 1 : 0) + (sshCount ? 1 : 0);
@@ -8877,6 +9665,940 @@ loadLoginMeta();
 </script>
 </body>
 </html>"""
+
+
+def login_html(error=""):
+    error_html = f"<div class=\"err\">{html.escape(error)}</div>" if error else ""
+    auth = normalize_auth_state(load_auth())
+    initial_login_meta_json = json.dumps(public_auth_meta(auth), ensure_ascii=False).replace("</", "<\\/")
+    captcha_code, captcha_token = captcha_challenge()
+    safe_captcha_token = html.escape(captcha_token, quote=True)
+    safe_captcha_code = html.escape(captcha_code, quote=True)
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+{branding_head_tags()}
+<title>OpenWrt Remote Hub</title>
+<style>
+:root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.92);--panel-soft:rgba(255,255,255,.06);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.25);--line-strong:rgba(34,211,238,.56);--blue:#7c3aed;--cyan:#22d3ee;--teal:#a855f7;--red:#fb7185;--amber:#f59e0b;--shadow:0 34px 84px rgba(0,0,0,.5);--grid:rgba(168,85,247,.14);--login-copy-size:14px}}
+*{{box-sizing:border-box}}
+body{{position:relative;min-height:100vh;margin:0;overflow-x:hidden;background-color:var(--bg);background-image:radial-gradient(circle at 12% 8%,rgba(168,85,247,.46),transparent 31%),radial-gradient(circle at 82% 12%,rgba(79,70,229,.38),transparent 30%),radial-gradient(circle at 50% 105%,rgba(236,72,153,.26),transparent 35%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-size:130% 130%,140% 140%,135% 135%,100% 100%,31px 31px,31px 31px;background-attachment:fixed;color:var(--text);font:12px/1.3 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:grid;place-items:center;padding:24px;animation:bgFlow 28s ease-in-out infinite alternate}}
+body::before{{content:"";position:fixed;inset:-25%;pointer-events:none;background:conic-gradient(from 0deg at 50% 50%,rgba(168,85,247,.05),rgba(236,72,153,.34),rgba(59,130,246,.22),rgba(245,158,11,.13),rgba(168,85,247,.05));filter:blur(54px);opacity:.7;animation:auraSpin 38s linear infinite}}
+body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,0));opacity:.4}}
+@keyframes bgFlow{{0%{{background-position:0% 0%,100% 0%,50% 100%,0 0,0 0,0 0}}50%{{background-position:28% 18%,62% 26%,38% 82%,0 0,15px 24px,24px 15px}}100%{{background-position:48% 28%,42% 42%,74% 62%,0 0,30px 0,0 30px}}}}
+@keyframes auraSpin{{from{{transform:rotate(0deg) scale(1)}}to{{transform:rotate(360deg) scale(1.08)}}}}
+.loginShell{{position:relative;z-index:1;width:min(520px,calc(100vw - 24px))}}
+.loginFrame{{position:relative;border:1px solid var(--line);border-radius:24px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.04)),var(--panel);box-shadow:var(--shadow);backdrop-filter:blur(18px)}}
+.loginMain{{display:grid;grid-template-columns:1fr}}
+.brandPanel{{position:relative;display:grid;gap:4px;padding:24px 22px 14px;background:linear-gradient(180deg,rgba(17,12,29,.82),rgba(17,12,29,0))}}
+.brandPanel::before{{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 16%,rgba(34,211,238,.12),transparent 20%),radial-gradient(circle at 24% 18%,rgba(255,255,255,.04),transparent 0 2px,transparent 3px),radial-gradient(circle at 72% 22%,rgba(168,85,247,.09),transparent 0 2px,transparent 3px);opacity:.8}}
+.brandPanel::after{{content:"";position:absolute;left:22px;right:22px;bottom:0;height:1px;background:linear-gradient(90deg,transparent,rgba(169,126,255,.18),transparent)}}
+.brandTop,.brandBottom{{position:relative;z-index:1}}
+.brandTop{{display:grid;gap:0}}
+.brandBottom{{display:none}}
+.brandHero{{display:grid;grid-template-columns:1fr;grid-template-areas:"seal" "title";justify-items:center;align-items:center;row-gap:12px;text-align:center}}
+.brandSeal{{grid-area:seal;position:relative;display:grid;place-items:center;width:78px;height:78px;margin-bottom:0;border-radius:50%;border:2px solid rgba(34,211,238,.54);background:radial-gradient(circle at 50% 35%,rgba(43,31,68,.98),rgba(12,8,22,.96));box-shadow:0 0 0 4px rgba(168,85,247,.08),0 0 20px rgba(34,211,238,.10)}}
+.brandSeal::before{{content:"";position:absolute;inset:12px;border-radius:50%;border:1px solid rgba(34,211,238,.20)}}
+.brandSeal svg{{width:36px;height:36px;filter:drop-shadow(0 0 8px rgba(34,211,238,.18))}}
+.brandTitle{{grid-area:title;margin:0;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:clamp(22px,4vw,28px);line-height:1.04;font-weight:800;letter-spacing:-.04em}}
+.brandVersion{{color:var(--red);font-size:14px;font-weight:800;letter-spacing:0;text-shadow:0 0 12px rgba(251,113,133,.35)}}
+.globeWrap{{display:none}}
+.globe{{display:none}}
+.globe::before{{display:none}}
+.globe::after{{display:none}}
+.orbitLine{{display:none}}
+.authPanel{{padding:0 22px 18px;background:none;overflow:visible}}
+.authStack{{display:grid;gap:12px;max-width:none;margin:0}}
+.authHead{{display:none}}
+.authMark{{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;border:1px solid rgba(169,126,255,.24);background:linear-gradient(180deg,rgba(124,58,237,.14),rgba(15,10,26,.82));box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}}
+.authMark svg{{width:22px;height:22px;stroke:#93c5fd}}
+.authHead h1{{margin:0;font-size:clamp(18px,4vw,22px);line-height:1.05;font-weight:800;letter-spacing:-.03em}}
+.authHead p{{display:none}}
+.authTabs{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;width:min(100%,430px);justify-self:center;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.04);overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
+.authTabBtn{{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:48px;padding:0 12px;border:0;border-right:1px solid rgba(169,126,255,.14);border-radius:0;background:transparent;color:#c4b5fd;font-size:12px;font-weight:800;letter-spacing:.01em;cursor:pointer;transition:background .2s ease,color .2s ease}}
+.authTabBtn:last-child{{border-right:0}}
+.authTabBtn svg{{width:18px;height:18px;stroke:currentColor;flex:0 0 auto}}
+.authTabBtn[aria-selected="true"]{{background:linear-gradient(110deg,rgba(34,211,238,.16),rgba(124,58,237,.30),rgba(236,72,153,.12));color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.10)}}
+.authTabBtn:hover{{color:#fff}}
+.authTabsBody{{display:grid}}
+.authTabPanel{{display:none;gap:10px}}
+.authTabPanel.is-active{{display:grid}}
+.authTabPanel[hidden]{{display:none !important}}
+.err{{width:min(100%,430px);justify-self:center;padding:10px 12px;border:1px solid rgba(251,113,133,.38);border-radius:14px;background:rgba(127,29,29,.2);color:#fecdd3;font-size:12px;font-weight:700}}
+.login{{display:grid;gap:14px}}
+.fieldLabel{{display:none}}
+.fieldGroup{{display:grid;gap:12px;justify-items:center}}
+.compactField{{width:min(100%,430px);justify-self:center}}
+.inputShell{{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;min-height:48px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));box-shadow:inset 0 1px 0 rgba(255,255,255,.04);transition:border-color .2s ease,box-shadow .2s ease,transform .2s ease}}
+.inputShell:focus-within{{border-color:var(--line-strong);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05);transform:translateY(-1px)}}
+.fieldIcon{{display:grid;place-items:center;color:#c4b5fd}}
+.fieldIcon svg{{width:18px;height:18px;stroke:currentColor}}
+.inputShell input{{width:100%;min-width:0;padding:0 12px 0 0;border:0;background:transparent;color:var(--text);font:500 14px/1.15 inherit;outline:none}}
+.inputShell input::placeholder,.methodRow textarea::placeholder{{color:#b9adc9}}
+.inputAction{{display:grid;place-items:center;width:46px;height:100%;border:0;background:transparent;color:#c4b5fd;cursor:pointer}}
+.inputAction svg{{width:18px;height:18px;stroke:currentColor}}
+.otpCard{{display:grid;gap:4px;width:min(100%,430px);justify-self:center;padding:0;border:0;border-radius:0;background:none}}
+.hint{{width:min(100%,430px);justify-self:center;margin:0;color:#b9adc9;font-size:var(--login-copy-size);line-height:1.35}}
+#passwordModeHint{{text-align:center}}
+.captchaSection{{display:grid;grid-template-columns:1fr;gap:10px;width:min(100%,430px);justify-self:center;padding:14px 12px 12px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035)),rgba(19,14,32,.88)}}
+.captchaHeading{{color:#eef3ff;font-size:var(--login-copy-size);font-weight:800;line-height:1.2;text-align:center}}
+.captchaTopRow{{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:center}}
+.captcha{{display:flex;align-items:center;justify-content:center;min-height:36px;padding:0;background:none;overflow:visible;position:relative}}
+.captcha::before{{display:none}}
+.captcha b{{position:relative;z-index:1;color:var(--amber);font:800 24px/1 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.28em;text-indent:.28em;text-shadow:0 0 12px rgba(245,158,11,.28)}}
+.captchaRefresh{{width:34px;height:34px;border:0;border-radius:10px;background:transparent;color:#c4b5fd;cursor:pointer;box-shadow:none}}
+.captchaRefresh svg{{width:20px;height:20px;stroke:currentColor}}
+.captchaAnswerShell{{grid-template-columns:minmax(0,1fr) 42px;min-height:42px}}
+.captchaAnswerShell input{{padding:0 12px}}
+.captchaInputMark{{display:grid;place-items:center;color:#8e98ad}}
+.captchaInputMark svg{{width:18px;height:18px;stroke:currentColor}}
+.primaryBtn{{display:inline-flex;align-items:center;justify-content:center;gap:10px;width:min(100%,430px);justify-self:center;min-height:50px;padding:0 14px;border:1px solid rgba(34,211,238,.30);border-radius:14px;background:linear-gradient(110deg,rgba(34,211,238,.20),rgba(124,58,237,.88),rgba(236,72,153,.20));color:#fff;font-size:14px;font-weight:800;letter-spacing:.01em;cursor:pointer;box-shadow:0 12px 24px rgba(124,58,237,.22);transition:transform .2s ease,box-shadow .2s ease,filter .2s ease}}
+.primaryBtn svg{{width:18px;height:18px;stroke:currentColor}}
+.primaryBtn:hover,.methodBtn:hover,.manualGuideLink:hover,.captchaRefresh:hover{{filter:brightness(1.06)}}
+.primaryBtn:active,.methodBtn:active,.captchaRefresh:active{{transform:translateY(1px)}}
+.quickAuthPanel{{display:grid;gap:9px}}
+.quickAuthHeader{{display:grid;gap:4px}}
+.quickAuthHeader h2{{margin:0;font-size:var(--login-copy-size);line-height:1.2}}
+.quickAuthHeader p{{margin:0;color:var(--muted);font-size:var(--login-copy-size);line-height:1.35}}
+.reserveNote{{display:grid;gap:4px;padding:8px 9px;border:1px solid rgba(169,126,255,.14);border-radius:10px;background:rgba(17,15,30,.54)}}
+.reserveNote b{{font-size:var(--login-copy-size);line-height:1.25}}
+.divider{{display:grid;grid-template-columns:1fr auto 1fr;gap:6px;align-items:center;color:#8e88aa;font-size:var(--login-copy-size);font-weight:700;letter-spacing:.08em;text-transform:uppercase}}
+.divider::before,.divider::after{{content:"";height:1px;background:linear-gradient(90deg,transparent,rgba(169,126,255,.18),transparent)}}
+.methodGrid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}
+.methodCard{{display:grid;gap:8px;padding:9px;border:1px solid rgba(169,126,255,.16);border-radius:11px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03)),rgba(19,14,32,.86);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
+.socialLoginSection{{display:grid;gap:8px}}
+.socialLoginSection[hidden]{{display:none !important}}
+.socialMethodGrid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}
+.socialMethodGrid[hidden]{{display:none !important}}
+.socialMethodCard[hidden]{{display:none !important}}
+.socialMethodEmpty{{padding:10px 12px;border:1px dashed rgba(169,126,255,.2);border-radius:11px;background:rgba(14,12,24,.5);color:#b5b0cd;font-size:var(--login-copy-size);line-height:1.35}}
+.socialMethodEmpty[hidden]{{display:none !important}}
+.methodCardTop{{display:flex;align-items:center;justify-content:space-between;gap:6px}}
+.methodMark{{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;border:1px solid rgba(34,211,238,.24);background:rgba(34,211,238,.08);color:#dbeafe}}
+.methodMark svg{{width:14px;height:14px;stroke:currentColor}}
+.methodMeta{{display:inline-flex;align-items:center;min-height:18px;padding:3px 6px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.08);color:#dbeafe;font-size:var(--login-copy-size);font-weight:700;letter-spacing:.04em;text-transform:uppercase}}
+.methodCard h2{{margin:0;font-size:var(--login-copy-size);line-height:1.2}}
+.methodCard p{{margin:0;color:var(--muted);font-size:var(--login-copy-size);line-height:1.35}}
+.methodBtn{{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:32px;padding:0 9px;border:1px solid rgba(34,211,238,.22);border-radius:9px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02)),rgba(17,15,30,.92);color:#edf3ff;font-size:var(--login-copy-size);font-weight:700;cursor:pointer}}
+.methodBtn svg{{width:13px;height:13px;stroke:currentColor}}
+.methodBtnRow{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px}}
+.methodBtnRow .methodBtn:only-child{{grid-column:1/-1}}
+.methodDetails{{border:1px solid rgba(169,126,255,.14);border-radius:9px;background:rgba(17,15,30,.44);overflow:hidden}}
+.methodDetails summary{{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 9px;cursor:pointer;color:#ede9fe;font-size:var(--login-copy-size);font-weight:700;list-style:none}}
+.methodDetails summary::-webkit-details-marker{{display:none}}
+.methodDetails summary::after{{content:"+";font-size:14px;line-height:1;color:#c4b5fd;transition:transform .2s ease}}
+.methodDetails[open] summary::after{{transform:rotate(45deg)}}
+.methodDetailsBody{{padding:0 8px 8px}}
+.methodRow{{display:grid;grid-template-columns:1fr;gap:5px}}
+.methodRow .wide{{grid-column:1/-1}}
+.methodRow textarea{{width:100%;min-height:64px;padding:8px 9px;border:1px solid var(--line);border-radius:9px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#e8eef9;outline:none;resize:vertical;font:10px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace}}
+.methodRow textarea:focus{{border-color:var(--line-strong);box-shadow:0 0 0 3px rgba(34,211,238,.1)}}
+.manualGuideLink{{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 9px;border:1px solid rgba(34,211,238,.24);border-radius:9px;background:rgba(34,211,238,.08);color:#dbeafe;text-decoration:none;font-size:var(--login-copy-size);font-weight:700}}
+.sshHint{{margin-top:0;padding:10px 12px;border:1px dashed rgba(34,211,238,.22);border-radius:10px;background:rgba(34,211,238,.07);color:#dbeafe}}
+.methodStatus{{padding:8px 9px;border:1px solid rgba(34,197,94,.28);border-radius:9px;background:rgba(20,83,45,.18);color:#bbf7d0;font-size:var(--login-copy-size);font-weight:700;line-height:1.35}}
+.methodStatus.bad{{border-color:rgba(251,113,133,.38);background:rgba(127,29,29,.22);color:#fecdd3}}
+.authFooter{{display:grid;gap:6px;padding-top:1px}}
+.altAuthSummary{{padding:8px 9px;border:1px solid rgba(169,126,255,.14);border-radius:10px;background:rgba(17,15,30,.58);color:#c4b5fd;font-size:var(--login-copy-size);line-height:1.35}}
+.securityNote{{display:flex;align-items:center;justify-content:center;gap:8px;color:#b9adc9;font-size:var(--login-copy-size)}}
+.securityNote svg{{width:14px;height:14px;stroke:#b9adc9;flex:0 0 auto}}
+.securityNote span{{font-size:0}}
+.securityNote span::before{{content:"Безопасное соединение";font-size:var(--login-copy-size)}}
+@media(max-width:760px){{body{{padding:10px;background-attachment:scroll;background-size:auto,auto,auto,100% 100%,31px 31px,31px 31px}}.loginShell{{width:min(100%,calc(100vw - 20px))}}.loginFrame{{border-radius:20px}}.brandPanel{{padding:20px 14px 12px}}.brandPanel::after{{left:14px;right:14px}}.brandSeal{{width:64px;height:64px}}.brandSeal::before{{inset:10px}}.brandSeal svg{{width:30px;height:30px}}.brandTitle{{font-size:clamp(19px,7vw,24px);gap:4px}}.brandVersion{{font-size:12px}}.authPanel{{padding:0 14px 14px}}.authTabs{{grid-template-columns:1fr;width:100%}}.authTabBtn{{min-height:44px;font-size:12px}}.authTabBtn svg{{width:16px;height:16px}}.fieldGroup{{justify-items:stretch}}.compactField,.otpCard,.hint,.captchaSection,.primaryBtn,.err{{width:100%;justify-self:stretch}}.inputShell{{grid-template-columns:40px minmax(0,1fr) auto;min-height:44px}}.fieldIcon svg{{width:16px;height:16px}}.inputShell input{{font-size:13px}}.inputAction{{width:40px}}.captchaSection{{padding:12px 10px 10px;gap:9px}}.captchaTopRow{{grid-template-columns:30px 1fr;gap:8px}}.captchaRefresh{{width:30px;height:30px}}.captchaRefresh svg{{width:18px;height:18px}}.captcha b{{font-size:21px}}.captchaAnswerShell{{grid-template-columns:minmax(0,1fr) 38px;min-height:38px}}.primaryBtn{{min-height:46px;font-size:13px}}.methodGrid,.socialMethodGrid{{grid-template-columns:1fr}}.methodBtnRow{{grid-template-columns:1fr}}.sshMethodCard{{display:none!important}}.authFooter{{display:none}}}}
+</style>
+</head>
+<body>
+<main class="loginShell">
+  <section class="loginFrame">
+    <div class="loginMain">
+      <aside class="brandPanel">
+        <div class="brandTop">
+          <div class="brandHero">
+            <div class="brandSeal" aria-hidden="true">
+              <svg viewBox="0 0 96 96" fill="none">
+                <rect x="20" y="48" width="56" height="22" rx="7" stroke="#E5F2FF" stroke-width="3"/>
+                <path d="M48 28v20" stroke="#E5F2FF" stroke-width="4" stroke-linecap="round"/>
+                <path d="M48 24a4 4 0 1 0 0 8a4 4 0 0 0 0-8Z" stroke="#E5F2FF" stroke-width="3"/>
+                <path d="M31 38c4-6 10-10 17-10s13 4 17 10" stroke="#3B82F6" stroke-width="4" stroke-linecap="round"/>
+                <path d="M25 30c6-8 14-13 23-13s17 5 23 13" stroke="#3B82F6" stroke-width="4" stroke-linecap="round"/>
+                <path d="M16 21c9-11 20-17 32-17s23 6 32 17" stroke="#3B82F6" stroke-width="4" stroke-linecap="round"/>
+                <circle cx="31" cy="59" r="3" fill="#E5F2FF"/>
+                <circle cx="48" cy="59" r="3" fill="#E5F2FF"/>
+                <circle cx="65" cy="59" r="3" fill="#E5F2FF"/>
+              </svg>
+            </div>
+            <h2 class="brandTitle">OpenWrt Remote Hub <span class="brandVersion">v103</span></h2>
+          </div>
+        </div>
+        <div class="brandBottom">
+          <div class="globeWrap" aria-hidden="true">
+            <div class="orbitLine"></div>
+            <div class="globe"></div>
+          </div>
+        </div>
+      </aside>
+      <section class="authPanel">
+        <div class="authStack">
+          <header class="authHead">
+            <div class="authMark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M7 10V7a5 5 0 0 1 10 0v3" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="4" y="10" width="16" height="10" rx="3" stroke-width="1.8"/>
+                <path d="M12 14v2.5" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div>
+              <h1>Вход в систему</h1>
+              <p>Авторизуйся для доступа к панели и защищённым сценариям управления.</p>
+            </div>
+          </header>
+          {error_html}
+          <div class="authTabs" role="tablist" aria-label="Сценарии входа">
+            <button class="authTabBtn" type="button" role="tab" aria-selected="true" aria-controls="passwordLoginPanel" id="passwordLoginTab" data-auth-tab="password">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M7 10V7a5 5 0 0 1 10 0v3" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="4" y="10" width="16" height="10" rx="3" stroke-width="1.8"/>
+                <path d="M12 14v2.5" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+              <span>Вход в систему</span>
+            </button>
+            <button class="authTabBtn" type="button" role="tab" aria-selected="false" aria-controls="quickLoginPanel" id="quickLoginTab" data-auth-tab="quick">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2" stroke-width="1.8" stroke-linecap="round"/>
+                <circle cx="9.5" cy="7" r="3.5" stroke-width="1.8"/>
+                <path d="M20 8v6M17 11h6" stroke-width="1.8" stroke-linecap="round"/>
+              </svg>
+              <span>Быстрый вход</span>
+            </button>
+          </div>
+          <div class="authTabsBody">
+            <section class="authTabPanel is-active" id="passwordLoginPanel" role="tabpanel" aria-labelledby="passwordLoginTab" data-auth-panel="password">
+              <form class="login" method="post" action="/login">
+                <div class="fieldGroup">
+                  <div class="compactField">
+                    <label class="fieldLabel" for="hubUsername">Логин</label>
+                    <div class="inputShell">
+                      <span class="fieldIcon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none">
+                          <path d="M12 12a4 4 0 1 0 0-8a4 4 0 0 0 0 8Z" stroke-width="1.7"/>
+                          <path d="M4 20a8 8 0 0 1 16 0" stroke-width="1.7" stroke-linecap="round"/>
+                        </svg>
+                      </span>
+                      <input id="hubUsername" name="username" autocomplete="username" placeholder="Введите логин" autofocus required>
+                    </div>
+                  </div>
+                  <div class="compactField">
+                    <label class="fieldLabel" for="hubPassword">Пароль</label>
+                    <div class="inputShell">
+                      <span class="fieldIcon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none">
+                          <path d="M7 10V7a5 5 0 0 1 10 0v3" stroke-width="1.7" stroke-linecap="round"/>
+                          <rect x="4" y="10" width="16" height="10" rx="3" stroke-width="1.7"/>
+                        </svg>
+                      </span>
+                      <input id="hubPassword" name="password" type="password" autocomplete="current-password" placeholder="Введите пароль" required>
+                      <button class="inputAction" id="passwordToggleBtn" type="button" aria-label="Показать или скрыть пароль">
+                        <svg viewBox="0 0 24 24" fill="none">
+                          <path d="M2 12s3.5-6 10-6s10 6 10 6s-3.5 6-10 6S2 12 2 12Z" stroke-width="1.7" stroke-linejoin="round"/>
+                          <circle cx="12" cy="12" r="3" stroke-width="1.7"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="otpCard compactField">
+                    <div>
+                      <label class="fieldLabel" for="hubOtp">Код 2FA</label>
+                      <div class="inputShell">
+                        <span class="fieldIcon" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none">
+                            <path d="M12 3l7 3v5c0 4.4-2.8 8.4-7 9.8C7.8 19.4 5 15.4 5 11V6l7-3Z" stroke-width="1.7" stroke-linejoin="round"/>
+                            <path d="M9.5 11.5l1.6 1.6l3.4-3.6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        </span>
+                        <input id="hubOtp" name="otp" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" placeholder="Введите код из приложения 2FA">
+                      </div>
+                    </div>
+                    <div class="hint" id="passwordModeHint" hidden>Резервный вход через пароль. Когда 2FA включена, сюда нужен TOTP-код.</div>
+                  </div>
+                  <div class="captchaSection">
+                    <div class="captchaHeading">Капча: введи эти цифры</div>
+                    <div class="captchaTopRow">
+                      <button class="captchaRefresh" id="captchaRefreshBtn" type="button" aria-label="Обновить капчу">
+                        <svg viewBox="0 0 24 24" fill="none">
+                          <path d="M20 6v5h-5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                          <path d="M4 18v-5h5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                          <path d="M7.5 9A7 7 0 0 1 19 11" stroke-width="1.8" stroke-linecap="round"/>
+                          <path d="M16.5 15A7 7 0 0 1 5 13" stroke-width="1.8" stroke-linecap="round"/>
+                        </svg>
+                      </button>
+                      <div class="captcha" id="hubCaptchaCode" aria-live="polite"><b>{safe_captcha_code}</b></div>
+                    </div>
+                    <div class="inputShell captchaAnswerShell">
+                      <input id="hubCaptcha" name="captcha_answer" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Повтори капчу" required>
+                      <span class="captchaInputMark" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none">
+                          <rect x="3" y="5" width="18" height="14" rx="3" stroke-width="1.7"/>
+                          <path d="M7 9h2M11 9h2M15 9h2M7 13h10" stroke-width="1.7" stroke-linecap="round"/>
+                        </svg>
+                      </span>
+                    </div>
+                  </div>
+                  <input name="captcha_token" type="hidden" value="{safe_captcha_token}">
+                  <button class="primaryBtn">
+                    <svg viewBox="0 0 24 24" fill="none">
+                      <path d="M7 10V7a5 5 0 0 1 10 0v3" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                      <rect x="4" y="10" width="16" height="10" rx="3" stroke-width="1.8"/>
+                      <path d="M12 14v2.5" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                    Войти
+                  </button>
+                </div>
+              </form>
+            </section>
+            <section class="authTabPanel" id="quickLoginPanel" role="tabpanel" aria-labelledby="quickLoginTab" data-auth-panel="quick" hidden>
+              <div class="quickAuthPanel">
+                <div class="divider">или</div>
+                <section class="methodGrid">
+                  <section class="methodCard" id="passkeyMethodCard">
+                    <div class="methodCardTop">
+                      <div class="methodMark" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none">
+                          <path d="M12 2l7 4v5c0 4.6-3 8.7-7 10c-4-1.3-7-5.4-7-10V6l7-4Z" stroke-width="1.7" stroke-linejoin="round"/>
+                          <path d="M8.5 12.5l2.3 2.3l4.7-4.8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </div>
+                      <span class="methodMeta">Passkey</span>
+                    </div>
+                    <div>
+                      <h2>Системный ключ</h2>
+                      <p>Windows Hello, Touch ID, Android и другие системные ключи могут входить без пароля.</p>
+                    </div>
+                    <button class="methodBtn" id="passkeyLoginBtn" type="button">
+                      <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M7 10V7a5 5 0 0 1 10 0v3" stroke-width="1.7" stroke-linecap="round"/>
+                        <rect x="4" y="10" width="16" height="10" rx="3" stroke-width="1.7"/>
+                        <path d="M12 14v2.5" stroke-width="1.7" stroke-linecap="round"/>
+                      </svg>
+                      Войти через Passkey
+                    </button>
+                    <div class="hint" id="passkeyHint">Сначала зарегистрируй passkey в меню доступа внутри панели.</div>
+                    <div class="methodStatus" id="passkeyStatus" hidden></div>
+                  </section>
+                  <section class="methodCard sshMethodCard" id="sshMethodCard">
+                    <div class="methodCardTop">
+                      <div class="methodMark" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none">
+                          <path d="M14.5 4.5a4.95 4.95 0 0 1 0 7l-6 6a4.95 4.95 0 1 1-7-7l2-2" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                          <path d="M9.5 19.5a4.95 4.95 0 0 1 0-7l6-6a4.95 4.95 0 1 1 7 7l-2 2" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      </div>
+                      <span class="methodMeta">ED25519</span>
+                    </div>
+                    <div class="sshMethodIntro">
+                      <h2>SSH-подпись</h2>
+                      <p>Challenge + подпись приватным ключом ED25519 без отправки самого приватного ключа.</p>
+                    </div>
+                    <div class="methodBtnRow">
+                      <button class="methodBtn" id="sshChallengeBtn" type="button">Получить challenge</button>
+                      <button class="methodBtn" id="sshVerifyBtn" type="button">Проверить подпись</button>
+                    </div>
+                    <details class="methodDetails" id="sshDetails">
+                      <summary>Ручная подпись challenge</summary>
+                      <div class="methodDetailsBody">
+                        <div class="methodRow">
+                          <textarea class="wide" id="sshChallenge" readonly placeholder="Здесь появится challenge для подписи"></textarea>
+                          <textarea class="wide" id="sshSignature" placeholder="Вставь блок -----BEGIN SSH SIGNATURE----- ... -----END SSH SIGNATURE-----"></textarea>
+                        </div>
+                      </div>
+                    </details>
+                    <a class="manualGuideLink sshManualGuideLink" href="/ssh-key-manual/" target="_blank" rel="noopener noreferrer">Как создать SSH key</a>
+                    <div class="hint sshHint" id="sshHint">Сначала добавь SSH ED25519 ключ в меню доступа внутри панели.</div>
+                    <div class="methodStatus" id="sshStatus" hidden></div>
+                  </section>
+                </section>
+                <section class="socialLoginSection" id="socialLoginSection" hidden>
+                  <div class="divider">только привязанные</div>
+                  <section class="socialMethodGrid" id="socialMethodGrid">
+                    <section class="methodCard socialMethodCard" id="githubLoginCard" hidden>
+                      <div class="methodCardTop">
+                        <div class="methodMark" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none">
+                            <path d="M12 3.2a8.8 8.8 0 0 0-2.8 17.1c.4.1.6-.2.6-.5v-1.8c-2.5.5-3-1-3-1c-.4-1-.9-1.3-.9-1.3c-.8-.5 0-.5 0-.5c.8.1 1.3.8 1.3.8c.8 1.3 2 1 2.5.8c.1-.6.3-1 .5-1.3c-2-.2-4.1-1-4.1-4.4c0-1 .3-1.9.8-2.5c-.1-.2-.4-1.1.1-2.4c0 0 .7-.2 2.6 1a9 9 0 0 1 4.8 0c1.8-1.2 2.6-1 2.6-1c.5 1.3.2 2.2.1 2.4c.5.6.8 1.5.8 2.5c0 3.4-2.1 4.2-4.1 4.4c.3.3.6.8.6 1.7v2.5c0 .3.2.6.6.5A8.8 8.8 0 0 0 12 3.2Z" stroke-width="1.4" stroke-linejoin="round"/>
+                          </svg>
+                        </div>
+                        <span class="methodMeta">GitHub</span>
+                      </div>
+                      <div>
+                        <h2>GitHub аккаунт</h2>
+                        <p>Появляется только после привязки аккаунта в меню доступа Hub.</p>
+                      </div>
+                      <button class="methodBtn" id="githubLoginBtn" type="button">Войти через GitHub</button>
+                      <div class="hint" id="githubLoginHint">Пока нет привязанного GitHub-аккаунта.</div>
+                    </section>
+                    <section class="methodCard socialMethodCard" id="vkLoginCard" hidden>
+                      <div class="methodCardTop">
+                        <div class="methodMark" aria-hidden="true">
+                          <svg viewBox="0 0 24 24" fill="none">
+                            <path d="M5 7.5c.2 4 2.2 8.3 6.2 8.3h.4V13c1.6 0 2.3.5 3.2 1.6l1 1.2h2.8l-1.8-2.5c-.5-.7-1.3-1.4-2-1.7c0 0 1.8-.9 2.8-3.1h-2.5c-1 2-2.6 2.1-2.6 2.1V7.5h-2.4v5.5c0 .5-.1.6-.5.6c-1 0-3.3-1.9-3.8-6.1H5Z" stroke-width="1.4" stroke-linejoin="round"/>
+                          </svg>
+                        </div>
+                        <span class="methodMeta">VK ID</span>
+                      </div>
+                      <div>
+                        <h2>VK ID аккаунт</h2>
+                        <p>Кнопка видна только для реально привязанных VK ID.</p>
+                      </div>
+                      <button class="methodBtn" id="vkLoginBtn" type="button">Войти через VK ID</button>
+                      <div class="hint" id="vkLoginHint">Пока нет привязанного VK ID.</div>
+                    </section>
+                  </section>
+                  <div class="socialMethodEmpty" id="socialMethodEmpty" hidden></div>
+                </section>
+                <footer class="authFooter">
+                  <div class="altAuthSummary" id="altAuthSummary" hidden>Проверяю доступные методы входа...</div>
+                </footer>
+              </div>
+            </section>
+          </div>
+          <div class="securityNote">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 3l7 3v5c0 4.4-2.8 8.4-7 9.8C7.8 19.4 5 15.4 5 11V6l7-3Z" stroke-width="1.7" stroke-linejoin="round"/>
+              <path d="M9.5 11.5l1.6 1.6l3.4-3.6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>Безопасное соединение. Данные и альтернативные методы авторизации защищены.</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+<script>
+const hubUsername = document.getElementById('hubUsername');
+const hubPassword = document.getElementById('hubPassword');
+const hubOtp = document.getElementById('hubOtp');
+const authTabButtons = Array.from(document.querySelectorAll('[data-auth-tab]'));
+const authTabPanels = Array.from(document.querySelectorAll('[data-auth-panel]'));
+const passwordModeHint = document.getElementById('passwordModeHint');
+const passwordToggleBtn = document.getElementById('passwordToggleBtn');
+const captchaRefreshBtn = document.getElementById('captchaRefreshBtn');
+const passkeyLoginBtn = document.getElementById('passkeyLoginBtn');
+const passkeyHint = document.getElementById('passkeyHint');
+const passkeyStatus = document.getElementById('passkeyStatus');
+const sshChallengeBtn = document.getElementById('sshChallengeBtn');
+const sshVerifyBtn = document.getElementById('sshVerifyBtn');
+const sshDetails = document.getElementById('sshDetails');
+const sshChallenge = document.getElementById('sshChallenge');
+const sshSignature = document.getElementById('sshSignature');
+const sshHint = document.getElementById('sshHint');
+const sshStatus = document.getElementById('sshStatus');
+const altAuthSummary = document.getElementById('altAuthSummary');
+const socialLoginSection = document.getElementById('socialLoginSection');
+const socialMethodGrid = document.getElementById('socialMethodGrid');
+const socialMethodEmpty = document.getElementById('socialMethodEmpty');
+const socialLoginUi = {{
+  github: {{
+    label: 'GitHub',
+    card: document.getElementById('githubLoginCard'),
+    button: document.getElementById('githubLoginBtn'),
+    hint: document.getElementById('githubLoginHint')
+  }},
+  vk: {{
+    label: 'VK ID',
+    card: document.getElementById('vkLoginCard'),
+    button: document.getElementById('vkLoginBtn'),
+    hint: document.getElementById('vkLoginHint')
+  }}
+}};
+let loginAuthMeta = {initial_login_meta_json};
+let sshTicket = '';
+
+function setActiveAuthTab(name) {{
+  const activeTab = name === 'quick' ? 'quick' : 'password';
+  authTabButtons.forEach((button) => {{
+    const selected = button.dataset.authTab === activeTab;
+    button.setAttribute('aria-selected', selected ? 'true' : 'false');
+    button.tabIndex = selected ? 0 : -1;
+  }});
+  authTabPanels.forEach((panel) => {{
+    const visible = panel.dataset.authPanel === activeTab;
+    panel.classList.toggle('is-active', visible);
+    panel.hidden = !visible;
+  }});
+}}
+
+function setMethodStatus(node, text, bad = false) {{
+  if (!node) return;
+  node.hidden = false;
+  node.className = 'methodStatus' + (bad ? ' bad' : '');
+  node.textContent = text;
+}}
+
+function b64urlToBytes(value) {{
+  const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - normalized.length % 4) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}}
+
+function bytesToB64url(buffer) {{
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer || []);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/g, '');
+}}
+
+function decodeRequestOptions(options) {{
+  const publicKey = Object.assign({{}}, options.publicKey || {{}});
+  publicKey.challenge = b64urlToBytes(publicKey.challenge || '');
+  publicKey.allowCredentials = Array.isArray(publicKey.allowCredentials)
+    ? publicKey.allowCredentials.map((item) => Object.assign({{}}, item, {{id: b64urlToBytes(item.id || '')}}))
+    : [];
+  return {{publicKey}};
+}}
+
+function encodeAssertion(assertion) {{
+  return {{
+    id: assertion.id,
+    rawId: bytesToB64url(assertion.rawId),
+    type: assertion.type,
+    authenticatorAttachment: assertion.authenticatorAttachment || null,
+    clientExtensionResults: assertion.getClientExtensionResults ? assertion.getClientExtensionResults() : {{}},
+    response: {{
+      clientDataJSON: bytesToB64url(assertion.response.clientDataJSON),
+      authenticatorData: bytesToB64url(assertion.response.authenticatorData),
+      signature: bytesToB64url(assertion.response.signature),
+      userHandle: assertion.response.userHandle ? bytesToB64url(assertion.response.userHandle) : null
+    }}
+  }};
+}}
+
+function isCompactSshLogin() {{
+  return window.matchMedia ? window.matchMedia('(max-width: 760px)').matches : window.innerWidth <= 760;
+}}
+
+function updateSshHintText(sshCount) {{
+  if (!sshHint) return;
+  if (!sshCount) {{
+    sshHint.textContent = 'Сначала добавь SSH ED25519 ключ в меню доступа внутри панели.';
+    return;
+  }}
+  sshHint.textContent = isCompactSshLogin()
+    ? 'SSH ED25519 вход доступен на полном экране. На телефоне здесь оставлена только подсказка.'
+    : 'Нажми Получить challenge, затем вставь подпись и нажми Проверить подпись.';
+}}
+
+function updateLoginMeta() {{
+  if (hubOtp) hubOtp.required = !!loginAuthMeta.totp_enabled;
+  if (passwordModeHint) {{
+    passwordModeHint.hidden = !loginAuthMeta.totp_enabled;
+    if (loginAuthMeta.totp_enabled) {{
+      passwordModeHint.textContent = '2FA включена: для входа по паролю обязателен TOTP-код.';
+    }}
+  }}
+  const invalidPasskeyCount = Number(loginAuthMeta.passkey_invalid_count || 0);
+  if (!passkeyLoginBtn || !passkeyHint) return;
+  if (!window.PublicKeyCredential || !window.isSecureContext) {{
+    passkeyLoginBtn.disabled = true;
+    passkeyHint.textContent = 'Passkey требует secure context: HTTPS или localhost.';
+  }} else if (!loginAuthMeta.passkeys_supported) {{
+    passkeyLoginBtn.disabled = true;
+    passkeyHint.textContent = 'На сервере ещё не установлен WebAuthn модуль. Запусти свежий install-vps.sh.';
+  }} else if (!Number(loginAuthMeta.passkey_count || 0) && invalidPasskeyCount) {{
+    passkeyLoginBtn.disabled = true;
+    passkeyHint.textContent = 'Сохранённый passkey повреждён или устарел. Удали его в меню доступа и зарегистрируй заново.';
+  }} else if (!Number(loginAuthMeta.passkey_count || 0)) {{
+    passkeyLoginBtn.disabled = true;
+    passkeyHint.textContent = 'Сначала зарегистрируй passkey в меню доступа внутри панели.';
+  }} else {{
+    passkeyLoginBtn.disabled = false;
+    passkeyHint.textContent = 'Готово: можно входить через системный passkey.';
+  }}
+}}
+
+function refreshSocialLoginMethods() {{
+  const social = loginAuthMeta.social || {{}};
+  let visibleCount = 0;
+  Object.entries(socialLoginUi).forEach(([provider, ui]) => {{
+    const meta = social[provider] || {{}};
+    const linkedCount = Number(meta.linked_count || 0);
+    const enabled = !!meta.enabled && linkedCount > 0;
+    if (ui.card) ui.card.hidden = !enabled;
+    if (ui.button) ui.button.disabled = !enabled;
+    if (ui.hint) {{
+      ui.hint.textContent = enabled
+        ? `Доступно ${{linkedCount}} привяз. аккаунт(ов) ${{ui.label}}.`
+        : `Вход через ${{ui.label}} появится только после привязки аккаунта в Hub.`;
+    }}
+    if (enabled) visibleCount += 1;
+  }});
+  if (socialLoginSection) socialLoginSection.hidden = visibleCount === 0;
+  if (socialMethodGrid) socialMethodGrid.hidden = visibleCount === 0;
+  if (socialMethodEmpty) socialMethodEmpty.hidden = true;
+  return visibleCount;
+}}
+
+function refreshLoginFlowMeta() {{
+  const passkeyCount = Number(loginAuthMeta.passkey_count || 0);
+  const invalidPasskeyCount = Number(loginAuthMeta.passkey_invalid_count || 0);
+  const sshCount = Number(loginAuthMeta.ssh_key_count || 0);
+  const socialVisibleCount = refreshSocialLoginMethods();
+  if (hubUsername && !hubUsername.value) hubUsername.value = loginAuthMeta.username || '';
+  const passwordState = loginAuthMeta.totp_enabled ? 'Пароль + 2FA активен.' : 'Пароль доступен как резерв.';
+  const passkeyState = !window.PublicKeyCredential || !window.isSecureContext
+    ? 'Passkey ждёт HTTPS/localhost.'
+    : !loginAuthMeta.passkeys_supported
+      ? 'Passkey ждёт модуль WebAuthn.'
+      : !passkeyCount && invalidPasskeyCount
+        ? 'Passkey повреждён: нужна перерегистрация.'
+      : passkeyCount
+        ? `Passkey готов: ${{passkeyCount}} шт.`
+        : 'Passkey пока не зарегистрирован.';
+  if (!sshCount) {{
+    sshTicket = '';
+    sshChallenge.value = '';
+    sshSignature.value = '';
+    if (sshDetails) sshDetails.open = false;
+    sshChallengeBtn.disabled = true;
+    sshVerifyBtn.disabled = true;
+  }} else {{
+    sshChallengeBtn.disabled = false;
+    sshVerifyBtn.disabled = !sshTicket;
+  }}
+  updateSshHintText(sshCount);
+  const socialState = socialVisibleCount
+    ? `Соцвход готов: ${{socialVisibleCount}} привяз. сервис(ов).`
+    : 'Соцвход появится после привязки аккаунта в Hub.';
+  if (altAuthSummary) {{
+    altAuthSummary.hidden = false;
+    altAuthSummary.textContent = `${{passwordState}} Passkey: ${{passkeyState}} ED25519: ${{sshCount ? `готово (${{sshCount}})` : 'ожидает добавления ключа'}} Соцсервисы: ${{socialState}}`;
+  }}
+}}
+
+async function loadLoginMeta() {{
+  try {{
+    const res = await fetch('/api/auth/meta', {{cache: 'no-store'}});
+    const data = await res.json();
+    loginAuthMeta = data.auth || {{}};
+    updateLoginMeta();
+    refreshLoginFlowMeta();
+  }} catch (err) {{
+    if (window.console && typeof window.console.warn === 'function') {{
+      window.console.warn('Не удалось обновить /api/auth/meta', err);
+    }}
+  }}
+}}
+
+authTabButtons.forEach((button) => {{
+  button.addEventListener('click', () => {{
+    setActiveAuthTab(button.dataset.authTab || 'password');
+  }});
+}});
+
+window.addEventListener('resize', () => {{
+  updateSshHintText(Number(loginAuthMeta.ssh_key_count || 0));
+  refreshLoginFlowMeta();
+}});
+
+setActiveAuthTab('password');
+updateLoginMeta();
+refreshLoginFlowMeta();
+
+if (passwordToggleBtn && hubPassword) {{
+  passwordToggleBtn.addEventListener('click', () => {{
+    const hidden = hubPassword.type === 'password';
+    hubPassword.type = hidden ? 'text' : 'password';
+    passwordToggleBtn.setAttribute('aria-label', hidden ? 'Скрыть пароль' : 'Показать или скрыть пароль');
+  }});
+}}
+
+if (captchaRefreshBtn) {{
+  captchaRefreshBtn.addEventListener('click', () => {{
+    window.location.reload();
+  }});
+}}
+
+Object.entries(socialLoginUi).forEach(([provider, ui]) => {{
+  if (!ui.button) return;
+  ui.button.addEventListener('click', () => {{
+    window.location.href = `/oauth/${{encodeURIComponent(provider)}}/start`;
+  }});
+}});
+
+if (passkeyLoginBtn) {{
+  passkeyLoginBtn.addEventListener('click', async () => {{
+    passkeyStatus.hidden = true;
+    try {{
+      const beginRes = await fetch('/api/login/passkey/begin', {{method: 'POST'}});
+      const beginData = await beginRes.json().catch(() => ({{}}));
+      if (!beginRes.ok || !beginData.ok) throw new Error(beginData.error || 'Не удалось начать Passkey-вход');
+      const assertion = await navigator.credentials.get(decodeRequestOptions(beginData.options || {{}}));
+      const finishRes = await fetch('/api/login/passkey/finish', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{ticket: beginData.ticket, credential: encodeAssertion(assertion)}})
+      }});
+      const finishData = await finishRes.json().catch(() => ({{}}));
+      if (!finishRes.ok || !finishData.ok) throw new Error(finishData.error || 'Passkey-вход не подтвердился');
+      window.location.href = finishData.redirect || '/';
+    }} catch (err) {{
+      setMethodStatus(passkeyStatus, err && err.message ? err.message : 'Passkey-вход не удался', true);
+    }}
+  }});
+}}
+
+if (sshChallengeBtn) {{
+  sshChallengeBtn.addEventListener('click', async () => {{
+    sshStatus.hidden = true;
+    try {{
+      const res = await fetch('/api/login/ssh/begin', {{method: 'POST'}});
+      const data = await res.json().catch(() => ({{}}));
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Не удалось получить challenge');
+      sshTicket = data.ticket || '';
+      sshChallenge.value = data.challenge || '';
+      if (sshDetails) sshDetails.open = true;
+      sshVerifyBtn.disabled = !sshTicket;
+      setMethodStatus(sshStatus, 'Challenge готов. Подпиши его SSH ED25519 ключом и вставь signature.');
+      refreshLoginFlowMeta();
+    }} catch (err) {{
+      sshVerifyBtn.disabled = true;
+      setMethodStatus(sshStatus, err && err.message ? err.message : 'Не удалось получить challenge', true);
+    }}
+  }});
+}}
+
+if (sshVerifyBtn) {{
+  sshVerifyBtn.addEventListener('click', async () => {{
+    sshStatus.hidden = true;
+    try {{
+      if (!sshTicket || !sshChallenge.value.trim()) throw new Error('Сначала запроси challenge');
+      if (!sshSignature.value.trim()) throw new Error('Вставь ASCII SSH signature');
+      const res = await fetch('/api/login/ssh/finish', {{
+        method: 'POST',
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{ticket: sshTicket, signature: sshSignature.value}})
+      }});
+      const data = await res.json().catch(() => ({{}}));
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Подпись не прошла проверку');
+      window.location.href = data.redirect || '/';
+    }} catch (err) {{
+      setMethodStatus(sshStatus, err && err.message ? err.message : 'Подпись ED25519 не подошла', true);
+    }}
+  }});
+}}
+
+loadLoginMeta();
+</script>
+</body>
+</html>"""
+
+
+def ssh_key_manual_html():
+    return """<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+{branding_head_tags(include_manifest=False)}
+<title>Мануал: SSH key для Hub</title>
+<style>
+:root{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.92);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.26);--cyan:#22d3ee;--amber:#f59e0b;--grid:rgba(168,85,247,.14)}
+*{box-sizing:border-box}
+body{position:relative;min-height:100vh;margin:0;overflow-x:hidden;background-color:var(--bg);background-image:radial-gradient(circle at 12% 8%,rgba(168,85,247,.46),transparent 31%),radial-gradient(circle at 82% 12%,rgba(79,70,229,.38),transparent 30%),radial-gradient(circle at 50% 105%,rgba(236,72,153,.26),transparent 35%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-size:130% 130%,140% 140%,135% 135%,100% 100%,31px 31px,31px 31px;background-attachment:fixed;color:var(--text);font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;animation:bgFlow 28s ease-in-out infinite alternate}
+body::before{content:"";position:fixed;inset:-25%;z-index:0;pointer-events:none;background:conic-gradient(from 0deg at 50% 50%,rgba(168,85,247,.05),rgba(236,72,153,.34),rgba(59,130,246,.22),rgba(245,158,11,.13),rgba(168,85,247,.05));filter:blur(54px);opacity:.7;animation:auraSpin 38s linear infinite}
+@keyframes bgFlow{0%{background-position:0% 0%,100% 0%,50% 100%,0 0,0 0,0 0}50%{background-position:28% 18%,62% 26%,38% 82%,0 0,15px 24px,24px 15px}100%{background-position:48% 28%,42% 42%,74% 62%,0 0,30px 0,0 30px}}
+@keyframes auraSpin{from{transform:rotate(0deg) scale(1)}to{transform:rotate(360deg) scale(1.08)}}
+.wrap{position:relative;z-index:1;max-width:920px;margin:0 auto;padding:22px 14px 36px}
+.hero{display:grid;gap:8px;margin-bottom:16px;padding:16px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.04)),var(--panel)}
+.hero h1{margin:0;font-size:24px;line-height:1.2}
+.hero p{margin:0;color:var(--muted)}
+.note{margin:0;padding:10px 12px;border:1px solid rgba(245,158,11,.24);border-radius:10px;background:rgba(245,158,11,.08);color:#fde68a}
+.steps{display:grid;gap:12px}
+.step{display:grid;gap:8px;padding:14px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03)),var(--panel)}
+.step h2{margin:0;font-size:16px}
+.step p{margin:0;color:var(--muted)}
+.cmd{border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(7,4,15,.72);overflow:hidden}
+.cmdHead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.07)}
+.cmdLabel{color:#ddd6fe;font-size:11px;font-weight:850;text-transform:uppercase;letter-spacing:.04em}
+.copyBtn,.topBtn{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:7px 12px;border:1px solid rgba(34,211,238,.26);border-radius:999px;background:rgba(34,211,238,.10);color:#dbeafe;text-decoration:none;font-size:12px;font-weight:850;cursor:pointer}
+.copyBtn:hover,.topBtn:hover{background:rgba(34,211,238,.16)}
+.cmd pre{margin:0;padding:10px 12px;color:#c4b5fd;font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+.topRow{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+@media(max-width:560px){.wrap{padding:14px 10px 24px}.hero h1{font-size:21px}.cmdHead{flex-direction:column;align-items:stretch}.copyBtn,.topBtn{width:100%}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <section class="hero">
+    <div class="topRow">
+      <h1>Мануал: как создать SSH key для Hub</h1>
+      <a class="topBtn" href="/login" target="_blank" rel="noopener noreferrer">Открыть логин Hub</a>
+    </div>
+    <p>PowerShell команды выполняются на вашем ПК с Windows, не на VPS. В Hub вы вставляете публичный ключ, потом challenge и затем подпись.</p>
+    <p class="note">Важно: файл <code>id_ed25519_hub</code> это приватный ключ, его никому не показывать. В Hub вставляется только файл <code>.pub</code>.</p>
+  </section>
+
+  <section class="steps">
+    <article class="step">
+      <h2>1. Открой PowerShell на Windows</h2>
+      <p>Нажмите Пуск, введите <code>PowerShell</code> и откройте Windows PowerShell.</p>
+    </article>
+
+    <article class="step">
+      <h2>2. Создай SSH-ключ на своем ПК</h2>
+      <p>Выполни команду ниже. Потом можно просто два раза нажать Enter, если не хочешь ставить passphrase на ключ.</p>
+      <div class="cmd">
+        <div class="cmdHead">
+          <span class="cmdLabel">PowerShell</span>
+          <button class="copyBtn" type="button" data-copy-text="ssh-keygen -t ed25519 -a 100 -f $env:USERPROFILE\\.ssh\\id_ed25519_hub -C &quot;hub-login&quot;">Копировать</button>
+        </div>
+        <pre>ssh-keygen -t ed25519 -a 100 -f $env:USERPROFILE\\.ssh\\id_ed25519_hub -C "hub-login"</pre>
+      </div>
+      <p>После этого появятся файлы <code>C:\\Users\\ВАШЕ_ИМЯ\\.ssh\\id_ed25519_hub</code> и <code>C:\\Users\\ВАШЕ_ИМЯ\\.ssh\\id_ed25519_hub.pub</code>.</p>
+    </article>
+
+    <article class="step">
+      <h2>3. Покажи публичный ключ и скопируй его целиком</h2>
+      <p>Нужна вся строка вида <code>ssh-ed25519 AAAA... hub-login</code>.</p>
+      <div class="cmd">
+        <div class="cmdHead">
+          <span class="cmdLabel">PowerShell</span>
+          <button class="copyBtn" type="button" data-copy-text="Get-Content $env:USERPROFILE\\.ssh\\id_ed25519_hub.pub">Копировать</button>
+        </div>
+        <pre>Get-Content $env:USERPROFILE\\.ssh\\id_ed25519_hub.pub</pre>
+      </div>
+    </article>
+
+    <article class="step">
+      <h2>4. Добавь публичный ключ в Hub</h2>
+      <p>Открой Hub, зайди в <code>Доступ к Hub</code>, блок <code>SSH ED25519</code>. Введи текущий пароль от Hub, укажи метку, например <code>Windows-PC</code>, вставь строку из файла <code>.pub</code> и нажми <code>Добавить SSH ED25519</code>.</p>
+    </article>
+
+    <article class="step">
+      <h2>5. Получи challenge на экране логина Hub</h2>
+      <p>Нажми <code>Получить challenge</code>, скопируй текст и сохрани его в файл на Windows ПК. Проще всего открыть Блокнот этой командой:</p>
+      <div class="cmd">
+        <div class="cmdHead">
+          <span class="cmdLabel">PowerShell</span>
+          <button class="copyBtn" type="button" data-copy-text="notepad $env:TEMP\\hub-challenge.txt">Копировать</button>
+        </div>
+        <pre>notepad $env:TEMP\\hub-challenge.txt</pre>
+      </div>
+      <p>Вставь туда challenge из Hub, сохрани файл и закрой Блокнот.</p>
+    </article>
+
+    <article class="step">
+      <h2>6. Подпиши challenge приватным ключом</h2>
+      <p>Подписывать нужно файлом без <code>.pub</code>, то есть именно приватным ключом <code>id_ed25519_hub</code>.</p>
+      <div class="cmd">
+        <div class="cmdHead">
+          <span class="cmdLabel">PowerShell</span>
+          <button class="copyBtn" type="button" data-copy-text="ssh-keygen -Y sign -f $env:USERPROFILE\\.ssh\\id_ed25519_hub -n owrt-remote-hub $env:TEMP\\hub-challenge.txt">Копировать</button>
+        </div>
+        <pre>ssh-keygen -Y sign -f $env:USERPROFILE\\.ssh\\id_ed25519_hub -n owrt-remote-hub $env:TEMP\\hub-challenge.txt</pre>
+      </div>
+      <p>После этого рядом появится файл <code>C:\\Users\\ВАШЕ_ИМЯ\\AppData\\Local\\Temp\\hub-challenge.txt.sig</code>.</p>
+    </article>
+
+    <article class="step">
+      <h2>7. Покажи подпись и скопируй весь блок</h2>
+      <p>Нужен весь текст от <code>-----BEGIN SSH SIGNATURE-----</code> до <code>-----END SSH SIGNATURE-----</code>.</p>
+      <div class="cmd">
+        <div class="cmdHead">
+          <span class="cmdLabel">PowerShell</span>
+          <button class="copyBtn" type="button" data-copy-text="Get-Content $env:TEMP\\hub-challenge.txt.sig">Копировать</button>
+        </div>
+        <pre>Get-Content $env:TEMP\\hub-challenge.txt.sig</pre>
+      </div>
+    </article>
+
+    <article class="step">
+      <h2>8. Вставь подпись обратно в Hub</h2>
+      <p>Вернись на экран логина, вставь весь блок подписи в поле <code>SSH signature</code> и нажми <code>Проверить подпись</code>. Если все ок, Hub впустит без пароля.</p>
+    </article>
+
+    <article class="step">
+      <h2>Если команда <code>ssh-keygen</code> не работает</h2>
+      <p>Проверь, установлен ли OpenSSH Client в Windows.</p>
+      <div class="cmd">
+        <div class="cmdHead">
+          <span class="cmdLabel">PowerShell</span>
+          <button class="copyBtn" type="button" data-copy-text="ssh -V">Копировать</button>
+        </div>
+        <pre>ssh -V</pre>
+      </div>
+    </article>
+  </section>
+</main>
+<script>
+async function copyText(text){
+  const value = String(text || '');
+  if (!value) return false;
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch (err) {
+    const area = document.createElement('textarea');
+    area.value = value;
+    area.setAttribute('readonly', 'readonly');
+    area.style.position = 'fixed';
+    area.style.left = '-1000px';
+    area.style.top = '-1000px';
+    document.body.appendChild(area);
+    area.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (copyErr) {}
+    area.remove();
+    return ok;
+  }
+}
+document.addEventListener('click', async (event) => {
+  const btn = event.target.closest('.copyBtn[data-copy-text]');
+  if (!btn) return;
+  const original = btn.textContent;
+  const ok = await copyText(btn.getAttribute('data-copy-text') || '');
+  btn.textContent = ok ? 'Скопировано' : 'Не удалось';
+  window.setTimeout(() => {
+    btn.textContent = original;
+  }, 1400);
+});
+</script>
+</body>
+</html>"""
+
+
+_base_login_html = login_html
+
+
+def login_html(error=""):
+    auth = normalize_auth_state(load_auth())
+    page = _base_login_html(error)
+    state = effective_captcha_state(auth)
+    if state.get("effective_mode") != CAPTCHA_MODE_RECAPTCHA:
+        return page
+    replacement = modern_login_captcha_html(auth)
+    page, count = re.subn(
+        r'<div class="captchaSection">.*?<input name="captcha_token" type="hidden" value="[^"]*">',
+        replacement,
+        page,
+        count=1,
+        flags=re.S,
+    )
+    if count and ".captchaSectionRecaptcha" not in page:
+        page = page.replace(
+            ".captchaRefresh:active{transform:translateY(1px)}",
+            ".captchaRefresh:active{transform:translateY(1px)}"
+            ".captchaSectionRecaptcha{gap:12px}"
+            ".captchaHint{color:var(--muted);font-size:12px;line-height:1.45}"
+            ".recaptchaBox{display:flex;justify-content:center;overflow-x:auto;padding:4px 0}",
+            1,
+        )
+    script = login_recaptcha_script(auth)
+    if script and script not in page:
+        page = page.replace("</head>", f"{script}\n</head>", 1)
+    return page
 
 
 class App:
@@ -9066,6 +10788,14 @@ class Handler(BaseHTTPRequestHandler):
     def send_text(self, status, text, content_type="text/plain; charset=utf-8"):
         self.send_bytes(status, text.encode("utf-8"), content_type)
 
+    def send_local_asset(self, file_path, content_type):
+        try:
+            body = Path(file_path).read_bytes()
+        except FileNotFoundError:
+            self.send_text(404, "asset not found")
+            return
+        self.send_bytes(200, body, content_type)
+
     def send_json(self, status, payload):
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         self.send_bytes(status, body, "application/json; charset=utf-8")
@@ -9160,6 +10890,27 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("Текущий пароль неверный")
         return auth
 
+    def verify_login_captcha(self, payload, auth=None):
+        auth = normalize_auth_state(auth or load_auth())
+        state = effective_captcha_state(auth)
+        if state.get("effective_mode") == CAPTCHA_MODE_RECAPTCHA:
+            token = (
+                (payload or {}).get("g-recaptcha-response")
+                or (payload or {}).get("recaptcha_token")
+                or ""
+            )
+            return verify_recaptcha_token(
+                state.get("secret_key", ""),
+                token,
+                remote_ip=self.client_ip(),
+                expected_hostname=self.request_host_name(),
+            )
+        captcha_token = (payload or {}).get("captcha_token", "")
+        captcha_answer = (payload or {}).get("captcha_answer", "")
+        if verify_captcha(captcha_token, captcha_answer):
+            return True, ""
+        return False, "РќРµРІРµСЂРЅР°СЏ РєР°РїС‡Р°"
+
     def create_login_session(self, username="", auth_method="password"):
         token, session = make_hub_session(
             username or current_username(),
@@ -9191,6 +10942,233 @@ class Handler(BaseHTTPRequestHandler):
             "application/json; charset=utf-8",
             [("Set-Cookie", self.session_cookie(token))],
         )
+
+    def social_callback_url(self, provider):
+        provider = str(provider or "").strip().lower()
+        base = public_url_origin(self.app.public_url) or self.request_origin()
+        if not base:
+            raise ValueError("Не удалось определить внешний URL Hub для OAuth callback")
+        return f"{base}/oauth/{provider}/callback"
+
+    def social_provider_config(self, provider, auth=None):
+        provider = str(provider or "").strip().lower()
+        if provider not in SOCIAL_PROVIDERS:
+            raise ValueError("Неизвестный OAuth provider")
+        auth = normalize_auth_state(auth or load_auth())
+        return sanitize_social_provider_state(provider, auth.get("social", {}).get(provider))
+
+    def social_flow_authorize_url(self, provider, state, redirect_uri, flow=None):
+        provider = str(provider or "").strip().lower()
+        cfg = self.social_provider_config(provider)
+        if not social_provider_configured(provider, cfg):
+            raise ValueError(social_provider_setup_message(provider))
+        flow = dict(flow or {})
+        if provider == "github":
+            query = {
+                "client_id": cfg["client_id"],
+                "redirect_uri": redirect_uri,
+                "scope": "read:user user:email",
+                "state": state,
+                "allow_signup": "false",
+            }
+        elif provider == "vk":
+            code_verifier = str(flow.get("code_verifier") or "").strip()
+            if not code_verifier:
+                raise ValueError("VK ID flow не подготовлен")
+            query = {
+                "client_id": cfg["client_id"],
+                "redirect_uri": redirect_uri,
+                "response_type": "code",
+                "scope": "email vkid.personal_info",
+                "state": state,
+                "code_challenge": make_pkce_challenge(code_verifier),
+                "code_challenge_method": "S256",
+            }
+        else:
+            raise ValueError("Неизвестный OAuth provider")
+        return f"{SOCIAL_PROVIDERS[provider]['authorize_url']}?{urllib.parse.urlencode(query)}"
+
+    def oauth_popup_html(self, title, message, provider="", ok=False):
+        tone = "ok" if ok else "bad"
+        provider = str(provider or "").strip().lower()
+        payload = json.dumps({"type": "owrt-social-linked", "provider": provider, "ok": bool(ok)}, ensure_ascii=False)
+        safe_title = html.escape(title or APP_NAME)
+        safe_message = html.escape(message or "")
+        return f"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{branding_head_tags(include_manifest=False)}
+<title>{safe_title}</title>
+<style>
+body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f172a;color:#e2e8f0;font:16px/1.45 system-ui,sans-serif;padding:20px}}
+.card{{width:min(100%,420px);padding:24px;border-radius:18px;border:1px solid rgba(148,163,184,.24);background:rgba(15,23,42,.88);box-shadow:0 20px 60px rgba(15,23,42,.45)}}
+.title{{margin:0 0 10px;font-size:22px;font-weight:800}}
+.msg{{margin:0;color:#cbd5e1}}
+.pill{{display:inline-flex;align-items:center;gap:8px;margin-bottom:14px;padding:7px 12px;border-radius:999px;background:{'#052e16' if ok else '#3f0d12'};color:{'#bbf7d0' if ok else '#fecaca'};font-size:13px;font-weight:700}}
+.link{{display:inline-flex;margin-top:18px;color:#93c5fd}}
+</style>
+</head>
+<body>
+  <article class="card">
+    <div class="pill">{'Готово' if ok else 'Ошибка'}</div>
+    <h1 class="title">{safe_title}</h1>
+    <p class="msg">{safe_message}</p>
+    <a class="link" href="/">{'Вернуться в Hub' if ok else 'Открыть вход в Hub'}</a>
+  </article>
+<script>
+const payload = {payload};
+try {{
+  if (window.opener && !window.opener.closed) {{
+    window.opener.postMessage(payload, window.location.origin);
+    setTimeout(() => window.close(), 250);
+  }}
+}} catch (err) {{}}
+</script>
+</body>
+</html>"""
+
+    def social_login_error_page(self, message):
+        safe_message = html.escape(message or "Не удалось завершить OAuth вход")
+        return f"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{branding_head_tags(include_manifest=False)}
+<title>OAuth ошибка</title>
+<style>
+body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f172a;color:#e2e8f0;font:16px/1.45 system-ui,sans-serif;padding:20px}}
+.card{{width:min(100%,460px);padding:24px;border-radius:18px;border:1px solid rgba(248,113,113,.26);background:rgba(15,23,42,.88);box-shadow:0 20px 60px rgba(15,23,42,.45)}}
+h1{{margin:0 0 10px;font-size:22px}}
+p{{margin:0;color:#cbd5e1}}
+a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
+</style>
+</head>
+<body>
+  <article class="card">
+    <h1>OAuth вход не завершен</h1>
+    <p>{safe_message}</p>
+    <a href="/login">Вернуться на страницу входа</a>
+  </article>
+</body>
+</html>"""
+
+    def exchange_social_code(self, provider, code, redirect_uri, flow=None, flow_state="", device_id=""):
+        provider = str(provider or "").strip().lower()
+        cfg = self.social_provider_config(provider)
+        flow = dict(flow or {})
+        if provider == "github":
+            token = oauth_fetch_json(
+                SOCIAL_PROVIDERS[provider]["token_url"],
+                method="POST",
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                data={
+                    "client_id": cfg["client_id"],
+                    "client_secret": cfg["client_secret"],
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                },
+            )
+            access_token = str(token.get("access_token") or "").strip()
+            if not access_token:
+                raise ValueError(token.get("error_description") or token.get("error") or "GitHub не вернул access token")
+            profile = oauth_fetch_json(
+                "https://api.github.com/user",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+            emails = oauth_fetch_json(
+                "https://api.github.com/user/emails",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {access_token}",
+                },
+            )
+            primary_email = ""
+            if isinstance(emails, list):
+                for row in emails:
+                    if row.get("primary"):
+                        primary_email = str(row.get("email") or "").strip()
+                        break
+                if not primary_email and emails:
+                    primary_email = str(emails[0].get("email") or "").strip()
+            account_id = str(profile.get("id") or "").strip()
+            if not account_id:
+                raise ValueError("GitHub не вернул ID пользователя")
+            return {
+                "id": account_id,
+                "label": str(profile.get("name") or profile.get("login") or primary_email or account_id),
+                "login": str(profile.get("login") or "").strip(),
+                "name": str(profile.get("name") or "").strip(),
+                "email": primary_email,
+                "profile_url": str(profile.get("html_url") or "").strip(),
+                "avatar_url": str(profile.get("avatar_url") or "").strip(),
+            }
+        if provider == "vk":
+            code_verifier = str(flow.get("code_verifier") or "").strip()
+            if not code_verifier:
+                raise ValueError("VK ID flow истек. Запусти вход еще раз")
+            device_id = str(device_id or "").strip()
+            if not device_id:
+                raise ValueError("VK ID не вернул device_id")
+            token_payload = {
+                "grant_type": "authorization_code",
+                "client_id": cfg["client_id"],
+                "code": code,
+                "redirect_uri": redirect_uri,
+                "code_verifier": code_verifier,
+                "device_id": device_id,
+                "state": str(flow_state or "").strip(),
+            }
+            service_token = str(cfg.get("client_secret") or "").strip()
+            if service_token:
+                token_payload["service_token"] = service_token
+            token = oauth_fetch_json(
+                SOCIAL_PROVIDERS[provider]["token_url"],
+                method="POST",
+                headers={"Accept": "application/json"},
+                data=token_payload,
+            )
+            access_token = str(token.get("access_token") or "").strip()
+            if not access_token:
+                raise ValueError(token.get("error_description") or token.get("error") or "VK ID не вернул access token")
+            token_state = str(token.get("state") or "").strip()
+            if token_state and token_state != str(flow_state or "").strip():
+                raise ValueError("VK ID вернул неожиданный state")
+            profile = oauth_fetch_json(
+                SOCIAL_PROVIDERS[provider]["api_url"],
+                method="POST",
+                headers={"Accept": "application/json"},
+                data={
+                    "client_id": cfg["client_id"],
+                    "access_token": access_token,
+                },
+            )
+            user = profile.get("user") if isinstance(profile.get("user"), dict) else {}
+            account_id = str(token.get("user_id") or user.get("user_id") or "").strip()
+            if not account_id:
+                raise ValueError("VK ID не вернул ID пользователя")
+            first_name = str(user.get("first_name") or "").strip()
+            last_name = str(user.get("last_name") or "").strip()
+            full_name = " ".join(part for part in (first_name, last_name) if part).strip()
+            email = str(user.get("email") or "").strip()
+            return {
+                "id": account_id,
+                "label": full_name or email or f"VK ID {account_id}",
+                "login": "",
+                "name": full_name,
+                "email": email,
+                "profile_url": f"https://vk.com/id{account_id}",
+                "avatar_url": str(user.get("avatar") or "").strip(),
+            }
+        raise ValueError("Неизвестный OAuth provider")
 
     def serve_acme_challenge(self, path):
         prefix = "/.well-known/acme-challenge/"
@@ -9234,6 +11212,22 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_bytes(401, login_html(error_text or "Неверный логин или пароль").encode("utf-8"), "text/html; charset=utf-8")
 
+    def login(self):
+        payload = self.read_payload()
+        username = payload.get("username", "")
+        password = payload.get("password", "")
+        otp = payload.get("otp", "")
+        captcha_ok, captcha_error = self.verify_login_captcha(payload)
+        if not captcha_ok:
+            self.send_bytes(401, login_html(captcha_error or "РќРµРІРµСЂРЅР°СЏ РєР°РїС‡Р°").encode("utf-8"), "text/html; charset=utf-8")
+            return
+        ok, error_text, auth, auth_method = verify_password_login(username, password, otp)
+        if ok:
+            token, _ = self.create_login_session(auth.get("username", username), auth_method)
+            self.redirect("/", [("Set-Cookie", self.session_cookie(token))])
+            return
+        self.send_bytes(401, login_html(error_text or "РќРµРІРµСЂРЅС‹Р№ Р»РѕРіРёРЅ РёР»Рё РїР°СЂРѕР»СЊ").encode("utf-8"), "text/html; charset=utf-8")
+
     def update_auth(self):
         payload = self.read_payload()
         auth = load_auth()
@@ -9258,11 +11252,216 @@ class Handler(BaseHTTPRequestHandler):
             save_auth_state(auth)
         self.send_text(200, "Доступ к Hub обновлен")
 
+    def update_auth(self):
+        payload = self.read_payload()
+        auth = normalize_auth_state(load_auth())
+        current_password = payload.get("current_password", "")
+        if not verify_login(auth.get("username", ""), current_password):
+            self.send_text(403, "Текущий пароль неверный")
+            return
+        username = payload.get("username", auth.get("username", "admin"))
+        new_password = payload.get("password", "")
+        confirm = payload.get("password_confirm", "")
+        captcha_mode = sanitize_captcha_mode(payload.get("captcha_mode"))
+        captcha_site_key = str(payload.get("captcha_site_key") or "").strip()
+        captcha_secret_key = str(payload.get("captcha_secret_key") or "").strip()
+        if new_password:
+            if new_password != confirm:
+                self.send_text(400, "Новый пароль и повтор не совпадают")
+                return
+            if len(new_password) < MIN_PASSWORD_LENGTH:
+                self.send_text(400, f"Новый пароль должен быть минимум {MIN_PASSWORD_LENGTH} символа")
+                return
+        if captcha_mode == CAPTCHA_MODE_RECAPTCHA and not (captcha_site_key and captcha_secret_key):
+            self.send_text(400, "Для Google reCAPTCHA нужны Site Key и Secret Key")
+            return
+        auth["username"] = clean_username(username)
+        if new_password:
+            auth["password"] = password_digest(new_password)
+        auth["captcha"] = sanitize_captcha_state(
+            {
+                "mode": captcha_mode,
+                "site_key": captcha_site_key,
+                "secret_key": captcha_secret_key,
+            }
+        )
+        auth["updated_at"] = now_ts()
+        save_auth_state(auth)
+        self.send_text(200, "Доступ к Hub обновлен")
+
+    def build_auth_meta(self, admin=False):
+        meta = admin_auth_meta() if admin else public_auth_meta()
+        social = meta.get("social") if isinstance(meta.get("social"), dict) else {}
+        for provider, item in social.items():
+            if not isinstance(item, dict):
+                continue
+            item["redirect_uri"] = self.social_callback_url(provider)
+        return meta
+
     def auth_meta(self):
         if self.admin_ok():
-            self.send_json(200, {"ok": True, "auth": admin_auth_meta()})
+            self.send_json(200, {"ok": True, "auth": self.build_auth_meta(admin=True)})
             return
-        self.send_json(200, {"ok": True, "auth": public_auth_meta()})
+        self.send_json(200, {"ok": True, "auth": self.build_auth_meta(admin=False)})
+
+    def save_social_provider_config(self, provider):
+        try:
+            payload = self.read_payload()
+            auth = self.require_current_password(payload)
+            provider = str(provider or "").strip().lower()
+            if provider not in SOCIAL_PROVIDERS:
+                raise ValueError("Неизвестный OAuth provider")
+            client_id = str(payload.get("client_id") or "").strip()
+            client_secret = str(payload.get("client_secret") or "").strip()
+
+            def mutator(current):
+                current = normalize_auth_state(current)
+                current["social"][provider]["client_id"] = client_id
+                current["social"][provider]["client_secret"] = client_secret
+                return current
+
+            save_auth_state(mutator(auth))
+            self.send_json(
+                200,
+                {
+                    "ok": True,
+                    "auth": self.build_auth_meta(admin=True),
+                    "message": f"{social_provider_label(provider)} сохранен",
+                },
+            )
+        except ValueError as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+        except Exception as exc:
+            self.send_json(500, {"ok": False, "error": str(exc)})
+
+    def begin_social_link(self, provider):
+        try:
+            payload = self.read_payload()
+            auth = self.require_current_password(payload)
+            provider = str(provider or "").strip().lower()
+            redirect_uri = self.social_callback_url(provider)
+            cfg = self.social_provider_config(provider, auth)
+            if not social_provider_configured(provider, cfg):
+                raise ValueError(social_provider_setup_message(provider))
+            flow_payload = {
+                "provider": provider,
+                "mode": "link",
+                "redirect_uri": redirect_uri,
+            }
+            if provider == "vk":
+                flow_payload["code_verifier"] = make_pkce_verifier()
+            ticket = put_auth_flow(f"oauth-{provider}", flow_payload)
+            self.send_json(
+                200,
+                {
+                    "ok": True,
+                    "url": self.social_flow_authorize_url(provider, ticket, redirect_uri, flow=flow_payload),
+                },
+            )
+        except ValueError as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+        except Exception as exc:
+            self.send_json(500, {"ok": False, "error": str(exc)})
+
+    def unlink_social_account(self, provider):
+        try:
+            payload = self.read_payload()
+            auth = self.require_current_password(payload)
+            provider = str(provider or "").strip().lower()
+            account_id = str(payload.get("id") or "").strip()
+            if not account_id:
+                raise ValueError("Не указан аккаунт для отвязки")
+            if not find_social_account_record(auth, provider, account_id):
+                raise ValueError("Аккаунт уже отвязан")
+            updated = save_auth_state(remove_social_account(auth, provider, account_id))
+            self.send_json(
+                200,
+                {
+                    "ok": True,
+                    "auth": self.build_auth_meta(admin=True),
+                    "message": f"{social_provider_label(provider)} отвязан",
+                },
+            )
+        except ValueError as exc:
+            self.send_json(400, {"ok": False, "error": str(exc)})
+        except Exception as exc:
+            self.send_json(500, {"ok": False, "error": str(exc)})
+
+    def start_social_login(self, provider):
+        provider = str(provider or "").strip().lower()
+        try:
+            redirect_uri = self.social_callback_url(provider)
+            cfg = self.social_provider_config(provider)
+            if not social_provider_configured(provider, cfg):
+                raise ValueError(social_provider_setup_message(provider))
+            if not cfg.get("accounts"):
+                raise ValueError(f"Для {social_provider_label(provider)} пока нет привязанных аккаунтов")
+            flow_payload = {
+                "provider": provider,
+                "mode": "login",
+                "redirect_uri": redirect_uri,
+            }
+            if provider == "vk":
+                flow_payload["code_verifier"] = make_pkce_verifier()
+            ticket = put_auth_flow(f"oauth-{provider}", flow_payload)
+            self.redirect(self.social_flow_authorize_url(provider, ticket, redirect_uri, flow=flow_payload))
+        except ValueError as exc:
+            self.send_bytes(400, self.social_login_error_page(str(exc)).encode("utf-8"), "text/html; charset=utf-8")
+        except Exception as exc:
+            self.send_bytes(500, self.social_login_error_page(str(exc)).encode("utf-8"), "text/html; charset=utf-8")
+
+    def finish_social_callback(self, provider):
+        provider = str(provider or "").strip().lower()
+        params = self.query()
+        flow_state = str(params.get("state", [""])[0] or "")
+        error_code = str(params.get("error", [""])[0] or "")
+        error_text = str(params.get("error_description", [""])[0] or params.get("error_reason", [""])[0] or error_code or "")
+        flow = None
+        try:
+            flow = pop_auth_flow(flow_state, f"oauth-{provider}")
+            if not flow:
+                raise ValueError("OAuth сессия истекла или уже была использована")
+            if error_code:
+                raise ValueError(error_text or f"{social_provider_label(provider)} вернул ошибку авторизации")
+            code = str(params.get("code", [""])[0] or "").strip()
+            if not code:
+                raise ValueError("OAuth provider не вернул код авторизации")
+            device_id = str(params.get("device_id", [""])[0] or "").strip()
+            account = self.exchange_social_code(
+                provider,
+                code,
+                str(flow.get("redirect_uri") or self.social_callback_url(provider)),
+                flow=flow,
+                flow_state=flow_state,
+                device_id=device_id,
+            )
+            if flow.get("mode") == "link":
+                updated = save_auth_state(upsert_social_account(load_auth(), provider, account))
+                message = f"{social_provider_label(provider)} аккаунт {account.get('label') or account.get('id')} привязан"
+                self.send_bytes(
+                    200,
+                    self.oauth_popup_html(social_provider_label(provider), message, provider=provider, ok=True).encode("utf-8"),
+                    "text/html; charset=utf-8",
+                )
+                return
+            auth = load_auth()
+            linked = find_social_account_record(auth, provider, account.get("id"))
+            if not linked:
+                raise ValueError("Этот аккаунт не привязан к Hub. Сначала привяжи его в разделе Доступ к Hub.")
+            save_auth_state(touch_social_account_last_used(auth, provider, account.get("id")))
+            token, _ = self.create_login_session(current_username(), auth_method=provider)
+            self.redirect("/", [("Set-Cookie", self.session_cookie(token))])
+        except ValueError as exc:
+            if (flow or {}).get("mode") == "link":
+                self.send_bytes(
+                    400,
+                    self.oauth_popup_html(social_provider_label(provider), str(exc), provider=provider, ok=False).encode("utf-8"),
+                    "text/html; charset=utf-8",
+                )
+                return
+            self.send_bytes(400, self.social_login_error_page(str(exc)).encode("utf-8"), "text/html; charset=utf-8")
+        except Exception as exc:
+            self.send_bytes(500, self.social_login_error_page(str(exc)).encode("utf-8"), "text/html; charset=utf-8")
 
     def totp_setup(self):
         try:
@@ -9417,8 +11616,11 @@ class Handler(BaseHTTPRequestHandler):
     def begin_passkey_login(self):
         try:
             auth = load_auth()
-            credentials = passkey_credentials(auth)
+            passkey_info = passkey_inventory(auth)
+            credentials = passkey_info.get("credentials", [])
             if not credentials:
+                if passkey_info.get("invalid_count"):
+                    raise ValueError("Сохраненный passkey поврежден или записан в старом формате. Удали его в меню доступа и зарегистрируй заново")
                 raise ValueError("Для входа Passkey пока не зарегистрирован")
             server = self.build_webauthn_server()
             options, state = server.authenticate_begin(
@@ -9439,8 +11641,11 @@ class Handler(BaseHTTPRequestHandler):
             if not flow:
                 raise ValueError("Passkey-челлендж истек, начни вход заново")
             auth = load_auth()
-            credentials = passkey_credentials(auth)
+            passkey_info = passkey_inventory(auth)
+            credentials = passkey_info.get("credentials", [])
             if not credentials:
+                if passkey_info.get("invalid_count"):
+                    raise ValueError("Сохраненный passkey поврежден или записан в старом формате. Удали его в меню доступа и зарегистрируй заново")
                 raise ValueError("Passkey не зарегистрирован")
             server = self.build_webauthn_server()
             credential = server.authenticate_complete(flow.get("state"), credentials, response)
@@ -10913,13 +13118,23 @@ exit 127
         if path == "/health":
             self.send_json(200, {"ok": True})
             return
+        if path == "/favicon.ico":
+            self.send_local_asset(FAVICON_ICO_FILE, "image/x-icon")
+            return
+        if path == "/favicon-32.png":
+            self.send_local_asset(FAVICON_PNG_32_FILE, "image/png")
+            return
+        if path == "/favicon-192.png":
+            self.send_local_asset(FAVICON_PNG_192_FILE, "image/png")
+            return
+        if path == "/favicon-512.png":
+            self.send_local_asset(FAVICON_PNG_512_FILE, "image/png")
+            return
+        if path == "/apple-touch-icon.png":
+            self.send_local_asset(APPLE_TOUCH_ICON_FILE, "image/png")
+            return
         if path == "/favicon.svg":
             self.send_bytes(200, favicon_svg().encode("utf-8"), "image/svg+xml; charset=utf-8")
-            return
-        if path == "/favicon.ico":
-            self.send_response(302)
-            self.send_header("Location", "/favicon.svg")
-            self.end_headers()
             return
         if path == "/sw.js":
             self.send_bytes(
@@ -10935,11 +13150,26 @@ exit 127
         if path == "/api/auth/meta":
             self.auth_meta()
             return
+        if path == "/oauth/github/start":
+            self.start_social_login("github")
+            return
+        if path == "/oauth/vk/start":
+            self.start_social_login("vk")
+            return
+        if path == "/oauth/github/callback":
+            self.finish_social_callback("github")
+            return
+        if path == "/oauth/vk/callback":
+            self.finish_social_callback("vk")
+            return
         if path.startswith("/.well-known/acme-challenge/"):
             self.serve_acme_challenge(path)
             return
         if path == "/login":
             self.send_bytes(200, login_html().encode("utf-8"), "text/html; charset=utf-8")
+            return
+        if path == "/ssh-key-manual/":
+            self.send_bytes(200, ssh_key_manual_html().encode("utf-8"), "text/html; charset=utf-8")
             return
         if path == "/logout":
             revoke_hub_session(token=self.current_session_token())
@@ -11172,6 +13402,24 @@ exit 127
             return
         if path == "/api/auth/ssh-keys/remove":
             self.remove_ssh_key()
+            return
+        if path == "/api/auth/social/github/save":
+            self.save_social_provider_config("github")
+            return
+        if path == "/api/auth/social/vk/save":
+            self.save_social_provider_config("vk")
+            return
+        if path == "/api/auth/social/github/link":
+            self.begin_social_link("github")
+            return
+        if path == "/api/auth/social/vk/link":
+            self.begin_social_link("vk")
+            return
+        if path == "/api/auth/social/github/unlink":
+            self.unlink_social_account("github")
+            return
+        if path == "/api/auth/social/vk/unlink":
+            self.unlink_social_account("vk")
             return
         if path == "/api/session/client-hint":
             payload = self.read_payload()
