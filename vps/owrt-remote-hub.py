@@ -1154,6 +1154,57 @@ def public_url_origin(public_url):
     return origin_from_parts(parts.scheme, parts.netloc)
 
 
+def append_forwarded_port(scheme, host, forwarded_port=""):
+    scheme = str(scheme or "").strip().lower()
+    host = str(host or "").strip()
+    forwarded_port = str(forwarded_port or "").split(",", 1)[0].strip()
+    if not host:
+        return ""
+    try:
+        parts = urllib.parse.urlsplit(f"{scheme or 'http'}://{host}")
+    except Exception:
+        return host
+    if not parts.hostname:
+        return host
+    if parts.port:
+        return parts.netloc or host
+    try:
+        port = int(forwarded_port)
+    except (TypeError, ValueError):
+        return parts.netloc or host
+    if not (0 < port < 65536):
+        return parts.netloc or host
+    default_port = 443 if scheme == "https" else 80 if scheme == "http" else None
+    if default_port and port == default_port:
+        return parts.netloc or host
+    host_name = parts.hostname
+    if ":" in host_name and not host_name.startswith("["):
+        host_name = f"[{host_name}]"
+    return f"{host_name}:{port}"
+
+
+def prefer_origin_with_explicit_port(primary="", secondary=""):
+    primary = str(primary or "").strip()
+    secondary = str(secondary or "").strip()
+    if not primary:
+        return secondary
+    if not secondary:
+        return primary
+    try:
+        primary_parts = urllib.parse.urlsplit(primary)
+        secondary_parts = urllib.parse.urlsplit(secondary)
+        if (
+            primary_parts.scheme == secondary_parts.scheme
+            and (primary_parts.hostname or "") == (secondary_parts.hostname or "")
+            and not primary_parts.port
+            and secondary_parts.port
+        ):
+            return secondary
+    except Exception:
+        pass
+    return primary
+
+
 def public_url_rp_id(public_url):
     value = str(public_url or "").strip()
     if not value:
@@ -1210,9 +1261,11 @@ def row_int_value(row, key, default=0):
 
 def canonical_router_hub_update(router, app_public_url="", request_origin=""):
     router = router or {}
+    router_public_url = public_url_origin(router.get("public_url", ""))
     app_origin = public_url_origin(app_public_url)
     request_origin = public_url_origin(request_origin)
-    public_url = app_origin or public_url_origin(router.get("public_url", ""))
+    public_url = prefer_origin_with_explicit_port(router_public_url, app_origin)
+    public_url = prefer_origin_with_explicit_port(public_url, request_origin)
     hub_url = public_url or request_origin
     vps_host = str(router.get("vps_host") or "").strip()
     if not vps_host and hub_url:
@@ -3116,7 +3169,8 @@ def router_current_hub_bundle(router, app_public_url="", request_origin="", fall
     router_public_url = public_url_origin(row.get("public_url", ""))
     app_origin = public_url_origin(app_public_url)
     request_origin = public_url_origin(request_origin)
-    public_url = router_public_url or app_origin
+    public_url = prefer_origin_with_explicit_port(router_public_url, app_origin)
+    public_url = prefer_origin_with_explicit_port(public_url, request_origin)
     hub_url = public_url or request_origin or router_fallback_hub_url(row, fallback_host, 8088)
     config_vps_host = (
         vps_host_name(public_url or hub_url)
@@ -12560,7 +12614,10 @@ class Handler(BaseHTTPRequestHandler):
         return "https" if isinstance(self.request, ssl.SSLSocket) else "http"
 
     def request_host(self):
-        return str(self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "").split(",", 1)[0].strip()
+        scheme = self.request_scheme()
+        host = str(self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or "").split(",", 1)[0].strip()
+        forwarded_port = self.headers.get("X-Forwarded-Port", "")
+        return append_forwarded_port(scheme, host, forwarded_port)
 
     def request_origin(self):
         return origin_from_parts(self.request_scheme(), self.request_host())
