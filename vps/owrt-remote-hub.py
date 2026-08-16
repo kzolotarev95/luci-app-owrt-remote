@@ -11010,7 +11010,7 @@ button:hover{{filter:brightness(1.06)}}
       <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v105</span></span></h1>
     </span>
     <label for="hubUsername">Логин</label>
-    <input id="hubUsername" name="username" autocomplete="username" autofocus required>
+    <input id="hubUsername" name="username" autocomplete="off" autofocus required>
     <label for="hubPassword">Пароль</label>
     <input id="hubPassword" name="password" type="password" autocomplete="current-password" required>
     <div class="otpCard">
@@ -11075,7 +11075,6 @@ button:hover{{filter:brightness(1.06)}}
         <textarea class="wide" id="sshSignature" placeholder="Вставь блок -----BEGIN SSH SIGNATURE----- ... -----END SSH SIGNATURE-----"></textarea>
       </div>
       <a class="manualGuideLink" href="/ssh-key-manual/" target="_blank" rel="noopener noreferrer">Мануал как создать Ssh key</a>
-      <div class="hint" id="sshHint">Сначала добавь SSH ED25519 ключ в меню доступа внутри панели.</div>
       <div class="methodStatus" id="sshStatus" hidden></div>
     </section>
         </section>
@@ -11205,7 +11204,6 @@ function updateLoginMeta() {{
 function refreshLoginFlowMeta() {{
   const passkeyCount = Number(loginAuthMeta.passkey_count || 0);
   const sshCount = Number(loginAuthMeta.ssh_key_count || 0);
-  if (hubUsername && !hubUsername.value) hubUsername.value = loginAuthMeta.username || '';
   setFlowBadge(flowPasswordState, loginAuthMeta.totp_enabled ? 'Password + 2FA' : 'Password reserve', loginAuthMeta.totp_enabled ? 'ready' : 'reserve');
   if (!window.PublicKeyCredential || !window.isSecureContext) {{
     setFlowBadge(flowPasskeyState, 'Passkey: secure context', 'pending');
@@ -11525,7 +11523,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                           <path d="M4 20a8 8 0 0 1 16 0" stroke-width="1.7" stroke-linecap="round"/>
                         </svg>
                       </span>
-                      <input id="hubUsername" name="username" autocomplete="username" placeholder="Введите логин" autofocus required>
+                      <input id="hubUsername" name="username" autocomplete="off" placeholder="Введите логин" autofocus required>
                     </div>
                   </div>
                   <div class="compactField">
@@ -11653,7 +11651,6 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                       </div>
                     </details>
                     <a class="manualGuideLink sshManualGuideLink" href="/ssh-key-manual/" target="_blank" rel="noopener noreferrer">Как создать SSH key</a>
-                    <div class="hint sshHint" id="sshHint">Сначала добавь SSH ED25519 ключ в меню доступа внутри панели.</div>
                     <div class="methodStatus" id="sshStatus" hidden></div>
                   </section>
                 </section>
@@ -11885,7 +11882,6 @@ function refreshLoginFlowMeta() {{
   const invalidPasskeyCount = Number(loginAuthMeta.passkey_invalid_count || 0);
   const sshCount = Number(loginAuthMeta.ssh_key_count || 0);
   const socialVisibleCount = refreshSocialLoginMethods();
-  if (hubUsername && !hubUsername.value) hubUsername.value = loginAuthMeta.username || '';
   const passwordState = loginAuthMeta.totp_enabled ? 'Пароль + 2FA активен.' : 'Пароль доступен как резерв.';
   const passkeyState = !window.PublicKeyCredential || !window.isSecureContext
     ? 'Passkey ждёт HTTPS/localhost.'
@@ -12041,7 +12037,6 @@ def ssh_key_manual_html():
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-{branding_head_tags(include_manifest=False)}
 <title>Мануал: SSH key для Hub</title>
 <style>
 :root{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.92);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.26);--cyan:#22d3ee;--amber:#f59e0b;--grid:rgba(168,85,247,.14)}
