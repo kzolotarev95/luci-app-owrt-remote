@@ -4,6 +4,8 @@ import base64
 import datetime as dt
 import dataclasses
 import enum
+from email.parser import BytesParser
+from email.policy import default as email_policy_default
 import hmac
 import hashlib
 import html
@@ -19,6 +21,7 @@ import ssl
 import sqlite3
 import struct
 import subprocess
+import shutil
 import sys
 import tarfile
 import tempfile
@@ -180,6 +183,12 @@ def iso_time(ts):
     if not ts:
         return ""
     return dt.datetime.fromtimestamp(int(ts), tz=dt.timezone.utc).isoformat()
+
+
+def format_router_note_time(ts):
+    if not ts:
+        return "Дата публикации неизвестна"
+    return dt.datetime.fromtimestamp(int(ts), tz=dt.timezone.utc).strftime("%d.%m.%Y %H:%M UTC")
 
 
 def router_proxy_limiter(router_id):
@@ -2788,6 +2797,232 @@ def clean_router_name(value):
     return text[:80]
 
 
+ROUTER_NOTE_TEXT_MAX_CHARS = 2000
+ROUTER_NOTES_MAX_ENTRIES = 200
+ROUTER_NOTES_STORAGE_VERSION = 1
+ROUTER_NOTES_MEDIA_DIR = STATE_DIR / "router-note-images"
+ROUTER_NOTE_IMAGE_MAX_FILES = 8
+ROUTER_NOTE_IMAGE_MAX_BYTES = 8 * 1024 * 1024
+ROUTER_NOTE_IMAGE_TOTAL_MAX_BYTES = 24 * 1024 * 1024
+ROUTER_NOTE_IMAGE_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+}
+ROUTER_NOTE_IMAGE_EXTENSIONS = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+
+
+def clean_router_notes(value):
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
+    lines = [line.rstrip() for line in text.split("\n")]
+    text = "\n".join(lines).strip()
+    return text[:ROUTER_NOTE_TEXT_MAX_CHARS]
+
+
+def clean_router_note_image_name(value):
+    text = Path(str(value or "").strip()).name
+    text = re.sub(r"\s+", " ", text).strip(" .")
+    return (text or "image")[:120]
+
+
+def clean_router_note_image_item(item):
+    if not isinstance(item, dict):
+        return {}
+    file_name = Path(str(item.get("file_name") or "")).name
+    if not file_name:
+        return {}
+    ext = Path(file_name).suffix.lower()
+    content_type = str(item.get("content_type") or "").split(";", 1)[0].strip().lower()
+    if not content_type and ext in ROUTER_NOTE_IMAGE_EXTENSIONS:
+        content_type = ROUTER_NOTE_IMAGE_EXTENSIONS[ext]
+    if content_type not in ROUTER_NOTE_IMAGE_TYPES:
+        return {}
+    expected_ext = ROUTER_NOTE_IMAGE_TYPES[content_type]
+    stem = Path(file_name).stem or secrets.token_hex(6)
+    file_name = f"{stem}{expected_ext}"
+    size = 0
+    try:
+        size = max(0, int(item.get("size") or 0))
+    except (TypeError, ValueError):
+        size = 0
+    return {
+        "id": str(item.get("id") or stem)[:32],
+        "file_name": file_name,
+        "content_type": content_type,
+        "name": clean_router_note_image_name(item.get("name") or file_name),
+        "size": size,
+    }
+
+
+def clean_router_note_images(items):
+    clean_items = []
+    for item in list(items or [])[:ROUTER_NOTE_IMAGE_MAX_FILES]:
+        clean_item = clean_router_note_image_item(item)
+        if clean_item:
+            clean_items.append(clean_item)
+    return clean_items
+
+
+def router_note_media_dir(router_id, note_id=""):
+    base = ROUTER_NOTES_MEDIA_DIR / clean_router_id(router_id)
+    note_name = str(note_id or "").strip()
+    if note_name:
+        return base / note_name[:64]
+    return base
+
+
+def router_note_image_path(router_id, note_id, file_name):
+    return router_note_media_dir(router_id, note_id) / Path(str(file_name or "")).name
+
+
+def router_note_image_url(router_id, note_id, file_name):
+    return (
+        f"/router/{urllib.parse.quote(clean_router_id(router_id))}"
+        f"/notes-media/{urllib.parse.quote(str(note_id or '')[:64])}"
+        f"/{urllib.parse.quote(Path(str(file_name or '')).name)}"
+    )
+
+
+def save_router_note_images(router_id, note_id, uploads):
+    uploads = list(uploads or [])
+    if len(uploads) > ROUTER_NOTE_IMAGE_MAX_FILES:
+        raise ValueError(f"можно прикрепить не больше {ROUTER_NOTE_IMAGE_MAX_FILES} изображений")
+    total_size = 0
+    saved = []
+    target_dir = router_note_media_dir(router_id, note_id)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for upload in uploads:
+        raw = bytes((upload or {}).get("body") or b"")
+        if not raw:
+            continue
+        total_size += len(raw)
+        if len(raw) > ROUTER_NOTE_IMAGE_MAX_BYTES:
+            raise ValueError("одно изображение слишком большое")
+        if total_size > ROUTER_NOTE_IMAGE_TOTAL_MAX_BYTES:
+            raise ValueError("общий размер изображений слишком большой")
+        content_type = str((upload or {}).get("content_type") or "").split(";", 1)[0].strip().lower()
+        filename = str((upload or {}).get("filename") or "")
+        if content_type not in ROUTER_NOTE_IMAGE_TYPES:
+            content_type = ROUTER_NOTE_IMAGE_EXTENSIONS.get(Path(filename).suffix.lower(), "")
+        if content_type not in ROUTER_NOTE_IMAGE_TYPES:
+            raise ValueError("поддерживаются только JPG, PNG, WEBP и GIF")
+        image_id = secrets.token_hex(6)
+        file_name = f"{image_id}{ROUTER_NOTE_IMAGE_TYPES[content_type]}"
+        write_private_bytes(target_dir / file_name, raw)
+        saved.append(
+            {
+                "id": image_id,
+                "file_name": file_name,
+                "content_type": content_type,
+                "name": clean_router_note_image_name(filename or file_name),
+                "size": len(raw),
+            }
+        )
+    return saved
+
+
+def delete_router_note_images(router_id, note_id):
+    target = router_note_media_dir(router_id, note_id)
+    if target.exists():
+        shutil.rmtree(target, ignore_errors=True)
+
+
+def payload_files(payload, field_name):
+    files = (payload or {}).get("__files__", {})
+    if not isinstance(files, dict):
+        return []
+    items = files.get(field_name, [])
+    return list(items) if isinstance(items, list) else []
+
+
+def build_router_note_entry(text, created_at=0, note_id="", images=None):
+    clean_text = clean_router_notes(text)
+    clean_images = clean_router_note_images(images)
+    if not clean_text and not clean_images:
+        return {}
+    created = int(created_at or now_ts())
+    entry = {
+        "id": str(note_id or secrets.token_hex(6))[:32],
+        "text": clean_text,
+        "created_at": created,
+    }
+    if clean_images:
+        entry["images"] = clean_images
+    return entry
+
+
+def parse_router_notes_entries(raw_value, fallback_ts=0):
+    raw_text = str(raw_value or "").strip()
+    if not raw_text:
+        return []
+    payload = None
+    try:
+        payload = json.loads(raw_text)
+    except json.JSONDecodeError:
+        payload = None
+    entries = []
+    if isinstance(payload, dict):
+        payload_entries = payload.get("entries")
+        if isinstance(payload_entries, list):
+            for item in payload_entries:
+                if not isinstance(item, dict):
+                    continue
+                entry = build_router_note_entry(
+                    item.get("text", ""),
+                    created_at=item.get("created_at") or fallback_ts or now_ts(),
+                    note_id=item.get("id", ""),
+                    images=item.get("images") or [],
+                )
+                if entry:
+                    entries.append(entry)
+            return entries[:ROUTER_NOTES_MAX_ENTRIES]
+    elif isinstance(payload, list):
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            entry = build_router_note_entry(
+                item.get("text", ""),
+                created_at=item.get("created_at") or fallback_ts or now_ts(),
+                note_id=item.get("id", ""),
+                images=item.get("images") or [],
+            )
+            if entry:
+                entries.append(entry)
+        return entries[:ROUTER_NOTES_MAX_ENTRIES]
+    legacy_entry = build_router_note_entry(raw_text, created_at=fallback_ts or now_ts())
+    return [legacy_entry] if legacy_entry else []
+
+
+def encode_router_notes_entries(entries):
+    clean_entries = []
+    for item in list(entries or [])[:ROUTER_NOTES_MAX_ENTRIES]:
+        if not isinstance(item, dict):
+            continue
+        entry = build_router_note_entry(
+            item.get("text", ""),
+            created_at=item.get("created_at") or now_ts(),
+            note_id=item.get("id", ""),
+            images=item.get("images") or [],
+        )
+        if entry:
+            clean_entries.append(entry)
+    return json.dumps(
+        {
+            "version": ROUTER_NOTES_STORAGE_VERSION,
+            "entries": clean_entries,
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
 def connect(db_path=DB_PATH):
     ensure_state()
     conn = sqlite3.connect(str(db_path))
@@ -2818,6 +3053,7 @@ def init_db(conn):
             ssh_reverse_tag text not null default '',
             ssh_host text not null default '127.0.0.1',
             ssh_port integer not null default 22,
+            notes text not null default '',
             created_at integer not null,
             updated_at integer not null,
             deleted_at integer not null default 0,
@@ -2833,6 +3069,7 @@ def init_db(conn):
     ensure_column(conn, "routers", "ssh_reverse_tag", "text not null default ''")
     ensure_column(conn, "routers", "ssh_host", "text not null default '127.0.0.1'")
     ensure_column(conn, "routers", "ssh_port", "integer not null default 22")
+    ensure_column(conn, "routers", "notes", "text not null default ''")
     conn.execute(
         """
         update routers
@@ -2917,6 +3154,29 @@ def row_to_router(row):
         status = json.loads(data.get("status_json") or "{}")
     except json.JSONDecodeError:
         status = {}
+    note_entries = parse_router_notes_entries(data.get("notes") or "", fallback_ts=data.get("updated_at") or data.get("created_at") or 0)
+    latest_entry = note_entries[-1] if note_entries else {}
+    latest_images = list(latest_entry.get("images") or [])
+    latest_note = latest_entry.get("text") or (f"Фото: {len(latest_images)}" if latest_images else "")
+    data["notes_entries"] = [
+        {
+            **entry,
+            "images": [
+                {
+                    **image,
+                    "url": router_note_image_url(data["id"], entry.get("id") or "", image.get("file_name") or ""),
+                }
+                for image in list(entry.get("images") or [])
+            ],
+            "created_at_iso": iso_time(entry.get("created_at") or 0),
+            "created_at_label": format_router_note_time(entry.get("created_at") or 0),
+        }
+        for entry in note_entries
+    ]
+    data["notes"] = latest_note
+    data["has_notes"] = bool(note_entries)
+    data["notes_count"] = len(note_entries)
+    data["notes_preview"] = " ".join(latest_note.split())[:220]
     custom_name = str(data.get("custom_name") or "").strip()
     if custom_name:
         data["name"] = custom_name
@@ -2930,6 +3190,7 @@ def row_to_router(row):
     data["access_url"] = f"/access/{urllib.parse.quote(data['id'])}/"
     data["ssh_url"] = f"/ssh/{urllib.parse.quote(data['id'])}/"
     data["config_url"] = f"/router/{urllib.parse.quote(data['id'])}/config"
+    data["notes_url"] = f"/router/{urllib.parse.quote(data['id'])}/notes"
     data["xray_client_url"] = f"/router/{urllib.parse.quote(data['id'])}/xray-client.json"
     data.pop("status_json", None)
     return data
@@ -2947,6 +3208,9 @@ def router_with_access(router, account):
         "admin": bool(can_admin),
         "ssh": bool(can_ssh),
         "manage": bool(can_manage),
+        "notes": bool(can_admin),
+        "notes_edit": bool(can_manage),
+        "notes_delete": bool(account and account.get("is_owner")),
         "config": bool(can_manage),
         "wol": bool(can_manage),
         "traffic": bool(can_manage),
@@ -3266,6 +3530,16 @@ def upsert_router(conn, values):
     reverse_tag = keep_str("reverse_tag", "reverse-in")
     ssh_vless_uuid = values.get("ssh_vless_uuid") or (current["ssh_vless_uuid"] if current and current["ssh_vless_uuid"] else str(uuid.uuid4()))
     ssh_reverse_tag = values.get("ssh_reverse_tag") or (current["ssh_reverse_tag"] if current and current["ssh_reverse_tag"] else f"{reverse_tag}-ssh")
+    if "notes" in values:
+        incoming_notes = values.get("notes", "")
+        if isinstance(incoming_notes, list):
+            notes = encode_router_notes_entries(incoming_notes)
+        else:
+            notes = encode_router_notes_entries(parse_router_notes_entries(incoming_notes, fallback_ts=ts))
+    elif current:
+        notes = str(current["notes"] or "")
+    else:
+        notes = encode_router_notes_entries([])
 
     payload = {
         "id": router_id,
@@ -3287,6 +3561,7 @@ def upsert_router(conn, values):
         "ssh_reverse_tag": ssh_reverse_tag,
         "ssh_host": keep_str("ssh_host", "127.0.0.1"),
         "ssh_port": keep_int("ssh_port", 22),
+        "notes": notes,
         "updated_at": ts,
         "deleted_at": 0,
     }
@@ -3317,6 +3592,7 @@ def upsert_router(conn, values):
                 ssh_reverse_tag = :ssh_reverse_tag,
                 ssh_host = :ssh_host,
                 ssh_port = :ssh_port,
+                notes = :notes,
                 deleted_at = :deleted_at,
                 updated_at = :updated_at
             where id = :id
@@ -3331,13 +3607,13 @@ def upsert_router(conn, values):
                 id, name, role, entry_port, vps_host, vless_port, vless_uuid,
                 vless_encryption, vless_decryption, vless_flow, reverse_tag,
                 public_url, admin_host, admin_port, ssh_entry_port, ssh_vless_uuid,
-                ssh_reverse_tag, ssh_host, ssh_port,
+                ssh_reverse_tag, ssh_host, ssh_port, notes,
                 created_at, updated_at, deleted_at
             ) values (
                 :id, :name, :role, :entry_port, :vps_host, :vless_port, :vless_uuid,
                 :vless_encryption, :vless_decryption, :vless_flow, :reverse_tag,
                 :public_url, :admin_host, :admin_port, :ssh_entry_port, :ssh_vless_uuid,
-                :ssh_reverse_tag, :ssh_host, :ssh_port,
+                :ssh_reverse_tag, :ssh_host, :ssh_port, :notes,
                 :created_at, :updated_at, :deleted_at
             )
             """,
@@ -3444,6 +3720,99 @@ def rename_router(conn, router_id, name):
         (clean_name, clean_name, now_ts(), router_id),
     )
     conn.commit()
+    return get_router(conn, router_id)
+
+
+def update_router_notes(conn, router_id, notes):
+    router_id = clean_router_id(router_id)
+    row = get_router(conn, router_id)
+    if not row or router_deleted(row):
+        raise ValueError("router not found")
+    clean_notes = clean_router_notes(notes)
+    stored = encode_router_notes_entries([build_router_note_entry(clean_notes, created_at=now_ts())] if clean_notes else [])
+    conn.execute(
+        "update routers set notes = ?, updated_at = ? where id = ?",
+        (stored, now_ts(), router_id),
+    )
+    conn.commit()
+    return get_router(conn, router_id)
+
+
+def append_router_note(conn, router_id, note_text, image_uploads=None):
+    router_id = clean_router_id(router_id)
+    row = get_router(conn, router_id)
+    if not row or router_deleted(row):
+        raise ValueError("router not found")
+    note_id = secrets.token_hex(6)
+    saved_images = save_router_note_images(router_id, note_id, image_uploads)
+    entry = build_router_note_entry(note_text, created_at=now_ts(), note_id=note_id, images=saved_images)
+    if not entry:
+        if saved_images:
+            delete_router_note_images(router_id, note_id)
+        raise ValueError("note is empty")
+    try:
+        entries = parse_router_notes_entries(row["notes"] or "", fallback_ts=row["updated_at"] or row["created_at"] or 0)
+        entries.append(entry)
+        entries = entries[-ROUTER_NOTES_MAX_ENTRIES:]
+        conn.execute(
+            "update routers set notes = ?, updated_at = ? where id = ?",
+            (encode_router_notes_entries(entries), now_ts(), router_id),
+        )
+        conn.commit()
+    except Exception:
+        if saved_images:
+            delete_router_note_images(router_id, note_id)
+        raise
+    return get_router(conn, router_id)
+
+
+def update_router_note_entry(conn, router_id, note_id, note_text):
+    router_id = clean_router_id(router_id)
+    note_id = str(note_id or "").strip()
+    if not note_id:
+        raise ValueError("note id is empty")
+    row = get_router(conn, router_id)
+    if not row or router_deleted(row):
+        raise ValueError("router not found")
+    clean_text = clean_router_notes(note_text)
+    entries = parse_router_notes_entries(row["notes"] or "", fallback_ts=row["updated_at"] or row["created_at"] or 0)
+    updated = False
+    for item in entries:
+        if str(item.get("id") or "") != note_id:
+            continue
+        if not clean_text and not list(item.get("images") or []):
+            raise ValueError("note is empty")
+        item["text"] = clean_text
+        updated = True
+        break
+    if not updated:
+        raise ValueError("note not found")
+    conn.execute(
+        "update routers set notes = ?, updated_at = ? where id = ?",
+        (encode_router_notes_entries(entries), now_ts(), router_id),
+    )
+    conn.commit()
+    return get_router(conn, router_id)
+
+
+def delete_router_note_entry(conn, router_id, note_id):
+    router_id = clean_router_id(router_id)
+    note_id = str(note_id or "").strip()
+    if not note_id:
+        raise ValueError("note id is empty")
+    row = get_router(conn, router_id)
+    if not row or router_deleted(row):
+        raise ValueError("router not found")
+    entries = parse_router_notes_entries(row["notes"] or "", fallback_ts=row["updated_at"] or row["created_at"] or 0)
+    filtered = [item for item in entries if str(item.get("id") or "") != note_id]
+    if len(filtered) == len(entries):
+        raise ValueError("note not found")
+    conn.execute(
+        "update routers set notes = ?, updated_at = ? where id = ?",
+        (encode_router_notes_entries(filtered), now_ts(), router_id),
+    )
+    conn.commit()
+    delete_router_note_images(router_id, note_id)
     return get_router(conn, router_id)
 
 
@@ -4088,7 +4457,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 @keyframes bannerShine{{0%,45%{{transform:translateX(-120%)}}72%,100%{{transform:translateX(120%)}}}}
 .cardTop{{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}}
 .status{{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid rgba(34,197,94,.36);background:rgba(34,197,94,.14);padding:7px 10px;font-weight:900;font-size:12px;color:#bbf7d0}}.status i{{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 13px var(--green);animation:statusPulse 1.6s ease-in-out infinite}}.status.off{{border-color:rgba(251,113,133,.36);background:rgba(251,113,133,.12);color:#fecdd3}}.status.off i{{background:var(--red);box-shadow:0 0 13px var(--red);animation:offlinePulse 1.9s ease-in-out infinite}}.status.warn i{{background:var(--amber);box-shadow:0 0 13px var(--amber)}}@keyframes statusPulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.45);opacity:1}}}}@keyframes offlinePulse{{0%,100%{{transform:scale(1);opacity:.5}}50%{{transform:scale(1.42);opacity:1}}}}.nameRow{{display:inline-flex;align-items:center;justify-content:center;gap:8px;max-width:100%;margin-top:12px;vertical-align:top}}.nameRow::before{{content:"";display:block;flex:0 0 28px;width:28px;height:28px}}.name{{margin:0;font-size:19px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}}.nameEditBtn{{position:static;display:inline-flex;align-items:center;justify-content:center;flex:0 0 28px;width:28px;height:28px;padding:0;border:1px solid rgba(251,191,36,.38);border-radius:999px;background:rgba(251,191,36,.12);color:#fde68a;box-shadow:inset 0 1px 0 rgba(255,255,255,.08);cursor:pointer;opacity:.5;transition:background .15s ease,border-color .15s ease,color .15s ease,transform .15s ease,opacity .15s ease}}.nameEditBtn:hover,.nameEditBtn:focus-visible{{opacity:1;border-color:rgba(34,211,238,.55);background:rgba(34,211,238,.14);color:#cffafe}}.nameEditBtn:active{{transform:scale(.96)}}.nameEditBtn svg{{width:13px;height:13px;display:block}}.nameEditBtn.disabled{{cursor:default;pointer-events:none;opacity:.22;border-color:rgba(255,255,255,.10);background:rgba(255,255,255,.05);color:rgba(255,255,255,.32)}}.mobilePanelToggle,.routerFormToggle{{display:none;width:100%;margin:14px 0 10px;border-radius:999px}}.routerFormWrap{{display:block}}[hidden],.headerActions[hidden],.routerStats[hidden],.routerFormWrap[hidden]{{display:none!important}}.metaLine{{margin-top:3px;color:var(--muted)}}.tagRow{{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}}.tag{{border:1px solid var(--line);border-radius:999px;padding:5px 9px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:12px;font-weight:750}}
-.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong,.metric.memory-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong,.metric.memory-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong,.metric.memory-bad strong{{color:#fecdd3}}.metric>span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.metric.temp-unavailable strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal;color:#f3e8ff}}.metric.model-metric strong{{margin-top:5px}}.modelMetricValue{{position:relative;display:flex;align-items:center;justify-content:center;width:100%;max-width:100%}}.modelLegendSpacer{{display:none}}.modelMetricName{{display:block;max-width:calc(100% - 72px);min-width:0;color:#ffffff;font-size:14px;line-height:1.2;text-align:center;white-space:nowrap}}.modelLegendBadge{{position:absolute;right:0;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;min-height:20px;min-width:62px;padding:0 8px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(120deg,rgba(34,211,238,.24),rgba(59,130,246,.16),rgba(168,85,247,.14));color:#e0f7ff;font-size:8px;font-weight:900;line-height:1;letter-spacing:.10em;text-transform:uppercase;box-shadow:0 8px 18px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12);overflow:hidden;white-space:nowrap}}.modelLegendBadge::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.modelLegendBadge span{{position:relative;display:block}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.wolPanel,.trafficPanel{{display:grid;gap:10px;margin-top:12px;padding:12px;border:1px solid rgba(34,211,238,.20);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),rgba(18,14,30,.82);text-align:left}}.trafficPanel{{gap:12px}}.wolPanel[hidden],.trafficPanel[hidden]{{display:none!important}}.wolHeader{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.wolTitle{{margin:0;color:#f3e8ff;font-size:13px;font-weight:900}}.wolMeta{{min-height:16px;color:#c4b5fd;font-size:12px;line-height:1.35}}.wolMeta.bad{{color:#fecdd3}}.wolControls,.trafficControls{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.95fr) auto;gap:8px;align-items:end}}.wolField{{display:grid;gap:6px;min-width:0;color:#ddd6fe;font-size:11px;font-weight:850}}.wolField select,.wolField input{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField select option{{background:#221a34;color:#f5f3ff}}.wolField select option:checked{{background:#3b82f6;color:#ffffff}}.wolField select:focus,.wolField input:focus{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolField input::placeholder{{color:rgba(221,214,254,.52)}}.wolControls .btn,.wolControls button,.trafficControls .btn,.trafficControls button{{min-height:38px}}.trafficSummary{{display:flex;flex-wrap:wrap;gap:6px}}.trafficSummaryChip{{display:inline-flex;align-items:center;min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.20);border-radius:999px;background:rgba(255,255,255,.05);color:#ddd6fe;font-size:10px;font-weight:850;letter-spacing:.03em;text-transform:uppercase}}.trafficSummaryChip.accent{{border-color:rgba(34,211,238,.34);background:rgba(34,211,238,.12);color:#cffafe}}.trafficSummaryChip.muted{{border-color:rgba(245,158,11,.24);background:rgba(245,158,11,.10);color:#fde68a}}.trafficViewport{{max-height:min(46vh,420px);overflow:auto;padding:8px 4px 0 0;border-top:1px solid rgba(167,139,250,.14);scrollbar-width:thin;overscroll-behavior:contain}}.trafficViewport::-webkit-scrollbar{{width:8px}}.trafficViewport::-webkit-scrollbar-thumb{{background:rgba(167,139,250,.24);border-radius:999px}}.trafficViewport::-webkit-scrollbar-track{{background:transparent}}.trafficList{{display:grid;gap:7px}}.trafficRow{{display:grid;gap:7px;padding:10px;border:1px solid rgba(167,139,250,.16);border-radius:10px;background:linear-gradient(180deg,rgba(57,43,82,.45),rgba(33,26,48,.70));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.trafficRowTop{{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:10px}}.trafficIdentity{{min-width:0}}.trafficName{{margin:0;color:#f5f3ff;font-size:13px;font-weight:900;line-height:1.35}}.trafficMetaLine{{margin:3px 0 0;color:#c4b5fd;font-size:10.5px;line-height:1.4;word-break:break-word}}.trafficTotalBadge{{display:grid;gap:2px;min-width:84px;padding:7px 9px;border:1px solid rgba(34,211,238,.22);border-radius:10px;background:linear-gradient(180deg,rgba(34,211,238,.12),rgba(34,211,238,.04));text-align:right}}.trafficTotalBadge span{{color:#a5f3fc;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}}.trafficTotalBadge strong{{color:#ecfeff;font-size:12px;line-height:1.25;word-break:break-word}}.trafficTagRow{{display:flex;flex-wrap:wrap;gap:5px}}.trafficTag{{display:inline-flex;align-items:center;min-height:20px;padding:0 7px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.10);color:#cffafe;font-size:9px;font-weight:850;letter-spacing:.03em;text-transform:uppercase}}.trafficStats{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}}.trafficStat{{display:grid;gap:2px;padding:7px 8px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.04);text-align:center}}.trafficStat span{{color:#c4b5fd;font-size:9px;font-weight:800;letter-spacing:.02em;text-transform:uppercase}}.trafficStat strong{{color:#f5f3ff;font-size:11px;line-height:1.35;word-break:break-word}}.trafficStatTotal{{display:none}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
+.metrics{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}}.metric{{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.055);padding:9px}}.metric.span2{{grid-column:span 2}}.metric.temp-ok strong,.metric.flash-ok strong,.metric.memory-ok strong{{color:#bbf7d0}}.metric.temp-warn strong,.metric.flash-warn strong,.metric.memory-warn strong{{color:#fde68a}}.metric.temp-bad strong,.metric.flash-bad strong,.metric.memory-bad strong{{color:#fecdd3}}.metric>span{{display:block;width:100%;color:var(--muted);font-size:11px;text-align:center}}.metric strong{{display:block;width:100%;margin-top:2px;font-size:14px;word-break:break-word;text-align:center}}.metric.metric-compact strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal}}.metric.temp-unavailable strong{{font-size:14px;line-height:1.3;white-space:pre-line;word-break:normal;color:#f3e8ff}}.metric.model-metric strong{{margin-top:5px}}.modelMetricValue{{position:relative;display:flex;align-items:center;justify-content:center;width:100%;max-width:100%}}.modelLegendSpacer{{display:none}}.modelMetricName{{display:block;max-width:calc(100% - 72px);min-width:0;color:#ffffff;font-size:14px;line-height:1.2;text-align:center;white-space:nowrap}}.modelLegendBadge{{position:absolute;right:0;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;min-height:20px;min-width:62px;padding:0 8px;border:1px solid rgba(34,211,238,.38);border-radius:999px;background:linear-gradient(120deg,rgba(34,211,238,.24),rgba(59,130,246,.16),rgba(168,85,247,.14));color:#e0f7ff;font-size:8px;font-weight:900;line-height:1;letter-spacing:.10em;text-transform:uppercase;box-shadow:0 8px 18px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12);overflow:hidden;white-space:nowrap}}.modelLegendBadge::before{{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent);transform:translateX(-120%);animation:bannerShine 6.2s ease-in-out infinite}}.modelLegendBadge span{{position:relative;display:block}}.actionToggle{{display:none}}.actions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}}.notesPreview{{margin-top:10px;padding:10px 12px;border:1px solid rgba(34,211,238,.16);border-radius:10px;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.03)),rgba(18,14,30,.62);color:#ddd6fe;font-size:12px;line-height:1.45}}.notesPreview strong{{color:#f5f3ff}}.notesPreview span{{color:#c4b5fd}}.wolPanel,.trafficPanel{{display:grid;gap:10px;margin-top:12px;padding:12px;border:1px solid rgba(34,211,238,.20);border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),rgba(18,14,30,.82);text-align:left}}.notesPanel{{gap:12px}}.notesEditor{{display:grid;gap:8px}}.notesArea{{width:100%;min-height:128px;padding:12px 13px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);resize:vertical;font:13px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace}}.notesArea:focus{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.notesArea[readonly]{{opacity:.88;cursor:default}}.notesMeta{{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#c4b5fd;font-size:12px;line-height:1.35}}.notesMeta.bad{{color:#fecdd3}}.notesMeta.ok{{color:#bbf7d0}}.notesMeta span:last-child{{white-space:nowrap}}.notesActions{{display:flex;gap:8px;flex-wrap:wrap}}.trafficPanel{{gap:12px}}.wolPanel[hidden],.trafficPanel[hidden]{{display:none!important}}.wolHeader{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.wolTitle{{margin:0;color:#f3e8ff;font-size:13px;font-weight:900}}.wolMeta{{min-height:16px;color:#c4b5fd;font-size:12px;line-height:1.35}}.wolMeta.bad{{color:#fecdd3}}.wolControls,.trafficControls{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.95fr) auto;gap:8px;align-items:end}}.wolField{{display:grid;gap:6px;min-width:0;color:#ddd6fe;font-size:11px;font-weight:850}}.wolField select,.wolField input{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField select option{{background:#221a34;color:#f5f3ff}}.wolField select option:checked{{background:#3b82f6;color:#ffffff}}.wolField select:focus,.wolField input:focus{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolField input::placeholder{{color:rgba(221,214,254,.52)}}.wolControls .btn,.wolControls button,.trafficControls .btn,.trafficControls button{{min-height:38px}}.trafficSummary{{display:flex;flex-wrap:wrap;gap:6px}}.trafficSummaryChip{{display:inline-flex;align-items:center;min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.20);border-radius:999px;background:rgba(255,255,255,.05);color:#ddd6fe;font-size:10px;font-weight:850;letter-spacing:.03em;text-transform:uppercase}}.trafficSummaryChip.accent{{border-color:rgba(34,211,238,.34);background:rgba(34,211,238,.12);color:#cffafe}}.trafficSummaryChip.muted{{border-color:rgba(245,158,11,.24);background:rgba(245,158,11,.10);color:#fde68a}}.trafficViewport{{max-height:min(46vh,420px);overflow:auto;padding:8px 4px 0 0;border-top:1px solid rgba(167,139,250,.14);scrollbar-width:thin;overscroll-behavior:contain}}.trafficViewport::-webkit-scrollbar{{width:8px}}.trafficViewport::-webkit-scrollbar-thumb{{background:rgba(167,139,250,.24);border-radius:999px}}.trafficViewport::-webkit-scrollbar-track{{background:transparent}}.trafficList{{display:grid;gap:7px}}.trafficRow{{display:grid;gap:7px;padding:10px;border:1px solid rgba(167,139,250,.16);border-radius:10px;background:linear-gradient(180deg,rgba(57,43,82,.45),rgba(33,26,48,.70));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.trafficRowTop{{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:10px}}.trafficIdentity{{min-width:0}}.trafficName{{margin:0;color:#f5f3ff;font-size:13px;font-weight:900;line-height:1.35}}.trafficMetaLine{{margin:3px 0 0;color:#c4b5fd;font-size:10.5px;line-height:1.4;word-break:break-word}}.trafficTotalBadge{{display:grid;gap:2px;min-width:84px;padding:7px 9px;border:1px solid rgba(34,211,238,.22);border-radius:10px;background:linear-gradient(180deg,rgba(34,211,238,.12),rgba(34,211,238,.04));text-align:right}}.trafficTotalBadge span{{color:#a5f3fc;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}}.trafficTotalBadge strong{{color:#ecfeff;font-size:12px;line-height:1.25;word-break:break-word}}.trafficTagRow{{display:flex;flex-wrap:wrap;gap:5px}}.trafficTag{{display:inline-flex;align-items:center;min-height:20px;padding:0 7px;border:1px solid rgba(34,211,238,.24);border-radius:999px;background:rgba(34,211,238,.10);color:#cffafe;font-size:9px;font-weight:850;letter-spacing:.03em;text-transform:uppercase}}.trafficStats{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}}.trafficStat{{display:grid;gap:2px;padding:7px 8px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(255,255,255,.04);text-align:center}}.trafficStat span{{color:#c4b5fd;font-size:9px;font-weight:800;letter-spacing:.02em;text-transform:uppercase}}.trafficStat strong{{color:#f5f3ff;font-size:11px;line-height:1.35;word-break:break-word}}.trafficStatTotal{{display:none}}.empty{{grid-column:1/-1;border:1px dashed var(--line);border-radius:8px;padding:30px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);text-align:center;color:var(--muted)}}.hint{{margin-top:16px;padding:13px;border:1px solid var(--line);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);color:var(--muted)}}.diagnosticPanel{{margin:16px 0 4px;padding:14px;border:1px solid rgba(34,211,238,.22);border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.045)),var(--panel);box-shadow:0 18px 46px rgba(0,0,0,.20);text-align:center}}.diagnosticPanel[hidden]{{display:none!important}}.diagnosticTop{{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:flex-start}}.diagnosticTop>div{{grid-column:2;text-align:center}}.diagnosticTop .btn{{grid-column:3;justify-self:end;align-self:start;width:auto;min-width:118px;max-width:none;padding-left:18px;padding-right:18px}}.diagnosticTop h2{{margin:0;font-size:18px}}.diagnosticLead{{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.4}}.diagnosticGrid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}}.diagnosticGrid label{{display:grid;gap:6px;color:#ddd6fe;font-size:12px;font-weight:850;text-align:center}}.diagnosticGrid textarea{{min-height:92px;resize:vertical;border:1px solid rgba(167,139,250,.24);border-radius:10px;padding:12px 13px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);outline:none;text-align:left}}.diagnosticGrid textarea::placeholder{{color:rgba(221,214,254,.42)}}.diagnosticGrid textarea:focus{{border-color:rgba(34,211,238,.62);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.diagnosticActions{{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;justify-content:center}}.diagSummary{{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:850}}.diagSummary.good{{border:1px solid rgba(34,197,94,.35);background:rgba(34,197,94,.12);color:#bbf7d0}}.diagSummary.warn{{border:1px solid rgba(245,158,11,.34);background:rgba(245,158,11,.10);color:#fde68a}}.diagSummary.bad{{border:1px solid rgba(251,113,133,.38);background:rgba(251,113,133,.10);color:#fecdd3}}.diagList{{margin:0;padding-left:18px;color:#ddd6fe}}.diagList li{{margin:2px 0}}.diagBlocks{{display:grid;gap:8px;margin-top:10px;text-align:left}}.diagBlock{{border:1px solid rgba(167,139,250,.16);border-radius:8px;padding:10px;background:linear-gradient(180deg,rgba(57,43,82,.55),rgba(33,26,48,.74));box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}.diagBlock strong{{display:block;margin-bottom:4px}}.diagBody{{display:grid;gap:8px}}.diagTextLine{{white-space:pre-line;line-height:1.45}}.diagCmdLine{{display:grid;gap:5px}}.diagCmdLabel{{line-height:1.4}}.diagCmdRow{{display:flex;align-items:center;gap:8px;min-width:0}}.diagCode{{flex:1;min-width:0;margin:0;padding:7px 11px;border:1px solid rgba(255,255,255,.08);border-radius:8px;background:rgba(0,0,0,.20);color:#c4b5fd;font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:auto;scrollbar-width:thin}}.diagCopyBtn{{flex:0 0 36px;width:36px;height:36px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:rgba(255,255,255,.08);color:#f3e8ff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease}}.diagCopyBtn:hover{{border-color:rgba(34,211,238,.52);background:rgba(34,211,238,.12)}}.diagCopyBtn:active{{transform:scale(.96)}}.diagCopyBtn.copied{{border-color:rgba(34,197,94,.42);background:rgba(34,197,94,.16);color:#bbf7d0}}.diagCopyBtn svg{{width:16px;height:16px;display:block}}.diagCopyBtn span{{position:absolute;left:-9999px}}.diagBlock.good strong{{color:#bbf7d0}}.diagBlock.warn strong{{color:#fde68a}}.diagBlock.bad strong{{color:#fecdd3}}code{{background:rgba(255,255,255,.10);border-radius:6px;padding:2px 5px;color:#f3e8ff}}
 .wolControls .btn[disabled],.wolControls button[disabled]{{opacity:.48;cursor:not-allowed;filter:saturate(.62)}}
 .trafficControls{{grid-template-columns:repeat(2,minmax(0,1fr))}}.trafficPasswordField{{grid-column:1}}.trafficStatusField{{grid-column:2}}.trafficActionBtn{{width:100%;min-width:0;padding:8px 8px;font-size:10px;letter-spacing:.01em;white-space:nowrap}}.trafficStatusField .wolMeta{{font-size:10px;line-height:1.22}}.trafficDangerBtn{{border-color:rgba(251,113,133,.34)!important;background:linear-gradient(180deg,rgba(251,113,133,.18),rgba(251,113,133,.08))!important;color:#ffe4e6!important}}.trafficDangerBtn:hover{{border-color:rgba(251,113,133,.54)!important;background:linear-gradient(180deg,rgba(251,113,133,.24),rgba(251,113,133,.12))!important}}
 .wolField input,.wolPickerToggle{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField input:focus,.wolPickerToggle:focus,.wolPickerToggle:focus-visible{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolDeviceField{{grid-column:1/-1;width:100%}}.wolPickerToggle{{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;cursor:pointer;touch-action:manipulation}}.wolPickerToggle[disabled]{{opacity:.55;cursor:not-allowed}}.wolPickerValue{{display:grid;gap:2px;min-width:0;flex:1}}.wolPickerValue strong{{display:block;min-width:0;color:#f5f3ff;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.wolPickerValue small{{display:block;min-width:0;color:#c4b5fd;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.wolPickerChevron{{flex:0 0 auto;color:#c4b5fd;font-size:15px;line-height:1}}.wolPickerList{{display:grid;gap:8px;max-height:240px;overflow:auto;padding:8px;border:1px solid rgba(34,211,238,.24);border-radius:12px;background:rgba(17,12,29,.88);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolDeviceBtn{{width:100%;display:grid;gap:3px;padding:10px 12px;border:1px solid rgba(167,139,250,.18);border-radius:10px;background:rgba(255,255,255,.04);color:#f5f3ff;text-align:left;cursor:pointer;touch-action:manipulation;transition:border-color .15s ease,background .15s ease,transform .15s ease}}.wolDeviceBtn:hover,.wolDeviceBtn:focus-visible{{border-color:rgba(34,211,238,.48);background:rgba(34,211,238,.12)}}.wolDeviceBtn:active{{transform:scale(.99)}}.wolDeviceBtn.active{{border-color:rgba(59,130,246,.62);background:rgba(59,130,246,.18);box-shadow:0 0 0 1px rgba(59,130,246,.16)}}.wolDeviceName{{display:block;color:#f5f3ff;font-size:13px;font-weight:800;line-height:1.3}}.wolDeviceMeta{{display:block;color:#c4b5fd;font-size:11px;line-height:1.35;word-break:break-word}}.wolPickerEmpty{{padding:14px 12px;border:1px dashed rgba(167,139,250,.20);border-radius:10px;background:rgba(255,255,255,.03);color:#c4b5fd;text-align:center}}.metric.memory-ok strong,.metric.flash-ok strong,.metric.memory-warn strong,.metric.flash-warn strong,.metric.memory-bad strong,.metric.flash-bad strong{{color:#f3e8ff}}.metric.memory-ok .metric-accent,.metric.flash-ok .metric-accent{{color:#bbf7d0}}.metric.memory-warn .metric-accent,.metric.flash-warn .metric-accent{{color:#fde68a}}.metric.memory-bad .metric-accent,.metric.flash-bad .metric-accent{{color:#fecdd3}}.metric-line{{display:block}}.metric-accent{{font-weight:inherit}}
@@ -4113,7 +4482,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <div class="brand">
       <div class="desktopHeader">
         <div class="desktopHeaderTop">
-          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v105</span></span></h1>
+          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v106</span></span></h1>
           <div class="routerSearchDock" id="routerSearchDock">
             <button class="routerSearchToggle" id="routerSearchToggle" type="button" aria-expanded="false" aria-controls="routerSearchPanel" data-active="false">
               <span>Поиск роутеров</span>
@@ -4365,7 +4734,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
                     <div class="authSectionHead">
                       <div>
                         <h3 id="delegatedUsersSectionTitle">Доступ к роутерам</h3>
-                        <p id="delegatedUsersSectionLead">A = только LuCI, B = SSH к роутеру, G = полный доступ к панели этого роутера без VPS/Xray/backup.</p>
+                        <p id="delegatedUsersSectionLead">A = только LuCI, B = SSH к роутеру, G = полный доступ к панели этого роутера без VPS/Xray/backup, а также просмотр, добавление и редактирование заметок.</p>
                       </div>
                     </div>
                     <form id="delegatedUserForm" class="authFields">
@@ -4465,7 +4834,7 @@ systemctl restart owrt-remote-xray</pre>
       </div>
     </div>
     <div class="mobileSearchDock" id="mobileRouterSearchDock">
-      <span class="mobileSearchVersion">v105</span>
+      <span class="mobileSearchVersion">v106</span>
       <button class="routerSearchToggle mobilePanelToggle primary" id="mobileRouterSearchToggle" type="button" aria-expanded="false" aria-controls="mobileRouterSearchPanel" data-active="false">
         <span>Поиск роутеров</span>
       </button>
@@ -4615,6 +4984,7 @@ const diagnosticSummary = document.getElementById('diagnosticSummary');
 const diagnosticBlocks = document.getElementById('diagnosticBlocks');
 const expandedActionPanels = new Set();
 const diagnosticDrafts = new Map();
+const noteStateByRouter = new Map();
 const wolStateByRouter = new Map();
 const trafficStateByRouter = new Map();
 const trafficAutoRefreshTimers = new Map();
@@ -4660,6 +5030,87 @@ function wolPanelId(routerId) {{
 
 function trafficPanelId(routerId) {{
   return 'router-traffic-' + String(routerId || '');
+}}
+
+function notesPanelId(routerId) {{
+  return 'router-notes-' + String(routerId || '');
+}}
+
+function normalizeRouterNotes(value) {{
+  return String(value ?? '').replace(/\\r\\n?/g, '\\n').slice(0, 5000);
+}}
+
+function routerNotesPreview(value) {{
+  return normalizeRouterNotes(value).trim().replace(/\s+/g, ' ').slice(0, 220);
+}}
+
+function syncRouterNotesState(list) {{
+  const routers = Array.isArray(list) ? list : [];
+  const validIds = new Set(routers.map((router) => String(router && router.id || '')));
+  for (const id of Array.from(noteStateByRouter.keys())) {{
+    if (!validIds.has(id)) noteStateByRouter.delete(id);
+  }}
+  routers.forEach((router) => {{
+    const key = String(router && router.id || '');
+    if (!key) return;
+    const saved = normalizeRouterNotes(router && router.notes || '');
+    const current = noteStateByRouter.get(key);
+    if (!current) {{
+      noteStateByRouter.set(key, {{
+        open: false,
+        saving: false,
+        dirty: false,
+        draft: saved,
+        saved,
+        error: '',
+        message: ''
+      }});
+      return;
+    }}
+    const next = Object.assign({{}}, current, {{saved}});
+    if (!current.dirty && !current.saving) next.draft = saved;
+    noteStateByRouter.set(key, next);
+  }});
+}}
+
+function getNoteState(routerId) {{
+  const key = String(routerId || '');
+  if (!noteStateByRouter.has(key)) {{
+    noteStateByRouter.set(key, {{
+      open: false,
+      saving: false,
+      dirty: false,
+      draft: '',
+      saved: '',
+      error: '',
+      message: ''
+    }});
+  }}
+  return noteStateByRouter.get(key);
+}}
+
+function setNoteState(routerId, patch) {{
+  const key = String(routerId || '');
+  const current = getNoteState(key);
+  const next = Object.assign({{}}, current, patch || {{}});
+  next.draft = normalizeRouterNotes(next.draft || '');
+  next.saved = normalizeRouterNotes(next.saved || '');
+  next.dirty = Boolean(next.dirty);
+  next.open = Boolean(next.open);
+  next.saving = Boolean(next.saving);
+  noteStateByRouter.set(key, next);
+  return next;
+}}
+
+function replaceRouterInList(router) {{
+  const nextRouter = router && typeof router === 'object' ? router : null;
+  if (!nextRouter || !nextRouter.id) return;
+  const list = Array.isArray(window.ROUTERS) ? window.ROUTERS.slice() : [];
+  const index = list.findIndex((item) => String(item && item.id || '') === String(nextRouter.id || ''));
+  if (index >= 0) list[index] = Object.assign({{}}, list[index], nextRouter);
+  else list.push(nextRouter);
+  window.ROUTERS = list;
+  syncRouterNotesState(window.ROUTERS);
 }}
 
 function clearTrafficAutoRefresh(routerId) {{
@@ -4833,7 +5284,7 @@ function hasOpenWolPicker() {{
 
 function activeWolInteractiveField() {{
   const active = document.activeElement;
-  return active && typeof active.matches === 'function' && active.matches('[data-wol-password],[data-wol-select],[data-traffic-password]') ? active : null;
+  return active && typeof active.matches === 'function' && active.matches('[data-wol-password],[data-wol-select],[data-traffic-password],[data-router-notes-input]') ? active : null;
 }}
 
 function shouldDeferRouterRender() {{
@@ -5187,7 +5638,9 @@ function routerMatchesSearch(router, query) {{
     router && router.name,
     router && router.id,
     router && router.status && router.status.model,
-    router && router.status && router.status.board
+    router && router.status && router.status.board,
+    router && router.notes_preview,
+    router && router.notes
   ].filter(Boolean).join(' '));
   return sample.includes(query);
 }}
@@ -6928,6 +7381,10 @@ function render(list) {{
     const trafficButton = trafficReady
       ? `<button class="btn" data-traffic-toggle="${{escapeAttr(r.id)}}" type="button">${{trafficState.open ? 'Скрыть Клиенты Traffic' : 'Клиенты Traffic'}}</button>`
       : `<span class="btn disabled">Клиенты Traffic</span>`;
+    const notesPreview = String(r.notes_preview || routerNotesPreview(r.notes || ''));
+    const notesButton = !!permissions.notes
+      ? `<a class="btn" href="${{escapeAttr(r.notes_url || ('/router/' + encodeURIComponent(r.id) + '/notes'))}}" target="_blank" rel="noopener noreferrer">Заметки</a>`
+      : `<span class="btn disabled">Заметки</span>`;
     const renameLabel = 'Переименовать ' + (r.name || r.id || 'роутер');
     const renameButton = !!permissions.manage
       ? `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`
@@ -6985,6 +7442,41 @@ function normalizeRouterName(value) {{
   return String(value || '').trim().replace(/\\s+/g, ' ').slice(0, 80);
 }}
 
+function renderRouterNotesPanel(router) {{
+  const permissions = router && router.permissions && typeof router.permissions === 'object' ? router.permissions : {{}};
+  const canEdit = Boolean(permissions.notes_edit || permissions.manage);
+  const state = getNoteState(router && router.id || '');
+  const currentDraft = normalizeRouterNotes(state.draft || (router && router.notes) || '');
+  const savedText = normalizeRouterNotes((router && router.notes) || state.saved || '');
+  const noteCount = currentDraft.length;
+  let statusText = '';
+  let statusClass = 'notesMeta';
+  if (state.error) {{
+    statusText = state.error;
+    statusClass += ' bad';
+  }} else if (state.message) {{
+    statusText = state.message;
+    statusClass += ' ok';
+  }} else if (savedText) {{
+    statusText = 'Сохранённая заметка уже привязана к этому роутеру.';
+  }} else {{
+    statusText = 'Запиши сюда клиента, изменения, предупреждения или что проверить потом.';
+  }}
+  return `<div class="wolPanel notesPanel" id="${{escapeAttr(notesPanelId(router.id))}}" data-router-notes-panel="${{escapeAttr(router.id)}}">
+    <div class="wolHeader">
+      <h3 class="wolTitle">Заметки</h3>
+      <div class="${{escapeAttr(statusClass)}}"><span>${{escapeHtml(statusText)}}</span><span>${{noteCount}} / 5000</span></div>
+    </div>
+    <div class="notesEditor">
+      <textarea class="notesArea" data-router-notes-input="${{escapeAttr(router.id)}}" placeholder="Например: клиент Маша, менял DNS, отключал 5 ГГц, просил не трогать LAN4..."${{canEdit ? '' : ' readonly'}}>${{escapeHtml(currentDraft)}}</textarea>
+      <div class="notesActions">
+        ${{canEdit ? `<button class="btn" type="button" data-notes-save="${{escapeAttr(router.id)}}"${{state.saving ? ' disabled' : ''}}>${{state.saving ? 'Сохраняю...' : 'Сохранить заметки'}}</button>` : '<span class="btn disabled">Только просмотр</span>'}}
+        ${{canEdit ? `<button class="btn" type="button" data-notes-reset="${{escapeAttr(router.id)}}"${{state.saving ? ' disabled' : ''}}>Сбросить черновик</button>` : ''}}
+      </div>
+    </div>
+  </div>`;
+}}
+
 function renderRouterStats(list) {{
   const total = list.length;
   const online = list.filter(r => Boolean(r.online)).length;
@@ -7020,6 +7512,7 @@ function renderRouterStats(list) {{
 }}
 
 render = function(list) {{
+  syncRouterNotesState(list);
   syncExpandedActionPanels(list);
   if (!list.length) {{
     cards.innerHTML = '<div class="empty">Пока нет роутеров. Добавь первый, например <b>main</b>.</div>';
@@ -7061,6 +7554,10 @@ render = function(list) {{
     const trafficButton = trafficReady
       ? `<button class="btn" data-traffic-toggle="${{escapeAttr(r.id)}}" type="button">${{trafficState.open ? 'Скрыть Клиенты Traffic' : 'Клиенты Traffic'}}</button>`
       : `<span class="btn disabled">Клиенты Traffic</span>`;
+    const notesPreview = String(r.notes_preview || routerNotesPreview(r.notes || ''));
+    const notesButton = !!permissions.notes
+      ? `<a class="btn" href="${{escapeAttr(r.notes_url || ('/router/' + encodeURIComponent(r.id) + '/notes'))}}" target="_blank" rel="noopener noreferrer">Заметки</a>`
+      : `<span class="btn disabled">Заметки</span>`;
     const renameLabel = 'Переименовать ' + (r.name || r.id || 'роутер');
     const renameButton = !!permissions.manage
       ? `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`
@@ -7084,6 +7581,7 @@ render = function(list) {{
         <div class="status ${{stateClass}}"><i></i>${{stateText}}</div>
       </div>
       <div class="nameRow"><div class="name">${{escapeHtml(r.name)}}</div>${{renameButton}}</div>
+      ${{notesPreview ? `<div class="notesPreview"><strong>Заметки:</strong> <span>${{escapeHtml(notesPreview)}}</span></div>` : ''}}
       <div class="metrics">
         ${{metricsHtml}}
       </div>
@@ -7093,6 +7591,7 @@ render = function(list) {{
         ${{sshButton}}
         ${{wolButton}}
         ${{trafficButton}}
+        ${{notesButton}}
         ${{permissions.config ? `<a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>` : '<span class="btn disabled">OpenWrt config</span>'}}
         ${{permissions.delete ? `<button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>` : '<span class="btn disabled">Удалить</span>'}}
       </div>
@@ -7644,6 +8143,7 @@ async function loadRouters() {{
   if (res.ok) {{
     const data = await res.json();
     window.ROUTERS = data.routers;
+    syncRouterNotesState(window.ROUTERS);
     if (shouldDeferRouterRender()) pendingRouterRender = true;
     else renderRouterView();
     fillRouterForm(false);
@@ -7701,6 +8201,19 @@ routerStats.addEventListener('click', (ev) => {{
 }});
 
 cards.addEventListener('input', (ev) => {{
+  const noteRouterId = ev.target?.dataset?.routerNotesInput;
+  if (noteRouterId) {{
+    ev.stopPropagation();
+    const value = normalizeRouterNotes(ev.target.value || '');
+    const state = getNoteState(noteRouterId);
+    setNoteState(noteRouterId, {{
+      draft: value,
+      dirty: value !== normalizeRouterNotes(state.saved || ''),
+      error: '',
+      message: ''
+    }});
+    return;
+  }}
   const routerId = ev.target?.dataset?.wolPassword || ev.target?.dataset?.trafficPassword;
   if (!routerId) return;
   const value = ev.target.value || '';
@@ -7724,12 +8237,12 @@ cards.addEventListener('change', (ev) => {{
 }});
 
 cards.addEventListener('focusin', (ev) => {{
-  if (!ev.target?.matches?.('[data-wol-password],[data-wol-select],[data-traffic-password]')) return;
+  if (!ev.target?.matches?.('[data-wol-password],[data-wol-select],[data-traffic-password],[data-router-notes-input]')) return;
   clearPendingWolBlurFlush();
 }});
 
 cards.addEventListener('focusout', (ev) => {{
-  if (!ev.target?.matches?.('[data-wol-password],[data-wol-select],[data-traffic-password]')) return;
+  if (!ev.target?.matches?.('[data-wol-password],[data-wol-select],[data-traffic-password],[data-router-notes-input]')) return;
   scheduleWolBlurFlush();
 }});
 
@@ -7763,7 +8276,7 @@ cards.addEventListener('pointerup', (ev) => {{
 }});
 
 cards.addEventListener('click', async (ev) => {{
-  const secureField = ev.target.closest('[data-wol-password],[data-traffic-password]');
+  const secureField = ev.target.closest('[data-wol-password],[data-traffic-password],[data-router-notes-input]');
   if (secureField) {{
     ev.stopPropagation();
     return;
@@ -7809,6 +8322,78 @@ cards.addEventListener('click', async (ev) => {{
     if (open) {{
       await loadTrafficClients(trafficToggleId, false);
     }}
+    return;
+  }}
+  const notesToggleId = ev.target?.closest?.('[data-notes-toggle]')?.dataset?.notesToggle;
+  if (notesToggleId) {{
+    const router = selectedRouter(notesToggleId);
+    const state = getNoteState(notesToggleId);
+    const open = !state.open;
+    const saved = normalizeRouterNotes((router && router.notes) || state.saved || '');
+    setNoteState(notesToggleId, {{
+      open,
+      saved,
+      draft: state.dirty && open ? state.draft : saved,
+      error: '',
+      message: open ? state.message : ''
+    }});
+    requestRouterRender();
+    if (!open) flushDeferredRouterRender();
+    return;
+  }}
+  const notesResetId = ev.target?.closest?.('[data-notes-reset]')?.dataset?.notesReset;
+  if (notesResetId) {{
+    const router = selectedRouter(notesResetId);
+    const saved = normalizeRouterNotes((router && router.notes) || getNoteState(notesResetId).saved || '');
+    setNoteState(notesResetId, {{
+      open: true,
+      saving: false,
+      saved,
+      draft: saved,
+      dirty: false,
+      error: '',
+      message: 'Черновик заметок сброшен.'
+    }});
+    requestRouterRender();
+    flushDeferredRouterRender();
+    return;
+  }}
+  const notesSaveId = ev.target?.closest?.('[data-notes-save]')?.dataset?.notesSave;
+  if (notesSaveId) {{
+    const state = getNoteState(notesSaveId);
+    const notes = normalizeRouterNotes(state.draft || '');
+    setNoteState(notesSaveId, {{open: true, saving: true, error: '', message: ''}});
+    requestRouterRender();
+    const res = await fetch('/api/router/' + encodeURIComponent(notesSaveId) + '/notes', {{
+      method: 'POST',
+      body: new URLSearchParams({{notes}})
+    }});
+    if (!res.ok) {{
+      setNoteState(notesSaveId, {{
+        open: true,
+        saving: false,
+        error: await res.text() || 'Не удалось сохранить заметки.',
+        message: ''
+      }});
+      requestRouterRender();
+      flushDeferredRouterRender();
+      return;
+    }}
+    const data = await res.json();
+    if (data && data.router) replaceRouterInList(data.router);
+    const saved = normalizeRouterNotes(data && data.router && data.router.notes || notes);
+    setNoteState(notesSaveId, {{
+      open: true,
+      saving: false,
+      saved,
+      draft: saved,
+      dirty: false,
+      error: '',
+      message: 'Заметки сохранены.'
+    }});
+    requestRouterRender();
+    flushDeferredRouterRender();
+    showRouterMsg('Заметки для роутера обновлены.');
     return;
   }}
   const wolPickButton = ev.target.closest('[data-wol-pick]');
@@ -10814,6 +11399,323 @@ window.setTimeout(focusTerminal, 80);
 </html>"""
 
 
+def router_notes_html(router, username="", saved="", error="", draft=None, edit_note_id=""):
+    router = dict(router or {})
+    router_id = str(router.get("id") or "").strip()
+    router_name = str(router.get("name") or router_id or "router").strip()
+    permissions = router.get("permissions") if isinstance(router.get("permissions"), dict) else {}
+    can_edit = bool(permissions.get("notes_edit") or permissions.get("manage"))
+    can_delete = bool(permissions.get("notes_delete") or permissions.get("owner"))
+    note_entries = list(router.get("notes_entries") or [])
+    visible_entries = list(reversed(note_entries))
+    has_note_images = any(bool(item.get("images")) for item in visible_entries)
+    edit_note_id = str(edit_note_id or "").strip()
+    if not can_edit:
+        edit_note_id = ""
+    notes_value = clean_router_notes(draft if draft is not None else "")
+    safe_router_name = html.escape(router_name)
+    safe_notes = html.escape(notes_value)
+    safe_notes_url = html.escape(str(router.get("notes_url") or f"/router/{urllib.parse.quote(router_id)}/notes"), quote=True)
+    note_len = len(notes_value)
+    notes_total = len(note_entries)
+    message_html = ""
+    saved = str(saved or "").strip().lower()
+    def render_note_images_html(images):
+        tiles = []
+        for image in list(images or []):
+            image_url = html.escape(str(image.get("url") or ""), quote=True)
+            if not image_url:
+                continue
+            image_name = html.escape(str(image.get("name") or "Изображение"))
+            tiles.append(
+                f"""
+          <a class="noteShot" href="{image_url}" target="_blank" rel="noopener noreferrer" title="{image_name}">
+            <img src="{image_url}" alt="{image_name}" loading="lazy">
+            <span>{image_name}</span>
+          </a>"""
+            )
+        return f'<div class="noteGallery">{"".join(tiles)}</div>' if tiles else ""
+    if error:
+        message_html = f'<div class="flash bad">{html.escape(str(error))}</div>'
+    elif saved == "added":
+        message_html = '<div class="flash ok">Заметка опубликована.</div>'
+    elif saved == "updated":
+        message_html = '<div class="flash ok">Заметка обновлена.</div>'
+    elif saved == "deleted":
+        message_html = '<div class="flash ok">Заметка удалена.</div>'
+    read_only_css = ""
+    view_only_notice_html = ""
+    if not can_edit:
+        read_only_css = ".notesLayout{grid-template-columns:1fr}.editor{display:none}.cardActions{display:none!important}"
+        view_only_notice_html = '<div class="viewOnlyBox">Доступ к заметкам открыт только для просмотра.</div>'
+    notes_layout_class = "notesLayout notesLayoutMedia" if has_note_images else "notesLayout"
+    notes_items = []
+    for item in visible_entries:
+        note_id = str(item.get("id") or "")
+        safe_note_id = html.escape(note_id, quote=True)
+        safe_edit_link = html.escape(f"{router.get('notes_url') or f'/router/{urllib.parse.quote(router_id)}/notes'}?edit={urllib.parse.quote(note_id)}", quote=True)
+        note_time_iso = html.escape(str(item.get("created_at_iso") or ""), quote=True)
+        note_time_label = html.escape(str(item.get("created_at_label") or "Дата публикации неизвестна"))
+        note_text_html = ""
+        if str(item.get("text") or "").strip():
+            note_text_html = f'<div class="noteBody">{html.escape(str(item.get("text") or "")).replace(chr(10), "<br>")}</div>'
+        note_images_html = render_note_images_html(item.get("images") or [])
+        if can_edit and note_id == edit_note_id:
+            edit_text = clean_router_notes(draft if draft is not None else item.get("text") or "")
+            safe_edit_text = html.escape(edit_text)
+            edit_count = len(edit_text)
+            note_body_html = f"""
+          <form class="noteEditForm" method="post" action="{safe_notes_url}">
+            <input type="hidden" name="action" value="update">
+            <input type="hidden" name="note_id" value="{safe_note_id}">
+            <div class="editorHead noteEditHead">
+              <h3>Редактирование</h3>
+              <div class="counter"><span id="noteCount-{safe_note_id}">{edit_count}</span> / {ROUTER_NOTE_TEXT_MAX_CHARS}</div>
+            </div>
+            <textarea class="noteInlineArea" name="note" maxlength="{ROUTER_NOTE_TEXT_MAX_CHARS}" data-note-count-target="noteCount-{safe_note_id}">{safe_edit_text}</textarea>
+            {note_images_html}
+            <div class="cardActions">
+              <button class="submitBtn submitBtnSmall" type="submit">Сохранить</button>
+              <a class="linkBtn linkBtnSmall" href="{safe_notes_url}">Отмена</a>
+            </div>
+          </form>"""
+        else:
+            note_action_parts = []
+            if can_edit:
+                note_action_parts.append(f'<a class="linkBtn linkBtnSmall" href="{safe_edit_link}">Редактировать</a>')
+            if can_delete:
+                note_action_parts.append(
+                    f"""
+            <form class="inlineForm" method="post" action="{safe_notes_url}">
+              <input type="hidden" name="action" value="delete">
+              <input type="hidden" name="note_id" value="{safe_note_id}">
+              <button class="dangerBtn" type="submit">Удалить</button>
+            </form>"""
+                )
+            note_actions_html = ""
+            if note_action_parts:
+                note_actions_html = f"""
+          <div class="cardActions">
+            {''.join(note_action_parts)}
+          </div>"""
+            note_body_html = f"""
+          {note_text_html}
+          {note_images_html}
+          {note_actions_html}"""
+        notes_items.append(
+            f"""
+        <article class="noteCard">
+          <div class="noteMeta">
+            <strong>Публикация</strong>
+            <time datetime="{note_time_iso}">{note_time_label}</time>
+          </div>
+{note_body_html}
+        </article>
+        """
+        )
+    notes_items_html = "".join(notes_items)
+    if not notes_items_html:
+        notes_items_html = '<div class="noteEmpty">Пока нет опубликованных заметок. Первая запись появится здесь сразу после сохранения.</div>'
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Заметки роутер {safe_router_name}</title>
+<style>
+:root{{--bg:#07040f;--panel:#171126;--panel-2:#221736;--line:rgba(167,139,250,.22);--line-strong:rgba(34,211,238,.34);--text:#f5f3ff;--muted:#c4b5fd;--ok:#22c55e;--bad:#fb7185;--shadow:0 22px 56px rgba(0,0,0,.34);--grid:rgba(168,85,247,.14)}}
+*{{box-sizing:border-box}}body{{position:relative;min-height:100vh;margin:0;overflow-x:hidden;font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background-color:var(--bg);background-image:radial-gradient(circle at 12% 8%,rgba(168,85,247,.40),transparent 31%),radial-gradient(circle at 82% 12%,rgba(79,70,229,.30),transparent 30%),radial-gradient(circle at 50% 105%,rgba(236,72,153,.20),transparent 35%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-size:130% 130%,140% 140%,135% 135%,100% 100%,31px 31px,31px 31px;background-attachment:fixed}}
+body::before{{content:"";position:fixed;inset:-25%;pointer-events:none;background:conic-gradient(from 0deg at 50% 50%,rgba(168,85,247,.05),rgba(236,72,153,.26),rgba(59,130,246,.18),rgba(245,158,11,.10),rgba(168,85,247,.05));filter:blur(54px);opacity:.62}}
+body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,0));opacity:.32}}
+.wrap{{position:relative;z-index:1;max-width:980px;margin:0 auto;padding:24px 16px 36px}}
+.top{{display:flex;align-items:center;justify-content:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:18px}}
+.backRow{{display:flex;gap:8px;flex-wrap:wrap}}
+.linkBtn,.submitBtn{{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:0 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.06);color:var(--text);text-decoration:none;font-weight:700;cursor:pointer}}
+.submitBtn{{background:linear-gradient(120deg,rgba(34,211,238,.20),rgba(59,130,246,.26));border-color:var(--line-strong)}}
+.linkBtnSmall,.submitBtnSmall,.dangerBtn{{min-height:34px;padding:0 12px;font-size:12px}}
+.dangerBtn{{display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(251,113,133,.34);border-radius:999px;background:rgba(251,113,133,.12);color:#fecdd3;font-weight:700;cursor:pointer}}
+.shell{{display:grid;gap:16px;padding:18px;border:1px solid var(--line);border-radius:22px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.04)),var(--panel);box-shadow:var(--shadow)}}
+.hero{{display:grid;gap:10px}}
+.heroTop{{display:flex;align-items:flex-start;justify-content:flex-start;gap:12px;flex-wrap:wrap}}
+.hero h1{{margin:0;font-size:28px;line-height:1.1}}
+.heroMeta{{display:flex;gap:8px;flex-wrap:wrap}}
+.pill{{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:0 12px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.05);color:var(--muted);font-size:12px;font-weight:800}}
+.pill.on{{border-color:rgba(34,197,94,.34);background:rgba(34,197,94,.14);color:#bbf7d0}}
+.pill.off{{border-color:rgba(251,113,133,.34);background:rgba(251,113,133,.12);color:#fecdd3}}
+.flash{{padding:12px 14px;border:1px solid var(--line);border-radius:14px;font-weight:700}}
+.flash.ok{{border-color:rgba(34,197,94,.34);background:rgba(34,197,94,.12);color:#bbf7d0}}
+.flash.bad{{border-color:rgba(251,113,133,.34);background:rgba(251,113,133,.12);color:#fecdd3}}
+.notesLayout{{display:grid;grid-template-columns:minmax(0,1.02fr) minmax(280px,.98fr);gap:16px;align-items:stretch;padding:14px;border:1px solid rgba(167,139,250,.18);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.03)),rgba(23,17,38,.72);box-shadow:inset 0 1px 0 rgba(255,255,255,.03)}}
+.notesLayoutMedia{{grid-template-columns:1fr}}
+.editor,.history{{display:grid;gap:10px;align-content:start;height:100%;padding:0;border:0;border-radius:0;background:transparent}}
+.editorHead{{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}}
+.editorHead h2{{margin:0;font-size:16px}}
+.counter{{color:var(--muted);font-size:12px;font-weight:800}}
+textarea{{width:100%;min-height:140px;padding:14px 16px;border:1px solid var(--line-strong);border-radius:16px;background:linear-gradient(180deg,rgba(47,34,72,.96),rgba(28,21,44,.98));color:var(--text);resize:vertical;outline:none;font:14px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}
+textarea::placeholder{{color:rgba(196,181,253,.68)}}
+textarea:focus{{box-shadow:0 0 0 3px rgba(34,211,238,.10),inset 0 1px 0 rgba(255,255,255,.04)}}
+.hint{{margin:0;color:var(--muted);font-size:12px}}
+.actions{{display:flex;align-items:center;justify-content:flex-start;gap:12px;flex-wrap:wrap}}
+.fileBtn{{position:relative;overflow:hidden}}
+.fileInput{{position:absolute;inset:0;opacity:0;cursor:pointer}}
+.uploadMeta{{min-height:18px;color:var(--muted);font-size:12px;line-height:1.35}}
+.historyHead{{display:flex;align-items:center;justify-content:flex-start;gap:10px;flex-wrap:wrap}}
+.historyHead h2{{margin:0;font-size:16px}}
+.historyCount{{margin-left:auto;padding-right:6px;color:var(--muted);font-size:12px;font-weight:800;line-height:1.3;text-align:right;max-width:100%}}
+.historyList{{display:grid;gap:10px;max-height:640px;overflow:auto;padding-right:4px;align-content:start}}
+.notesLayoutMedia .historyList{{max-height:none;overflow:visible;padding-right:0}}
+.noteCard{{display:grid;gap:10px;align-content:start;min-width:0;min-height:140px;padding:14px 16px;border:1px solid rgba(34,211,238,.16);border-radius:16px;background:linear-gradient(180deg,rgba(43,33,67,.92),rgba(28,21,44,.96));box-shadow:inset 0 1px 0 rgba(255,255,255,.03);overflow:hidden}}
+.noteMeta{{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}}
+.noteMeta strong{{font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#a5f3fc}}
+.noteMeta time{{color:var(--muted);font-size:12px;font-weight:700}}
+.noteBody{{white-space:pre-wrap;word-break:break-word;line-height:1.55}}
+.inlineForm{{margin:0}}
+.cardActions{{display:flex;align-items:center;gap:8px;flex-wrap:wrap}}
+.noteEditForm{{display:grid;gap:10px}}
+.noteEditHead h3{{margin:0;font-size:14px}}
+.noteInlineArea{{min-height:120px}}
+.noteGallery{{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;width:100%;min-width:0}}
+.noteShot{{display:grid;grid-template-rows:auto 16px;align-content:start;gap:6px;flex:0 0 136px;width:136px;min-width:0;padding:8px;border:1px solid rgba(167,139,250,.18);border-radius:12px;background:rgba(255,255,255,.04);color:var(--muted);text-decoration:none;overflow:hidden}}
+.noteShot img{{display:block;width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:8px;background:rgba(12,9,23,.72)}}
+.noteShot span{{display:block;min-width:0;overflow:hidden;font-size:10px;line-height:16px;white-space:nowrap;text-overflow:ellipsis}}
+.noteEmpty{{display:grid;align-content:center;min-height:140px;padding:14px 16px;border:1px dashed rgba(167,139,250,.20);border-radius:16px;color:var(--muted);text-align:center}}
+.viewOnlyBox{{padding:11px 13px;border:1px solid rgba(34,211,238,.20);border-radius:14px;background:rgba(34,211,238,.08);color:#cffafe;font-size:12px;font-weight:700}}
+{read_only_css}
+@media(max-width:860px){{.notesLayout{{grid-template-columns:1fr}}.historyList{{max-height:none}}}}
+@media(max-width:680px){{
+  body{{background-attachment:scroll}}
+  .wrap{{padding:10px 8px 18px}}
+  .top{{margin-bottom:10px}}
+  .backRow,.backRow .linkBtn{{width:100%}}
+  .shell{{gap:12px;padding:12px 10px;border-radius:16px}}
+  .hero{{gap:6px}}
+  .heroTop{{gap:8px}}
+  .hero h1{{font-size:18px;line-height:1.14}}
+  .notesLayout{{gap:10px;padding:10px;border-radius:14px}}
+  .editor,.history{{gap:8px}}
+  .editorHead,.historyHead{{align-items:flex-start;gap:6px}}
+  .historyHead{{flex-direction:column}}
+  .editorHead h2,.historyHead h2{{font-size:14px}}
+  .counter,.historyCount{{font-size:11px}}
+  .historyCount{{margin-left:0;padding-right:0;text-align:left}}
+  .linkBtn,.submitBtn,.dangerBtn{{min-height:36px;padding:0 10px;font-size:12px}}
+  textarea{{min-height:94px;padding:11px 12px;font-size:15px;line-height:1.34;border-radius:14px}}
+  #routerNotes::placeholder{{font-size:13px;line-height:1.28}}
+  .actions{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}
+  .actions .submitBtn,.actions .linkBtn{{width:100%;min-width:0;padding:0 10px}}
+  .uploadMeta{{min-height:0;font-size:10px}}
+  .historyList{{gap:8px;padding-right:0}}
+  .noteCard,.noteEmpty{{min-height:0;gap:8px;padding:10px 12px;border-radius:12px}}
+  .noteMeta{{flex-direction:column;gap:4px}}
+  .noteMeta strong{{font-size:11px}}
+  .noteMeta time{{font-size:10px}}
+  .noteBody{{font-size:13px;line-height:1.45}}
+  .cardActions{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}
+  .cardActions .linkBtn,.cardActions .dangerBtn,.cardActions .submitBtn{{width:100%;min-width:0}}
+  .inlineForm{{display:block}}
+  .inlineForm .dangerBtn{{width:100%}}
+  .noteInlineArea{{min-height:88px}}
+  .noteGallery{{gap:6px}}
+  .noteShot{{gap:5px;flex-basis:112px;width:112px;padding:6px;border-radius:10px}}
+  .noteShot span{{font-size:9px;line-height:1.15}}
+}}
+@media(max-width:420px){{
+  .wrap{{padding:8px 7px 16px}}
+  .shell{{padding:10px 9px;border-radius:15px}}
+  .hero h1{{font-size:17px}}
+  .notesLayout{{padding:9px;border-radius:13px}}
+  .editorHead h2,.historyHead h2{{font-size:13px}}
+  .counter,.historyCount{{font-size:10px}}
+  textarea{{min-height:86px;padding:10px 11px;font-size:14px}}
+  #routerNotes::placeholder{{font-size:12px;line-height:1.22}}
+  .actions,.cardActions{{grid-template-columns:1fr}}
+  .linkBtn,.submitBtn,.dangerBtn{{min-height:34px;font-size:11px}}
+  .noteCard,.noteEmpty{{padding:9px 10px}}
+  .noteBody{{font-size:12px}}
+  .noteGallery{{gap:6px}}
+  .noteShot{{flex-basis:96px;width:96px}}
+}}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <div class="top">
+    <div class="backRow">
+      <a class="linkBtn" href="/">Вернуться в панель Hub</a>
+    </div>
+  </div>
+  <section class="shell">
+    <div class="hero">
+      <div class="heroTop">
+        <div>
+          <h1>Заметки роутер {safe_router_name}</h1>
+        </div>
+      </div>
+      {message_html}
+    </div>
+    <div class="{notes_layout_class}">
+      <form class="editor" method="post" action="{safe_notes_url}" enctype="multipart/form-data">
+        <input type="hidden" name="action" value="add">
+        <div class="editorHead">
+          <h2>Новая заметка</h2>
+          <div class="counter"><span id="noteCount">{note_len}</span> / {ROUTER_NOTE_TEXT_MAX_CHARS}</div>
+        </div>
+        <textarea id="routerNotes" name="note" maxlength="{ROUTER_NOTE_TEXT_MAX_CHARS}" placeholder="Например: клиент zks95, менял DNS, отключал 5 ГГц, просил не трогать lan4.">{safe_notes}</textarea>
+        <div class="actions">
+          <button class="submitBtn" type="submit">Сохранить заметку</button>
+          <label class="linkBtn fileBtn">
+            Прикрепить изображения
+            <input class="fileInput" id="noteImages" type="file" name="images" accept="image/*" multiple>
+          </label>
+        </div>
+        <div class="uploadMeta" id="noteFilesMeta">Можно выбрать до {ROUTER_NOTE_IMAGE_MAX_FILES} изображений.</div>
+      </form>
+      <section class="history">
+        <div class="historyHead">
+          <h2>История заметок</h2>
+          <div class="historyCount">Всего публикаций: {notes_total}</div>
+        </div>
+        {view_only_notice_html}
+        <div class="historyList">
+          {notes_items_html}
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+<script>
+document.querySelectorAll('textarea[data-note-count-target], #routerNotes').forEach((field) => {{
+  const targetId = field.getAttribute('data-note-count-target') || 'noteCount';
+  const target = document.getElementById(targetId);
+  if (!target) return;
+  const syncCount = () => {{
+    target.textContent = String((field.value || '').length);
+  }};
+  field.addEventListener('input', syncCount);
+  syncCount();
+}});
+const noteImages = document.getElementById('noteImages');
+const noteFilesMeta = document.getElementById('noteFilesMeta');
+if (noteImages && noteFilesMeta) {{
+  const syncFiles = () => {{
+    const files = Array.from(noteImages.files || []);
+    if (!files.length) {{
+      noteFilesMeta.textContent = 'Можно выбрать до {ROUTER_NOTE_IMAGE_MAX_FILES} изображений.';
+      return;
+    }}
+    const preview = files.slice(0, 3).map((file) => file.name).join(', ');
+    noteFilesMeta.textContent = files.length > 3
+      ? `Выбрано ${{files.length}} изображений: ${{preview}}...`
+      : `Выбрано ${{files.length}} изображений: ${{preview}}`;
+  }};
+  noteImages.addEventListener('change', syncFiles);
+  syncFiles();
+}}
+</script>
+</body>
+</html>"""
+
+
 def ssh_terminal_html_v2(row, ws_token, quick_commands_html=""):
     router_id = row["id"]
     safe_name = html.escape(row["name"] or router_id, quote=True)
@@ -11061,7 +11963,7 @@ button:hover{{filter:brightness(1.06)}}
       <form class="login" method="post" action="/login">
     {error_html}
     <span class="brand">
-      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v105</span></span></h1>
+      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v106</span></span></h1>
     </span>
     <label for="hubUsername">Логин</label>
     <input id="hubUsername" name="username" autocomplete="off" autofocus required>
@@ -11520,7 +12422,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                 <circle cx="65" cy="59" r="3" fill="#E5F2FF"/>
               </svg>
             </div>
-            <h2 class="brandTitle">OpenWrt Remote Hub <span class="brandVersion">v105</span></h2>
+            <h2 class="brandTitle">OpenWrt Remote Hub <span class="brandVersion">v106</span></h2>
           </div>
         </div>
         <div class="brandBottom">
@@ -12598,6 +13500,32 @@ class Handler(BaseHTTPRequestHandler):
         ctype = self.headers.get("Content-Type", "")
         if "application/json" in ctype:
             return json.loads(body.decode("utf-8") or "{}")
+        if "multipart/form-data" in ctype.lower():
+            message = BytesParser(policy=email_policy_default).parsebytes(
+                b"Content-Type: " + ctype.encode("utf-8", errors="replace") + b"\r\nMIME-Version: 1.0\r\n\r\n" + body
+            )
+            payload = {"__files__": {}}
+            if not message.is_multipart():
+                return payload
+            for part in message.iter_parts():
+                if part.get_content_disposition() != "form-data":
+                    continue
+                name = str(part.get_param("name", header="content-disposition") or "").strip()
+                if not name:
+                    continue
+                filename = part.get_filename()
+                raw = part.get_payload(decode=True) or b""
+                if filename is not None:
+                    payload["__files__"].setdefault(name, []).append(
+                        {
+                            "filename": filename,
+                            "content_type": part.get_content_type() or "",
+                            "body": raw,
+                        }
+                    )
+                    continue
+                payload[name] = raw.decode(part.get_content_charset() or "utf-8", errors="replace")
+            return payload
         parsed = urllib.parse.parse_qs(body.decode("utf-8"))
         return {k: v[-1] for k, v in parsed.items()}
 
@@ -13751,6 +14679,116 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
             "text/html; charset=utf-8",
             [("Set-Cookie", current_router_cookie(router_id))],
         )
+
+    def router_notes_page(self, router_id, error="", draft=None, status=200, edit_note_id=""):
+        if not self.require_router_access(router_id, "A"):
+            return
+        profile = self.current_account_profile(touch=False) or {}
+        with self.app.conn() as conn:
+            row = get_active_router(conn, router_id)
+        if not row:
+            self.send_text(404, "router not found")
+            return
+        router = router_with_access(row_to_router(row), profile)
+        saved = self.query().get("saved", [""])[0]
+        if (router.get("permissions") or {}).get("notes_edit") and not edit_note_id:
+            edit_note_id = self.query().get("edit", [""])[0]
+        else:
+            edit_note_id = ""
+        body = router_notes_html(
+            router,
+            username=(profile or {}).get("username") or current_username(),
+            saved="" if error else saved,
+            error=error,
+            draft=draft,
+            edit_note_id=edit_note_id,
+        ).encode("utf-8")
+        self.send_bytes(
+            status,
+            body,
+            "text/html; charset=utf-8",
+            [("Set-Cookie", current_router_cookie(router_id))],
+        )
+
+    def router_note_media_page(self, path):
+        parts = path.strip("/").split("/")
+        if len(parts) != 5 or parts[0] != "router" or parts[2] != "notes-media":
+            self.send_text(404, "not found")
+            return
+        router_id = urllib.parse.unquote(parts[1])
+        note_id = urllib.parse.unquote(parts[3])
+        file_name = Path(urllib.parse.unquote(parts[4])).name
+        if not self.require_router_access(router_id, "A"):
+            return
+        with self.app.conn() as conn:
+            row = get_active_router(conn, router_id)
+        if not row:
+            self.send_text(404, "router not found")
+            return
+        entries = parse_router_notes_entries(row["notes"] or "", fallback_ts=row["updated_at"] or row["created_at"] or 0)
+        image_meta = {}
+        for item in entries:
+            if str(item.get("id") or "") != note_id:
+                continue
+            for image in list(item.get("images") or []):
+                if Path(str(image.get("file_name") or "")).name == file_name:
+                    image_meta = image
+                    break
+            break
+        if not image_meta:
+            self.send_text(404, "image not found")
+            return
+        file_path = router_note_image_path(router_id, note_id, file_name)
+        try:
+            body = file_path.read_bytes()
+        except FileNotFoundError:
+            self.send_text(404, "image file not found")
+            return
+        self.send_bytes(
+            200,
+            body,
+            str(image_meta.get("content_type") or "application/octet-stream"),
+            [("Cache-Control", "private, max-age=3600")],
+        )
+
+    def router_notes_submit(self, router_id):
+        payload = self.read_payload()
+        action = str(payload.get("action") or "add").strip().lower()
+        note_id = payload.get("note_id", "")
+        notes = payload.get("note", payload.get("notes", ""))
+        if action == "delete":
+            if not self.owner_ok():
+                self.router_notes_page(
+                    router_id,
+                    error="Удаление заметок доступно только владельцу.",
+                    draft=notes,
+                    status=403,
+                )
+                return
+        elif not self.require_router_access(router_id, "G"):
+            return
+        uploads = payload_files(payload, "images") if action == "add" else []
+        try:
+            with self.app.conn() as conn:
+                if action == "delete":
+                    delete_router_note_entry(conn, router_id, note_id)
+                    saved = "deleted"
+                elif action == "update":
+                    update_router_note_entry(conn, router_id, note_id, notes)
+                    saved = "updated"
+                else:
+                    append_router_note(conn, router_id, notes, image_uploads=uploads)
+                    saved = "added"
+        except Exception as exc:
+            self.router_notes_page(
+                router_id,
+                error=str(exc),
+                draft=notes,
+                status=400,
+                edit_note_id=note_id if action == "update" else "",
+            )
+            return
+        self.redirect(f"/router/{urllib.parse.quote(router_id)}/notes?saved={urllib.parse.quote(saved)}")
 
     def vps_terminal_page(self):
         if not self.require_owner():
@@ -15304,6 +16342,12 @@ exit 127
                 self.send_json(400, {"ok": False, "error": str(exc), "router_id": router_id, "devices": []})
             return
         if path.startswith("/router/"):
+            if "/notes-media/" in path:
+                self.router_note_media_page(path)
+                return
+            if path.endswith("/notes"):
+                self.router_notes_page(self.router_id_from_path("/router/"))
+                return
             self.router_asset(path)
             return
         self.send_text(404, "not found")
@@ -15779,6 +16823,22 @@ exit 127
                 self.send_json(200, {"ok": True, "router": row_to_router(row)})
             except Exception as exc:
                 self.send_text(400, str(exc))
+            return
+        if path.startswith("/api/router/") and path.endswith("/notes"):
+            try:
+                router_id = urllib.parse.unquote(path.split("/")[3])
+                if not self.require_router_access(router_id, "G", json_mode=True):
+                    return
+                payload = self.read_payload()
+                with self.app.conn() as conn:
+                    row = update_router_notes(conn, router_id, payload.get("notes", ""))
+                router = router_with_access(row_to_router(row), self.current_account_profile())
+                self.send_json(200, {"ok": True, "router": router})
+            except Exception as exc:
+                self.send_text(400, str(exc))
+            return
+        if path.startswith("/router/") and path.endswith("/notes"):
+            self.router_notes_submit(self.router_id_from_path("/router/"))
             return
         if path.startswith("/api/router/") and path.endswith("/delete"):
             router_id = urllib.parse.unquote(path.split("/")[3])
