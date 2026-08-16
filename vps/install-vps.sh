@@ -139,6 +139,13 @@ install_python_deps_v2() {
 	if ! $SUDO /opt/owrt-remote/venv/bin/python -m pip install --upgrade fido2 >/dev/null; then
 		warn "Не смог поставить fido2 для Passkey/WebAuthn. Проверь internet/DNS на VPS."
 	fi
+	if ! $SUDO /opt/owrt-remote/venv/bin/python - <<'PY' >/dev/null 2>&1
+from pywebpush import webpush, WebPushException  # noqa: F401
+from fido2.server import Fido2Server  # noqa: F401
+PY
+	then
+		warn "Hub venv создался, но Web Push/Passkey модули не импортируются. Выполни: sudo /opt/owrt-remote/venv/bin/python -m pip install --upgrade pywebpush fido2"
+	fi
 }
 
 install_xray_service() {

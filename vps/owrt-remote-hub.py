@@ -78,6 +78,7 @@ SESSION_TOKEN_FILE = STATE_DIR / "hub-session.token"
 SESSIONS_FILE = STATE_DIR / "hub-sessions.json"
 NOTIFICATIONS_FILE = STATE_DIR / "hub-notifications.json"
 PUSH_SUBSCRIPTIONS_FILE = STATE_DIR / "hub-push-subscriptions.json"
+PUSH_DELIVERY_FILE = STATE_DIR / "hub-push-delivery.json"
 VAPID_PRIVATE_KEY_FILE = STATE_DIR / "hub-vapid-private.pem"
 VAPID_PUBLIC_KEY_FILE = STATE_DIR / "hub-vapid-public.txt"
 BOOT_ID_FILE = STATE_DIR / "hub-boot.id"
@@ -92,6 +93,10 @@ ROUTER_PROXY_LIMIT = max(1, int(os.environ.get("OWRT_REMOTE_ROUTER_PROXY_LIMIT",
 PROXY_TIMEOUT = float(os.environ.get("OWRT_REMOTE_PROXY_TIMEOUT", "25"))
 STATIC_CACHE_TTL = int(os.environ.get("OWRT_REMOTE_STATIC_CACHE_TTL", "3600"))
 STATIC_CACHE_MAX_BYTES = int(os.environ.get("OWRT_REMOTE_STATIC_CACHE_MAX_BYTES", str(8 * 1024 * 1024)))
+try:
+    SERVICE_WORKER_VERSION = str(int(Path(__file__).stat().st_mtime))
+except Exception:
+    SERVICE_WORKER_VERSION = "1"
 PBKDF2_ITERATIONS = 240000
 MIN_PASSWORD_LENGTH = 4
 SESSION_COOKIE = "owrt_remote_session"
@@ -2005,6 +2010,129 @@ def save_push_subscriptions(items):
     write_json_private(PUSH_SUBSCRIPTIONS_FILE, {"subscriptions": cleaned[-80:]})
 
 
+def load_push_delivery_attempts():
+    ensure_state()
+    if not PUSH_DELIVERY_FILE.exists():
+        return []
+    try:
+        data = json.loads(PUSH_DELIVERY_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    if isinstance(data, dict):
+        data = data.get("attempts", [])
+    if not isinstance(data, list):
+        return []
+    return [item for item in data if isinstance(item, dict)]
+
+
+def save_push_delivery_attempts(items):
+    cleaned = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        results = item.get("results") if isinstance(item.get("results"), list) else []
+        cleaned.append(
+            {
+                "ts": int(item.get("ts") or now_ts()),
+                "title": str(item.get("title") or APP_NAME)[:160],
+                "body": str(item.get("body") or "")[:260],
+                "kind": str(item.get("kind") or "info")[:40],
+                "summary": str(item.get("summary") or "")[:120],
+                "results": [
+                    {
+                        "client": str(result.get("client") or "браузер")[:120],
+                        "endpoint_host": str(result.get("endpoint_host") or "")[:120],
+                        "result": str(result.get("result") or "unknown")[:200],
+                    }
+                    for result in results
+                    if isinstance(result, dict)
+                ][:20],
+            }
+        )
+    write_json_private(PUSH_DELIVERY_FILE, {"attempts": cleaned[-20:]})
+
+
+def push_endpoint_host(endpoint):
+    try:
+        return (urllib.parse.urlparse(str(endpoint or "")).hostname or "")[:120]
+    except Exception:
+        return ""
+
+
+def remember_push_delivery(payload, results, summary=""):
+    attempt = {
+        "ts": int((payload or {}).get("ts") or now_ts()),
+        "title": (payload or {}).get("title") or APP_NAME,
+        "body": (payload or {}).get("body") or "",
+        "kind": (payload or {}).get("kind") or "info",
+        "summary": summary,
+        "results": results,
+    }
+    with PUSH_LOCK:
+        attempts = load_push_delivery_attempts()
+        attempts.append(attempt)
+        save_push_delivery_attempts(attempts)
+
+
+def web_push_backend_status():
+    status = {
+        "ready": False,
+        "reason": "",
+        "error": "",
+        "public_key": "",
+        "subject": vapid_subject(),
+    }
+    if webpush is None or WebPushException is None:
+        status["reason"] = "pywebpush_missing"
+        status["error"] = "На VPS не установлен Web Push модуль. Запусти свежий install-vps.sh."
+        return status
+    try:
+        public_key = vapid_public_key()
+    except Exception as exc:
+        detail = " ".join(str(exc).split())[:160]
+        status["reason"] = "vapid_key_error"
+        status["error"] = f"Не смог подготовить VAPID ключи на VPS. {detail}".strip()
+        return status
+    status["public_key"] = public_key
+    if not public_key:
+        status["reason"] = "vapid_key_missing"
+        status["error"] = "Не смог создать VAPID ключи на VPS"
+        return status
+    status["ready"] = True
+    return status
+
+
+def push_status_snapshot():
+    backend = web_push_backend_status()
+    subscriptions = sorted(
+        load_push_subscriptions(),
+        key=lambda item: int(item.get("last_seen") or 0),
+        reverse=True,
+    )
+    attempts = load_push_delivery_attempts()
+    last_attempt = attempts[-1] if attempts else None
+    return {
+        "ok": True,
+        "ready": backend.get("ready", False),
+        "ready_reason": backend.get("reason", ""),
+        "ready_error": backend.get("error", ""),
+        "subscription_count": len(subscriptions),
+        "subject": backend.get("subject", vapid_subject(subscriptions[0] if subscriptions else None)),
+        "subscriptions": [
+            {
+                "id": item.get("id", ""),
+                "client": item.get("client", "браузер"),
+                "client_hint": item.get("client_hint", ""),
+                "endpoint_host": push_endpoint_host(item.get("endpoint", "")),
+                "last_seen": int(item.get("last_seen") or 0),
+                "last_seen_iso": iso_time(int(item.get("last_seen") or 0)),
+            }
+            for item in subscriptions[:8]
+        ],
+        "last_attempt": last_attempt,
+    }
+
+
 def vapid_public_key():
     ensure_state()
     if VAPID_PUBLIC_KEY_FILE.exists() and VAPID_PRIVATE_KEY_FILE.exists():
@@ -2036,7 +2164,7 @@ def vapid_public_key():
 
 
 def web_push_ready():
-    return webpush is not None and WebPushException is not None and bool(vapid_public_key())
+    return web_push_backend_status().get("ready", False)
 
 
 def web_push_apple_endpoint(subscription):
@@ -2098,7 +2226,7 @@ def remove_push_subscription(endpoint):
 
 
 def push_payload_for_notification(item):
-    return {
+    payload = {
         "title": item.get("title") or APP_NAME,
         "body": item.get("body") or "",
         "tag": "owrt-" + str(item.get("id") or item.get("kind") or now_ts()),
@@ -2106,6 +2234,15 @@ def push_payload_for_notification(item):
         "kind": item.get("kind") or "info",
         "ts": int(item.get("ts") or now_ts()),
     }
+    payload["web_push"] = 8030
+    payload["notification"] = {
+        "title": payload["title"],
+        "body": payload["body"],
+        "tag": payload["tag"],
+        "navigate": payload["url"],
+        "silent": False,
+    }
+    return payload
 
 
 def send_web_push(subscription, payload):
@@ -2166,16 +2303,27 @@ def queue_web_push_payload(payload, subscriptions=None):
     if subscriptions is None:
         subscriptions = load_push_subscriptions()
     if not subscriptions:
+        remember_push_delivery(payload, [], "no_subscriptions")
         return
 
     def worker():
         gone = []
+        results = []
         for subscription in subscriptions:
             result = send_web_push(subscription, payload)
+            results.append(
+                {
+                    "client": subscription.get("client") or "браузер",
+                    "endpoint_host": push_endpoint_host(subscription.get("endpoint", "")),
+                    "result": result,
+                }
+            )
             if result == "gone":
                 gone.append(subscription.get("endpoint", ""))
         for endpoint in gone:
             remove_push_subscription(endpoint)
+        summary = "ok" if results and all(item.get("result") == "ok" for item in results) else "partial"
+        remember_push_delivery(payload, results, summary)
 
     threading.Thread(target=worker, daemon=True).start()
 
@@ -2192,6 +2340,12 @@ self.addEventListener('install', event => {
   self.skipWaiting();
 });
 
+self.addEventListener('message', event => {
+  if (event && event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 self.addEventListener('activate', event => {
   event.waitUntil(self.clients.claim());
 });
@@ -2203,16 +2357,31 @@ self.addEventListener('push', event => {
   } catch (e) {
     data = {title: 'OpenWrt Remote Hub', body: event.data ? event.data.text() : ''};
   }
-  const title = data.title || 'OpenWrt Remote Hub';
+  const notificationData = data && typeof data.notification === 'object' ? data.notification : null;
+  const payload = notificationData ? {
+    title: notificationData.title || data.title || 'OpenWrt Remote Hub',
+    body: notificationData.body || data.body || '',
+    tag: notificationData.tag || data.tag || 'owrt-remote-hub',
+    url: notificationData.navigate || data.url || '/',
+    badge: notificationData.badge || data.badge || undefined,
+    icon: notificationData.icon || data.icon || undefined,
+    kind: data.kind || 'info'
+  } : data;
+  const title = payload.title || 'OpenWrt Remote Hub';
   const options = {
-    body: data.body || '',
-    tag: data.tag || 'owrt-remote-hub',
+    body: payload.body || '',
+    tag: payload.tag || 'owrt-remote-hub',
     renotify: true,
-    data: {url: data.url || '/'},
-    badge: data.badge || undefined,
-    icon: data.icon || undefined
+    data: {url: payload.url || '/'},
+    badge: payload.badge || undefined,
+    icon: payload.icon || undefined
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({type: 'window', includeUncontrolled: true});
+    const hasVisibleClient = clients.some((client) => client && (client.visibilityState === 'visible' || client.focused));
+    if (hasVisibleClient && payload.kind !== 'push-test') return;
+    await self.registration.showNotification(title, options);
+  })());
 });
 
 self.addEventListener('notificationclick', event => {
@@ -2238,6 +2407,7 @@ self.addEventListener('notificationclick', event => {
 def web_manifest_json():
     return json.dumps(
         {
+            "id": "/",
             "name": "OpenWrt Remote Hub",
             "short_name": "Wrt Hub",
             "start_url": "/",
@@ -2248,19 +2418,19 @@ def web_manifest_json():
             "description": "Удаленный доступ к OpenWrt через свой VPS",
             "icons": [
                 {
-                    "src": "/favicon-192.png",
+                    "src": f"/favicon-192.png?v={SERVICE_WORKER_VERSION}",
                     "sizes": "192x192",
                     "type": "image/png",
                     "purpose": "any maskable",
                 },
                 {
-                    "src": "/favicon-512.png",
+                    "src": f"/favicon-512.png?v={SERVICE_WORKER_VERSION}",
                     "sizes": "512x512",
                     "type": "image/png",
                     "purpose": "any maskable",
                 },
                 {
-                    "src": "/apple-touch-icon.png",
+                    "src": f"/apple-touch-icon.png?v={SERVICE_WORKER_VERSION}",
                     "sizes": "180x180",
                     "type": "image/png",
                     "purpose": "any maskable",
@@ -2274,12 +2444,12 @@ def web_manifest_json():
 
 def branding_head_tags(include_manifest=True):
     parts = [
-        '<link rel="icon" href="/favicon.ico" sizes="any">',
-        '<link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">',
-        '<link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">',
+        f'<link rel="icon" href="/favicon.ico?v={SERVICE_WORKER_VERSION}" sizes="any">',
+        f'<link rel="icon" href="/favicon-32.png?v={SERVICE_WORKER_VERSION}" type="image/png" sizes="32x32">',
+        f'<link rel="apple-touch-icon" href="/apple-touch-icon.png?v={SERVICE_WORKER_VERSION}" sizes="180x180">',
     ]
     if include_manifest:
-        parts.append('<link rel="manifest" href="/manifest.webmanifest">')
+        parts.append(f'<link rel="manifest" href="/manifest.webmanifest?v={SERVICE_WORKER_VERSION}">')
     parts.extend(
         [
             f'<meta name="theme-color" content="{BRAND_THEME_COLOR}">',
@@ -3823,6 +3993,15 @@ def dashboard_html(routers, username, sessions=None, notifications=None, auth_bo
     sessions_json = json.dumps(sessions or [], ensure_ascii=False)
     notifications_json = json.dumps(notifications or [], ensure_ascii=False)
     auth_bootstrap_json = json.dumps(auth_bootstrap or {}, ensure_ascii=False)
+    push_bootstrap = web_push_backend_status()
+    push_bootstrap_json = json.dumps(
+        {
+            "ready": bool(push_bootstrap.get("ready", False)),
+            "publicKey": str(push_bootstrap.get("public_key", "") or ""),
+            "subject": str(push_bootstrap.get("subject", "") or ""),
+        },
+        ensure_ascii=False,
+    )
     is_owner = bool((auth_bootstrap or {}).get("is_owner"))
     safe_username = html.escape(username, quote=True)
     return f"""<!doctype html>
@@ -3861,10 +4040,10 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 .wolField input,.wolPickerToggle{{width:100%;min-width:0;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.24);border-radius:10px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));color:#f5f3ff;outline:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolField input:focus,.wolPickerToggle:focus,.wolPickerToggle:focus-visible{{border-color:rgba(34,211,238,.60);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05)}}.wolDeviceField{{grid-column:1/-1;width:100%}}.wolPickerToggle{{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;cursor:pointer;touch-action:manipulation}}.wolPickerToggle[disabled]{{opacity:.55;cursor:not-allowed}}.wolPickerValue{{display:grid;gap:2px;min-width:0;flex:1}}.wolPickerValue strong{{display:block;min-width:0;color:#f5f3ff;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.wolPickerValue small{{display:block;min-width:0;color:#c4b5fd;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.wolPickerChevron{{flex:0 0 auto;color:#c4b5fd;font-size:15px;line-height:1}}.wolPickerList{{display:grid;gap:8px;max-height:240px;overflow:auto;padding:8px;border:1px solid rgba(34,211,238,.24);border-radius:12px;background:rgba(17,12,29,.88);box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}}.wolDeviceBtn{{width:100%;display:grid;gap:3px;padding:10px 12px;border:1px solid rgba(167,139,250,.18);border-radius:10px;background:rgba(255,255,255,.04);color:#f5f3ff;text-align:left;cursor:pointer;touch-action:manipulation;transition:border-color .15s ease,background .15s ease,transform .15s ease}}.wolDeviceBtn:hover,.wolDeviceBtn:focus-visible{{border-color:rgba(34,211,238,.48);background:rgba(34,211,238,.12)}}.wolDeviceBtn:active{{transform:scale(.99)}}.wolDeviceBtn.active{{border-color:rgba(59,130,246,.62);background:rgba(59,130,246,.18);box-shadow:0 0 0 1px rgba(59,130,246,.16)}}.wolDeviceName{{display:block;color:#f5f3ff;font-size:13px;font-weight:800;line-height:1.3}}.wolDeviceMeta{{display:block;color:#c4b5fd;font-size:11px;line-height:1.35;word-break:break-word}}.wolPickerEmpty{{padding:14px 12px;border:1px dashed rgba(167,139,250,.20);border-radius:10px;background:rgba(255,255,255,.03);color:#c4b5fd;text-align:center}}.metric.memory-ok strong,.metric.flash-ok strong,.metric.memory-warn strong,.metric.flash-warn strong,.metric.memory-bad strong,.metric.flash-bad strong{{color:#f3e8ff}}.metric.memory-ok .metric-accent,.metric.flash-ok .metric-accent{{color:#bbf7d0}}.metric.memory-warn .metric-accent,.metric.flash-warn .metric-accent{{color:#fde68a}}.metric.memory-bad .metric-accent,.metric.flash-bad .metric-accent{{color:#fecdd3}}.metric-line{{display:block}}.metric-accent{{font-weight:inherit}}
 .seasonalFx{{position:fixed;inset:0;display:block;width:100vw;height:100vh;z-index:0;pointer-events:none;opacity:.9;mix-blend-mode:screen}}.desktopHeader{{--hdr-col-1:124px;--hdr-col-2:124px;--hdr-col-3:156px;--hdr-col-4:124px;--hdr-col-5:144px;--hdr-col-6:144px;--hdr-col-7:144px;--hdr-col-8:144px;--top-col-1:256px;--top-col-2:288px;--top-col-3:144px;display:grid;gap:8px;width:max-content;max-width:100%;margin-left:15px}}.desktopHeaderTop{{display:grid;grid-template-columns:var(--top-col-1) var(--top-col-2) var(--top-col-3);align-items:flex-start;gap:8px;width:max-content;max-width:100%;justify-self:start}}.desktopHeaderTop>.appBanner{{width:var(--top-col-1);min-width:var(--top-col-1);max-width:var(--top-col-1)}}.desktopHeaderTop>.routerSearchDock{{width:var(--top-col-2);min-width:var(--top-col-2);max-width:var(--top-col-2)}}.desktopHeaderTop>#seasonDock{{width:var(--top-col-3);min-width:var(--top-col-3);max-width:var(--top-col-3)}}.desktopHeaderBottom{{display:grid;grid-template-columns:var(--hdr-col-1) var(--hdr-col-2) var(--hdr-col-3) var(--hdr-col-4) var(--hdr-col-5) var(--hdr-col-6) var(--hdr-col-7) var(--hdr-col-8);gap:8px;width:max-content;max-width:100%;align-items:start;justify-self:start}}.desktopHeader .appBanner{{grid-column:auto;width:100%;min-width:0}}.desktopHeader .links{{display:grid;grid-column:1/span 3;grid-template-columns:var(--hdr-col-1) var(--hdr-col-2) var(--hdr-col-3);gap:8px;margin-top:0}}.desktopHeader .links a{{width:100%;min-width:0}}.routerSearchDock{{position:relative;display:block;grid-column:auto;width:100%;min-width:0;max-width:100%}}.mobileSearchDock{{display:none;width:100%;position:relative}}.routerSearchToggle{{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:36px;width:100%;padding:8px 14px;border:1px solid rgba(34,211,238,.30);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.12),rgba(124,58,237,.22),rgba(236,72,153,.12));color:#f3e8ff;font-size:13px;font-weight:800;line-height:1;box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10)}}.routerSearchToggle[data-active="true"],.routerSearchToggle[aria-expanded="true"]{{border-color:rgba(34,211,238,.52);box-shadow:0 14px 30px rgba(34,211,238,.14),inset 0 1px 0 rgba(255,255,255,.12)}}.routerSearchToggleIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.mobileSearchVersion{{display:inline-flex;align-items:center;justify-content:center;min-height:20px;padding:0 7px;border:1px solid rgba(251,113,133,.34);border-radius:999px;background:rgba(251,113,133,.14);color:#fecdd3;font-size:10px;font-weight:900;line-height:1;letter-spacing:.04em;box-shadow:0 0 14px rgba(251,113,133,.14)}}.mobileSearchDock>.mobileSearchVersion{{display:flex;width:fit-content;margin:0 auto 6px}}#routerSearchToggle,#seasonToggle{{border:1px solid var(--line);background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.06);color:#f3e8ff}}#routerSearchToggle[data-active="true"],#routerSearchToggle[aria-expanded="true"],#seasonToggle[data-open="true"],#seasonToggle[aria-expanded="true"]{{border-color:var(--line);background:rgba(255,255,255,.11);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}}#routerSearchToggle .routerSearchToggleIcon,#seasonToggle .routerSearchToggleIcon{{color:#ddd6fe}}.routerSearchPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:55;width:min(296px,calc(100vw - 24px))}}.routerSearchPanel[hidden]{{display:none!important}}.routerSearchCard{{display:grid;grid-template-rows:auto auto auto;align-content:start;gap:8px;width:100%;min-height:82px;padding:12px;border:1px solid rgba(34,211,238,.26);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.045)),rgba(19,14,32,.96);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(10px)}}.routerSearchHead{{display:flex;align-items:center;justify-content:space-between;gap:8px}}.routerSearchTitle{{display:block;color:#f3e8ff;font-size:12px;font-weight:900;line-height:1.1}}.routerSearchClear{{min-height:24px;padding:0 9px;border:1px solid rgba(167,139,250,.24);border-radius:999px;background:rgba(255,255,255,.06);color:#ddd6fe;font-size:11px;font-weight:850;cursor:pointer}}.routerSearchClear[disabled]{{opacity:.42;cursor:not-allowed}}.routerSearchField{{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 12px;border:1px solid rgba(34,211,238,.26);border-radius:999px;background:linear-gradient(110deg,rgba(34,211,238,.08),rgba(124,58,237,.14),rgba(236,72,153,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}}.routerSearchField:focus-within{{border-color:rgba(34,211,238,.54);box-shadow:0 0 0 3px rgba(34,211,238,.10),inset 0 1px 0 rgba(255,255,255,.08)}}.routerSearchField input{{width:100%;padding:0;border:0;background:transparent;color:#f7f2ff;box-shadow:none;outline:none;font-size:13px;font-weight:700}}.routerSearchField input::placeholder{{color:#b9adc9}}.routerSearchIcon{{flex:0 0 auto;color:#c4b5fd;font-size:14px;line-height:1}}.routerSearchMeta{{min-height:14px;color:#c4b5fd;font-size:11px;font-weight:800;line-height:1.2}}.seasonDock{{display:grid;gap:6px;width:100%;padding:9px 10px;border:1px solid rgba(251,191,36,.18);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.035)),rgba(19,14,32,.90);box-shadow:0 12px 28px rgba(0,0,0,.18);backdrop-filter:blur(10px)}}.seasonLabel{{display:flex;align-items:center;justify-content:center;text-align:center;gap:8px;color:#fde68a;font-size:11px;font-weight:900;line-height:1.1;text-transform:uppercase;letter-spacing:.04em}}.seasonSwitch{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}}.seasonBtn{{min-height:30px;padding:6px 8px;border:1px solid rgba(251,191,36,.22);border-radius:999px;background:rgba(255,255,255,.06);color:#f7f2ff;font-size:11px;font-weight:850;line-height:1;cursor:pointer;transition:transform .15s ease,border-color .15s ease,background .15s ease,box-shadow .15s ease,color .15s ease}}.seasonBtn:hover,.seasonBtn:focus-visible{{border-color:rgba(34,211,238,.50);background:rgba(34,211,238,.12);color:#ecfeff}}.seasonBtn[data-active="true"]{{border-color:rgba(251,191,36,.52);background:linear-gradient(110deg,rgba(251,191,36,.22),rgba(34,211,238,.10),rgba(168,85,247,.14));box-shadow:0 10px 20px rgba(251,191,36,.14),inset 0 1px 0 rgba(255,255,255,.08);color:#fff7cc}}.seasonBtn:active{{transform:scale(.98)}}#seasonDock{{position:relative;display:block;grid-column:auto;width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none;align-self:start}}.seasonToggle{{min-height:36px;padding:8px 12px;font-size:13px;line-height:1;white-space:normal;text-align:center}}.seasonToggleText{{display:block}}.seasonPanel{{position:absolute;top:calc(100% + 10px);left:0;z-index:56;width:min(320px,calc(100vw - 24px))}}.seasonPanel[hidden]{{display:none!important}}.seasonCard{{display:grid;gap:8px;width:100%;padding:12px;border:1px solid rgba(251,191,36,.18);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035)),rgba(19,14,32,.95);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(12px)}}.headerActions{{display:grid;grid-column:4/span 5;grid-template-columns:var(--hdr-col-4) var(--hdr-col-5) var(--hdr-col-6) var(--hdr-col-7) var(--hdr-col-8);align-self:flex-start;justify-content:flex-start;align-content:flex-start;min-width:0;gap:8px;padding-top:0;max-width:none}}.card{{text-align:center}}.cardTop{{align-items:center;justify-content:center;flex-direction:column}}.tagRow,.actions{{justify-content:center}}.name{{display:inline-flex;align-items:center;justify-content:center;max-width:220px;min-height:34px;margin:0;padding:7px 10px;border:1px solid rgba(251,191,36,.48);border-radius:999px;background:linear-gradient(135deg,rgba(251,191,36,.32),rgba(245,158,11,.22),rgba(255,255,255,.07));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff;font-size:13px;line-height:1;font-weight:900;text-shadow:0 0 16px rgba(251,191,36,.42);box-shadow:0 10px 24px rgba(245,158,11,.10),inset 0 1px 0 rgba(255,255,255,.12)}}.metric{{text-align:center}}.metric.span2{{grid-column:1/-1}}
 @media(max-width:980px){{.cards{{grid-template-columns:repeat(2,minmax(0,1fr))}}.toolbar{{grid-template-columns:1fr 1fr}}.card.main{{grid-column:span 1}}.top{{justify-items:stretch}}.desktopHeader,.desktopHeaderTop,.desktopHeaderBottom{{width:100%;max-width:none}}.desktopHeader{{--hdr-col-1:minmax(0,1fr);--hdr-col-2:minmax(0,1fr);--hdr-col-3:minmax(0,1.35fr);--hdr-col-4:minmax(0,1fr);--hdr-col-5:minmax(0,1fr);--hdr-col-6:minmax(0,1fr);--hdr-col-7:minmax(0,1fr);--hdr-col-8:minmax(0,1fr)}}.headerActions{{width:100%}}}}
-@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.headerStack{{margin-top:0;width:100%;min-width:0}}.headerStack .badge{{width:100%;min-width:0}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.authMenuHead{{min-height:40px;padding:0 104px 8px 0}}.authMenu h2{{margin:2px 104px 0 0;line-height:1.2}}.authMenuClose{{display:inline-flex;top:0;right:0;min-height:32px;padding:6px 12px}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.authRow{{grid-template-columns:1fr;gap:7px;padding:8px}}.authRowTitle{{font-size:13px}}.authRowMeta{{font-size:11px;line-height:1.3}}.authRouterFlags{{justify-content:flex-start;gap:6px}}.authFlagPill{{min-height:25px;padding:3px 7px;gap:5px}}.authFlagPill input{{width:12px;height:12px;flex-basis:12px}}.authFlagPill span{{font-size:10px}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.seasonDock{{width:100%}}#mobileSeasonDock{{width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none}}.routerSearchToggle,.seasonToggle{{width:100%}}.routerSearchPanel,.seasonPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard,.seasonCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}.wolControls,.trafficControls{{grid-template-columns:1fr}}.wolField span,.wolMeta{{text-align:center}}.wolControls .btn,.wolControls button,.trafficControls .btn,.trafficControls button{{width:100%}}.trafficSummary{{justify-content:center}}.trafficViewport{{max-height:360px;padding-right:0}}.trafficRowTop{{grid-template-columns:1fr}}.trafficTotalBadge{{min-width:0;text-align:left}}}}
-@media(max-width:680px){{.desktopHeader{{display:none}}#hubMenuPanelHost{{display:block;width:100%}}#hubMenuPanelHost:empty{{display:none}}.top{{padding:6px 0 0;gap:0}}.mobileSearchDock{{display:block;margin:0}}.mobilePanelToggle,.routerFormToggle,.actionToggle{{width:100%;min-height:38px;margin:7px 0;padding:9px 12px;border-radius:999px;font-size:12px;line-height:1}}.actionToggle{{display:inline-flex}}body.preload-mobile-panels .headerActions,body.preload-mobile-panels .routerFormWrap,body.preload-mobile-panels .routerStats{{display:none!important}}.card .actions.mobileCollapsed:not(.open){{display:none}}.cardTop{{gap:0}}}}
-@media(max-width:680px){{.headerActions .badge,.headerActions .btn{{width:100%;min-width:0;max-width:none}}}}
-@media(max-width:420px){{.links,.headerActions,.summary,.actions{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
+@media(max-width:680px){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary,.mobileOwnerTools{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.mobileOwnerTools .btn,.mobileOwnerTools .badge,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.headerStack{{margin-top:0;width:100%;min-width:0}}.headerStack .badge{{width:100%;min-width:0}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.authMenuHead{{min-height:40px;padding:0 104px 8px 0}}.authMenu h2{{margin:2px 104px 0 0;line-height:1.2}}.authMenuClose{{display:inline-flex;top:0;right:0;min-height:32px;padding:6px 12px}}.cards,.toolbar,.authGrid{{grid-template-columns:1fr}}.authRow{{grid-template-columns:1fr;gap:7px;padding:8px}}.authRowTitle{{font-size:13px}}.authRowMeta{{font-size:11px;line-height:1.3}}.authRouterFlags{{justify-content:flex-start;gap:6px}}.authFlagPill{{min-height:25px;padding:3px 7px;gap:5px}}.authFlagPill input{{width:12px;height:12px;flex-basis:12px}}.authFlagPill span{{font-size:10px}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.seasonDock{{width:100%}}#mobileSeasonDock{{width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none}}.routerSearchToggle,.seasonToggle{{width:100%}}.routerSearchPanel,.seasonPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard,.seasonCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}.wolControls,.trafficControls{{grid-template-columns:1fr}}.wolField span,.wolMeta{{text-align:center}}.wolControls .btn,.wolControls button,.trafficControls .btn,.trafficControls button{{width:100%}}.trafficSummary{{justify-content:center}}.trafficViewport{{max-height:360px;padding-right:0}}.trafficRowTop{{grid-template-columns:1fr}}.trafficTotalBadge{{min-width:0;text-align:left}}}}
+@media(max-width:680px){{.desktopHeader{{display:none}}#hubMenuPanelHost{{display:block;width:100%}}#hubMenuPanelHost:empty{{display:none}}.mobileOwnerTools{{display:grid;margin:0 0 8px}}.mobileOwnerTools[hidden]{{display:none!important}}.top{{padding:6px 0 0;gap:0}}.mobileSearchDock{{display:block;margin:0}}.mobilePanelToggle,.routerFormToggle,.actionToggle{{width:100%;min-height:38px;margin:7px 0;padding:9px 12px;border-radius:999px;font-size:12px;line-height:1}}.actionToggle{{display:inline-flex}}body.preload-mobile-panels .headerActions,body.preload-mobile-panels .routerFormWrap,body.preload-mobile-panels .routerStats,body.preload-mobile-panels .mobileOwnerTools{{display:none!important}}.card .actions.mobileCollapsed:not(.open){{display:none}}.cardTop{{gap:0}}}}
+@media(max-width:680px){{.headerActions .badge,.headerActions .btn,.mobileOwnerTools .badge,.mobileOwnerTools .btn{{width:100%;min-width:0;max-width:none}}}}
+@media(max-width:420px){{.links,.headerActions,.summary,.actions,.mobileOwnerTools{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
 @media(max-width:680px){{.desktopHeader{{width:100%}}.summary{{justify-content:center}}}}
 @media(min-width:681px){{.trafficPanel{{width:min(100%,332px);justify-self:center;padding:9px 9px 8px;border-radius:10px;gap:9px}}.trafficControls{{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px}}.trafficPanel .wolField{{gap:4px;font-size:11px}}.trafficPanel .wolField span{{text-align:center}}.trafficPanel .wolField input{{min-height:32px;padding:0 9px;font-size:13px}}.trafficStatusField .wolMeta{{min-height:32px;font-size:11px;line-height:1.18;text-align:center}}.trafficPanel .btn{{min-height:32px;padding:6px 7px;font-size:11px}}.trafficSummary{{justify-content:center}}.trafficSummaryChip{{min-height:20px;padding:0 7px;font-size:9.5px}}.trafficViewport{{max-height:min(42svh,350px)}}.trafficList{{gap:6px}}.trafficRow{{gap:6px;padding:8px}}.trafficRowTop{{grid-template-columns:1fr;gap:7px}}.trafficIdentity{{text-align:center!important}}.trafficName{{display:block;width:100%;font-size:13px;text-align:center!important}}.trafficMetaLine{{font-size:10px;line-height:1.32;text-align:center!important}}.trafficTotalBadge{{display:grid;width:fit-content;min-width:136px;max-width:186px;justify-self:center!important;margin:0 auto;place-self:center;padding:6px 10px;text-align:center!important}}.trafficTotalBadge span{{font-size:9px}}.trafficTotalBadge strong{{font-size:12px}}.trafficStat{{padding:6px 5px}}.trafficStat span{{font-size:9px}}.trafficStat strong{{font-size:11px}}}}
 @media(max-width:900px),(pointer:coarse){{.trafficPanel{{width:min(100%,340px);justify-self:center;padding:10px 10px 9px;gap:9px}}.trafficControls{{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px;align-items:start}}.trafficPanel .wolField{{gap:4px;font-size:11px}}.trafficPanel .wolField span{{text-align:center}}.trafficPanel .wolField input{{min-height:34px;padding:0 10px;font-size:13px}}.trafficStatusField .wolMeta{{display:flex;align-items:center;justify-content:center;min-height:34px;padding:0 4px;font-size:11px;line-height:1.18;text-align:center}}.trafficPanel .btn{{min-height:34px;padding:7px 8px;font-size:11px}}.trafficSummary{{justify-content:center}}.trafficSummaryChip{{min-height:22px;padding:0 8px;font-size:9.5px}}.trafficViewport{{max-height:min(44svh,390px);padding-top:4px}}.trafficList{{gap:6px}}.trafficRow{{gap:6px;padding:8px}}.trafficRowTop{{grid-template-columns:1fr;gap:7px}}.trafficIdentity{{text-align:center!important}}.trafficName{{display:block;width:100%;font-size:13px;text-align:center!important}}.trafficMetaLine{{font-size:10px;line-height:1.33;text-align:center!important}}.trafficTotalBadge{{display:grid;width:fit-content;min-width:140px;max-width:198px;justify-self:center!important;margin:0 auto;place-self:center;padding:6px 12px;text-align:center!important}}.trafficTotalBadge span{{font-size:9px}}.trafficTotalBadge strong{{font-size:12px}}.trafficStats{{gap:5px}}.trafficStat{{padding:6px 6px}}.trafficStat span{{font-size:9px}}.trafficStat strong{{font-size:11px}}}}
@@ -3934,7 +4113,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
             <a class="nethavenTop" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">NetHaven VPN</a>
           </div>
           <div class="headerActions">
-            <a class="badge" href="/vps-terminal/" target="_blank" rel="noopener noreferrer" {'hidden' if not is_owner else ''}>Терминал VPS</a>
+            <a class="badge" id="vpsTerminalLink" href="/vps-terminal/" target="_blank" rel="noopener noreferrer" {'hidden' if not is_owner else ''}>Терминал VPS</a>
             <button class="badge" id="xrayReload" type="button" {'hidden' if not is_owner else ''}>Обновить Xray CFG</button>
             <button class="badge" id="xrayRestart" type="button" {'hidden' if not is_owner else ''}>Рестарт Xray VPS</button>
             <button class="badge authToggle" id="authToggle" type="button">{safe_username}</button>
@@ -4166,10 +4345,12 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
                   <h3>Уведомления</h3>
                   <div class="notifyActions">
                     <button class="sessionBtn notifyBtn" id="notifyEnable" type="button">Включить</button>
+                    <button class="sessionBtn" id="notifyTest" type="button">Проверить Push</button>
                     <button class="sessionBtn" id="notifyClear" type="button">Очистить</button>
                   </div>
                 </div>
                 <div class="notifyHint">Web Push для входов в панель, смены IP и запуска VPS/Hub. На iOS включай из приложения Hub с экрана Домой.</div>
+                <div id="notifyStatus" class="authHint" hidden></div>
                 <div id="notifyList" class="notifyList"></div>
                   </div>
                 </div>
@@ -4277,6 +4458,11 @@ systemctl restart owrt-remote-xray</pre>
     </div>
     <button class="mobilePanelToggle primary" id="hubMenuToggle" type="button" hidden>Открыть меню хаба</button>
     <div id="hubMenuPanelHost"></div>
+    <div class="mobileOwnerTools" id="mobileOwnerTools" hidden>
+      <a class="badge" href="/vps-terminal/" id="mobileVpsTerminal" target="_blank" rel="noopener noreferrer">Терминал VPS</a>
+      <button class="badge" id="mobileXrayReload" type="button">Обновить Xray CFG</button>
+      <button class="badge" id="mobileXrayRestart" type="button">Рестарт Xray VPS</button>
+    </div>
   </section>
 
   <button class="routerFormToggle primary" id="routerFormToggle" type="button" hidden>Открыть добавление</button>
@@ -4319,6 +4505,8 @@ systemctl restart owrt-remote-xray</pre>
 window.ROUTERS = {routers_json};
 window.HUB_SESSIONS = {sessions_json};
 window.HUB_NOTIFICATIONS = {notifications_json};
+window.HUB_PUSH_BOOTSTRAP = {push_bootstrap_json};
+const APP_CLIENT_VERSION = {json.dumps(SERVICE_WORKER_VERSION)};
 const mobileLayoutMq = window.matchMedia('(max-width: 680px)');
 const mobileCardsMq = mobileLayoutMq;
 const cards = document.getElementById('cards');
@@ -4327,6 +4515,10 @@ const routerStatsToggle = document.getElementById('routerStatsToggle');
 const headerActions = document.querySelector('.headerActions');
 const hubMenuToggle = document.getElementById('hubMenuToggle');
 const hubMenuPanelHost = document.getElementById('hubMenuPanelHost');
+const mobileOwnerTools = document.getElementById('mobileOwnerTools');
+const mobileVpsTerminal = document.getElementById('mobileVpsTerminal');
+const mobileXrayReload = document.getElementById('mobileXrayReload');
+const mobileXrayRestart = document.getElementById('mobileXrayRestart');
 const routerFormWrap = document.getElementById('routerFormWrap');
 const routerForm = document.getElementById('routerForm');
 const routerFormToggle = document.getElementById('routerFormToggle');
@@ -7145,14 +7337,17 @@ function defaultVpsHost(list) {{
 function updateMobilePanelToggle(toggle, panel, openText, closeText) {{
   if (!toggle || !panel) return;
   const mobile = mobileLayoutMq.matches;
+  const controlsHubMenu = panel === headerActions;
   if (!mobile) {{
     toggle.hidden = true;
     panel.hidden = false;
+    if (controlsHubMenu && mobileOwnerTools) mobileOwnerTools.hidden = true;
     toggle.setAttribute('aria-expanded', 'true');
     return;
   }}
   toggle.hidden = false;
   const open = !panel.hidden;
+  if (controlsHubMenu && mobileOwnerTools) mobileOwnerTools.hidden = !open || !authIsOwner();
   toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
   toggle.textContent = open ? closeText : openText;
 }}
@@ -7177,11 +7372,15 @@ if (headerActionsAnchor && headerActions.parentNode) {{
 function syncHubMenuPlacement() {{
   if (!headerActions || !hubMenuPanelHost || !headerActionsAnchor) return;
   if (mobileLayoutMq.matches) {{
+    if (mobileOwnerTools && mobileOwnerTools.parentNode !== hubMenuPanelHost) {{
+      hubMenuPanelHost.insertBefore(mobileOwnerTools, hubMenuPanelHost.firstChild);
+    }}
     if (headerActions.parentNode !== hubMenuPanelHost) {{
       hubMenuPanelHost.appendChild(headerActions);
     }}
     return;
   }}
+  if (mobileOwnerTools) mobileOwnerTools.hidden = true;
   if (headerActionsAnchor.parentNode && headerActions.parentNode !== headerActionsAnchor.parentNode) {{
     headerActionsAnchor.parentNode.insertBefore(headerActions, headerActionsAnchor);
   }}
@@ -7349,7 +7548,7 @@ initMobilePanelToggle(hubMenuToggle, headerActions, 'Открыть меню х�
 initMobilePanelToggle(routerStatsToggle, routerStats, 'Открыть статистику', 'Скрыть статистику');
 document.body.classList.remove('preload-mobile-panels');
 
-document.getElementById('xrayReload').addEventListener('click', async () => {{
+async function handleXrayReload() {{
   showRouterMsg('Обновляю Xray на VPS...');
   const res = await fetch('/api/xray/reload', {{method: 'POST'}});
   const text = await res.text();
@@ -7363,9 +7562,9 @@ document.getElementById('xrayReload').addEventListener('click', async () => {{
   }} else {{
     showRouterMsg(text || 'Не удалось обновить Xray VPS', true);
   }}
-}});
+}}
 
-document.getElementById('xrayRestart').addEventListener('click', async () => {{
+async function handleXrayRestart() {{
   showRouterMsg('Перезапускаю Xray на VPS...');
   const res = await fetch('/api/xray/restart', {{method: 'POST'}});
   const text = await res.text();
@@ -7379,7 +7578,12 @@ document.getElementById('xrayRestart').addEventListener('click', async () => {{
   }} else {{
     showRouterMsg(text || 'Не удалось перезапустить Xray VPS', true);
   }}
-}});
+}}
+
+document.getElementById('xrayReload').addEventListener('click', handleXrayReload);
+document.getElementById('xrayRestart').addEventListener('click', handleXrayRestart);
+if (mobileXrayReload) mobileXrayReload.addEventListener('click', handleXrayReload);
+if (mobileXrayRestart) mobileXrayRestart.addEventListener('click', handleXrayRestart);
 
 async function loadRouters() {{
   const res = await fetch('/api/routers', {{cache: 'no-store'}});
@@ -7645,6 +7849,7 @@ function updateMobileChromeToggles() {{
   updateRouterFormToggle();
   updateMobilePanelToggle(hubMenuToggle, headerActions, 'Открыть меню хаба', 'Скрыть меню хаба');
   updateMobilePanelToggle(routerStatsToggle, routerStats, 'Открыть статистику', 'Скрыть статистику');
+  syncOwnerChrome();
 }}
 if (typeof mobileLayoutMq.addEventListener === 'function') {{
   mobileLayoutMq.addEventListener('change', updateMobileChromeToggles);
@@ -7667,7 +7872,9 @@ const delegatedUserMsg = document.getElementById('delegatedUserMsg');
 const delegatedUserReset = document.getElementById('delegatedUserReset');
 const notifyList = document.getElementById('notifyList');
 const notifyEnable = document.getElementById('notifyEnable');
+const notifyTest = document.getElementById('notifyTest');
 const notifyClear = document.getElementById('notifyClear');
+const notifyStatus = document.getElementById('notifyStatus');
 const backupFile = document.getElementById('backupFile');
 const backupVpsHost = document.getElementById('backupVpsHost');
 const backupPublicUrl = document.getElementById('backupPublicUrl');
@@ -7867,8 +8074,10 @@ function localizeAuthUi() {{
     if (hint) hint.textContent = 'Web Push для входов в панель, смены IP и запуска VPS/Hub. На iPhone включай из приложения Hub с экрана Домой.';
   }}
   const notifyEnableBtn = document.getElementById('notifyEnable');
+  const notifyTestBtn = document.getElementById('notifyTest');
   const notifyClearBtn = document.getElementById('notifyClear');
   if (notifyEnableBtn) notifyEnableBtn.textContent = 'Включить';
+  if (notifyTestBtn) notifyTestBtn.textContent = 'Проверить Push';
   if (notifyClearBtn) notifyClearBtn.textContent = 'Очистить';
 
   const backupGroupTitle = document.getElementById('backupGroupTitle');
@@ -8218,12 +8427,14 @@ function renderDelegatedOverview(meta) {{
 function syncOwnerChrome() {{
   const owner = authIsOwner();
   const canAddRouter = authCanAddRouter();
-  ['xrayReload', 'xrayRestart'].forEach((id) => {{
+  ['vpsTerminalLink', 'xrayReload', 'xrayRestart'].forEach((id) => {{
     const node = document.getElementById(id);
-    if (node) node.hidden = !owner;
+    if (node) node.hidden = !owner || mobileLayoutMq.matches;
   }});
-  const vpsTerminalLink = document.querySelector('.headerActions a[href="/vps-terminal/"]');
-  if (vpsTerminalLink) vpsTerminalLink.hidden = !owner;
+  if (mobileOwnerTools) mobileOwnerTools.hidden = !owner || !mobileLayoutMq.matches || !!(headerActions && headerActions.hidden);
+  if (mobileVpsTerminal) mobileVpsTerminal.hidden = !owner;
+  if (mobileXrayReload) mobileXrayReload.hidden = !owner;
+  if (mobileXrayRestart) mobileXrayRestart.hidden = !owner;
   if (routerFormToggle) routerFormToggle.hidden = !canAddRouter;
   if (!canAddRouter && routerFormWrap) routerFormWrap.hidden = true;
 }}
@@ -8516,6 +8727,8 @@ function renderAuthMeta() {{
   if (!meta.is_owner) {{
     renderDelegatedOverview(meta);
     syncOwnerChrome();
+    updateNotifyButton();
+    loadPushStatus({{silent: true}});
     return;
   }}
   ['securityGroup', 'socialGroup', 'notifyGroup', 'backupGroup', 'delegatedUsersGroup'].forEach((id) => {{
@@ -8574,6 +8787,8 @@ function renderAuthMeta() {{
   renderDelegatedRouterAccess();
   renderDelegatedUsers(meta.delegated_users || []);
   resetDelegatedUserForm(false);
+  updateNotifyButton();
+  loadPushStatus({{silent: true}});
 }}
 
 async function loadAuthMeta({{silent = false, forceUsername = false}} = {{}}) {{
@@ -8749,18 +8964,33 @@ function isStandalonePwa() {{
   return !!(window.navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches));
 }}
 
+function hasWindowPushManager() {{
+  return !!(window.pushManager && typeof window.pushManager.subscribe === 'function');
+}}
+
+function embeddedPushVapidConfig() {{
+  const boot = window.HUB_PUSH_BOOTSTRAP || {{}};
+  const publicKey = String(boot.publicKey || '').trim();
+  if (!publicKey) return null;
+  return {{
+    publicKey,
+    subject: String(boot.subject || '').trim(),
+  }};
+}}
+
 function webPushSupportInfo() {{
   const secure = !!window.isSecureContext;
   const hasServiceWorker = 'serviceWorker' in navigator;
-  const hasPushManager = 'PushManager' in window;
+  const hasWindowPush = hasWindowPushManager();
+  const hasPushManager = hasWindowPush || 'PushManager' in window;
   const hasNotification = 'Notification' in window;
   let reason = '';
   if (!secure) reason = 'https';
-  else if (!hasServiceWorker) reason = 'serviceWorker';
   else if (!hasPushManager) reason = 'pushManager';
   else if (!hasNotification) reason = 'notification';
+  else if (!hasWindowPush && !hasServiceWorker) reason = 'serviceWorker';
   if (isIOSDevice() && !isStandalonePwa()) reason = 'ios-home-screen';
-  return {{secure, hasServiceWorker, hasPushManager, hasNotification, reason}};
+  return {{secure, hasServiceWorker, hasWindowPush, hasPushManager, hasNotification, reason}};
 }}
 
 function webPushSupported() {{
@@ -8795,16 +9025,20 @@ function syncNotificationFlags() {{
   }}
 }}
 
+let hubPushServerReady = null;
+let hubPushServerError = '';
+
 function notificationPermissionText() {{
   syncNotificationFlags();
   const support = webPushSupportInfo();
+   if (hubPushServerReady === false) return 'Push на VPS не готов';
   if (!webPushSupported()) {{
     if (support.reason === 'https') return 'Push: нужен HTTPS';
     if (isIOSDevice()) return isStandalonePwa() ? 'Push недоступен' : 'iOS: добавь на экран';
     return 'Push недоступен';
   }}
   if (localStorage.getItem('owrtPushEnabled') === '1' && Notification.permission === 'granted') return 'Push включён';
-  if (Notification.permission === 'granted') return 'Включено';
+  if (Notification.permission === 'granted') return 'Включить Push';
   if (Notification.permission === 'denied') return 'Запрещено';
   return 'Включить Push';
 }}
@@ -8812,11 +9046,134 @@ function notificationPermissionText() {{
 function updateNotifyButton() {{
   if (!authIsOwner()) {{
     notifyEnable.hidden = true;
+    if (notifyTest) notifyTest.hidden = true;
     return;
   }}
+  notifyEnable.hidden = false;
+  if (notifyTest) notifyTest.hidden = false;
   syncNotificationFlags();
   notifyEnable.textContent = notificationPermissionText();
+  if (notifyTest) notifyTest.disabled = hubPushServerReady === false;
   notifyEnable.classList.toggle('on', Notification.permission === 'granted' && (localStorage.getItem('owrtNotifyEnabled') === '1' || localStorage.getItem('owrtPushEnabled') === '1'));
+}}
+
+function setNotifyStatus(text, bad = false) {{
+  if (!notifyStatus) return;
+  notifyStatus.hidden = !text;
+  notifyStatus.textContent = text || '';
+  notifyStatus.className = 'authHint' + (bad ? ' authDanger' : '');
+}}
+
+function pushSupportSummary() {{
+  const support = webPushSupportInfo();
+  const parts = [
+    `ver=${{APP_CLIENT_VERSION}}`,
+    `perm=${{'Notification' in window ? Notification.permission : 'none'}}`,
+    `secure=${{support.secure ? 'yes' : 'no'}}`,
+    `sw=${{support.hasServiceWorker ? 'yes' : 'no'}}`,
+    `winpm=${{support.hasWindowPush ? 'yes' : 'no'}}`,
+    `ctrl=${{navigator.serviceWorker && navigator.serviceWorker.controller ? 'yes' : 'no'}}`,
+    `push=${{support.hasPushManager ? 'yes' : 'no'}}`,
+    `notify=${{support.hasNotification ? 'yes' : 'no'}}`
+  ];
+  if (isIOSDevice()) parts.push(`standalone=${{isStandalonePwa() ? 'yes' : 'no'}}`);
+  if (support.reason) parts.push(`reason=${{support.reason}}`);
+  return parts.join(', ');
+}}
+
+function pushErrorText(error, fallback = 'Не удалось включить Web Push') {{
+  if (!error) return fallback;
+  const name = String(error.name || '').trim();
+  const message = String(error.message || error || '').trim();
+  if (name && message && !message.startsWith(name + ':')) return `${{name}}: ${{message}}`;
+  return message || name || fallback;
+}}
+
+function formatPushResult(result) {{
+  const text = String(result || 'unknown');
+  if (text === 'ok') return 'ok';
+  if (text === 'gone') return 'подписка устарела';
+  if (text.startsWith('subscribe_error:')) return 'ошибка сохранения подписки: ' + text.slice('subscribe_error:'.length);
+  if (text.startsWith('error:')) {{
+    const parts = text.split(':', 3);
+    const code = parts[1] || 'unknown';
+    const detail = parts[2] || '';
+    return detail ? `ошибка ${{code}}: ${{detail}}` : `ошибка ${{code}}`;
+  }}
+  return text;
+}}
+
+function formatPushAttempt(attempt) {{
+  if (!attempt || typeof attempt !== 'object') return '';
+  const results = Array.isArray(attempt.results) ? attempt.results : [];
+  const rendered = results.map((item) => {{
+    const client = String(item && item.client || 'браузер');
+    const host = String(item && item.endpoint_host || '');
+    const result = formatPushResult(item && item.result || 'unknown');
+    return host ? `${{client}} @ ${{host}}: ${{result}}` : `${{client}}: ${{result}}`;
+  }}).join(' | ');
+  if (rendered) return rendered;
+  if (attempt.summary === 'no_subscriptions') return 'Подписок на VPS сейчас нет.';
+  if (attempt.summary === 'subscribe_error') return 'Hub не смог сохранить push-подписку.';
+  return '';
+}}
+
+async function pushSubscriptionEndpointId(endpoint) {{
+  const value = String(endpoint || '').trim();
+  if (!value || !window.crypto || !crypto.subtle || !window.TextEncoder) return '';
+  try {{
+    const bytes = new TextEncoder().encode(value);
+    const digest = await crypto.subtle.digest('SHA-256', bytes);
+    const hash = Array.from(new Uint8Array(digest)).map((n) => n.toString(16).padStart(2, '0')).join('');
+    return hash.slice(0, 16);
+  }} catch (e) {{
+    return '';
+  }}
+}}
+
+async function loadPushStatus({{silent = false}} = {{}}) {{
+  if (!authIsOwner()) return;
+  try {{
+    const res = await fetch('/api/push/status', {{cache: 'no-store'}});
+    if (!res.ok) throw new Error('push status ' + res.status);
+    const data = await res.json().catch(() => ({{}}));
+    hubPushServerReady = data.ready !== false;
+    hubPushServerError = String(data.ready_error || '').trim();
+    const subject = String(data.subject || '').trim();
+    if (!hubPushServerReady) {{
+      const subjectText = subject ? ` Текущий VAPID subject: ${{subject}}.` : '';
+      setNotifyStatus((hubPushServerError || 'На VPS не готов Web Push backend.') + subjectText, true);
+      updateNotifyButton();
+      return;
+    }}
+    const count = Number(data.subscription_count || 0);
+    const subscriptions = Array.isArray(data.subscriptions) ? data.subscriptions : [];
+    const localSubscriptionId = String(localStorage.getItem('owrtPushSubscriptionId') || '').trim();
+    const localClientHint = currentClientHint();
+    let current = localSubscriptionId ? subscriptions.find((item) => String(item && item.id || '') === localSubscriptionId) : null;
+    if (!current && localClientHint) {{
+      const hinted = subscriptions.filter((item) => String(item && item.client_hint || '') === localClientHint);
+      if (hinted.length === 1) current = hinted[0];
+    }}
+    if (current && current.id && current.id !== localSubscriptionId) {{
+      localStorage.setItem('owrtPushSubscriptionId', String(current.id));
+    }}
+    const currentActive = !!current;
+    if (Notification.permission === 'granted') {{
+      localStorage.setItem('owrtPushEnabled', currentActive ? '1' : '0');
+    }}
+    const clientText = current && current.client
+      ? ` Это устройство подписано как ${{current.client}}.`
+      : (count ? ' На VPS есть подписки, но не от этого устройства.' : '');
+    const attemptText = formatPushAttempt(data.last_attempt);
+    const prefix = count ? `Подписок на VPS: ${{count}}.` : 'Подписок на VPS сейчас нет.';
+    setNotifyStatus(attemptText ? `${{prefix}} Последняя отправка: ${{attemptText}}.${{clientText}}` : prefix + clientText, !currentActive || (attemptText && !attemptText.includes(': ok')));
+    updateNotifyButton();
+  }} catch (e) {{
+    hubPushServerReady = null;
+    hubPushServerError = '';
+    if (!silent) setNotifyStatus('Не смог прочитать статус Web Push на VPS.', true);
+  }}
 }}
 
 function currentClientHint() {{
@@ -8847,28 +9204,351 @@ function urlBase64ToUint8Array(value) {{
   return output;
 }}
 
-async function registerPushSubscription() {{
-  const reg = await navigator.serviceWorker.register('/sw.js', {{scope: '/'}});
-  const ready = await navigator.serviceWorker.ready;
-  const keyRes = await fetch('/api/push/vapid-public-key', {{cache: 'no-store'}});
-  const keyData = await keyRes.json();
-  if (!keyRes.ok || !keyData.ok || !keyData.publicKey) {{
-    throw new Error(keyData.error || 'Web Push на VPS не готов. Обнови установку Hub.');
+const HUB_SW_URL = '/sw.js';
+let pushServiceWorkerReady = null;
+let pushServiceWorkerPromise = null;
+let pushVapidConfig = embeddedPushVapidConfig();
+let pushVapidPromise = null;
+
+function pushEnvironmentReady() {{
+  return !!(((pushServiceWorkerReady && pushServiceWorkerReady.pushManager) || hasWindowPushManager()) && pushVapidConfig && pushVapidConfig.publicKey);
+}}
+
+function ensureClientVersion() {{
+  const key = 'owrtClientVersion';
+  const current = String(localStorage.getItem(key) || '');
+  const url = new URL(window.location.href);
+  if (current !== APP_CLIENT_VERSION) {{
+    localStorage.setItem(key, APP_CLIENT_VERSION);
   }}
-  let subscription = await ready.pushManager.getSubscription();
-  if (!subscription) {{
-    subscription = await ready.pushManager.subscribe({{
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
+  if (url.searchParams.has('appv')) {{
+    url.searchParams.delete('appv');
+    const cleanUrl = url.pathname + url.search + url.hash;
+    window.history.replaceState(null, '', cleanUrl);
+  }}
+  return false;
+}}
+
+function pageControlledByServiceWorker() {{
+  return !!(navigator.serviceWorker && navigator.serviceWorker.controller);
+}}
+
+function isPushInitStateError(error) {{
+  const text = String((error && (error.message || error.name)) || error || '').toLowerCase();
+  return text.includes('invalidstateerror') || text.includes('push service initialization failed');
+}}
+
+function pushWorkerState(worker) {{
+  return worker && worker.state ? String(worker.state) : '';
+}}
+
+function pushRegistrationUsable(registration) {{
+  return !!(registration && registration.pushManager && registration.active && pushWorkerState(registration.active) === 'activated');
+}}
+
+async function waitForPushRegistrationActivation(registration, {{timeoutMs = 5000}} = {{}}) {{
+  let reg = registration || null;
+  const deadline = Date.now() + Math.max(800, Number(timeoutMs) || 5000);
+  while (reg && Date.now() < deadline) {{
+    if (pushRegistrationUsable(reg)) return reg;
+    const candidate = reg.installing || reg.waiting || reg.active;
+    if (reg.waiting && typeof reg.waiting.postMessage === 'function') {{
+      try {{ reg.waiting.postMessage({{type: 'SKIP_WAITING'}}); }} catch (e) {{}}
+    }}
+    await new Promise((resolve) => {{
+      let done = false;
+      const finish = () => {{
+        if (done) return;
+        done = true;
+        resolve();
+      }};
+      if (candidate && typeof candidate.addEventListener === 'function') {{
+        try {{ candidate.addEventListener('statechange', finish, {{once: true}}); }} catch (e) {{}}
+      }}
+      setTimeout(finish, 320);
+    }});
+    try {{
+      const fresh = await navigator.serviceWorker.getRegistration();
+      if (fresh) reg = fresh;
+    }} catch (e) {{}}
+  }}
+  return reg;
+}}
+
+async function resetHubPushState({{unregister = false}} = {{}}) {{
+  pushServiceWorkerReady = null;
+  pushServiceWorkerPromise = null;
+  pushVapidConfig = null;
+  pushVapidPromise = null;
+  try {{
+    localStorage.removeItem('owrtPushSubscriptionId');
+    localStorage.removeItem('owrtPushEnabled');
+  }} catch (e) {{}}
+  if (!unregister || !('serviceWorker' in navigator)) return;
+  try {{
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map(async (registration) => {{
+      const scope = String((registration && registration.scope) || '');
+      if (!scope.startsWith(window.location.origin + '/')) return;
+      try {{ await registration.unregister(); }} catch (e) {{}}
+    }}));
+  }} catch (e) {{}}
+}}
+
+async function ensureServiceWorkerControllingPage({{timeoutMs = 2500}} = {{}}) {{
+  if (!('serviceWorker' in navigator)) return false;
+  if (pageControlledByServiceWorker()) return true;
+  await new Promise((resolve) => {{
+    let done = false;
+    const finish = () => {{
+      if (done) return;
+      done = true;
+      resolve();
+    }};
+    navigator.serviceWorker.addEventListener('controllerchange', finish, {{once: true}});
+    setTimeout(finish, timeoutMs);
+  }});
+  return pageControlledByServiceWorker();
+}}
+
+async function ensureHubServiceWorker({{forceFresh = false, forceUpdate = false}} = {{}}) {{
+  let reg = null;
+  if (!forceFresh) {{
+    try {{
+      reg = await navigator.serviceWorker.getRegistration();
+    }} catch (e) {{}}
+  }}
+  const activeScriptUrl = reg && reg.active && reg.active.scriptURL ? String(reg.active.scriptURL) : '';
+  const activeScriptPath = activeScriptUrl ? new URL(activeScriptUrl, window.location.href).pathname : '';
+  if (!reg || !reg.pushManager || (activeScriptPath && activeScriptPath !== '/sw.js')) {{
+    try {{
+      reg = await navigator.serviceWorker.register(HUB_SW_URL, {{scope: '/'}});
+    }} catch (e) {{
+      throw new Error(`serviceWorker.register failed: ${{pushErrorText(e, 'unknown error')}}`);
+    }}
+  }}
+  if (forceUpdate && reg && typeof reg.update === 'function') {{
+    try {{ await reg.update(); }} catch (e) {{}}
+  }}
+  reg = await waitForPushRegistrationActivation(reg, {{timeoutMs: isIOSDevice() ? 6500 : 3500}});
+  if (reg && reg.waiting && typeof reg.waiting.postMessage === 'function') {{
+    try {{ reg.waiting.postMessage({{type: 'SKIP_WAITING'}}); }} catch (e) {{}}
+  }}
+  return reg || navigator.serviceWorker.ready;
+}}
+
+async function ensurePushServiceWorkerReady({{forceFresh = false, forceUpdate = false}} = {{}}) {{
+  if (!forceFresh && pushRegistrationUsable(pushServiceWorkerReady)) return pushServiceWorkerReady;
+  if (!pushServiceWorkerPromise || forceFresh || forceUpdate) {{
+    pushServiceWorkerPromise = (async () => {{
+      const reg = await ensureHubServiceWorker({{forceFresh, forceUpdate}});
+      let ready = reg && reg.pushManager ? reg : await navigator.serviceWorker.ready;
+      ready = await waitForPushRegistrationActivation(ready, {{timeoutMs: isIOSDevice() ? 6500 : 3500}});
+      const controlled = await ensureServiceWorkerControllingPage({{timeoutMs: isIOSDevice() ? 4000 : 1500}});
+      if (!controlled && isIOSDevice() && isStandalonePwa()) {{
+        throw new Error('Hub на iPhone ещё не перешёл под контроль service worker. Полностью закрой приложение Hub свайпом и открой снова, потом повтори Push.');
+      }}
+      try {{
+        const fresh = await navigator.serviceWorker.getRegistration();
+        if (fresh) ready = await waitForPushRegistrationActivation(fresh, {{timeoutMs: isIOSDevice() ? 6500 : 3500}});
+      }} catch (e) {{}}
+      if (!ready || !ready.pushManager) {{
+        throw new Error('Service worker для Push не подготовился. Полностью перезапусти Hub и повтори Push.');
+      }}
+      pushServiceWorkerReady = ready;
+      return ready;
+    }})().catch((e) => {{
+      pushServiceWorkerPromise = null;
+      throw e;
     }});
   }}
-  const res = await fetch('/api/push/subscribe', {{
-    method: 'POST',
-    headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify({{...(subscription.toJSON ? subscription.toJSON() : subscription), client_hint: currentClientHint()}})
-  }});
+  return pushServiceWorkerPromise;
+}}
+
+async function fetchPushVapidConfig() {{
+  const embedded = embeddedPushVapidConfig();
+  if (embedded && embedded.publicKey) {{
+    pushVapidConfig = embedded;
+    return embedded;
+  }}
+  if (pushVapidConfig && pushVapidConfig.publicKey) return pushVapidConfig;
+  if (!pushVapidPromise) {{
+    pushVapidPromise = (async () => {{
+      let keyRes;
+      try {{
+        keyRes = await fetch('/api/push/vapid-public-key', {{cache: 'no-store'}});
+      }} catch (e) {{
+        throw new Error(`Не смог получить VAPID ключ с VPS: ${{pushErrorText(e, 'network error')}}`);
+      }}
+      const keyData = await keyRes.json().catch(() => ({{}}));
+      if (!keyRes.ok || !keyData.ok || !keyData.publicKey) {{
+        throw new Error(keyData.error || `VAPID endpoint вернул HTTP ${{keyRes.status}}`);
+      }}
+      pushVapidConfig = {{
+        publicKey: String(keyData.publicKey || ''),
+        subject: String(keyData.subject || ''),
+      }};
+      return pushVapidConfig;
+    }})().catch((e) => {{
+      pushVapidPromise = null;
+      throw e;
+    }});
+  }}
+  return pushVapidPromise;
+}}
+
+async function warmPushEnvironment({{silent = true}} = {{}}) {{
+  if (!webPushSupported()) return null;
+  try {{
+    const tasks = [fetchPushVapidConfig()];
+    if ('serviceWorker' in navigator) {{
+      tasks.unshift(ensurePushServiceWorkerReady({{forceFresh: isIOSDevice() && !hasWindowPushManager(), forceUpdate: isIOSDevice() && !hasWindowPushManager()}}).catch((e) => {{
+        if (hasWindowPushManager()) return null;
+        throw e;
+      }}));
+    }}
+    return await Promise.all(tasks);
+  }} catch (e) {{
+    if (!silent) throw e;
+    return null;
+  }}
+}}
+
+async function ensurePushWarmupForAction(actionLabel) {{
+  if (hasWindowPushManager()) return;
+  if (!isIOSDevice() || pushEnvironmentReady()) return;
+  showRouterMsg(`Подготавливаю Web Push на iPhone для "${{actionLabel}}"...`);
+  setNotifyStatus(`Подготавливаю Web Push на iPhone. Текущее состояние: ${{pushSupportSummary()}}`);
+  await warmPushEnvironment({{silent: false}});
+  updateNotifyButton();
+  setNotifyStatus(`Среда Web Push готова. Продолжаю "${{actionLabel}}".`);
+}}
+
+async function resolvePushSubscriptionManager({{forceFresh = false, forceUpdate = false}} = {{}}) {{
+  const keyData = await fetchPushVapidConfig();
+  if (hasWindowPushManager()) {{
+    return {{
+      manager: window.pushManager,
+      registration: null,
+      keyData,
+      source: 'window',
+    }};
+  }}
+  const ready = await ensurePushServiceWorkerReady({{forceFresh, forceUpdate}});
+  return {{
+    manager: ready && ready.pushManager ? ready.pushManager : null,
+    registration: ready,
+    keyData,
+    source: 'serviceWorker',
+  }};
+}}
+
+async function registerPushSubscription({{preferCached = false, directSubscribeFirst = false}} = {{}}) {{
+  let ready = pushServiceWorkerReady;
+  let keyData = pushVapidConfig;
+  let pushManager = ready && ready.pushManager ? ready.pushManager : null;
+  let pushSource = 'serviceWorker';
+  const preferWindowManager = hasWindowPushManager();
+  const requireFreshRegistration = preferWindowManager || isIOSDevice() || !preferCached || !pushEnvironmentReady();
+  if (requireFreshRegistration) {{
+    const resolved = await resolvePushSubscriptionManager({{
+      forceFresh: !preferWindowManager && isIOSDevice(),
+      forceUpdate: !preferWindowManager && isIOSDevice()
+    }});
+    ready = resolved.registration;
+    keyData = resolved.keyData;
+    pushManager = resolved.manager;
+    pushSource = resolved.source;
+  }}
+  if (!pushManager) {{
+    throw new Error('PushManager не подготовился для этого устройства.');
+  }}
+  let subscription = null;
+  const subscribeOptions = {{
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
+  }};
+  const trySubscribe = async () => {{
+    return await pushManager.subscribe(subscribeOptions);
+  }};
+  if (directSubscribeFirst && isIOSDevice()) {{
+    try {{
+      subscription = await trySubscribe();
+    }} catch (e) {{
+      if (!(pushSource === 'serviceWorker' && isPushInitStateError(e))) {{
+        if (String((e && e.name) || '').toLowerCase() === 'aborterror') {{
+          throw new Error('iPhone прервал создание push-подписки. Полностью закрой Hub свайпом, открой снова с экрана Домой и повтори "Включить Push".');
+        }}
+      }}
+      if (pushSource !== 'serviceWorker' || !isPushInitStateError(e)) {{
+        throw new Error(`pushManager.subscribe failed: ${{pushErrorText(e, 'unknown error')}}`);
+      }}
+    }}
+  }}
+  try {{
+    if (!subscription) subscription = await pushManager.getSubscription();
+  }} catch (e) {{
+    if (!isPushInitStateError(e)) {{
+      throw new Error(`pushManager.getSubscription failed: ${{pushErrorText(e, 'unknown error')}}`);
+    }}
+    if (pushSource !== 'serviceWorker') {{
+      throw new Error(`pushManager.getSubscription failed: ${{pushErrorText(e, 'unknown error')}}`);
+    }}
+    await resetHubPushState({{unregister: false}});
+    const resolved = await resolvePushSubscriptionManager({{forceFresh: true, forceUpdate: true}});
+    ready = resolved.registration;
+    keyData = resolved.keyData;
+    pushManager = resolved.manager;
+    pushSource = resolved.source;
+    try {{
+      subscription = await trySubscribe();
+    }} catch (retrySubscribeError) {{
+      const retryName = String((retrySubscribeError && retrySubscribeError.name) || '').toLowerCase();
+      if (retryName === 'aborterror' && isIOSDevice() && isStandalonePwa()) {{
+        throw new Error('iPhone прервал создание push-подписки после обновления service worker. Полностью закрой Hub свайпом, открой снова с экрана Домой и повтори "Включить Push".');
+      }}
+      if (!isPushInitStateError(retrySubscribeError)) {{
+        throw new Error(`pushManager.subscribe failed after refresh: ${{pushErrorText(retrySubscribeError, 'unknown error')}}`);
+      }}
+    }}
+    try {{
+      if (!subscription) subscription = await pushManager.getSubscription();
+    }} catch (retryError) {{
+      if (isPushInitStateError(retryError) && isIOSDevice() && isStandalonePwa()) {{
+        await resetHubPushState({{unregister: true}});
+        throw new Error('iPhone держит битую push-регистрацию Safari. Hub уже сбросил service worker для этого сайта. Полностью закрой приложение Hub свайпом, открой его снова с экрана Домой и ещё раз нажми "Включить Push".');
+      }}
+      throw new Error(`pushManager.getSubscription failed after refresh: ${{pushErrorText(retryError, 'unknown error')}}`);
+    }}
+  }}
+  if (!subscription) {{
+    try {{
+      const subscribePromise = trySubscribe();
+      subscription = await subscribePromise;
+    }} catch (e) {{
+      if (isPushInitStateError(e) && isIOSDevice() && isStandalonePwa()) {{
+        if (pushSource === 'serviceWorker') {{
+          await resetHubPushState({{unregister: true}});
+          throw new Error('iPhone завис в push-сервисе Safari. Hub уже очистил service worker этого сайта. Полностью закрой приложение Hub свайпом, открой снова с экрана Домой и повтори "Включить Push". Если снова не пойдёт, тогда уже удаляй Hub с экрана Домой и добавляй заново.');
+        }}
+      }}
+      throw new Error(`pushManager.subscribe failed: ${{pushErrorText(e, 'unknown error')}}`);
+    }}
+  }}
+  const subscriptionId = await pushSubscriptionEndpointId(subscription && subscription.endpoint ? subscription.endpoint : '');
+  if (subscriptionId) localStorage.setItem('owrtPushSubscriptionId', subscriptionId);
+  let res;
+  try {{
+    res = await fetch('/api/push/subscribe', {{
+      method: 'POST',
+      headers: {{'Content-Type': 'application/json'}},
+      body: JSON.stringify({{...(subscription.toJSON ? subscription.toJSON() : subscription), client_hint: currentClientHint()}})
+    }});
+  }} catch (e) {{
+    throw new Error(`Не смог отправить подписку на VPS: ${{pushErrorText(e, 'network error')}}`);
+  }}
   const data = await res.json().catch(() => ({{}}));
-  if (!res.ok || !data.ok) throw new Error(data.error || 'Не смог сохранить push-подписку');
+  if (!res.ok || !data.ok) throw new Error(data.error || `Не смог сохранить push-подписку (HTTP ${{res.status}})`);
   return data;
 }}
 
@@ -8889,6 +9569,7 @@ async function enableNotifications() {{
         : 'На iOS открой Hub через Safari, нажми Поделиться -> На экран Домой, потом зайди из иконки и включи Push.')
       : 'Этот браузер не даёт Web Push. Попробуй Chrome/Edge/Firefox или проверь разрешения уведомлений.';
     showRouterMsg(message, false);
+    setNotifyStatus(`Push недоступен: ${{message}} Текущее состояние: ${{pushSupportSummary()}}`, true);
     return;
   }}
   if (Notification.permission === 'default') {{
@@ -8899,26 +9580,35 @@ async function enableNotifications() {{
     localStorage.setItem('owrtPushEnabled', '0');
     updateNotifyButton();
     showRouterMsg('Браузер не дал разрешение на уведомления. Проверь замочек возле адреса сайта и разреши уведомления.', true);
+    setNotifyStatus(`Разрешение на уведомления не выдано. Текущее состояние: ${{pushSupportSummary()}}`, true);
     return;
   }}
   localStorage.setItem('owrtNotifyEnabled', '1');
   try {{
+    if (!(isIOSDevice() && hasWindowPushManager())) {{
+      await ensurePushWarmupForAction('Включить Push');
+    }}
     showRouterMsg('Включаю настоящий Web Push для этого устройства...');
-    await registerPushSubscription();
+    setNotifyStatus(`Пробую включить Web Push. Текущее состояние: ${{pushSupportSummary()}}`);
+    await registerPushSubscription({{preferCached: isIOSDevice(), directSubscribeFirst: isIOSDevice()}});
     localStorage.setItem('owrtPushEnabled', '1');
     showRouterMsg('Push включён. Теперь уведомления должны приходить даже когда вкладка закрыта.');
+    setNotifyStatus(`Web Push включён. Текущее состояние: ${{pushSupportSummary()}}`);
   }} catch (e) {{
     localStorage.setItem('owrtPushEnabled', '0');
-    showRouterMsg(e.message || 'Не удалось включить Web Push', true);
+    const text = pushErrorText(e, 'Не удалось включить Web Push');
+    showRouterMsg(text, true);
+    setNotifyStatus(`Не удалось включить Web Push: ${{text}}. Текущее состояние: ${{pushSupportSummary()}}`, true);
   }}
   updateNotifyButton();
+  await loadPushStatus();
 }}
 
 function showBrowserNotification(item) {{
   syncNotificationFlags();
-  if (localStorage.getItem('owrtPushEnabled') === '1') return;
   if (!item || !('Notification' in window) || Notification.permission !== 'granted') return;
   if (localStorage.getItem('owrtNotifyEnabled') !== '1') return;
+  if (localStorage.getItem('owrtPushEnabled') === '1' && document.visibilityState !== 'visible') return;
   try {{
     new Notification(item.title || 'OpenWrt Remote Hub', {{
       body: item.body || '',
@@ -8926,6 +9616,32 @@ function showBrowserNotification(item) {{
       renotify: false
     }});
   }} catch (e) {{}}
+}}
+
+async function testPushDelivery() {{
+  if (!authIsOwner()) return;
+  if (!webPushSupported()) {{
+    showRouterMsg('Сначала открой Hub по HTTPS и включи Web Push на этом устройстве.', true);
+    setNotifyStatus(`Тест Push невозможен. Текущее состояние: ${{pushSupportSummary()}}`, true);
+    await loadPushStatus();
+    return;
+  }}
+  try {{
+    if (!(isIOSDevice() && hasWindowPushManager())) {{
+      await ensurePushWarmupForAction('Проверить Push');
+    }}
+    showRouterMsg('Проверяю доставку Web Push на это устройство...');
+    setNotifyStatus(`Проверяю доставку Web Push. Текущее состояние: ${{pushSupportSummary()}}`);
+    const data = await registerPushSubscription({{preferCached: isIOSDevice(), directSubscribeFirst: isIOSDevice()}});
+    const client = data && data.subscription && data.subscription.client ? data.subscription.client : 'устройство';
+    showRouterMsg(`VPS принял подписку и отправил тестовый Web Push на ${{client}}.`);
+    setNotifyStatus(`VPS принял подписку и отправил тестовый Web Push на ${{client}}.`);
+  }} catch (e) {{
+    const text = pushErrorText(e, 'Тестовый Web Push не удался');
+    showRouterMsg(text, true);
+    setNotifyStatus(`Тестовый Web Push не удался: ${{text}}. Текущее состояние: ${{pushSupportSummary()}}`, true);
+  }}
+  await loadPushStatus();
 }}
 
 function initialNotificationTs() {{
@@ -9137,6 +9853,7 @@ backupRewrite.addEventListener('click', async () => {{
 }});
 
 notifyEnable.addEventListener('click', enableNotifications);
+if (notifyTest) notifyTest.addEventListener('click', testPushDelivery);
 notifyClear.addEventListener('click', async () => {{
   if (!confirm('Очистить все уведомления?')) return;
   const res = await fetch('/api/notifications/clear', {{method: 'POST'}});
@@ -9545,9 +10262,14 @@ if (authMeta && typeof authMeta === 'object' && Object.keys(authMeta).length) {{
   renderAuthMeta();
   syncOwnerChrome();
 }}
-loadAuthMeta({{silent: true}}).catch(() => {{}});
-reportClientHint();
-updateNotifyButton();
+const clientVersionRedirecting = ensureClientVersion();
+if (!clientVersionRedirecting) {{
+  loadAuthMeta({{silent: true}}).catch(() => {{}});
+  reportClientHint();
+  updateNotifyButton();
+  loadPushStatus({{silent: true}});
+  warmPushEnvironment({{silent: true}});
+}}
 initSeasonEffects();
 syncRouterSearchToggleState();
   requestRouterRender();
@@ -14490,14 +15212,25 @@ exit 127
         if path == "/api/push/vapid-public-key":
             if not self.require_owner(json_mode=True):
                 return
-            public_key = vapid_public_key()
-            if not webpush:
-                self.send_json(503, {"ok": False, "error": "На VPS не установлен Web Push модуль. Запусти свежий install-vps.sh.", "publicKey": public_key})
+            backend = web_push_backend_status()
+            if not backend.get("ready"):
+                self.send_json(
+                    503,
+                    {
+                        "ok": False,
+                        "error": backend.get("error") or "На VPS не готов Web Push backend.",
+                        "reason": backend.get("reason", ""),
+                        "subject": backend.get("subject", ""),
+                        "publicKey": backend.get("public_key", ""),
+                    },
+                )
                 return
-            if not public_key:
-                self.send_json(503, {"ok": False, "error": "Не смог создать VAPID ключи на VPS", "publicKey": ""})
+            self.send_json(200, {"ok": True, "publicKey": backend.get("public_key", ""), "subject": backend.get("subject", "")})
+            return
+        if path == "/api/push/status":
+            if not self.require_owner(json_mode=True):
                 return
-            self.send_json(200, {"ok": True, "publicKey": public_key})
+            self.send_json(200, push_status_snapshot())
             return
         if path.startswith("/api/router/") and path.endswith("/wol/devices"):
             parts = path.strip("/").split("/")
@@ -14745,14 +15478,18 @@ exit 127
         if path == "/api/push/subscribe":
             if not self.require_owner(json_mode=True):
                 return
+            payload = {}
+            session = self.current_hub_session(touch=False) or {}
+            username = session.get("username", current_username())
+            user_agent = self.headers.get("User-Agent", "")
+            client_ip = self.client_ip()
             try:
                 payload = self.read_payload()
-                session = self.current_hub_session(touch=False) or {}
                 subscription = save_push_subscription(
                     payload,
-                    session.get("username", current_username()),
-                    self.client_ip(),
-                    self.headers.get("User-Agent", ""),
+                    username,
+                    client_ip,
+                    user_agent,
                 )
                 test_payload = {
                     "title": APP_NAME,
@@ -14762,7 +15499,26 @@ exit 127
                     "kind": "push-test",
                     "ts": now_ts(),
                 }
+                test_payload["web_push"] = 8030
+                test_payload["notification"] = {
+                    "title": test_payload["title"],
+                    "body": test_payload["body"],
+                    "tag": test_payload["tag"],
+                    "navigate": test_payload["url"],
+                    "silent": False,
+                }
                 result = send_web_push(subscription, test_payload)
+                remember_push_delivery(
+                    test_payload,
+                    [
+                        {
+                            "client": subscription.get("client") or "браузер",
+                            "endpoint_host": push_endpoint_host(subscription.get("endpoint", "")),
+                            "result": result,
+                        }
+                    ],
+                    "ok" if result == "ok" else "partial",
+                )
                 if result == "gone":
                     remove_push_subscription(subscription.get("endpoint", ""))
                 if result != "ok":
@@ -14770,6 +15526,27 @@ exit 127
                     return
                 self.send_json(200, {"ok": True, "delivery": result, "subscription": {"id": subscription.get("id"), "client": subscription.get("client")}})
             except Exception as exc:
+                detail = " ".join(str(exc).split())[:160] or exc.__class__.__name__
+                client = client_label(user_agent, normalize_client_hint((payload or {}).get("client_hint", "")))
+                remember_push_delivery(
+                    {
+                        "title": APP_NAME,
+                        "body": "Не удалось сохранить push-подписку.",
+                        "tag": "owrt-push-test",
+                        "url": "/",
+                        "kind": "push-test",
+                        "ts": now_ts(),
+                    },
+                    [
+                        {
+                            "client": client or "браузер",
+                            "endpoint_host": push_endpoint_host((payload or {}).get("endpoint", "")),
+                            "result": f"subscribe_error:{detail}",
+                        }
+                    ],
+                    "subscribe_error",
+                )
+                self.log_message("push subscribe error: %s", detail)
                 self.send_json(400, {"ok": False, "error": str(exc)})
             return
         if path == "/api/push/unsubscribe":
