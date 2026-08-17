@@ -12349,6 +12349,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .hint.warn{{padding:10px 12px;border:1px solid rgba(245,158,11,.30);border-radius:14px;background:rgba(120,53,15,.18);color:#fde68a;font-weight:700}}
 #passwordModeHint{{text-align:center}}
 .captchaSection{{display:grid;grid-template-columns:1fr;gap:6px;width:min(100%,244px);justify-self:center;padding:8px 7px 7px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035)),rgba(19,14,32,.88)}}
+.captchaSectionRecaptcha{{width:min(100%,336px);padding:10px 10px 8px;gap:8px}}
 .captchaHeading{{color:#eef3ff;font-size:var(--login-copy-size);font-weight:800;line-height:1.2;text-align:center}}
 .captchaTopRow{{position:relative;min-height:40px}}
 .captchaTopRow::before{{display:none}}
@@ -12356,6 +12357,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .captcha::before{{display:none}}
 .captcha b{{display:inline-flex;align-items:center;justify-content:center;gap:.28em;min-height:40px;margin:0 auto;color:var(--amber);font:800 24px/1 ui-monospace,SFMono-Regular,Consolas,monospace;text-shadow:0 0 12px rgba(245,158,11,.28)}}
 .captcha b span{{display:block;min-width:.62em;text-align:center}}
+.recaptchaBox{{display:flex;justify-content:center;align-items:flex-start;width:100%;min-width:0;overflow:hidden;padding:2px 0 0}}
 .captchaRefresh{{position:absolute;top:0;right:0;bottom:0;margin:auto 0;width:28px;height:28px;border:0;border-radius:10px;background:transparent;color:#c4b5fd;cursor:pointer;box-shadow:none;z-index:2}}
 .captchaRefresh svg{{width:20px;height:20px;stroke:currentColor}}
 .captchaAnswerShell{{grid-template-columns:38px minmax(0,1fr) 38px;min-height:38px}}
@@ -12414,7 +12416,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .securityNote svg{{width:14px;height:14px;stroke:#b9adc9;flex:0 0 auto}}
 .securityNote span{{font-size:0}}
 .securityNote span::before{{content:"Безопасное соединение";font-size:var(--login-copy-size)}}
-@media(max-width:760px){{body{{padding:10px;background-attachment:scroll;background-size:auto,auto,auto,100% 100%,31px 31px,31px 31px}}.loginShell{{width:min(100%,calc(100vw - 20px))}}.loginFrame{{border-radius:20px}}.brandPanel{{padding:20px 14px 12px}}.brandPanel::after{{left:14px;right:14px}}.brandSeal{{width:64px;height:64px}}.brandSeal::before{{inset:10px}}.brandSeal svg{{width:30px;height:30px}}.brandTitle{{font-size:clamp(18px,6vw,22px);gap:8px;line-height:1.08;flex-wrap:nowrap}}.brandVersion{{font-size:12px}}.authPanel{{padding:0 14px 14px}}.authTabs{{grid-template-columns:1fr;width:100%}}.authTabBtn{{min-height:44px;font-size:12px;justify-content:center;text-align:center;flex-direction:column;gap:5px;padding:8px 12px}}.authTabBtn svg{{width:16px;height:16px}}.fieldGroup{{justify-items:stretch}}.compactField,.otpCard,.hint,.captchaSection,.primaryBtn,.err{{width:100%;justify-self:stretch}}.inputShell{{grid-template-columns:40px minmax(0,1fr) 40px;min-height:44px}}.fieldIcon svg{{width:16px;height:16px}}.inputShell input{{font-size:13px}}.inputAction{{width:40px}}.captchaSection{{width:min(100%,236px);justify-self:center;padding:8px 7px 7px;gap:6px}}.captchaTopRow{{min-height:36px}}.captchaRefresh{{width:26px;height:26px}}.captchaRefresh svg{{width:18px;height:18px}}.captcha{{min-height:36px}}.captcha b{{min-height:36px;font-size:21px}}.captchaAnswerShell{{grid-template-columns:36px minmax(0,1fr) 36px;min-height:36px}}.primaryBtn{{min-height:46px;font-size:13px}}.methodGrid,.socialMethodGrid{{grid-template-columns:1fr}}.methodBtnRow{{grid-template-columns:1fr}}.sshMethodCard{{display:none!important}}.authFooter{{display:none}}}}
+@media(max-width:760px){{body{{padding:10px;background-attachment:scroll;background-size:auto,auto,auto,100% 100%,31px 31px,31px 31px}}.loginShell{{width:min(100%,calc(100vw - 20px))}}.loginFrame{{border-radius:20px}}.brandPanel{{padding:20px 14px 12px}}.brandPanel::after{{left:14px;right:14px}}.brandSeal{{width:64px;height:64px}}.brandSeal::before{{inset:10px}}.brandSeal svg{{width:30px;height:30px}}.brandTitle{{font-size:clamp(18px,6vw,22px);gap:8px;line-height:1.08;flex-wrap:nowrap}}.brandVersion{{font-size:12px}}.authPanel{{padding:0 14px 14px}}.authTabs{{grid-template-columns:1fr;width:100%}}.authTabBtn{{min-height:44px;font-size:12px;justify-content:center;text-align:center;flex-direction:column;gap:5px;padding:8px 12px}}.authTabBtn svg{{width:16px;height:16px}}.fieldGroup{{justify-items:stretch}}.compactField,.otpCard,.hint,.captchaSection,.primaryBtn,.err{{width:100%;justify-self:stretch}}.inputShell{{grid-template-columns:40px minmax(0,1fr) 40px;min-height:44px}}.fieldIcon svg{{width:16px;height:16px}}.inputShell input{{font-size:13px}}.inputAction{{width:40px}}.captchaSection{{width:min(100%,236px);justify-self:center;padding:8px 7px 7px;gap:6px}}.captchaSectionRecaptcha{{width:min(100%,336px);padding:10px 8px 8px}}.captchaTopRow{{min-height:36px}}.captchaRefresh{{width:26px;height:26px}}.captchaRefresh svg{{width:18px;height:18px}}.captcha{{min-height:36px}}.captcha b{{min-height:36px;font-size:21px}}.captchaAnswerShell{{grid-template-columns:36px minmax(0,1fr) 36px;min-height:36px}}.primaryBtn{{min-height:46px;font-size:13px}}.methodGrid,.socialMethodGrid{{grid-template-columns:1fr}}.methodBtnRow{{grid-template-columns:1fr}}.sshMethodCard{{display:none!important}}.authFooter{{display:none}}}}
 </style>
 </head>
 <body>
@@ -13315,9 +13317,9 @@ def login_html(error=""):
         page = page.replace(
             ".captchaRefresh:active{transform:translateY(1px)}",
             ".captchaRefresh:active{transform:translateY(1px)}"
-            ".captchaSectionRecaptcha{gap:12px}"
+            ".captchaSectionRecaptcha{width:min(100%,336px);padding:10px 10px 8px;gap:8px}"
             ".captchaHint{color:var(--muted);font-size:12px;line-height:1.45}"
-            ".recaptchaBox{display:flex;justify-content:center;overflow-x:auto;padding:4px 0}",
+            ".recaptchaBox{display:flex;justify-content:center;align-items:flex-start;width:100%;min-width:0;overflow:hidden;padding:2px 0 0}",
             1,
         )
     script = login_recaptcha_script(auth)
