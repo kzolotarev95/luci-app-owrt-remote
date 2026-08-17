@@ -14097,6 +14097,7 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
         username = payload.get("username", "")
         password = payload.get("password", "")
         otp = payload.get("otp", "")
+        force_local_captcha = sanitize_captcha_mode(payload.get("captcha_mode_override")) == CAPTCHA_MODE_DIGITS
         captcha_ok, captcha_error = self.verify_login_captcha(payload)
         if not captcha_ok:
             fallback_message = recaptcha_fallback_message(captcha_error)
@@ -14104,7 +14105,7 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
                 401,
                 login_html(
                     fallback_message or captcha_error or "Неверная капча",
-                    force_local_captcha=bool(fallback_message),
+                    force_local_captcha=bool(fallback_message) or force_local_captcha,
                 ).encode("utf-8"),
                 "text/html; charset=utf-8",
             )
@@ -14114,7 +14115,14 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
             token, _ = self.create_login_session((auth or {}).get("username", username), auth_method)
             self.redirect("/", [("Set-Cookie", self.session_cookie(token))])
             return
-        self.send_bytes(401, login_html(error_text or "Неверный логин или пароль").encode("utf-8"), "text/html; charset=utf-8")
+        self.send_bytes(
+            401,
+            login_html(
+                error_text or "Неверный логин или пароль",
+                force_local_captcha=force_local_captcha,
+            ).encode("utf-8"),
+            "text/html; charset=utf-8",
+        )
 
     def update_auth(self):
         payload = self.read_payload()
