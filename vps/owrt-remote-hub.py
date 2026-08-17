@@ -12322,6 +12322,10 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .authTabPanel.is-active{{display:grid}}
 .authTabPanel[hidden]{{display:none !important}}
 .err{{width:min(100%,430px);justify-self:center;padding:10px 12px;border:1px solid rgba(251,113,133,.38);border-radius:14px;background:rgba(127,29,29,.2);color:#fecdd3;font-size:12px;font-weight:700}}
+.loginStatus{{width:min(100%,430px);justify-self:center;padding:10px 12px;border:1px solid rgba(34,211,238,.30);border-radius:14px;background:rgba(17,24,39,.44);color:#dbeafe;font-size:12px;font-weight:700;line-height:1.45}}
+.loginStatus[hidden]{{display:none!important}}
+.loginStatus.bad{{border-color:rgba(251,113,133,.38);background:rgba(127,29,29,.2);color:#fecdd3}}
+.loginStatus.ok{{border-color:rgba(34,197,94,.34);background:rgba(20,83,45,.22);color:#bbf7d0}}
 .login{{display:grid;gap:14px}}
 .fieldLabel{{display:none}}
 .fieldGroup{{display:grid;gap:12px;justify-items:center}}
@@ -12450,6 +12454,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
             </div>
           </header>
           {error_html}
+          <div class="loginStatus" id="loginRuntimeStatus" hidden></div>
           <div class="authTabs" role="tablist" aria-label="Сценарии входа">
             <button class="authTabBtn" type="button" role="tab" aria-selected="true" aria-controls="passwordLoginPanel" id="passwordLoginTab" data-auth-tab="password">
               <svg viewBox="0 0 24 24" fill="none">
@@ -12673,6 +12678,8 @@ const hubUsername = document.getElementById('hubUsername');
 const hubPassword = document.getElementById('hubPassword');
 const hubOtp = document.getElementById('hubOtp');
 const passwordLoginForm = document.getElementById('passwordLoginForm');
+const passwordLoginSubmitBtn = passwordLoginForm ? passwordLoginForm.querySelector('.primaryBtn') : null;
+const loginRuntimeStatus = document.getElementById('loginRuntimeStatus');
 const authTabButtons = Array.from(document.querySelectorAll('[data-auth-tab]'));
 const authTabPanels = Array.from(document.querySelectorAll('[data-auth-panel]'));
 const passwordModeHint = document.getElementById('passwordModeHint');
@@ -12708,6 +12715,7 @@ const socialLoginUi = {{
 }};
 let loginAuthMeta = {initial_login_meta_json};
 let sshTicket = '';
+let loginSubmitInFlight = false;
 
 function setActiveAuthTab(name) {{
   const activeTab = name === 'quick' ? 'quick' : 'password';
@@ -12728,6 +12736,26 @@ function setMethodStatus(node, text, bad = false) {{
   node.hidden = false;
   node.className = 'methodStatus' + (bad ? ' bad' : '');
   node.textContent = text;
+}}
+
+function setLoginRuntimeStatus(text, tone = 'info') {{
+  if (!loginRuntimeStatus) return;
+  const normalizedTone = tone === 'bad' || tone === 'ok' ? tone : 'info';
+  loginRuntimeStatus.hidden = !text;
+  loginRuntimeStatus.className = normalizedTone === 'info' ? 'loginStatus' : `loginStatus ${{normalizedTone}}`;
+  loginRuntimeStatus.textContent = text || '';
+}}
+
+function decodeHtmlText(value) {{
+  const node = document.createElement('textarea');
+  node.innerHTML = String(value || '');
+  return node.value;
+}}
+
+function extractLoginError(htmlText) {{
+  const match = String(htmlText || '').match(/<div class="err">([\\s\\S]*?)<\\/div>/i);
+  if (!match) return '';
+  return decodeHtmlText(match[1].replace(/<[^>]+>/g, ' ')).trim();
 }}
 
 function b64urlToBytes(value) {{
@@ -12884,21 +12912,82 @@ function refreshLoginFlowMeta() {{
 if (hubOtp) {{
   hubOtp.addEventListener('input', () => {{
     hubOtp.setCustomValidity('');
+    setLoginRuntimeStatus('');
   }});
 }}
 
 if (passwordLoginForm) {{
-  passwordLoginForm.addEventListener('submit', (ev) => {{
-    if (!loginAuthMeta.totp_enabled || !hubOtp) return;
-    const otpValue = String(hubOtp.value || '').trim();
-    if (/^[0-9]{{{TOTP_DIGITS}}}$/.test(otpValue)) {{
+  passwordLoginForm.addEventListener('submit', async (ev) => {{
+    ev.preventDefault();
+    if (loginSubmitInFlight) return;
+    setLoginRuntimeStatus('');
+    if (loginAuthMeta.totp_enabled && hubOtp) {{
+      const otpValue = String(hubOtp.value || '').trim();
+      if (!/^[0-9]{{{TOTP_DIGITS}}}$/.test(otpValue)) {{
+        hubOtp.setCustomValidity('Введи 6-значный код 2FA из приложения.');
+        hubOtp.reportValidity();
+        hubOtp.focus();
+        return;
+      }}
       hubOtp.setCustomValidity('');
+    }}
+    if (passwordLoginForm.reportValidity && !passwordLoginForm.reportValidity()) return;
+    if (!window.FormData || !window.fetch || !window.AbortController) {{
+      passwordLoginForm.submit();
       return;
     }}
-    ev.preventDefault();
-    hubOtp.setCustomValidity('Введи 6-значный код 2FA из приложения.');
-    hubOtp.reportValidity();
-    hubOtp.focus();
+    loginSubmitInFlight = true;
+    if (passwordLoginSubmitBtn) passwordLoginSubmitBtn.disabled = true;
+    setLoginRuntimeStatus('Проверяю вход и сохраняю сессию...', 'info');
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 20000);
+    try {{
+      const response = await fetch(passwordLoginForm.action || '/login', {{
+        method: 'POST',
+        body: new FormData(passwordLoginForm),
+        credentials: 'same-origin',
+        redirect: 'follow',
+        cache: 'no-store',
+        signal: controller.signal,
+      }});
+      const bodyText = await response.text();
+      const loginError = extractLoginError(bodyText);
+      if (!response.ok) {{
+        setLoginRuntimeStatus(
+          loginError || `Вход не завершился. Сервер вернул HTTP ${{response.status}}.`,
+          'bad',
+        );
+        return;
+      }}
+      const probe = await fetch('/api/sessions', {{
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: {{Accept: 'application/json'}},
+        signal: controller.signal,
+      }});
+      if (probe.ok) {{
+        setLoginRuntimeStatus('Вход подтвержден. Открываю панель...', 'ok');
+        window.location.assign('/');
+        return;
+      }}
+      if (probe.status === 401) {{
+        setLoginRuntimeStatus(
+          'Логин принят, но браузер не сохранил сессию. Чаще всего это cookie/Secure/HTTP/proxy mismatch или встроенный браузер Telegram.',
+          'bad',
+        );
+        return;
+      }}
+      setLoginRuntimeStatus(`Сессия после входа не подтвердилась. Проверка вернула HTTP ${{probe.status}}.`, 'bad');
+    }} catch (err) {{
+      const message = err && err.name === 'AbortError'
+        ? 'Вход завис дольше 20 секунд. Чаще всего это проверка Google reCAPTCHA с VPS или зависший redirect/proxy.'
+        : (err && err.message ? `Ошибка входа: ${{err.message}}` : 'Не удалось завершить вход.');
+      setLoginRuntimeStatus(message, 'bad');
+    }} finally {{
+      window.clearTimeout(timeoutId);
+      loginSubmitInFlight = false;
+      if (passwordLoginSubmitBtn) passwordLoginSubmitBtn.disabled = false;
+    }}
   }});
 }}
 
