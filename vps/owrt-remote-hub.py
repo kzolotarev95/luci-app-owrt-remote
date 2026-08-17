@@ -13007,9 +13007,14 @@ if (passwordLoginForm) {{
       }}
       setLoginRuntimeStatus(`Сессия после входа не подтвердилась. Проверка вернула HTTP ${{probe.status}}.`, 'bad');
     }} catch (err) {{
-      const message = err && err.name === 'AbortError'
-        ? 'Вход завис дольше 20 секунд. Чаще всего это проверка Google reCAPTCHA с VPS или зависший redirect/proxy.'
-        : (err && err.message ? `Ошибка входа: ${{err.message}}` : 'Не удалось завершить вход.');
+      if (err && err.name === 'AbortError') {{
+        setLoginRuntimeStatus('Google reCAPTCHA зависла слишком долго. Переключаю страницу на локальную цифровую капчу...', 'bad');
+        window.setTimeout(() => {{
+          window.location.assign('/login?captcha=digits&reason=recaptcha-timeout');
+        }}, 350);
+        return;
+      }}
+      const message = err && err.message ? `Ошибка входа: ${{err.message}}` : 'Не удалось завершить вход.';
       setLoginRuntimeStatus(message, 'bad');
     }} finally {{
       window.clearTimeout(timeoutId);
@@ -13317,6 +13322,12 @@ def login_html(error="", force_local_captcha=False):
     auth = normalize_auth_state(load_auth())
     page = _base_login_html(error)
     if force_local_captcha:
+        page, _ = re.subn(
+            r'(<input name="captcha_token" type="hidden" value="[^"]*">)',
+            r'\1<input name="captcha_mode_override" type="hidden" value="digits">',
+            page,
+            count=1,
+        )
         return page
     state = effective_captcha_state(auth)
     if state.get("effective_mode") != CAPTCHA_MODE_RECAPTCHA:
@@ -13746,6 +13757,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def verify_login_captcha(self, payload, auth=None):
         auth = normalize_auth_state(auth or load_auth())
+        override_mode = sanitize_captcha_mode((payload or {}).get("captcha_mode_override"))
+        if override_mode == CAPTCHA_MODE_DIGITS:
+            captcha_token = (payload or {}).get("captcha_token", "")
+            captcha_answer = (payload or {}).get("captcha_answer", "")
+            if verify_captcha(captcha_token, captcha_answer):
+                return True, ""
+            return False, "Неверная локальная капча"
         state = effective_captcha_state(auth)
         if state.get("effective_mode") == CAPTCHA_MODE_RECAPTCHA:
             token = (
@@ -16347,7 +16365,16 @@ exit 127
             self.serve_acme_challenge(path)
             return
         if path == "/login":
-            self.send_bytes(200, login_html().encode("utf-8"), "text/html; charset=utf-8")
+            query = self.query()
+            force_local_captcha = sanitize_captcha_mode((query.get("captcha") or [""])[-1]) == CAPTCHA_MODE_DIGITS
+            login_error = ""
+            if force_local_captcha and ((query.get("reason") or [""])[-1] == "recaptcha-timeout"):
+                login_error = "Google reCAPTCHA зависла или недоступна с VPS. Для входа ниже включена локальная цифровая капча."
+            self.send_bytes(
+                200,
+                login_html(login_error, force_local_captcha=force_local_captcha).encode("utf-8"),
+                "text/html; charset=utf-8",
+            )
             return
         if path == "/ssh-key-manual/":
             self.send_bytes(200, ssh_key_manual_html().encode("utf-8"), "text/html; charset=utf-8")
