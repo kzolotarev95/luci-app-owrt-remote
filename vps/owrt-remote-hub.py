@@ -2671,6 +2671,10 @@ def captcha_challenge():
     return code, token
 
 
+def captcha_code_markup(code):
+    return "".join(f"<span>{html.escape(ch, quote=False)}</span>" for ch in str(code or ""))
+
+
 def verify_captcha(token, answer):
     try:
         raw = base64.urlsafe_b64decode((token or "").encode("ascii")).decode("utf-8")
@@ -2731,7 +2735,7 @@ def legacy_login_captcha_html(auth=None):
     """
     captcha_code, captcha_token = captcha_challenge()
     safe_captcha_token = html.escape(captcha_token, quote=True)
-    safe_captcha_code = html.escape(captcha_code, quote=True)
+    safe_captcha_code = captcha_code_markup(captcha_code)
     return f"""
     <label for="hubCaptchaCode">Капча: введи эти цифры</label>
     <div class="captcha" id="hubCaptchaCode" aria-live="polite"><b>{safe_captcha_code}</b></div>
@@ -2751,7 +2755,7 @@ def modern_login_captcha_html(auth=None):
                   </div>"""
     captcha_code, captcha_token = captcha_challenge()
     safe_captcha_token = html.escape(captcha_token, quote=True)
-    safe_captcha_code = html.escape(captcha_code, quote=True)
+    safe_captcha_code = captcha_code_markup(captcha_code)
     return f"""
                   <div class="captchaSection">
                     <div class="captchaHeading">Капча: введи эти цифры</div>
@@ -4482,7 +4486,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <div class="brand">
       <div class="desktopHeader">
         <div class="desktopHeaderTop">
-          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v106</span></span></h1>
+          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v107</span></span></h1>
           <div class="routerSearchDock" id="routerSearchDock">
             <button class="routerSearchToggle" id="routerSearchToggle" type="button" aria-expanded="false" aria-controls="routerSearchPanel" data-active="false">
               <span>Поиск роутеров</span>
@@ -4834,7 +4838,7 @@ systemctl restart owrt-remote-xray</pre>
       </div>
     </div>
     <div class="mobileSearchDock" id="mobileRouterSearchDock">
-      <span class="mobileSearchVersion">v106</span>
+      <span class="mobileSearchVersion">v107</span>
       <button class="routerSearchToggle mobilePanelToggle primary" id="mobileRouterSearchToggle" type="button" aria-expanded="false" aria-controls="mobileRouterSearchPanel" data-active="false">
         <span>Поиск роутеров</span>
       </button>
@@ -11963,7 +11967,7 @@ button:hover{{filter:brightness(1.06)}}
       <form class="login" method="post" action="/login">
     {error_html}
     <span class="brand">
-      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v106</span></span></h1>
+      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v107</span></span></h1>
     </span>
     <label for="hubUsername">Логин</label>
     <input id="hubUsername" name="username" autocomplete="off" autofocus required>
@@ -12267,7 +12271,7 @@ def login_html(error=""):
     initial_login_meta_json = json.dumps(public_auth_meta(auth), ensure_ascii=False).replace("</", "<\\/")
     captcha_code, captcha_token = captcha_challenge()
     safe_captcha_token = html.escape(captcha_token, quote=True)
-    safe_captcha_code = html.escape(captcha_code, quote=True)
+    safe_captcha_code = captcha_code_markup(captcha_code)
     return f"""<!doctype html>
 <html lang="ru">
 <head>
@@ -12296,8 +12300,8 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .brandSeal{{grid-area:seal;position:relative;display:grid;place-items:center;width:78px;height:78px;margin-bottom:0;border-radius:50%;border:2px solid rgba(34,211,238,.54);background:radial-gradient(circle at 50% 35%,rgba(43,31,68,.98),rgba(12,8,22,.96));box-shadow:0 0 0 4px rgba(168,85,247,.08),0 0 20px rgba(34,211,238,.10)}}
 .brandSeal::before{{content:"";position:absolute;inset:12px;border-radius:50%;border:1px solid rgba(34,211,238,.20)}}
 .brandSeal svg{{width:36px;height:36px;filter:drop-shadow(0 0 8px rgba(34,211,238,.18))}}
-.brandTitle{{grid-area:title;margin:0;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:clamp(22px,4vw,28px);line-height:1.04;font-weight:800;letter-spacing:-.04em}}
-.brandVersion{{color:var(--red);font-size:14px;font-weight:800;letter-spacing:0;text-shadow:0 0 12px rgba(251,113,133,.35)}}
+.brandTitle{{grid-area:title;margin:0;display:flex;flex-direction:row;align-items:baseline;justify-content:center;gap:10px;font-size:clamp(22px,4vw,28px);line-height:1.04;font-weight:800;letter-spacing:-.04em;text-align:center;flex-wrap:wrap}}
+.brandVersion{{position:relative;top:-2px;display:inline-block;color:var(--red);font-size:14px;font-weight:800;letter-spacing:0;text-shadow:0 0 12px rgba(251,113,133,.35);white-space:nowrap}}
 .globeWrap{{display:none}}
 .globe{{display:none}}
 .globe::before{{display:none}}
@@ -12314,6 +12318,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .authTabBtn{{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:48px;padding:0 12px;border:0;border-right:1px solid rgba(169,126,255,.14);border-radius:0;background:transparent;color:#c4b5fd;font-size:12px;font-weight:800;letter-spacing:.01em;cursor:pointer;transition:background .2s ease,color .2s ease}}
 .authTabBtn:last-child{{border-right:0}}
 .authTabBtn svg{{width:18px;height:18px;stroke:currentColor;flex:0 0 auto}}
+.authTabBtn span{{display:block;text-align:center}}
 .authTabBtn[aria-selected="true"]{{background:linear-gradient(110deg,rgba(34,211,238,.16),rgba(124,58,237,.30),rgba(236,72,153,.12));color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.10)}}
 .authTabBtn:hover{{color:#fff}}
 .authTabsBody{{display:grid}}
@@ -12329,28 +12334,33 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .fieldLabel{{display:none}}
 .fieldGroup{{display:grid;gap:12px;justify-items:center}}
 .compactField{{width:min(100%,430px);justify-self:center}}
-.inputShell{{display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;min-height:48px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));box-shadow:inset 0 1px 0 rgba(255,255,255,.04);transition:border-color .2s ease,box-shadow .2s ease,transform .2s ease}}
+.inputShell{{display:grid;grid-template-columns:46px minmax(0,1fr) 46px;align-items:center;min-height:48px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,rgba(52,38,74,.96),rgba(34,26,52,.96));box-shadow:inset 0 1px 0 rgba(255,255,255,.04);transition:border-color .2s ease,box-shadow .2s ease,transform .2s ease}}
 .inputShell:focus-within{{border-color:var(--line-strong);box-shadow:0 0 0 3px rgba(34,211,238,.12),inset 0 1px 0 rgba(255,255,255,.05);transform:translateY(-1px)}}
 .fieldIcon{{display:grid;place-items:center;color:#c4b5fd}}
 .fieldIcon svg{{width:18px;height:18px;stroke:currentColor}}
-.inputShell input{{width:100%;min-width:0;padding:0 12px 0 0;border:0;background:transparent;color:var(--text);font:500 14px/1.15 inherit;outline:none}}
+.inputShell input{{width:100%;min-width:0;padding:0 10px;border:0;background:transparent;color:var(--text);font:500 14px/1.15 inherit;outline:none;text-align:center}}
 .inputShell input::placeholder,.methodRow textarea::placeholder{{color:#b9adc9}}
+.inputShell input::placeholder{{text-align:center}}
 .inputAction{{display:grid;place-items:center;width:46px;height:100%;border:0;background:transparent;color:#c4b5fd;cursor:pointer}}
+.inputActionSpacer{{visibility:hidden;pointer-events:none}}
 .inputAction svg{{width:18px;height:18px;stroke:currentColor}}
 .otpCard{{display:grid;gap:4px;width:min(100%,430px);justify-self:center;padding:0;border:0;border-radius:0;background:none}}
 .hint{{width:min(100%,430px);justify-self:center;margin:0;color:#b9adc9;font-size:var(--login-copy-size);line-height:1.35}}
 .hint.warn{{padding:10px 12px;border:1px solid rgba(245,158,11,.30);border-radius:14px;background:rgba(120,53,15,.18);color:#fde68a;font-weight:700}}
 #passwordModeHint{{text-align:center}}
-.captchaSection{{display:grid;grid-template-columns:1fr;gap:10px;width:min(100%,430px);justify-self:center;padding:14px 12px 12px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035)),rgba(19,14,32,.88)}}
+.captchaSection{{display:grid;grid-template-columns:1fr;gap:6px;width:min(100%,244px);justify-self:center;padding:8px 7px 7px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035)),rgba(19,14,32,.88)}}
 .captchaHeading{{color:#eef3ff;font-size:var(--login-copy-size);font-weight:800;line-height:1.2;text-align:center}}
-.captchaTopRow{{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:center}}
-.captcha{{display:flex;align-items:center;justify-content:center;min-height:36px;padding:0;background:none;overflow:visible;position:relative}}
+.captchaTopRow{{position:relative;min-height:40px}}
+.captchaTopRow::before{{display:none}}
+.captcha{{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;margin:0 auto;min-height:40px;padding:0;background:none;overflow:visible;text-align:center}}
 .captcha::before{{display:none}}
-.captcha b{{position:relative;z-index:1;color:var(--amber);font:800 24px/1 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:.28em;text-indent:.28em;text-shadow:0 0 12px rgba(245,158,11,.28)}}
-.captchaRefresh{{width:34px;height:34px;border:0;border-radius:10px;background:transparent;color:#c4b5fd;cursor:pointer;box-shadow:none}}
+.captcha b{{display:inline-flex;align-items:center;justify-content:center;gap:.28em;min-height:40px;margin:0 auto;color:var(--amber);font:800 24px/1 ui-monospace,SFMono-Regular,Consolas,monospace;text-shadow:0 0 12px rgba(245,158,11,.28)}}
+.captcha b span{{display:block;min-width:.62em;text-align:center}}
+.captchaRefresh{{position:absolute;top:0;right:0;bottom:0;margin:auto 0;width:28px;height:28px;border:0;border-radius:10px;background:transparent;color:#c4b5fd;cursor:pointer;box-shadow:none;z-index:2}}
 .captchaRefresh svg{{width:20px;height:20px;stroke:currentColor}}
-.captchaAnswerShell{{grid-template-columns:minmax(0,1fr) 42px;min-height:42px}}
+.captchaAnswerShell{{grid-template-columns:38px minmax(0,1fr) 38px;min-height:38px}}
 .captchaAnswerShell input{{padding:0 12px}}
+.captchaInputSpacer{{visibility:hidden;pointer-events:none}}
 .captchaInputMark{{display:grid;place-items:center;color:#8e98ad}}
 .captchaInputMark svg{{width:18px;height:18px;stroke:currentColor}}
 .primaryBtn{{display:inline-flex;align-items:center;justify-content:center;gap:10px;width:min(100%,430px);justify-self:center;min-height:50px;padding:0 14px;border:1px solid rgba(34,211,238,.30);border-radius:14px;background:linear-gradient(110deg,rgba(34,211,238,.20),rgba(124,58,237,.88),rgba(236,72,153,.20));color:#fff;font-size:14px;font-weight:800;letter-spacing:.01em;cursor:pointer;box-shadow:0 12px 24px rgba(124,58,237,.22);transition:transform .2s ease,box-shadow .2s ease,filter .2s ease}}
@@ -12404,7 +12414,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .securityNote svg{{width:14px;height:14px;stroke:#b9adc9;flex:0 0 auto}}
 .securityNote span{{font-size:0}}
 .securityNote span::before{{content:"Безопасное соединение";font-size:var(--login-copy-size)}}
-@media(max-width:760px){{body{{padding:10px;background-attachment:scroll;background-size:auto,auto,auto,100% 100%,31px 31px,31px 31px}}.loginShell{{width:min(100%,calc(100vw - 20px))}}.loginFrame{{border-radius:20px}}.brandPanel{{padding:20px 14px 12px}}.brandPanel::after{{left:14px;right:14px}}.brandSeal{{width:64px;height:64px}}.brandSeal::before{{inset:10px}}.brandSeal svg{{width:30px;height:30px}}.brandTitle{{font-size:clamp(19px,7vw,24px);gap:4px}}.brandVersion{{font-size:12px}}.authPanel{{padding:0 14px 14px}}.authTabs{{grid-template-columns:1fr;width:100%}}.authTabBtn{{min-height:44px;font-size:12px}}.authTabBtn svg{{width:16px;height:16px}}.fieldGroup{{justify-items:stretch}}.compactField,.otpCard,.hint,.captchaSection,.primaryBtn,.err{{width:100%;justify-self:stretch}}.inputShell{{grid-template-columns:40px minmax(0,1fr) auto;min-height:44px}}.fieldIcon svg{{width:16px;height:16px}}.inputShell input{{font-size:13px}}.inputAction{{width:40px}}.captchaSection{{padding:12px 10px 10px;gap:9px}}.captchaTopRow{{grid-template-columns:30px 1fr;gap:8px}}.captchaRefresh{{width:30px;height:30px}}.captchaRefresh svg{{width:18px;height:18px}}.captcha b{{font-size:21px}}.captchaAnswerShell{{grid-template-columns:minmax(0,1fr) 38px;min-height:38px}}.primaryBtn{{min-height:46px;font-size:13px}}.methodGrid,.socialMethodGrid{{grid-template-columns:1fr}}.methodBtnRow{{grid-template-columns:1fr}}.sshMethodCard{{display:none!important}}.authFooter{{display:none}}}}
+@media(max-width:760px){{body{{padding:10px;background-attachment:scroll;background-size:auto,auto,auto,100% 100%,31px 31px,31px 31px}}.loginShell{{width:min(100%,calc(100vw - 20px))}}.loginFrame{{border-radius:20px}}.brandPanel{{padding:20px 14px 12px}}.brandPanel::after{{left:14px;right:14px}}.brandSeal{{width:64px;height:64px}}.brandSeal::before{{inset:10px}}.brandSeal svg{{width:30px;height:30px}}.brandTitle{{font-size:clamp(18px,6vw,22px);gap:8px;line-height:1.08;flex-wrap:nowrap}}.brandVersion{{font-size:12px}}.authPanel{{padding:0 14px 14px}}.authTabs{{grid-template-columns:1fr;width:100%}}.authTabBtn{{min-height:44px;font-size:12px;justify-content:center;text-align:center;flex-direction:column;gap:5px;padding:8px 12px}}.authTabBtn svg{{width:16px;height:16px}}.fieldGroup{{justify-items:stretch}}.compactField,.otpCard,.hint,.captchaSection,.primaryBtn,.err{{width:100%;justify-self:stretch}}.inputShell{{grid-template-columns:40px minmax(0,1fr) 40px;min-height:44px}}.fieldIcon svg{{width:16px;height:16px}}.inputShell input{{font-size:13px}}.inputAction{{width:40px}}.captchaSection{{width:min(100%,236px);justify-self:center;padding:8px 7px 7px;gap:6px}}.captchaTopRow{{min-height:36px}}.captchaRefresh{{width:26px;height:26px}}.captchaRefresh svg{{width:18px;height:18px}}.captcha{{min-height:36px}}.captcha b{{min-height:36px;font-size:21px}}.captchaAnswerShell{{grid-template-columns:36px minmax(0,1fr) 36px;min-height:36px}}.primaryBtn{{min-height:46px;font-size:13px}}.methodGrid,.socialMethodGrid{{grid-template-columns:1fr}}.methodBtnRow{{grid-template-columns:1fr}}.sshMethodCard{{display:none!important}}.authFooter{{display:none}}}}
 </style>
 </head>
 <body>
@@ -12427,7 +12437,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                 <circle cx="65" cy="59" r="3" fill="#E5F2FF"/>
               </svg>
             </div>
-            <h2 class="brandTitle">OpenWrt Remote Hub <span class="brandVersion">v106</span></h2>
+            <h2 class="brandTitle">OpenWrt Remote Hub <span class="brandVersion">v107</span></h2>
           </div>
         </div>
         <div class="brandBottom">
@@ -12486,6 +12496,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                         </svg>
                       </span>
                       <input id="hubUsername" name="username" autocomplete="off" placeholder="Введите логин" autofocus required>
+                      <span class="inputAction inputActionSpacer" aria-hidden="true"></span>
                     </div>
                   </div>
                   <div class="compactField">
@@ -12517,6 +12528,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                           </svg>
                         </span>
                         <input id="hubOtp" name="otp" inputmode="numeric" pattern="[0-9]{{{TOTP_DIGITS}}}" maxlength="{TOTP_DIGITS}" autocomplete="one-time-code" placeholder="Введите 6-значный код 2FA" aria-describedby="passwordModeHint">
+                        <span class="inputAction inputActionSpacer" aria-hidden="true"></span>
                       </div>
                     </div>
                     <div class="hint" id="passwordModeHint" hidden>Резервный вход через пароль. Когда 2FA включена, сюда нужен 6-значный TOTP-код.</div>
@@ -12535,6 +12547,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                       <div class="captcha" id="hubCaptchaCode" aria-live="polite"><b>{safe_captcha_code}</b></div>
                     </div>
                     <div class="inputShell captchaAnswerShell">
+                      <span class="captchaInputMark captchaInputSpacer" aria-hidden="true"></span>
                       <input id="hubCaptcha" name="captcha_answer" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="Повтори капчу" required>
                       <span class="captchaInputMark" aria-hidden="true">
                         <svg viewBox="0 0 24 24" fill="none">
