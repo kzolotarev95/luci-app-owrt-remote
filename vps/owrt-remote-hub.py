@@ -2728,7 +2728,7 @@ def legacy_login_captcha_html(auth=None):
         return f"""
     <label for="hubRecaptcha">Капча: подтверди вход через Google reCAPTCHA v2 Checkbox</label>
     <div class="captcha recaptchaWrap" id="hubRecaptcha"><div class="g-recaptcha" data-sitekey="{safe_site_key}" data-theme="dark"></div></div>
-    <div class="hint">Нужен ключ Google reCAPTCHA v2 Checkbox для текущего домена. Проверка идет на сервере после отправки формы.</div>"""
+    """
     captcha_code, captcha_token = captcha_challenge()
     safe_captcha_token = html.escape(captcha_token, quote=True)
     safe_captcha_code = html.escape(captcha_code, quote=True)
@@ -2748,7 +2748,6 @@ def modern_login_captcha_html(auth=None):
                   <div class="captchaSection captchaSectionRecaptcha">
                     <div class="captchaHeading">Капча: подтверди, что ты не робот</div>
                     <div class="recaptchaBox"><div class="g-recaptcha" data-sitekey="{safe_site_key}" data-theme="dark"></div></div>
-                    <div class="captchaHint">Нужен ключ Google reCAPTCHA v2 Checkbox для текущего домена.</div>
                   </div>"""
     captcha_code, captcha_token = captcha_challenge()
     safe_captcha_token = html.escape(captcha_token, quote=True)
