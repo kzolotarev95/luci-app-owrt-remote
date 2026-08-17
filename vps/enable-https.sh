@@ -28,6 +28,13 @@ die() {
 	exit 1
 }
 
+apt_get() {
+	if ! command -v apt-get >/dev/null 2>&1; then
+		die "нужен Ubuntu/Debian с apt-get"
+	fi
+	$SUDO apt-get -o DPkg::Lock::Timeout=300 "$@"
+}
+
 detect_host() {
 	if [ -n "$HOSTNAME_ARG" ]; then
 		printf '%s\n' "$HOSTNAME_ARG"
@@ -53,12 +60,8 @@ install_certbot() {
 	fi
 
 	info "Ставлю свежий Certbot через snap..."
-	if command -v apt-get >/dev/null 2>&1; then
-		$SUDO apt-get update
-		$SUDO apt-get install -y snapd
-	else
-		die "нужен Ubuntu/Debian с apt-get или уже установленный certbot с --ip-address"
-	fi
+	apt_get update
+	apt_get install -y snapd
 
 	$SUDO systemctl enable --now snapd.socket >/dev/null 2>&1 || true
 	$SUDO snap wait system seed.loaded >/dev/null 2>&1 || true
@@ -75,11 +78,8 @@ install_certbot() {
 }
 
 install_nginx() {
-	if ! command -v apt-get >/dev/null 2>&1; then
-		die "для HTTPS-прокси нужен Ubuntu/Debian с apt-get"
-	fi
 	info "Ставлю nginx для стабильного HTTPS..."
-	$SUDO apt-get update
+	apt_get update
 	policy_created=0
 	if [ ! -e /usr/sbin/policy-rc.d ]; then
 		$SUDO tee /usr/sbin/policy-rc.d >/dev/null <<'EOF'
@@ -89,7 +89,7 @@ EOF
 		$SUDO chmod +x /usr/sbin/policy-rc.d
 		policy_created=1
 	fi
-	if ! $SUDO apt-get install -y nginx; then
+	if ! apt_get install -y nginx; then
 		if [ "$policy_created" = "1" ]; then
 			$SUDO rm -f /usr/sbin/policy-rc.d
 		fi
@@ -100,6 +100,56 @@ EOF
 	fi
 	$SUDO rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
 	$SUDO systemctl stop nginx >/dev/null 2>&1 || true
+}
+
+write_nginx_http_bootstrap_config() {
+	host="$1"
+	$SUDO mkdir -p /etc/nginx/conf.d /etc/nginx/sites-available /etc/nginx/sites-enabled
+	$SUDO tee /etc/nginx/conf.d/owrt-remote-map.conf >/dev/null <<'EOF'
+map $http_upgrade $owrt_remote_connection_upgrade {
+	default upgrade;
+	'' close;
+}
+EOF
+	$SUDO tee /etc/nginx/sites-available/owrt-remote >/dev/null <<EOF
+server {
+	listen 80 default_server;
+	server_name $host _;
+
+	location /.well-known/acme-challenge/ {
+		root $ACME_WEBROOT;
+		default_type text/plain;
+	}
+
+	location / {
+		proxy_pass http://127.0.0.1:8088;
+		proxy_http_version 1.1;
+		proxy_set_header Host \$http_host;
+		proxy_set_header X-Real-IP \$remote_addr;
+		proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+		proxy_set_header X-Forwarded-Proto http;
+		proxy_set_header X-Forwarded-Host \$http_host;
+		proxy_set_header X-Forwarded-Port \$server_port;
+		proxy_set_header Upgrade \$http_upgrade;
+		proxy_set_header Connection \$owrt_remote_connection_upgrade;
+		proxy_read_timeout 3600s;
+		proxy_send_timeout 3600s;
+		proxy_connect_timeout 30s;
+		proxy_buffering off;
+		proxy_request_buffering off;
+	}
+}
+EOF
+	$SUDO ln -sf /etc/nginx/sites-available/owrt-remote /etc/nginx/sites-enabled/owrt-remote
+	$SUDO rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
+}
+
+start_nginx_http_bootstrap() {
+	host="$1"
+	write_nginx_http_bootstrap_config "$host"
+	$SUDO nginx -t
+	$SUDO systemctl enable --now nginx
+	$SUDO systemctl restart nginx
 }
 
 refresh_hub_files() {
@@ -132,6 +182,25 @@ ensure_hub_http() {
 		i=$((i + 1))
 	done
 	die "Hub не ответил на http://127.0.0.1:8088/health"
+}
+
+check_nginx_http_bootstrap() {
+	token="owrt-remote-acme-probe-$$"
+	probe_dir="$ACME_WEBROOT/.well-known/acme-challenge"
+	probe_path="$probe_dir/$token"
+	$SUDO mkdir -p "$probe_dir"
+	printf '%s\n' "$token" | $SUDO tee "$probe_path" >/dev/null
+	i=1
+	while [ "$i" -le 20 ]; do
+		if [ "$(curl -fsS --max-time 3 "http://127.0.0.1/.well-known/acme-challenge/$token" 2>/dev/null || true)" = "$token" ]; then
+			$SUDO rm -f "$probe_path"
+			return 0
+		fi
+		sleep 1
+		i=$((i + 1))
+	done
+	$SUDO rm -f "$probe_path"
+	return 1
 }
 
 certbot_email_args() {
@@ -188,16 +257,10 @@ Environment=OWRT_REMOTE_TLS_PORTS=
 EOF
 
 	$SUDO mkdir -p /etc/nginx/conf.d /etc/nginx/sites-available /etc/nginx/sites-enabled
-	$SUDO tee /etc/nginx/conf.d/owrt-remote-map.conf >/dev/null <<'EOF'
-map $http_upgrade $owrt_remote_connection_upgrade {
-	default upgrade;
-	'' close;
-}
-EOF
 	$SUDO tee /etc/nginx/sites-available/owrt-remote >/dev/null <<EOF
 server {
-	listen 80;
-	server_name $host;
+	listen 80 default_server;
+	server_name $host _;
 
 	location /.well-known/acme-challenge/ {
 		root $ACME_WEBROOT;
@@ -289,6 +352,10 @@ main() {
 		die "этот certbot не умеет IP-сертификаты. Нужен свежий certbot 5.4+ через snap."
 	fi
 	ensure_hub_http
+	start_nginx_http_bootstrap "$host"
+	if ! check_nginx_http_bootstrap; then
+		die "временный HTTP на 80 порту не отвечает локально. Проверь, не занят ли порт 80 другим сервисом"
+	fi
 	issue_cert "$host"
 	enable_nginx_tls "$host"
 	if ! check_https; then

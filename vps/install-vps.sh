@@ -2,7 +2,7 @@
 set -u
 
 APP_NAME="OpenWrt Remote Hub"
-INSTALLER_VERSION="2026-08-15-branding-v1"
+INSTALLER_VERSION="2026-08-17-https-bootstrap-v1"
 RAW_BASE="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 STATE_DIR="${OWRT_REMOTE_STATE_DIR:-/var/lib/owrt-remote}"
 HUB_LOGIN="${HUB_LOGIN:-admin}"
@@ -27,6 +27,13 @@ warn() {
 die() {
 	printf 'ERROR: %s\n' "$*" >&2
 	exit 1
+}
+
+apt_get() {
+	if ! command -v apt-get >/dev/null 2>&1; then
+		die "поддерживается Ubuntu/Debian с apt-get"
+	fi
+	$SUDO apt-get -o DPkg::Lock::Timeout=300 "$@"
 }
 
 need_cmd() {
@@ -77,12 +84,8 @@ detect_vps_host() {
 }
 
 install_packages() {
-	if command -v apt-get >/dev/null 2>&1; then
-		$SUDO apt-get update
-		$SUDO apt-get install -y curl wget unzip python3 python3-venv openssh-client ca-certificates ufw
-		return
-	fi
-	die "поддерживается Ubuntu/Debian с apt-get"
+	apt_get update
+	apt_get install -y curl wget unzip python3 python3-venv openssh-client ca-certificates ufw
 }
 
 install_xray_binary() {
