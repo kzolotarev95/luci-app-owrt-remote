@@ -8,6 +8,9 @@ ACME_WEBROOT="$STATE_DIR/acme-webroot"
 HOSTNAME_ARG="${1:-${HTTPS_HOST:-}}"
 EMAIL="${EMAIL:-}"
 STAGING="${STAGING:-0}"
+TLS_CERT_MODE=""
+TLS_CERT_PATH=""
+TLS_KEY_PATH=""
 
 if [ "$(id -u)" -eq 0 ]; then
 	SUDO=""
@@ -100,6 +103,16 @@ EOF
 	fi
 	$SUDO rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default
 	$SUDO systemctl stop nginx >/dev/null 2>&1 || true
+}
+
+ensure_openssl() {
+	if command -v openssl >/dev/null 2>&1; then
+		return
+	fi
+	info "Ставлю openssl для резервного HTTPS..."
+	apt_get update
+	apt_get install -y openssl
+	command -v openssl >/dev/null 2>&1 || die "openssl не установился"
 }
 
 write_nginx_http_bootstrap_config() {
@@ -237,11 +250,71 @@ issue_cert() {
 	fi
 }
 
+use_letsencrypt_cert() {
+	host="$1"
+	TLS_CERT_MODE="letsencrypt"
+	TLS_CERT_PATH="/etc/letsencrypt/live/$host/fullchain.pem"
+	TLS_KEY_PATH="/etc/letsencrypt/live/$host/privkey.pem"
+	[ -f "$TLS_CERT_PATH" ] || return 1
+	[ -f "$TLS_KEY_PATH" ] || return 1
+	return 0
+}
+
+generate_self_signed_cert() {
+	host="$1"
+	ensure_openssl
+	cert_dir="/etc/owrt-remote/selfsigned/$host"
+	cert_path="$cert_dir/fullchain.pem"
+	key_path="$cert_dir/privkey.pem"
+	conf_path="/tmp/owrt-remote-openssl-$$.cnf"
+	alt_kind="DNS"
+	if is_ipv4 "$host"; then
+		alt_kind="IP"
+	fi
+	$SUDO mkdir -p "$cert_dir"
+	cat >"$conf_path" <<EOF
+[req]
+distinguished_name = dn
+x509_extensions = v3_req
+prompt = no
+
+[dn]
+CN = $host
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+$alt_kind.1 = $host
+EOF
+	$SUDO openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 3650 \
+		-keyout "$key_path" \
+		-out "$cert_path" \
+		-config "$conf_path" >/dev/null 2>&1 || {
+		rm -f "$conf_path"
+		die "не смог создать резервный TLS-сертификат"
+	}
+	rm -f "$conf_path"
+	$SUDO chmod 600 "$key_path"
+	$SUDO chmod 644 "$cert_path"
+	TLS_CERT_MODE="selfsigned"
+	TLS_CERT_PATH="$cert_path"
+	TLS_KEY_PATH="$key_path"
+}
+
 enable_nginx_tls() {
 	host="$1"
-	live_dir="/etc/letsencrypt/live/$host"
-	[ -f "$live_dir/fullchain.pem" ] || die "не найден сертификат: $live_dir/fullchain.pem"
-	[ -f "$live_dir/privkey.pem" ] || die "не найден ключ: $live_dir/privkey.pem"
+	cert_path="$2"
+	key_path="$3"
+	hsts_line=""
+	[ -f "$cert_path" ] || die "не найден сертификат: $cert_path"
+	[ -f "$key_path" ] || die "не найден ключ: $key_path"
+	if [ "$TLS_CERT_MODE" = "letsencrypt" ]; then
+		hsts_line='	add_header Strict-Transport-Security "max-age=31536000" always;'
+	fi
 
 	# HTTPS и HTTP-redirect обслуживает nginx. Hub остается только на
 	# внутреннем HTTP-порту 8088, чтобы не смешивать web-сессии между
@@ -276,9 +349,9 @@ server {
 	listen 443 ssl;
 	server_name $host;
 
-	ssl_certificate $live_dir/fullchain.pem;
-	ssl_certificate_key $live_dir/privkey.pem;
-	add_header Strict-Transport-Security "max-age=31536000" always;
+	ssl_certificate $cert_path;
+	ssl_certificate_key $key_path;
+$hsts_line
 	keepalive_timeout 15s;
 	keepalive_requests 100;
 	send_timeout 30s;
@@ -356,8 +429,13 @@ main() {
 	if ! check_nginx_http_bootstrap; then
 		die "временный HTTP на 80 порту не отвечает локально. Проверь, не занят ли порт 80 другим сервисом"
 	fi
-	issue_cert "$host"
-	enable_nginx_tls "$host"
+	if issue_cert "$host" && use_letsencrypt_cert "$host"; then
+		info "Let's Encrypt сертификат получен."
+	else
+		warn "Let's Encrypt не выдал сертификат. Включаю резервный HTTPS на самоподписанном сертификате."
+		generate_self_signed_cert "$host"
+	fi
+	enable_nginx_tls "$host" "$TLS_CERT_PATH" "$TLS_KEY_PATH"
 	if ! check_https; then
 		$SUDO systemctl status owrt-remote --no-pager -l || true
 		die "HTTPS не ответил на https://127.0.0.1/health"
@@ -367,6 +445,9 @@ main() {
 	info "============================================================"
 	info "HTTPS включен"
 	info "============================================================"
+	if [ "$TLS_CERT_MODE" = "selfsigned" ]; then
+		info "Сертификат: самоподписанный резервный"
+	fi
 	info "Панель:"
 	info "  https://$host/"
 	info "  http://$host/"

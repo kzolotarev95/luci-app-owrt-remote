@@ -85,7 +85,7 @@ detect_vps_host() {
 
 install_packages() {
 	apt_get update
-	apt_get install -y curl wget unzip python3 python3-venv openssh-client ca-certificates ufw
+	apt_get install -y curl wget unzip python3 python3-venv openssh-client ca-certificates ufw openssl
 }
 
 install_xray_binary() {
