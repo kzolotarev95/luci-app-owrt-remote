@@ -2726,9 +2726,9 @@ def legacy_login_captcha_html(auth=None):
     if state.get("effective_mode") == CAPTCHA_MODE_RECAPTCHA:
         safe_site_key = html.escape(state.get("site_key", ""), quote=True)
         return f"""
-    <label for="hubRecaptcha">Капча: подтверди вход через Google reCAPTCHA</label>
+    <label for="hubRecaptcha">Капча: подтверди вход через Google reCAPTCHA v2 Checkbox</label>
     <div class="captcha recaptchaWrap" id="hubRecaptcha"><div class="g-recaptcha" data-sitekey="{safe_site_key}" data-theme="dark"></div></div>
-    <div class="hint">Google reCAPTCHA проверяется на сервере после отправки формы.</div>"""
+    <div class="hint">Нужен ключ Google reCAPTCHA v2 Checkbox для текущего домена. Проверка идет на сервере после отправки формы.</div>"""
     captcha_code, captcha_token = captcha_challenge()
     safe_captcha_token = html.escape(captcha_token, quote=True)
     safe_captcha_code = html.escape(captcha_code, quote=True)
@@ -2748,6 +2748,7 @@ def modern_login_captcha_html(auth=None):
                   <div class="captchaSection captchaSectionRecaptcha">
                     <div class="captchaHeading">Капча: подтверди, что ты не робот</div>
                     <div class="recaptchaBox"><div class="g-recaptcha" data-sitekey="{safe_site_key}" data-theme="dark"></div></div>
+                    <div class="captchaHint">Нужен ключ Google reCAPTCHA v2 Checkbox для текущего домена.</div>
                   </div>"""
     captcha_code, captcha_token = captcha_challenge()
     safe_captcha_token = html.escape(captcha_token, quote=True)
@@ -9156,13 +9157,13 @@ function ensureCaptchaSettingsFields() {{
     wrap.innerHTML = `
       <div style="display:grid;gap:8px;padding:10px 12px;border:1px solid rgba(148,163,184,.18);border-radius:8px;background:rgba(255,255,255,.03)">
         <strong style="font-size:13px">Капча на экране входа</strong>
-        <span style="color:var(--muted);font-size:12px;line-height:1.45">Можно оставить цифровую капчу или переключить вход на Google reCAPTCHA.</span>
+        <span style="color:var(--muted);font-size:12px;line-height:1.45">Можно оставить цифровую капчу или переключить вход на Google reCAPTCHA v2 Checkbox. Ключ должен быть выпущен для текущего домена.</span>
         <select class="wide" name="captcha_mode">
           <option value="{CAPTCHA_MODE_DIGITS}">Капча: цифры</option>
-          <option value="{CAPTCHA_MODE_RECAPTCHA}">Капча: Google reCAPTCHA</option>
+          <option value="{CAPTCHA_MODE_RECAPTCHA}">Капча: Google reCAPTCHA v2 Checkbox</option>
         </select>
-        <input class="wide" name="captcha_site_key" placeholder="reCAPTCHA Site Key">
-        <input class="wide" name="captcha_secret_key" placeholder="reCAPTCHA Secret Key">
+        <input class="wide" name="captcha_site_key" placeholder="reCAPTCHA v2 Site Key">
+        <input class="wide" name="captcha_secret_key" placeholder="reCAPTCHA v2 Secret Key">
       </div>
     `;
     const saveBtn = authForm.querySelector('button');
@@ -9384,7 +9385,7 @@ function renderAuthMeta() {{
   const captchaMode = String(captchaMeta.mode || '{CAPTCHA_MODE_DIGITS}');
   const captchaConfigured = !!captchaMeta.configured;
   const captchaPillText = captchaMode === '{CAPTCHA_MODE_RECAPTCHA}'
-    ? (captchaConfigured ? 'Google reCAPTCHA' : 'reCAPTCHA без ключей')
+    ? (captchaConfigured ? 'Google reCAPTCHA v2' : 'reCAPTCHA v2 без ключей')
     : 'Капча: цифры';
   const socialEntries = Object.entries(meta.social || {{}})
     .filter(([, item]) => Number(item && item.linked_count || 0) > 0)
@@ -13530,10 +13531,12 @@ class Handler(BaseHTTPRequestHandler):
         return {k: v[-1] for k, v in parsed.items()}
 
     def session_cookie(self, token):
-        return f"{SESSION_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={SESSION_TTL_SECONDS}"
+        secure = "; Secure" if self.request_scheme() == "https" else ""
+        return f"{SESSION_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={SESSION_TTL_SECONDS}{secure}"
 
     def clear_session_cookie(self):
-        return f"{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0"
+        secure = "; Secure" if self.request_scheme() == "https" else ""
+        return f"{SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0{secure}"
 
     def request_scheme(self):
         forwarded = str(self.headers.get("X-Forwarded-Proto", "")).split(",", 1)[0].strip().lower()
@@ -13981,7 +13984,7 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
                 self.send_text(400, f"Новый пароль должен быть минимум {MIN_PASSWORD_LENGTH} символа")
                 return
         if captcha_mode == CAPTCHA_MODE_RECAPTCHA and not (captcha_site_key and captcha_secret_key):
-            self.send_text(400, "Для Google reCAPTCHA нужны Site Key и Secret Key")
+            self.send_text(400, "Для Google reCAPTCHA v2 Checkbox нужны Site Key и Secret Key")
             return
         auth["username"] = clean_username(username)
         if new_password:

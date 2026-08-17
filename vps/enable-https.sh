@@ -174,12 +174,13 @@ enable_nginx_tls() {
 	[ -f "$live_dir/fullchain.pem" ] || die "не найден сертификат: $live_dir/fullchain.pem"
 	[ -f "$live_dir/privkey.pem" ] || die "не найден ключ: $live_dir/privkey.pem"
 
-	# HTTPS обслуживает nginx. Hub остается обычным HTTP на 80/8088,
-	# так LuCI и SSH-terminal не спотыкаются о встроенный TLS Python.
+	# HTTPS и HTTP-redirect обслуживает nginx. Hub остается только на
+	# внутреннем HTTP-порту 8088, чтобы не смешивать web-сессии между
+	# прямым :80 и проксированным :443.
 	$SUDO mkdir -p /etc/systemd/system/owrt-remote.service.d
 	$SUDO tee /etc/systemd/system/owrt-remote.service.d/https.conf >/dev/null <<EOF
 [Service]
-Environment=OWRT_REMOTE_EXTRA_PORTS=80
+Environment=OWRT_REMOTE_EXTRA_PORTS=
 Environment=OWRT_REMOTE_PUBLIC_URL=https://$host
 Environment=OWRT_REMOTE_TLS_CERT=
 Environment=OWRT_REMOTE_TLS_KEY=
@@ -195,11 +196,30 @@ map $http_upgrade $owrt_remote_connection_upgrade {
 EOF
 	$SUDO tee /etc/nginx/sites-available/owrt-remote >/dev/null <<EOF
 server {
-	listen 443 ssl http2;
+	listen 80;
+	server_name $host;
+
+	location /.well-known/acme-challenge/ {
+		root $ACME_WEBROOT;
+		default_type text/plain;
+	}
+
+	location / {
+		return 301 https://$host\$request_uri;
+	}
+}
+
+server {
+	listen 443 ssl;
 	server_name $host;
 
 	ssl_certificate $live_dir/fullchain.pem;
 	ssl_certificate_key $live_dir/privkey.pem;
+	add_header Strict-Transport-Security "max-age=31536000" always;
+	keepalive_timeout 15s;
+	keepalive_requests 100;
+	send_timeout 30s;
+	reset_timedout_connection on;
 
 	client_max_body_size 64m;
 
@@ -233,6 +253,7 @@ EOF
 	$SUDO chmod +x /etc/letsencrypt/renewal-hooks/deploy/owrt-remote-restart.sh
 
 	if command -v ufw >/dev/null 2>&1; then
+		$SUDO ufw allow 80/tcp >/dev/null 2>&1 || true
 		$SUDO ufw allow 443/tcp >/dev/null 2>&1 || true
 	fi
 
