@@ -108,6 +108,7 @@ SESSION_TTL_SECONDS = int(os.environ.get("OWRT_REMOTE_SESSION_TTL", str(30 * 24 
 CAPTCHA_TTL_SECONDS = 600
 CAPTCHA_MODE_DIGITS = "digits"
 CAPTCHA_MODE_RECAPTCHA = "recaptcha"
+RECAPTCHA_FALLBACK_MARKER = "__OWRT_REMOTE_RECAPTCHA_FALLBACK__:"
 ROUTER_ACCESS_FLAGS = ("A", "B", "G")
 ROUTER_ACCESS_LABELS = {
     "A": "Web only",
@@ -115,6 +116,10 @@ ROUTER_ACCESS_LABELS = {
     "G": "Full router access",
 }
 RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
+try:
+    RECAPTCHA_VERIFY_TIMEOUT_SECONDS = max(2.0, min(20.0, float(os.environ.get("OWRT_REMOTE_RECAPTCHA_TIMEOUT", "6"))))
+except ValueError:
+    RECAPTCHA_VERIFY_TIMEOUT_SECONDS = 6.0
 AUTH_CHALLENGE_TTL_SECONDS = 300
 TOTP_PERIOD_SECONDS = 30
 TOTP_DIGITS = 6
@@ -1103,7 +1108,7 @@ def touch_social_account_last_used(auth, provider, account_id):
     return clean
 
 
-def oauth_fetch_json(url, method="GET", headers=None, data=None):
+def oauth_fetch_json(url, method="GET", headers=None, data=None, timeout=15):
     payload = None
     header_map = {str(key): str(value) for key, value in dict(headers or {}).items()}
     if data is not None:
@@ -1123,7 +1128,7 @@ def oauth_fetch_json(url, method="GET", headers=None, data=None):
         if not request.has_header(key):
             request.add_header(key, value)
     try:
-        with urllib.request.urlopen(request, timeout=15) as response:
+        with urllib.request.urlopen(request, timeout=float(timeout or 15)) as response:
             body = response.read().decode("utf-8", "replace")
             return json.loads(body or "{}")
     except urllib.error.HTTPError as exc:
@@ -2698,9 +2703,18 @@ def verify_recaptcha_token(secret_key, response_token, remote_ip="", expected_ho
     if remote_ip:
         payload["remoteip"] = str(remote_ip).strip()
     try:
-        result = oauth_fetch_json(RECAPTCHA_VERIFY_URL, method="POST", data=payload)
+        result = oauth_fetch_json(
+            RECAPTCHA_VERIFY_URL,
+            method="POST",
+            data=payload,
+            timeout=RECAPTCHA_VERIFY_TIMEOUT_SECONDS,
+        )
     except Exception as exc:
-        return False, f"Не удалось проверить Google reCAPTCHA: {exc}"
+        detail = " ".join(str(exc or "").split())[:180]
+        message = "Google reCAPTCHA недоступна с VPS. Переключил вход на локальную цифровую капчу ниже: повтори цифры и нажми Войти еще раз."
+        if detail:
+            message = f"{message} Причина: {detail}"
+        return False, f"{RECAPTCHA_FALLBACK_MARKER}{message}"
     if not result.get("success"):
         errors = result.get("error-codes", [])
         detail = ", ".join(str(item) for item in errors if str(item).strip())
@@ -2712,6 +2726,13 @@ def verify_recaptcha_token(secret_key, response_token, remote_ip="", expected_ho
     if expected_hostname and actual_hostname and actual_hostname != expected_hostname:
         return False, f"Google reCAPTCHA выдана для другого хоста: {actual_hostname}"
     return True, ""
+
+
+def recaptcha_fallback_message(value):
+    text = str(value or "")
+    if not text.startswith(RECAPTCHA_FALLBACK_MARKER):
+        return ""
+    return text[len(RECAPTCHA_FALLBACK_MARKER):].strip()
 
 
 def login_recaptcha_script(auth=None):
@@ -12953,6 +12974,13 @@ if (passwordLoginForm) {{
       const bodyText = await response.text();
       const loginError = extractLoginError(bodyText);
       if (!response.ok) {{
+        const switchedToDigitsCaptcha = bodyText.includes('id="hubCaptchaCode"') && bodyText.includes('name="captcha_token"');
+        if (switchedToDigitsCaptcha) {{
+          document.open();
+          document.write(bodyText);
+          document.close();
+          return;
+        }}
         setLoginRuntimeStatus(
           loginError || `Вход не завершился. Сервер вернул HTTP ${{response.status}}.`,
           'bad',
@@ -13285,9 +13313,11 @@ document.addEventListener('click', async (event) => {
 _base_login_html = login_html
 
 
-def login_html(error=""):
+def login_html(error="", force_local_captcha=False):
     auth = normalize_auth_state(load_auth())
     page = _base_login_html(error)
+    if force_local_captcha:
+        return page
     state = effective_captcha_state(auth)
     if state.get("effective_mode") != CAPTCHA_MODE_RECAPTCHA:
         return page
@@ -14051,14 +14081,22 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
         otp = payload.get("otp", "")
         captcha_ok, captcha_error = self.verify_login_captcha(payload)
         if not captcha_ok:
-            self.send_bytes(401, login_html(captcha_error or "РќРµРІРµСЂРЅР°СЏ РєР°РїС‡Р°").encode("utf-8"), "text/html; charset=utf-8")
+            fallback_message = recaptcha_fallback_message(captcha_error)
+            self.send_bytes(
+                401,
+                login_html(
+                    fallback_message or captcha_error or "Неверная капча",
+                    force_local_captcha=bool(fallback_message),
+                ).encode("utf-8"),
+                "text/html; charset=utf-8",
+            )
             return
         ok, error_text, auth, auth_method = verify_password_login(username, password, otp)
         if ok:
             token, _ = self.create_login_session((auth or {}).get("username", username), auth_method)
             self.redirect("/", [("Set-Cookie", self.session_cookie(token))])
             return
-        self.send_bytes(401, login_html(error_text or "РќРµРІРµСЂРЅС‹Р№ Р»РѕРіРёРЅ РёР»Рё РїР°СЂРѕР»СЊ").encode("utf-8"), "text/html; charset=utf-8")
+        self.send_bytes(401, login_html(error_text or "Неверный логин или пароль").encode("utf-8"), "text/html; charset=utf-8")
 
     def update_auth(self):
         payload = self.read_payload()
