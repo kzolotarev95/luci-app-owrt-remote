@@ -1302,7 +1302,7 @@ def verify_password_login(username, password, otp=""):
         totp = {}
     if totp.get("enabled"):
         if not verify_totp(totp.get("secret", ""), otp):
-            return False, "Неверный код 2FA", auth, "password+totp"
+            return False, "Неверный или пустой код 2FA. Введи 6-значный код из приложения.", auth, "password+totp"
         return True, "", profile, "password+totp"
     return True, "", profile, "password"
 
@@ -12336,6 +12336,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .inputAction svg{{width:18px;height:18px;stroke:currentColor}}
 .otpCard{{display:grid;gap:4px;width:min(100%,430px);justify-self:center;padding:0;border:0;border-radius:0;background:none}}
 .hint{{width:min(100%,430px);justify-self:center;margin:0;color:#b9adc9;font-size:var(--login-copy-size);line-height:1.35}}
+.hint.warn{{padding:10px 12px;border:1px solid rgba(245,158,11,.30);border-radius:14px;background:rgba(120,53,15,.18);color:#fde68a;font-weight:700}}
 #passwordModeHint{{text-align:center}}
 .captchaSection{{display:grid;grid-template-columns:1fr;gap:10px;width:min(100%,430px);justify-self:center;padding:14px 12px 12px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035)),rgba(19,14,32,.88)}}
 .captchaHeading{{color:#eef3ff;font-size:var(--login-copy-size);font-weight:800;line-height:1.2;text-align:center}}
@@ -12469,7 +12470,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
           </div>
           <div class="authTabsBody">
             <section class="authTabPanel is-active" id="passwordLoginPanel" role="tabpanel" aria-labelledby="passwordLoginTab" data-auth-panel="password">
-              <form class="login" method="post" action="/login">
+              <form class="login" method="post" action="/login" id="passwordLoginForm">
                 <div class="fieldGroup">
                   <div class="compactField">
                     <label class="fieldLabel" for="hubUsername">Логин</label>
@@ -12511,10 +12512,10 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                             <path d="M9.5 11.5l1.6 1.6l3.4-3.6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
                           </svg>
                         </span>
-                        <input id="hubOtp" name="otp" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" placeholder="Введите код из приложения 2FA">
+                        <input id="hubOtp" name="otp" inputmode="numeric" pattern="[0-9]{{{TOTP_DIGITS}}}" maxlength="{TOTP_DIGITS}" autocomplete="one-time-code" placeholder="Введите 6-значный код 2FA" aria-describedby="passwordModeHint">
                       </div>
                     </div>
-                    <div class="hint" id="passwordModeHint" hidden>Резервный вход через пароль. Когда 2FA включена, сюда нужен TOTP-код.</div>
+                    <div class="hint" id="passwordModeHint" hidden>Резервный вход через пароль. Когда 2FA включена, сюда нужен 6-значный TOTP-код.</div>
                   </div>
                   <div class="captchaSection">
                     <div class="captchaHeading">Капча: введи эти цифры</div>
@@ -12671,6 +12672,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 const hubUsername = document.getElementById('hubUsername');
 const hubPassword = document.getElementById('hubPassword');
 const hubOtp = document.getElementById('hubOtp');
+const passwordLoginForm = document.getElementById('passwordLoginForm');
 const authTabButtons = Array.from(document.querySelectorAll('[data-auth-tab]'));
 const authTabPanels = Array.from(document.querySelectorAll('[data-auth-panel]'));
 const passwordModeHint = document.getElementById('passwordModeHint');
@@ -12785,11 +12787,20 @@ function updateSshHintText(sshCount) {{
 }}
 
 function updateLoginMeta() {{
-  if (hubOtp) hubOtp.required = !!loginAuthMeta.totp_enabled;
+  if (hubOtp) {{
+    const totpEnabled = !!loginAuthMeta.totp_enabled;
+    hubOtp.required = totpEnabled;
+    hubOtp.placeholder = totpEnabled ? 'Введите 6-значный код 2FA' : 'Введите код из приложения 2FA';
+    hubOtp.setAttribute('aria-required', totpEnabled ? 'true' : 'false');
+    if (!totpEnabled) hubOtp.setCustomValidity('');
+  }}
   if (passwordModeHint) {{
     passwordModeHint.hidden = !loginAuthMeta.totp_enabled;
+    passwordModeHint.classList.toggle('warn', !!loginAuthMeta.totp_enabled);
     if (loginAuthMeta.totp_enabled) {{
-      passwordModeHint.textContent = '2FA включена: для входа по паролю обязателен TOTP-код.';
+      passwordModeHint.textContent = '2FA включена: для входа по паролю обязателен 6-значный TOTP-код из приложения.';
+    }} else {{
+      passwordModeHint.textContent = 'Резервный вход через пароль. Когда 2FA включена, сюда нужен 6-значный TOTP-код.';
     }}
   }}
   const invalidPasskeyCount = Number(loginAuthMeta.passkey_invalid_count || 0);
@@ -12868,6 +12879,27 @@ function refreshLoginFlowMeta() {{
     altAuthSummary.hidden = false;
     altAuthSummary.textContent = `${{passwordState}} Passkey: ${{passkeyState}} ED25519: ${{sshCount ? `готово (${{sshCount}})` : 'ожидает добавления ключа'}} Соцсервисы: ${{socialState}}`;
   }}
+}}
+
+if (hubOtp) {{
+  hubOtp.addEventListener('input', () => {{
+    hubOtp.setCustomValidity('');
+  }});
+}}
+
+if (passwordLoginForm) {{
+  passwordLoginForm.addEventListener('submit', (ev) => {{
+    if (!loginAuthMeta.totp_enabled || !hubOtp) return;
+    const otpValue = String(hubOtp.value || '').trim();
+    if (/^[0-9]{{{TOTP_DIGITS}}}$/.test(otpValue)) {{
+      hubOtp.setCustomValidity('');
+      return;
+    }}
+    ev.preventDefault();
+    hubOtp.setCustomValidity('Введи 6-значный код 2FA из приложения.');
+    hubOtp.reportValidity();
+    hubOtp.focus();
+  }});
 }}
 
 async function loadLoginMeta() {{
