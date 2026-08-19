@@ -213,7 +213,7 @@ flowchart LR
 <tr>
 <td align="center">
 
-<img src="assets/screenshots/hub-dashboard.jpg" alt="OpenWrt Remote Hub dashboard" width="100%" />
+<img src="assets/screenshots/hub-router-dashboard.jpg" alt="OpenWrt Remote Hub dashboard" width="100%" />
 
 <br>
 <b>Hub-панель</b>
@@ -228,29 +228,51 @@ flowchart LR
 <tr>
 <td width="50%" align="center">
 
-<img src="assets/screenshots/login-screen.jpg" alt="Login screen with captcha" width="320" />
+<img src="assets/screenshots/hub-login-password-2fa.jpg" alt="Hub login with password and 2FA" width="320" />
 
 <br>
-<b>Вход в Hub</b>
+<b>Вход по паролю + 2FA</b>
 <br>
-<sub>Логин, пароль и простая капча для защиты панели.</sub>
+<sub>Основной экран входа в Hub: логин, пароль, 6-значный TOTP-код и reCAPTCHA.</sub>
 
 </td>
 <td width="50%" align="center">
 
-<img src="assets/screenshots/access-settings.jpg" alt="Hub access and security settings" width="420" />
+<img src="assets/screenshots/hub-quick-login.jpg" alt="Quick login methods in Hub" width="420" />
 
 <br>
-<b>Безопасность Hub</b>
+<b>Быстрый вход</b>
 <br>
-<sub>Пароль, 2FA, Passkey, SSH ED25519, привязанные сервисы, ограниченные пользователи и уведомления.</sub>
+<sub>Passkey, SSH ED25519 подпись и вход через привязанные GitHub / VK ID аккаунты.</sub>
 
 </td>
 </tr>
 <tr>
 <td width="50%" align="center">
 
-<img src="assets/screenshots/traffic-clients.jpg" alt="Router traffic clients panel" width="360" />
+<img src="assets/screenshots/hub-access-security.jpg" alt="Hub access and security settings" width="420" />
+
+<br>
+<b>Безопасность и доступ</b>
+<br>
+<sub>Пароль, 2FA, Passkey, SSH ED25519, привязанные сервисы, ограниченные пользователи и уведомления.</sub>
+
+</td>
+<td width="50%" align="center">
+
+<img src="assets/screenshots/hub-vps-terminal.jpg" alt="VPS web terminal" width="100%" />
+
+<br>
+<b>VPS Terminal</b>
+<br>
+<sub>Веб-терминал VPS с быстрыми командами для обслуживания Hub, Xray, HTTPS и диагностики сервиса.</sub>
+
+</td>
+</tr>
+<tr>
+<td width="50%" align="center">
+
+<img src="assets/screenshots/router-traffic-clients.jpg" alt="Router traffic clients panel" width="360" />
 
 <br>
 <b>Клиенты Traffic</b>
@@ -260,12 +282,34 @@ flowchart LR
 </td>
 <td width="50%" align="center">
 
-<img src="assets/screenshots/vps-terminal.jpg" alt="VPS web terminal" width="100%" />
+<img src="assets/screenshots/router-wake-on-lan.jpg" alt="Wake-on-LAN panel in router card" width="360" />
 
 <br>
-<b>VPS Terminal</b>
+<b>Wake-on-LAN</b>
 <br>
-<sub>Веб-терминал VPS с быстрыми командами для обслуживания Hub, Xray, HTTPS и диагностики сервиса.</sub>
+<sub>Пробуждение устройств по MAC-адресу прямо из карточки роутера без отдельной админки.</sub>
+
+</td>
+</tr>
+<tr>
+<td width="50%" align="center">
+
+<img src="assets/screenshots/hub-effects-panel.jpg" alt="Hub effects panel" width="360" />
+
+<br>
+<b>Эффекты Hub</b>
+<br>
+<sub>Набор визуальных эффектов интерфейса: снег, дождь, орбиты, туманность, лучи и другие режимы.</sub>
+
+</td>
+<td width="50%" align="center">
+
+<img src="assets/screenshots/hub-router-dashboard.jpg" alt="OpenWrt router dashboard cards" width="360" />
+
+<br>
+<b>Карточки роутеров</b>
+<br>
+<sub>Живые карточки со статусом, моделью, памятью, температурой, SSH, LuCI и быстрыми действиями.</sub>
 
 </td>
 </tr>
