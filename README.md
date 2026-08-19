@@ -238,34 +238,34 @@ flowchart LR
 </td>
 <td width="50%" align="center">
 
-<img src="assets/screenshots/access-settings.png" alt="Access settings and sessions" width="420" />
+<img src="assets/screenshots/access-settings.jpg" alt="Hub access and security settings" width="420" />
 
 <br>
-<b>Доступ и сессии</b>
+<b>Безопасность Hub</b>
 <br>
-<sub>Смена логина/пароля и управление активными сессиями.</sub>
+<sub>Пароль, 2FA, Passkey, SSH ED25519, привязанные сервисы, ограниченные пользователи и уведомления.</sub>
 
 </td>
 </tr>
 <tr>
 <td width="50%" align="center">
 
-<img src="assets/screenshots/router-settings.png" alt="OpenWrt router settings" width="100%" />
+<img src="assets/screenshots/traffic-clients.jpg" alt="Router traffic clients panel" width="360" />
 
 <br>
-<b>Настройки роутера</b>
+<b>Клиенты Traffic</b>
 <br>
-<sub>Router ID, Hub URL, токены, Xray, reverse tags и SSH параметры.</sub>
+<sub>Список клиентов роутера с SSH-опросом и счетчиками входящего/исходящего трафика прямо в Hub.</sub>
 
 </td>
 <td width="50%" align="center">
 
-<img src="assets/screenshots/ssh-web-terminal.jpg" alt="SSH web terminal" width="100%" />
+<img src="assets/screenshots/vps-terminal.jpg" alt="VPS web terminal" width="100%" />
 
 <br>
-<b>SSH Web Terminal</b>
+<b>VPS Terminal</b>
 <br>
-<sub>Терминал OpenWrt прямо в браузере, удобно даже с телефона.</sub>
+<sub>Веб-терминал VPS с быстрыми командами для обслуживания Hub, Xray, HTTPS и диагностики сервиса.</sub>
 
 </td>
 </tr>
