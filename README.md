@@ -38,8 +38,6 @@
 Роутер сам подключается к VPS изнутри сети, а ты заходишь в Hub-панель и открываешь нужный роутер, LuCI или SSH Web Terminal.
 </p>
 
-<img width="1920" height="1852" alt="FireShot Capture 056 - OpenWrt Remote Hub -  wrthub developer li" src="https://github.com/user-attachments/assets/88a8a019-a4b0-4764-aeec-ab50330a0ca0" />
-
 
 <table>
 <tr>
@@ -840,53 +838,6 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 ---
 
 <div align="center">
-
-<h2>🧾 Мини-шпаргалка команд</h2>
-
-<table>
-<tr>
-<th align="center">Где</th>
-<th align="center">Команда</th>
-<th align="center">Что делает</th>
-</tr>
-<tr>
-<td align="center">VPS</td>
-<td align="center"><code>systemctl status owrt-remote</code></td>
-<td align="center">статус Hub</td>
-</tr>
-<tr>
-<td align="center">VPS</td>
-<td align="center"><code>systemctl status owrt-remote-xray</code></td>
-<td align="center">статус Xray reverse</td>
-</tr>
-<tr>
-<td align="center">VPS</td>
-<td align="center"><code>curl -sS http://127.0.0.1:8088/health</code></td>
-<td align="center">healthcheck Hub</td>
-</tr>
-<tr>
-<td align="center">VPS</td>
-<td align="center"><code>sudo nginx -t</code></td>
-<td align="center">проверка nginx-конфига</td>
-</tr>
-<tr>
-<td align="center">OpenWrt</td>
-<td align="center"><code>owrt-remote doctor</code></td>
-<td align="center">диагностика агента</td>
-</tr>
-<tr>
-<td align="center">OpenWrt</td>
-<td align="center"><code>owrt-remote status</code></td>
-<td align="center">текущий статус</td>
-</tr>
-<tr>
-<td align="center">OpenWrt</td>
-<td align="center"><code>owrt-remote heartbeat</code></td>
-<td align="center">отправить heartbeat</td>
-</tr>
-</table>
-
-</div>
 
 ---
 
