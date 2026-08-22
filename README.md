@@ -19,7 +19,7 @@
   <img alt="License" src="https://img.shields.io/badge/License-MIT-22C55E?style=flat-square">
 </p>
 
-<h3>Удалённый доступ к OpenWrt через свой VPS</h3>
+<h3>Удалённый доступ к OpenWrt через свой VPS</h3> Сайт скрипта : https://hub.freedev.app
 
 <p>
   Карточки роутеров · Online/Offline · LuCI · SSH Web Terminal · Xray Reverse · HTTPS через nginx
