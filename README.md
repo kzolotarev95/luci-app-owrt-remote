@@ -145,7 +145,7 @@ password: admin
 <h3> VPS: поставить Hub, Xray, firewall и HTTPS одной командой</h3>
 
 ```sh
-curl -fsSL "https://gitlab.com/kzolotarev95/luci-app-owrt-remote/-/raw/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo sh
 ```
 
 Установщик спросит:
@@ -165,7 +165,7 @@ hub.example.com
 <h3> OpenWrt: поставить Remote Hub на роутер</h3>
 
 ```sh
-wget -O - "https://gitlab.com/kzolotarev95/luci-app-owrt-remote/-/raw/main/install.sh?v=$(date +%s)" | sh
+wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/install.sh?v=$(date +%s)" | sh
 ```
 
 Проверка на роутере:
@@ -426,7 +426,7 @@ flowchart LR
 </div>
 
 ```sh
-curl -fsSL "https://gitlab.com/kzolotarev95/luci-app-owrt-remote/-/raw/main/vps/install-vps.sh?v=$(date +%s)" | sudo env RESET_LOGIN=0 sh
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/install-vps.sh?v=$(date +%s)" | sudo env RESET_LOGIN=0 sh
 ```
 
 <div align="center">
@@ -436,7 +436,7 @@ curl -fsSL "https://gitlab.com/kzolotarev95/luci-app-owrt-remote/-/raw/main/vps/
 </div>
 
 ```sh
-curl -fsSL "https://gitlab.com/kzolotarev95/luci-app-owrt-remote/-/raw/main/vps/enable-https.sh?v=$(date +%s)" | sudo sh -s -- YOUR_VPS_IP
+curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" | sudo sh -s -- YOUR_VPS_IP
 ```
 
 </details>

@@ -4,7 +4,7 @@ set -eu
 
 export PATH="/bin:/sbin:/usr/bin:/usr/sbin:${PATH:-}"
 
-RAW_URL="${RAW_URL:-https://gitlab.com/kzolotarev95/luci-app-owrt-remote/-/raw/main}"
+RAW_URL="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 ROOT="${ROOT:-/}"
 SCRIPT_DIR="$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd)"
 

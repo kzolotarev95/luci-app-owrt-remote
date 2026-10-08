@@ -3,7 +3,7 @@ set -u
 
 APP_NAME="OpenWrt Remote Hub"
 INSTALLER_VERSION="2026-08-17-https-bootstrap-v1"
-RAW_BASE="${RAW_URL:-https://gitlab.com/kzolotarev95/luci-app-owrt-remote/-/raw/main}"
+RAW_BASE="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 XRAY_INSTALL_SCRIPT_URL="${XRAY_INSTALL_SCRIPT_URL:-https://github.com/XTLS/Xray-install/raw/main/install-release.sh}"
 STATE_DIR="${OWRT_REMOTE_STATE_DIR:-/var/lib/owrt-remote}"
 HUB_LOGIN="${HUB_LOGIN:-admin}"
@@ -273,7 +273,7 @@ print_result() {
 	if [ "${HTTPS_OK:-0}" != "1" ]; then
 		info ""
 		info "Включить HTTPS вручную:"
-		info '  curl -fsSL "https://gitlab.com/kzolotarev95/luci-app-owrt-remote/-/raw/main/vps/enable-https.sh?v=$(date +%s)" | sudo sh -s -- '"$host"
+		info '  curl -fsSL "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main/vps/enable-https.sh?v=$(date +%s)" | sudo sh -s -- '"$host"
 	fi
 	info "============================================================"
 }
