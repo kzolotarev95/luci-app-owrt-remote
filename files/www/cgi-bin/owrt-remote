@@ -155,7 +155,9 @@ clear_config() {
 
 apply_xray_settings() {
 	local script script_file output rc
-	script="$(param xray_settings_script)"
+	# HTML textarea POSTs use CRLF, even when the copied Hub commands use LF.
+	# BusyBox ash treats the trailing CR as part of keywords such as then/fi.
+	script="$(param xray_settings_script | tr -d '\r')"
 	output="${TMPDIR:-/tmp}/owrt-remote-apply.$$"
 	script_file="${TMPDIR:-/tmp}/owrt-remote-apply-script.$$"
 	rc=0
@@ -172,7 +174,19 @@ apply_xray_settings() {
 	} >"$script_file"
 	chmod 600 "$script_file" 2>/dev/null || true
 
-	if sh "$script_file" >"$output" 2>&1; then
+	# Check the complete script before any UCI command can change the router.
+	if sh -n "$script_file" >"$output" 2>&1; then
+		:
+	else
+		rc=$?
+		set_result "Ошибка применения Xray настроек" "Синтаксическая ошибка в командах. Настройки не изменены.
+$(cat "$output")
+rc=$rc" "bad"
+		rm -f "$script_file" "$output"
+		return
+	fi
+
+	if sh -e "$script_file" >"$output" 2>&1; then
 		set_result "Xray настройки применены" "$(cat "$output")" "ok"
 	else
 		rc=$?
