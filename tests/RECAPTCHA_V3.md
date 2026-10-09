@@ -1,4 +1,4 @@
-# reCAPTCHA v3 в OpenWrt Remote Hub v111
+# reCAPTCHA v3 в OpenWrt Remote Hub v112
 
 В меню владельца, в блоке «Капча на экране входа», доступны цифры,
 Google reCAPTCHA v2 Checkbox и Google reCAPTCHA v3. Установка обновления
@@ -74,8 +74,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "vps\deploy-recaptcha-v3
 непосредственно перед попыткой. Резервные копии при повторном запуске
 не перезаписываются:
 
-* `/opt/owrt-remote/owrt-remote-hub.py.bak-before-recaptcha-v3-v111`
-* `/opt/owrt-remote/captcha-before-recaptcha-v3-v111.json` (режим 0600).
+* `/opt/owrt-remote/owrt-remote-hub.py.bak-before-recaptcha-v3-v112`
+* `/opt/owrt-remote/captcha-before-recaptcha-v3-v112.json` (режим 0600).
 
 Скрипт рассчитан на стандартные пути установленного Hub:
 `/opt/owrt-remote/owrt-remote-hub.py`, `/var/lib/owrt-remote/hub-auth.json`

@@ -131,7 +131,7 @@ class HubFixture:
         assert "groups" in json.loads(self.request("/api/router-groups"))
         assert "notifications" in json.loads(self.request("/api/notifications"))
         assert self.request("/access/test-router/") == b"router proxy fixture"
-        assert b"v111" in self.request("/")
+        assert b"v112" in self.request("/")
         self.app.snapshot_router_states()
 
     def __exit__(self, *args):

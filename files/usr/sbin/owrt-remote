@@ -523,13 +523,14 @@ render_client_config() {
 
 	router_id="$(safe_id "$(uci_get router_id main)")"
 	vps_host="$(uci_get vps_host '')"
-	local wan_sockopt
+	local wan_sockopt wan_xray_device
 	wan_sockopt=''
 	if truthy "$(uci_get wan_direct 0)"; then
 		command -v wan_prepare >/dev/null 2>&1 || die "WAN helper missing: $WAN_HELPER"
 		wan_prepare || die "не удалось подготовить прямое соединение через WAN"
 		vps_host="$(wan_resolve_host "$vps_host")" || die "VPS host не разрешается через WAN DNS"
-		wan_sockopt=", \"sockopt\": {\"mark\": $((PODKOP_BYPASS_MARK)), \"interface\": \"$(json_escape "$(wan_device)")\"}"
+		wan_xray_device="$(wan_device)" || die "выбранный WAN интерфейс отключился"
+		wan_sockopt=", \"sockopt\": {\"mark\": $((PODKOP_BYPASS_MARK)), \"interface\": \"$(json_escape "$wan_xray_device")\"}"
 	fi
 	vps_port="$(safe_num "$(uci_get vps_port 8443)" 8443)"
 	uuid="$(uci_get vless_uuid '')"
@@ -839,6 +840,7 @@ send_heartbeat() {
 	if truthy "$(uci_get wan_direct 0)"; then
 		command -v wan_prepare >/dev/null 2>&1 || die "WAN helper missing: $WAN_HELPER"
 		wan_prepare || return 1
+		wan_reconcile_xray
 	fi
 
 	endpoint="${hub_url%/}/api/heartbeat"
@@ -862,6 +864,39 @@ send_heartbeat() {
 	rm -f "$tmp" "$response"
 	[ "$used" = "1" ] || die "hub_url/public_url/vps_host пустые"
 	return 1
+}
+
+wan_reconcile_xray() {
+	local config bound device
+	config="$(uci_get xray_config /etc/xray/owrt-remote-client.json)"
+	[ -r "$config" ] || return 0
+	bound="$(jsonfilter -i "$config" -e '@.outbounds[@.tag="vps-interconn"].streamSettings.sockopt.interface' 2>/dev/null)"
+	device="$(wan_device)" || return 1
+	[ "$bound" != "$device" ] || return 0
+	xray_running || return 0
+	wan_reconnect_xray "$bound" "$device"
+}
+
+wan_reconnect_xray() {
+	local restart_lock owner
+	restart_lock="${TMPDIR:-/tmp}/owrt-remote-wan-restart"
+	# A concurrent heartbeat must not enqueue another restart of the same tunnel.
+	if ! mkdir "$restart_lock" 2>/dev/null; then
+		owner="$(cat "$restart_lock/pid" 2>/dev/null)"
+		case "$owner" in ''|*[!0-9]*) return 0 ;; esac
+		kill -0 "$owner" 2>/dev/null && return 0
+		rm -f "$restart_lock/pid"
+		rmdir "$restart_lock" 2>/dev/null || return 0
+		mkdir "$restart_lock" 2>/dev/null || return 0
+	fi
+	log "Reconnecting reverse tunnel after WAN change: $1 -> $2"
+	(
+		trap 'rm -f "$restart_lock/pid"; rmdir "$restart_lock" 2>/dev/null || true' EXIT
+		trap 'exit 1' INT TERM
+		sleep 1
+		/etc/init.d/owrt-remote restart >/dev/null 2>&1 || log 'WAN failover tunnel restart failed'
+	) </dev/null >/dev/null 2>&1 &
+	printf '%s' "$!" >"$restart_lock/pid"
 }
 
 heartbeat_mark_ok() {
@@ -923,6 +958,8 @@ status() {
 	printf 'vps_host: %s\n' "$(uci_get vps_host '')"
 	printf 'vps_host_mode: %s\n' "$(vps_host_mode)"
 	printf 'wan_direct: %s\n' "$(uci_get wan_direct 0)"
+	printf 'wan_interfaces: %s\n' "$(uci_get wan_interface wan)"
+	printf 'wan_active_interface: %s\n' "$(cat "$WAN_STATE/active-interface" 2>/dev/null)"
 	printf 'vps_port: %s\n' "$(uci_get vps_port 8443)"
 	printf 'xray_bin: %s\n' "$(xray_bin_path)"
 	printf 'xray_config: %s\n' "$(uci_get xray_config /etc/xray/owrt-remote-client.json)"

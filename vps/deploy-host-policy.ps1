@@ -5,7 +5,7 @@ param(
     [string]$PinnedVpsHost = '193.233.82.38',
     [ValidatePattern('^[a-zA-Z0-9_-]+$')][string]$WanInterface = 'wan',
     [switch]$PreserveConnectionSettings,
-    [ValidatePattern('^[a-zA-Z0-9_-]+$')][string]$BackupName = 'host-policy-v111',
+    [ValidatePattern('^[a-zA-Z0-9_-]+$')][string]$BackupName = 'host-policy-v112',
     [switch]$PrepareOnly
 )
 
@@ -90,7 +90,7 @@ test -s "$config"
 if [ '__ACTION__' = Install ]; then
     for item in agent wan.sh cgi init; do test -s "$stage/$item"; sh -n "$stage/$item"; done
     test -s "$stage/luci"
-    for item in cgi luci; do grep -F -q 'v111' "$stage/$item"; done
+    for item in cgi luci; do grep -F -q 'v112' "$stage/$item"; done
     # curl is needed to preserve HTTPS SNI and bypass the local DNS/proxy.
     if ! command -v curl >/dev/null 2>&1; then
         if command -v opkg >/dev/null 2>&1; then opkg update && opkg install curl ca-bundle
@@ -156,16 +156,16 @@ if [ '__ACTION__' = Install ]; then
         exit 1
     fi
     /usr/sbin/owrt-remote status
-    grep -F -q 'v111' /www/cgi-bin/owrt-remote
-    grep -F -q 'v111' /www/luci-static/resources/view/owrt_remote.js
-    echo HOST_POLICY_ROUTER_V111_OK
+    grep -F -q 'v112' /www/cgi-bin/owrt-remote
+    grep -F -q 'v112' /www/luci-static/resources/view/owrt_remote.js
+    echo HOST_POLICY_ROUTER_V112_OK
 else
     test -f "$backup/complete"
     save_files "$stage/previous"
     changed=1
     restore_files "$backup"
     /usr/sbin/owrt-remote status
-    echo HOST_POLICY_ROUTER_V111_ROLLBACK_OK
+    echo HOST_POLICY_ROUTER_V112_ROLLBACK_OK
 fi
 '@
 } else {
@@ -180,7 +180,7 @@ fi
 set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-host-policy-v111
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-host-policy-v112
 changed=0
 cleanup() {
     code=$?
@@ -200,7 +200,7 @@ test -s "$target"
 python_bin=/opt/owrt-remote/venv/bin/python
 [ -x "$python_bin" ] || python_bin=python3
 if [ '__ACTION__' = Install ]; then
-    grep -F -q 'v111' "$stage/hub.py"
+    grep -F -q 'v112' "$stage/hub.py"
     "$python_bin" -m py_compile "$stage/hub.py"
     OWRT_HOST_POLICY_HUB_SOURCE="$stage/hub.py" "$python_bin" "$stage/test_host_policy.py" HostPolicyTests -v
     OWRT_RESOURCE_HUB_SOURCE="$stage/hub.py" "$python_bin" "$stage/resources.py" -v
@@ -226,7 +226,7 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
 done
 test "$healthy" = 1
 cmp "$candidate" "$target"
-printf '\nHOST_POLICY_VPS_V111_%s_OK\n' '__ACTION__'
+printf '\nHOST_POLICY_VPS_V112_%s_OK\n' '__ACTION__'
 '@
 }
 

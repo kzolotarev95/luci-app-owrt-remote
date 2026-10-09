@@ -17,8 +17,8 @@ if ($Action -eq 'Install') {
 set -Eeuo pipefail
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-recaptcha-v3-v111
-captcha_backup=/opt/owrt-remote/captcha-before-recaptcha-v3-v111.json
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-recaptcha-v3-v112
+captcha_backup=/opt/owrt-remote/captcha-before-recaptcha-v3-v112.json
 candidate=$target.new-__UPLOAD_NAME__
 changed=0
 cleanup() {
@@ -45,7 +45,7 @@ if [ ! -x "$python_bin" ]; then python_bin=python3; fi
 import ast, pathlib, sys
 source = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
 tree = ast.parse(source)
-assert 'v111' in source
+assert 'v112' in source
 assert 'v108' not in source
 assert 'CAPTCHA_MODE_RECAPTCHA_V3' in source
 assert 'prepareLoginRecaptcha' in source
@@ -88,7 +88,7 @@ pid=$(systemctl show owrt-remote -p MainPID --value)
 test "$pid" -gt 0
 printf 'PID=%s FD=%s\n' "$pid" "$(find /proc/$pid/fd -maxdepth 1 -type l | wc -l)"
 systemctl --no-pager --full status owrt-remote | sed -n '1,16p'
-echo RECAPTCHA_V3_V111_OK
+echo RECAPTCHA_V3_V112_OK
 '@
 } elseif ($Action -eq 'Rollback') {
     $RemoteScript = @'
@@ -96,8 +96,8 @@ echo RECAPTCHA_V3_V111_OK
 set -Eeuo pipefail
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-recaptcha-v3-v111
-captcha_backup=/opt/owrt-remote/captcha-before-recaptcha-v3-v111.json
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-recaptcha-v3-v112
+captcha_backup=/opt/owrt-remote/captcha-before-recaptcha-v3-v112.json
 candidate=$target.rollback-__UPLOAD_NAME__
 changed=0
 restore_captcha() {

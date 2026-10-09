@@ -14,7 +14,7 @@ $RemoteScript = @'
 set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-vps-widgets-v111
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-vps-widgets-v112
 candidate=$target.new-__UPLOAD_NAME__
 changed=0
 cleanup() {
@@ -37,6 +37,7 @@ python_bin=/opt/owrt-remote/venv/bin/python
 [ -x "$python_bin" ] || python_bin=python3
 if [ '__ACTION__' = Install ]; then
     test -s "$stage/hub.py"
+    grep -F -q 'v112' "$stage/hub.py"
     "$python_bin" -m py_compile "$stage/hub.py"
     OWRT_VPS_WIDGETS_HUB_SOURCE="$stage/hub.py" "$python_bin" "$stage/tests.py" -v
     if [ ! -e "$backup" ]; then cp -p "$target" "$backup"; fi
@@ -66,7 +67,7 @@ if [ '__ACTION__' = Install ]; then
     code=$(curl -sS --max-time 5 -o "$stage/response.json" -w '%{http_code}' http://127.0.0.1:8088/api/vps/resources)
     test "$code" = 401
 fi
-printf '\nVPS_WIDGETS_V111_%s_OK\n' '__ACTION__'
+printf '\nVPS_WIDGETS_V112_%s_OK\n' '__ACTION__'
 '@
 $RemoteScript = $RemoteScript.Replace('__UPLOAD_NAME__', $UploadName).Replace('__ACTION__', $Action)
 try {

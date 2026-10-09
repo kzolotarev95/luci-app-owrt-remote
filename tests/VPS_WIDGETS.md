@@ -1,4 +1,4 @@
-# Виджеты ресурсов VPS (v111)
+# Виджеты ресурсов VPS (v112)
 
 Три карточки ЦП, ОЗУ и ДИСК находятся над кнопками «Рестарт Xray VPS»,
 профилем и выходом. На ПК ширина и высота совпадают с кнопками под ними.
@@ -23,7 +23,7 @@ vCPU и объёмы занятой/общей памяти и диска.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\Documents\openwrt overlay\vps\deploy-vps-widgets.ps1" -Vps "root@193.233.82.38" -Action Install
 ```
 
-После `VPS_WIDGETS_V111_Install_OK` обновите страницу через Ctrl+F5.
+После `VPS_WIDGETS_V112_Install_OK` обновите страницу через Ctrl+F5.
 Скрипт загружает локальный файл, проверяет его до замены, перезапускает
 службу и проверяет health. При ошибке после замены восстанавливает файл
 перед текущей попыткой. База данных и настройки не заменяются.
@@ -33,8 +33,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\
 ```
 
 Откат использует неизменяемую копию первого состояния до установки:
-`/opt/owrt-remote/owrt-remote-hub.py.bak-before-vps-widgets-v111`.
-Успешное завершение: `VPS_WIDGETS_V111_Rollback_OK`.
+`/opt/owrt-remote/owrt-remote-hub.py.bak-before-vps-widgets-v112`.
+Успешное завершение: `VPS_WIDGETS_V112_Rollback_OK`.
 
 ## Локальные проверки
 

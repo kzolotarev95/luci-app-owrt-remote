@@ -18,7 +18,7 @@ if ($Action -eq 'Install') {
 set -Eeuo pipefail
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-resource-fix-v111
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-resource-fix-v112
 candidate=$target.new-__UPLOAD_NAME__
 changed=0
 cleanup() {
@@ -45,7 +45,7 @@ if [ ! -x "$python_bin" ]; then python_bin=python3; fi
 import ast, pathlib, sys
 source = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
 tree = ast.parse(source)
-assert 'v111' in source
+assert 'v112' in source
 assert 'v108' not in source
 factory = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'connect')
 assert any(isinstance(item, ast.Name) and item.id == 'contextmanager' for item in factory.decorator_list)
@@ -78,7 +78,7 @@ pid=$(systemctl show owrt-remote -p MainPID --value)
 test "$pid" -gt 0
 printf 'PID=%s FD=%s\n' "$pid" "$(find /proc/$pid/fd -maxdepth 1 -type l | wc -l)"
 systemctl --no-pager --full status owrt-remote | sed -n '1,16p'
-echo RESOURCE_FIX_V111_OK
+echo RESOURCE_FIX_V112_OK
 '@
 } elseif ($Action -eq 'Rollback') {
     $RemoteScript = @'
@@ -86,7 +86,7 @@ echo RESOURCE_FIX_V111_OK
 set -Eeuo pipefail
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-resource-fix-v111
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-resource-fix-v112
 candidate=$target.rollback-__UPLOAD_NAME__
 changed=0
 cleanup() {

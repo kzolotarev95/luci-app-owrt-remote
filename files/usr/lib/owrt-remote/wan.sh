@@ -40,20 +40,62 @@ wan_url_port() {
 	printf '%s' "$port"
 }
 
-wan_device() {
+wan_interfaces() {
+	printf '%s\n' "${OWRT_REMOTE_WAN_INTERFACE:-$(uci_get wan_interface wan)}" | awk '
+		{ for (i=1; i<=NF; i++) {
+			if ($i !~ /^[a-zA-Z0-9_.:-]+$/) exit 1
+			if (!seen[$i]++) { printf "%s%s", sep, $i; sep=" " }
+		} }
+	'
+}
+
+wan_interface_device() {
 	local iface device
-	iface="${OWRT_REMOTE_WAN_INTERFACE:-$(uci_get wan_interface wan)}"
+	iface="$1"
 	device="$(ubus call "network.interface.$iface" status 2>/dev/null | jsonfilter -e '@.l3_device' 2>/dev/null)"
 	[ -n "$device" ] || return 1
 	case "$device" in *[!a-zA-Z0-9_.:-]*) return 1 ;; esac
+	case "$device" in tun*|sing*|podkop*|lo) return 1 ;; esac
 	printf '%s' "$device"
 }
 
+wan_interface_ready() {
+	local device
+	device="$(wan_interface_device "$1")" || return 1
+	ip -4 route show table main default dev "$device" | grep -q '^default'
+}
+
+wan_select_interface() {
+	local interfaces current iface
+	interfaces="$(wan_interfaces)" || return 1
+	current="$(cat "$WAN_STATE/active-interface" 2>/dev/null)"
+	# Keep a working uplink rather than interrupting it when a primary returns.
+	if [ -n "$current" ]; then
+		case " $interfaces " in *" $current "*)
+			if wan_interface_ready "$current"; then printf '%s' "$current"; return; fi
+			;;
+		esac
+	fi
+	for iface in $interfaces; do
+		if wan_interface_ready "$iface"; then printf '%s' "$iface"; return; fi
+	done
+	return 1
+}
+
+wan_device() {
+	local iface
+	iface="${OWRT_REMOTE_ACTIVE_WAN_INTERFACE:-}"
+	[ -n "$iface" ] || iface="$(wan_select_interface)" || return 1
+	wan_interface_device "$iface"
+}
+
 wan_dns_server() {
-	local dns
+	local dns iface
 	dns="$(uci_get wan_dns '')"
 	if [ -z "$dns" ]; then
-		dns="$(ubus call "network.interface.$(uci_get wan_interface wan)" status 2>/dev/null | jsonfilter -e '@["dns-server"][0]' 2>/dev/null)"
+		iface="${OWRT_REMOTE_ACTIVE_WAN_INTERFACE:-}"
+		[ -n "$iface" ] || iface="$(wan_select_interface)" || return 1
+		dns="$(ubus call "network.interface.$iface" status 2>/dev/null | jsonfilter -e '@["dns-server"][0]' 2>/dev/null)"
 	fi
 	[ -n "$dns" ] || dns=1.1.1.1
 	wan_ip_literal "$dns" || return 1
@@ -232,7 +274,7 @@ wan_preflight() {
 	for tool in ip nft ubus jsonfilter curl nslookup; do
 		command -v "$tool" >/dev/null 2>&1 || { log "WAN direct requires $tool"; return 1; }
 	done
-	device="$(wan_device)" || { log "WAN interface is not ready: $(uci_get wan_interface wan)"; return 1; }
+	device="$(wan_device)" || { log "No selected WAN interface is ready: $(uci_get wan_interface wan)"; return 1; }
 	case "$device" in tun*|sing*|podkop*) log "WAN direct cannot use a proxy/TUN device: $device"; return 1 ;; esac
 	ip -4 route show table main default dev "$device" | grep -q '^default' || {
 		log "WAN has no IPv4 default route on $device"; return 1
@@ -243,7 +285,8 @@ wan_preflight() {
 }
 
 wan_prepare_locked() {
-	local device dns gateway family host ip url port
+	local device dns gateway family host ip url port previous OWRT_REMOTE_ACTIVE_WAN_INTERFACE
+	OWRT_REMOTE_ACTIVE_WAN_INTERFACE="$(wan_select_interface)" || { log 'No selected WAN has a physical IPv4 default route'; return 1; }
 	wan_preflight || return 1
 	device="$(wan_device)" || return 1
 	dns="$(wan_dns_server)" || return 1
@@ -288,6 +331,12 @@ wan_prepare_locked() {
 	mv "$WAN_STATE/endpoints.dedup.$$" "$WAN_STATE/endpoints.new.$$"
 	wan_apply_destination_rules "$dns" "$WAN_STATE/endpoints.new.$$" || return 1
 	mv "$WAN_STATE/endpoints.new.$$" "$WAN_STATE/endpoints"
+	previous="$(cat "$WAN_STATE/active-interface" 2>/dev/null)"
+	printf '%s\n' "$OWRT_REMOTE_ACTIVE_WAN_INTERFACE" >"$WAN_STATE/active-interface.new.$$"
+	mv "$WAN_STATE/active-interface.new.$$" "$WAN_STATE/active-interface"
+	if [ -n "$previous" ] && [ "$previous" != "$OWRT_REMOTE_ACTIVE_WAN_INTERFACE" ]; then
+		log "WAN failover: $previous -> $OWRT_REMOTE_ACTIVE_WAN_INTERFACE"
+	fi
 }
 
 wan_prepare() (
@@ -307,14 +356,19 @@ wan_prepare() (
 		sleep 1
 	done
 	printf '%s' "$$" >"$WAN_STATE/lock/pid"
-	trap 'rm -f "$WAN_STATE/lock/pid" "$WAN_STATE/endpoints.new.$$" "$WAN_STATE/endpoints.dedup.$$" "$WAN_STATE/targets.new.$$" "$WAN_STATE/target-keys.$$"; rmdir "$WAN_STATE/lock" 2>/dev/null || true' EXIT
+	trap 'rm -f "$WAN_STATE/lock/pid" "$WAN_STATE/endpoints.new.$$" "$WAN_STATE/endpoints.dedup.$$" "$WAN_STATE/targets.new.$$" "$WAN_STATE/target-keys.$$" "$WAN_STATE/active-interface.new.$$"; rmdir "$WAN_STATE/lock" 2>/dev/null || true' EXIT
 	trap 'exit 1' INT TERM
 	wan_prepare_locked
 )
 
 wan_post_json() {
-	local url token file host port ip device
+	local url token file host port ip device selected OWRT_REMOTE_ACTIVE_WAN_INTERFACE
 	url="$1"; token="$2"; file="$3"
+	selected="$(wan_select_interface)" || return 1
+	if [ "$selected" != "$(cat "$WAN_STATE/active-interface" 2>/dev/null)" ]; then
+		wan_prepare || return 1
+	fi
+	OWRT_REMOTE_ACTIVE_WAN_INTERFACE="$(cat "$WAN_STATE/active-interface")" || return 1
 	host="$(wan_url_host "$url")"
 	port="$(wan_url_port "$url")" || return 1
 	ip="$(wan_endpoint_ip "$url")" || return 1
@@ -347,13 +401,14 @@ wan_cleanup() {
 		rm -f "$WAN_STATE/route-owner-$family"
 	done
 	# Only volatile resolver cache owned by this module.
-	rm -f "$WAN_STATE"/resolve-* "$WAN_STATE/endpoints" "$WAN_STATE/targets"
+	rm -f "$WAN_STATE"/resolve-* "$WAN_STATE/endpoints" "$WAN_STATE/targets" "$WAN_STATE/active-interface"
 	rm -f "$WAN_STATE/lock/pid"
 	rmdir "$WAN_STATE/lock" "$WAN_STATE" 2>/dev/null || true
 }
 
 wan_diagnostics() {
 	printf 'vps_host=%s mode=%s WAN_direct=%s\n' "$(uci_get vps_host '')" "$(vps_host_mode)" "$(uci_get wan_direct 0)"
+	printf 'WAN_selected=%s WAN_active=%s\n' "$(wan_interfaces)" "$(cat "$WAN_STATE/active-interface" 2>/dev/null)"
 	printf 'WAN_device=%s WAN_DNS=%s\n' "$(wan_device)" "$(wan_dns_server)"
 	printf 'System DNS (compare with WAN DNS):\n'
 	nslookup -timeout=3 -retry=1 "$(wan_url_host "$(uci_get hub_url '')")" 2>&1 || true

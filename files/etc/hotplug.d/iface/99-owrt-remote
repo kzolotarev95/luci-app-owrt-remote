@@ -8,7 +8,7 @@ LAST_RESTART_FILE="$STATE_DIR/last-restart"
 QUIET_SECONDS=18
 RESTART_COOLDOWN=45
 
-[ "$ACTION" = "ifup" ] || [ "$ACTION" = "ifupdate" ] || [ "$ACTION" = "ifrestart" ] || exit 0
+[ "$ACTION" = "ifup" ] || [ "$ACTION" = "ifupdate" ] || [ "$ACTION" = "ifrestart" ] || [ "$ACTION" = "ifdown" ] || exit 0
 
 case "$(uci -q get owrtremote.main.enabled 2>/dev/null || echo 0)" in
 	1|yes|true|on|enabled) ;;
@@ -26,10 +26,18 @@ if [ -n "$INTERFACE" ] && command -v ubus >/dev/null 2>&1; then
 	)"
 fi
 
-case "$INTERFACE:$DEVICE:$proto" in
-	wan:*:*|wan6:*:*|*:pppoe*:*|*:ppp*:*|*:*:pppoe|*:*:ppp) ;;
-	*) exit 0 ;;
-esac
+direct_wan="$(uci -q get owrtremote.main.wan_direct 2>/dev/null || echo 0)"
+if [ "$direct_wan" = 1 ]; then
+	selected_wans="$(uci -q get owrtremote.main.wan_interface 2>/dev/null || echo wan)"
+	[ -n "$selected_wans" ] || selected_wans=wan
+	case " $selected_wans " in *" $INTERFACE "*) ;; *) exit 0 ;; esac
+else
+	[ "$ACTION" != ifdown ] || exit 0
+	case "$INTERFACE:$DEVICE:$proto" in
+		wan:*:*|wan6:*:*|*:pppoe*:*|*:ppp*:*|*:*:pppoe|*:*:ppp) ;;
+		*) exit 0 ;;
+	esac
+fi
 
 network_ready() {
 	if command -v ip >/dev/null 2>&1 && ip route get 1.1.1.1 >/dev/null 2>&1; then
@@ -95,6 +103,13 @@ printf '%s\n' "$stamp" >"$STAMP_FILE"
 	[ "$(cat "$STAMP_FILE" 2>/dev/null)" = "$stamp" ] || exit 0
 	sleep 2
 	[ "$(cat "$STAMP_FILE" 2>/dev/null)" = "$stamp" ] || exit 0
+
+	if [ "$direct_wan" = 1 ]; then
+		# Heartbeat prepares the selected uplink and reconnects Xray only if its
+		# binding changed. A restored primary must not interrupt a healthy backup.
+		/usr/sbin/owrt-remote heartbeat wan-reconnect >/dev/null 2>&1 || true
+		exit 0
+	fi
 
 	now="$(safe_num "$(date +%s 2>/dev/null || echo 0)" 0)"
 	last_restart="$(safe_num "$(cat "$LAST_RESTART_FILE" 2>/dev/null)" 0)"
