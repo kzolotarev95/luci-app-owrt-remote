@@ -154,6 +154,9 @@ ROUTER_PROXY_LIMITERS = {}
 STATIC_CACHE_LOCK = threading.Lock()
 NOTIFICATIONS_LOCK = threading.Lock()
 NOTIFICATIONS_COND = threading.Condition()
+NOTIFICATION_WAIT_LOCK = threading.Lock()
+NOTIFICATION_WAIT_ACTIVE = {}
+NOTIFICATION_WAIT_MAX = max(1, int(os.environ.get("OWRT_REMOTE_NOTIFICATION_WAIT_MAX", "64")))
 PUSH_LOCK = threading.Lock()
 TRAFFIC_COUNTERS_LOCK = threading.Lock()
 AUTH_STATE_LOCK = threading.Lock()
@@ -2183,7 +2186,11 @@ def list_notifications(after=0, limit=60, after_serial=0):
     items = load_notifications()
     latest_serial = max((int(item.get("serial") or 0) for item in items), default=0)
     if after_serial > latest_serial:
-        after_serial = 0
+        # A cleared/pruned notification file must not turn a stale browser
+        # cursor into an immediate full-list response.  Returning no items
+        # lets the caller advance from the current server serial and keep the
+        # long-poll blocked until a genuinely new notification arrives.
+        return []
     if after_serial > 0:
         items = [item for item in items if int(item.get("serial") or 0) > after_serial]
     elif after > 0:
@@ -2204,6 +2211,10 @@ def wait_for_notifications(after_serial=0, timeout=25, limit=60):
         timeout = max(1, min(60, int(timeout or 25)))
     except (TypeError, ValueError):
         timeout = 25
+    # A clear/prune can make a browser cursor newer than the current file.
+    # Clamp it before entering the wait so the next newly-created serial is
+    # delivered instead of being hidden behind the stale cursor.
+    after_serial = min(after_serial, latest_notification_serial())
     deadline = time.time() + timeout
     while True:
         items = list_notifications(limit=limit, after_serial=after_serial)
@@ -2214,6 +2225,40 @@ def wait_for_notifications(after_serial=0, timeout=25, limit=60):
             return []
         with NOTIFICATIONS_COND:
             NOTIFICATIONS_COND.wait(timeout=remaining)
+
+
+def notification_wait_context(session_token="", client_id="", client_ip=""):
+    """Return a bounded per-browser context key for long-poll admission."""
+    token = str(session_token or "")[:160]
+    client_id = str(client_id or "")[:96]
+    if not re.fullmatch(r"[A-Za-z0-9_-]{8,96}", client_id):
+        client_id = "ip:" + str(client_ip or "unknown")[:96]
+    return hashlib.sha256((token + "\0" + client_id).encode("utf-8", "replace")).hexdigest()
+
+
+def claim_notification_wait(key):
+    now = time.monotonic()
+    with NOTIFICATION_WAIT_LOCK:
+        for active_key, started in list(NOTIFICATION_WAIT_ACTIVE.items()):
+            if now - started > 90:
+                NOTIFICATION_WAIT_ACTIVE.pop(active_key, None)
+        if key in NOTIFICATION_WAIT_ACTIVE or len(NOTIFICATION_WAIT_ACTIVE) >= NOTIFICATION_WAIT_MAX:
+            return False
+        NOTIFICATION_WAIT_ACTIVE[key] = now
+        return True
+
+
+def release_notification_wait(key):
+    with NOTIFICATION_WAIT_LOCK:
+        NOTIFICATION_WAIT_ACTIVE.pop(key, None)
+
+
+def notification_wait_metrics():
+    with NOTIFICATION_WAIT_LOCK:
+        return {
+            "active": len(NOTIFICATION_WAIT_ACTIVE),
+            "limit": NOTIFICATION_WAIT_MAX,
+        }
 
 
 def clear_notifications():
@@ -11123,6 +11168,66 @@ let lastNotificationTs = initialNotificationTs();
 let lastNotificationSerial = initialNotificationSerial();
 let notificationWaitAbort = false;
 let notificationWaitRunning = false;
+let notificationWaitController = null;
+let notificationLeaderTimer = 0;
+let notificationLeaderTab = '';
+const NOTIFICATION_CLIENT_KEY = 'owrtNotificationClientId';
+const NOTIFICATION_LEASE_KEY = 'owrtNotificationLease';
+const NOTIFICATION_LEASE_MS = 90000;
+
+function notificationClientId() {{
+  try {{
+    let value = localStorage.getItem(NOTIFICATION_CLIENT_KEY);
+    if (!/^[A-Za-z0-9_-]{{8,96}}$/.test(value || '')) {{
+      value = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(36).slice(2))
+        .replace(/[^A-Za-z0-9_-]/g, '').slice(0, 96);
+      localStorage.setItem(NOTIFICATION_CLIENT_KEY, value);
+    }}
+    return value;
+  }} catch (e) {{
+    // Let the server fall back to the client IP when storage is unavailable;
+    // random per-tab ids would defeat the single-poll admission guard.
+    return '';
+  }}
+}}
+
+const notificationClient = notificationClientId();
+const notificationTab = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 96);
+
+function notificationLeaderState() {{
+  try {{
+    const raw = localStorage.getItem(NOTIFICATION_LEASE_KEY);
+    const state = raw ? JSON.parse(raw) : null;
+    return state && typeof state === 'object' ? state : null;
+  }} catch (e) {{
+    return null;
+  }}
+}}
+
+function notificationIsLeader() {{
+  const now = Date.now();
+  const current = notificationLeaderState();
+  if (!current || Number(current.expires || 0) <= now || current.tab === notificationTab) {{
+    try {{
+      localStorage.setItem(NOTIFICATION_LEASE_KEY, JSON.stringify({{tab: notificationTab, expires: now + NOTIFICATION_LEASE_MS}}));
+      notificationLeaderTab = notificationTab;
+      return true;
+    }} catch (e) {{
+      notificationLeaderTab = notificationTab;
+      return true;
+    }}
+  }}
+  notificationLeaderTab = String(current.tab || '');
+  return notificationLeaderTab === notificationTab;
+}}
+
+function releaseNotificationLeader() {{
+  try {{
+    const current = notificationLeaderState();
+    if (current && current.tab === notificationTab) localStorage.removeItem(NOTIFICATION_LEASE_KEY);
+  }} catch (e) {{}}
+  notificationLeaderTab = '';
+}}
 
 function storeNotificationCursor() {{
   localStorage.setItem('owrtLastNotificationTs', String(lastNotificationTs));
@@ -11167,7 +11272,9 @@ async function loadNotifications({{initial = false}} = {{}}) {{
   const data = await res.json().catch(() => ({{}}));
   const items = Array.isArray(data.notifications) ? data.notifications : [];
   if (!items.length && !initial) {{
-    lastNotificationSerial = Math.max(lastNotificationSerial, Number(data.serial || 0));
+    const serverSerial = Number(data.serial || 0);
+    lastNotificationSerial = serverSerial < lastNotificationSerial
+      ? serverSerial : Math.max(lastNotificationSerial, serverSerial);
     storeNotificationCursor();
     return;
   }}
@@ -11177,19 +11284,37 @@ async function loadNotifications({{initial = false}} = {{}}) {{
 async function waitNotificationsLoop() {{
   if (!authIsOwner()) return;
   if (notificationWaitRunning || notificationWaitAbort) return;
+  if (!notificationIsLeader()) {{
+    if (!notificationLeaderTimer) notificationLeaderTimer = setTimeout(() => {{
+      notificationLeaderTimer = 0;
+      waitNotificationsLoop();
+    }}, 5000);
+    return;
+  }}
   notificationWaitRunning = true;
   try {{
     while (!notificationWaitAbort) {{
+      if (!notificationIsLeader()) break;
       const params = new URLSearchParams({{
         after_serial: String(lastNotificationSerial || 0),
         timeout: '25',
-        limit: '60'
+        limit: '60',
+        client_id: notificationClient
       }});
       let res;
       try {{
-        res = await fetch('/api/notifications/wait?' + params.toString(), {{cache: 'no-store'}});
+        notificationWaitController = new AbortController();
+        res = await fetch('/api/notifications/wait?' + params.toString(), {{cache: 'no-store', signal: notificationWaitController.signal}});
       }} catch (e) {{
+        if (notificationWaitAbort) break;
         await new Promise(resolve => setTimeout(resolve, 2000));
+        continue;
+      }} finally {{
+        notificationWaitController = null;
+      }}
+      if (res.status === 429) {{
+        const retry = Math.max(2000, Math.min(15000, Number(res.headers.get('Retry-After') || 5) * 1000));
+        await new Promise(resolve => setTimeout(resolve, retry));
         continue;
       }}
       if (!res.ok) {{
@@ -11202,13 +11327,28 @@ async function waitNotificationsLoop() {{
         applyNotificationItems(items);
         continue;
       }}
-      lastNotificationSerial = Math.max(lastNotificationSerial, Number(data.serial || 0));
+      const serverSerial = Number(data.serial || 0);
+      lastNotificationSerial = serverSerial < lastNotificationSerial
+        ? serverSerial : Math.max(lastNotificationSerial, serverSerial);
       storeNotificationCursor();
     }}
   }} finally {{
     notificationWaitRunning = false;
   }}
 }}
+
+function stopNotificationWait() {{
+  notificationWaitAbort = true;
+  if (notificationWaitController) notificationWaitController.abort();
+  if (notificationLeaderTimer) {{ clearTimeout(notificationLeaderTimer); notificationLeaderTimer = 0; }}
+  releaseNotificationLeader();
+}}
+
+window.addEventListener('pagehide', stopNotificationWait);
+window.addEventListener('pageshow', () => {{
+  notificationWaitAbort = false;
+  waitNotificationsLoop();
+}});
 
 function bytesToBase64(bytes) {{
   let binary = '';
@@ -15704,6 +15844,23 @@ class Handler(BaseHTTPRequestHandler):
         return self.server.app
 
     def log_message(self, fmt, *args):
+        # Successful long-poll and terminal-read responses are expected to be
+        # frequent.  Nginx and journald already retain their failures; avoid
+        # writing a line for every normal 200 response while keeping 4xx/5xx
+        # diagnostics visible.
+        path = urllib.parse.urlsplit(str(self.path or "")).path
+        status = 0
+        if len(args) > 1:
+            try:
+                status = int(str(args[1]))
+            except (TypeError, ValueError):
+                status = 0
+        quiet = (
+            path == "/api/notifications/wait"
+            or re.fullmatch(r"/api/ssh-session/[^/]+/read", path or "")
+        )
+        if quiet and 200 <= status < 400:
+            return
         sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), fmt % args))
 
     def parsed(self):
@@ -15905,9 +16062,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.send_bytes(200, body, content_type)
 
-    def send_json(self, status, payload):
+    def send_json(self, status, payload, extra_headers=None):
         body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        self.send_bytes(status, body, "application/json; charset=utf-8")
+        self.send_bytes(status, body, "application/json; charset=utf-8", extra_headers=extra_headers)
 
     def require_admin(self):
         if self.admin_ok():
@@ -18737,6 +18894,8 @@ exit 127
             result = {"ok": True}
             if self.query().get('panel-update') == ['1']:
                 result['revision'] = HUB_LOADED_REVISION
+            if self.query().get("request-load-fix") == ["1"]:
+                result["notification_wait"] = notification_wait_metrics()
             self.send_json(200, result)
             return
         if path == '/api/hub-update':
@@ -18915,17 +19074,38 @@ exit 127
             if not self.require_owner(json_mode=True):
                 return
             query = self.query()
-            self.send_json(
-                200,
-                {
-                    "notifications": wait_for_notifications(
-                        query.get("after_serial", ["0"])[0],
-                        query.get("timeout", ["25"])[0],
-                        query.get("limit", ["60"])[0],
-                    ),
-                    "serial": latest_notification_serial(),
-                },
+            key = notification_wait_context(
+                self.current_session_token(),
+                query.get("client_id", [""])[0],
+                self.client_ip(),
             )
+            if not claim_notification_wait(key):
+                self.send_json(
+                    429,
+                    {
+                        "ok": False,
+                        "busy": True,
+                        "notifications": [],
+                        "serial": latest_notification_serial(),
+                        "error": "для этого клиента уже выполняется long-poll",
+                    },
+                    extra_headers=[("Retry-After", "5")],
+                )
+                return
+            try:
+                self.send_json(
+                    200,
+                    {
+                        "notifications": wait_for_notifications(
+                            query.get("after_serial", ["0"])[0],
+                            query.get("timeout", ["25"])[0],
+                            query.get("limit", ["60"])[0],
+                        ),
+                        "serial": latest_notification_serial(),
+                    },
+                )
+            finally:
+                release_notification_wait(key)
             return
         if path == "/api/push/vapid-public-key":
             if not self.require_owner(json_mode=True):

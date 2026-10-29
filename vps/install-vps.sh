@@ -152,6 +152,44 @@ PY
 	fi
 }
 
+install_log_limits() {
+	$SUDO mkdir -p /etc/systemd/journald.conf.d /etc/nginx/conf.d
+	$SUDO tee /etc/systemd/journald.conf.d/owrt-remote-limits.conf >/dev/null <<'EOF'
+[Journal]
+SystemMaxUse=256M
+SystemKeepFree=512M
+MaxRetentionSec=7day
+RateLimitIntervalSec=30s
+RateLimitBurst=2000
+Compress=yes
+EOF
+	$SUDO tee /etc/nginx/conf.d/owrt-remote-log-policy.conf >/dev/null <<'EOF'
+# Successful long-poll and terminal reads are expected traffic.
+# Keep 4xx/5xx responses in access.log for diagnostics.
+map "$request_uri:$status" $owrt_remote_access_log {
+	default 1;
+	~^/api/notifications/wait[^:]*:2[0-9][0-9]$ 0;
+	~^/api/ssh-session/[^/]+/read[^:]*:2[0-9][0-9]$ 0;
+}
+access_log /var/log/nginx/access.log combined if=$owrt_remote_access_log;
+EOF
+	$SUDO tee /etc/logrotate.d/owrt-remote >/dev/null <<'EOF'
+/var/log/nginx/*.log {
+	daily
+	rotate 7
+	size 50M
+	missingok
+	notifempty
+	compress
+	delaycompress
+	copytruncate
+}
+EOF
+	$SUDO systemctl daemon-reload >/dev/null 2>&1 || true
+	$SUDO systemctl reload-or-restart systemd-journald >/dev/null 2>&1 || true
+	$SUDO journalctl --vacuum-size=256M --vacuum-time=7d >/dev/null 2>&1 || true
+}
+
 install_xray_service() {
 	xray_bin="$(command -v xray || command -v /usr/local/bin/xray || command -v /usr/bin/xray || true)"
 	[ -n "$xray_bin" ] || return 0
@@ -291,6 +329,7 @@ main() {
 	install_xray_binary
 	install_files
 	install_python_deps_v2
+	install_log_limits
 	install_xray_service
 	open_firewall
 	start_hub
