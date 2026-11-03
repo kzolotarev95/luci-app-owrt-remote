@@ -228,6 +228,7 @@ install_file "etc/init.d/owrt-remote" 0755
 install_file "etc/hotplug.d/iface/99-owrt-remote" 0755
 install_config
 install_file "www/cgi-bin/owrt-remote" 0755
+install_file "www/luci-static/resources/owrt_remote_effects.js" 0644
 install_file "usr/share/luci/menu.d/luci-app-owrt-remote.json" 0644
 install_file "usr/share/rpcd/acl.d/luci-app-owrt-remote.json" 0644
 install_file "www/luci-static/resources/view/owrt_remote.js" 0644
