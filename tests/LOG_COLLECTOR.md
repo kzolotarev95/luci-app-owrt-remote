@@ -1,4 +1,4 @@
-# Journal collector liveness fix (local v119)
+# Journal collector liveness fix (local v120)
 
 ## What the reported evidence does and does not prove
 
@@ -68,7 +68,7 @@ WAN/DNS or policy routing. VPS files and hosting URLs are untouched.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\Documents\openwrt overlay\vps\deploy-log-collector-fix.ps1" -Router "root@192.168.2.1" -Action Install
 ```
 
-Retained backup: `/root/owrt-remote-backup-before-log-collector-v119`.
+Retained backup: `/root/owrt-remote-backup-before-log-collector-v120`.
 Rollback leaves journal data intact:
 
 ```powershell

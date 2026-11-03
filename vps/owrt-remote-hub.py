@@ -5198,7 +5198,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <div class="brand">
       <div class="desktopHeader">
         <div class="desktopHeaderTop">
-          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v119</span></span></h1>
+          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v120</span></span></h1>
           <button class="badge hubUpdateButton" data-hub-update type="button" {'hidden' if not is_owner else ''}>Проверить обновление панели</button>
           <div class="routerSearchDock" id="routerSearchDock">
             <button class="routerSearchToggle" id="routerSearchToggle" type="button" aria-expanded="false" aria-controls="routerSearchPanel" data-active="false">
@@ -5536,7 +5536,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     </div>
     {vps_resource_widgets_html(mobile=True, resources=vps_resources)}
     <div class="mobileSearchDock" id="mobileHubUpdateDock">
-      <span class="mobileSearchVersion">v119</span>
+      <span class="mobileSearchVersion">v120</span>
       <button class="badge hubUpdateButton" data-hub-update type="button" {'hidden' if not is_owner else ''}>Проверить обновление панели</button>
     </div>
     <div class="mobileSearchDock" id="mobileSeasonDock" aria-label="Зимние эффекты">
@@ -13283,7 +13283,7 @@ button:hover{{filter:brightness(1.06)}}
       <form class="login" method="post" action="/login">
     {error_html}
     <span class="brand">
-      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v119</span></span></h1>
+      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v120</span></span></h1>
     </span>
     <label for="hubUsername">Логин</label>
     <input id="hubUsername" name="username" autocomplete="off" autofocus required>
@@ -13755,7 +13755,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                 <circle cx="65" cy="59" r="3" fill="#E5F2FF"/>
               </svg>
             </div>
-            <h2 class="brandTitle">OpenWrt Remote Hub <span class="brandVersion">v119</span></h2>
+            <h2 class="brandTitle">OpenWrt Remote Hub <span class="brandVersion">v120</span></h2>
           </div>
         </div>
         <div class="brandBottom">
@@ -14797,12 +14797,12 @@ echo 'Скрипт загружен; запуск установки…'
 
 
 def router_update_name(row, reported_name=''):
-    """Prefer UCI's router_name; keep the stable router ID a separate field."""
+    """Honor the Hub rename before UCI names; keep the stable ID separate."""
     try:
         cached_name = json.loads(row.get('status_json') or '{}').get('name')
     except (ValueError, AttributeError):
         cached_name = ''
-    for value in (reported_name, cached_name, row.get('custom_name')):
+    for value in (row.get('custom_name'), reported_name, cached_name):
         name = re.sub(r'[\x00-\x1f\x7f]', ' ', str(value or '')).strip()[:200]
         if name:
             return name
@@ -17548,7 +17548,15 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
                 return
         job = manager.snapshot()
         with self.app.conn() as conn:
-            routers = [router_update_status(dict(row)) for row in list_router_rows(conn)]
+            rows = [dict(row) for row in list_router_rows(conn)]
+        routers = [router_update_status(row) for row in rows]
+        if job:
+            # A queue may predate a rename, including an in-flight SSH probe.
+            # Overlay current Hub names on the copy without altering its results.
+            custom_names = {row['id']: router_update_name(row) for row in rows if row.get('custom_name')}
+            for item in job['items']:
+                if item['id'] in custom_names:
+                    item['name'] = custom_names[item['id']]
         self.send_json(200, {'ok': True, 'job': job, 'routers': routers})
 
     def ssh_ws(self):

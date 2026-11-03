@@ -29,7 +29,7 @@ class RequestLoadDeployTests(unittest.TestCase):
             "owrt-remote-limits.conf",
             "MaxRetentionSec=7day",
             "rotate 7",
-            "REQUEST_LOAD_FIX_V119_",
+            "REQUEST_LOAD_FIX_V120_",
             "restore_optional",
         ):
             self.assertIn(marker, source)

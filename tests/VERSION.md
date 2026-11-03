@@ -1,33 +1,33 @@
-# Версия v119
+# Версия v120
 
-Версия v119 указана в панели VPS, на экране входа, в мобильной шапке,
+Версия v120 указана в панели VPS, на экране входа, в мобильной шапке,
 CGI и представлении LuCI роутера. Скрипты локальной установки, их проверки
 и документация используют тот же номер. Ссылки источников не менялись.
 
 Установить локальную сборку на VPS:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\Documents\openwrt overlay\vps\deploy-version-v119.ps1" -Vps "root@193.233.82.38" -Action Install
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\Documents\openwrt overlay\vps\deploy-version-v120.ps1" -Vps "root@138.124.79.58" -Action Install
 ```
 
 В ходе текущего тестирования обновления через кнопку вместо обычной установки
 нужно использовать тестовые сборки из [HUB_UPDATE.md](HUB_UPDATE.md):
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\Documents\openwrt overlay\vps\test-hub-self-update.ps1" -Vps "root@193.233.82.38" -Action Retest
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\Documents\openwrt overlay\vps\test-hub-self-update.ps1" -Vps "root@138.124.79.58" -Action Retest
 ```
 
 Установить версию интерфейса роутера (CGI и LuCI):
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\Documents\openwrt overlay\vps\deploy-version-v119.ps1" -Router "root@192.168.2.1" -Action Install
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\Documents\openwrt overlay\vps\deploy-version-v120.ps1" -Router "root@192.168.2.1" -Action Install
 ```
 
 Скрипт сохраняет первую резервную копию и проверяет файлы до установки.
 На VPS дополнительно сверяется SHA-256 запущенной сборки через `/health?panel-update=1`;
 ответ от другой сборки не подтверждает успешную установку.
 Обновление через кнопку не позволяет установить более старую опубликованную
-версию поверх локальной v119. Для исправлений с тем же номером версии
+версию поверх локальной v120. Для исправлений с тем же номером версии
 по-прежнему проверяется SHA-256. Отдельный баннер «последняя версия» скрыт:
 при отсутствии обновлений остаётся зелёная кнопка «Обновление не требуется».
 При ошибке после замены возвращает файлы предыдущей попытки.
@@ -37,8 +37,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\
 Для отката обычной установки VPS либо роутера повторить соответствующую
 команду с `-Action Rollback`. Копии:
 
-- VPS: `/opt/owrt-remote/owrt-remote-hub.py.bak-before-v119`.
-- Роутер: `/root/owrt-remote-backup-before-v119` (CGI и LuCI).
+- VPS: `/opt/owrt-remote/owrt-remote-hub.py.bak-before-v120`.
+- Роутер: `/root/owrt-remote-backup-before-v120` (CGI и LuCI).
 
 Для возврата из тестового режима обновления VPS повторить команду
 `test-hub-self-update.ps1` с `-Action Restore`: его копия хранится отдельно,

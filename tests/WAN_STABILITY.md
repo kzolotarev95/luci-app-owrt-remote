@@ -1,4 +1,4 @@
-# Исправление запуска прямого WAN в v119
+# Исправление запуска прямого WAN в v120
 
 На проблемном роутере обычный `wan` был поднят, имел IPv4-адрес,
 маршрут и рабочий DNS. Проверка `ip -4 route show table 210` возвращала
@@ -16,7 +16,7 @@ instance после шести падений. Из-за остановленн�
 конфигурации останавливают агент до запуска Xray.
 
 Изменены только `files/usr/lib/owrt-remote/wan.sh` и
-`files/usr/sbin/owrt-remote`. Версия остаётся v119. Настройки Podkop,
+`files/usr/sbin/owrt-remote`. Версия остаётся v120. Настройки Podkop,
 LAN и источники установки GitHub/GitLab не меняются. Обновление VPS
 для этого исправления не требуется.
 
@@ -28,7 +28,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\
 
 Скрипт перед заменой проверяет синтаксис и подготовку WAN новым helper,
 сохраняет агент, helper, UCI и Xray-конфигурацию в
-`/root/owrt-remote-backup-before-wan-stability-v119`. Сохранённая копия
+`/root/owrt-remote-backup-before-wan-stability-v120`. Сохранённая копия
 не перезаписывается при повторной установке. После замены выполняются
 перезапуск, проверка процесса Xray и настоящий heartbeat до Hub.
 При ошибке восстанавливается состояние до текущей попытки.

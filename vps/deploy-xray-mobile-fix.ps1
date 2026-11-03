@@ -14,7 +14,7 @@ $RemoteScript = @'
 set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/www/cgi-bin/owrt-remote
-backup_dir=/root/owrt-remote-backup-before-xray-mobile-v119
+backup_dir=/root/owrt-remote-backup-before-xray-mobile-v120
 backup=$backup_dir/owrt-remote
 candidate=$target.new-__UPLOAD_NAME__
 changed=0

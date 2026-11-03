@@ -1,4 +1,4 @@
-# Восстановление Xray после пропажи выбранного WAN (v119)
+# Восстановление Xray после пропажи выбранного WAN (v120)
 
 Сообщения `No selected WAN has a physical IPv4 default route`, ошибки
 генерации конфигурации и `crash loop 6 crashes` описывают последовательность:
@@ -50,7 +50,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\
 ```
 
 Скрипт обновляет агент и WAN helper парой, сохраняет первую копию в
-`/root/owrt-remote-backup-before-wan-recovery-v119`, проверяет shell-синтаксис
+`/root/owrt-remote-backup-before-wan-recovery-v120`, проверяет shell-синтаксис
 и побайтовое совпадение. Затем перезагружает только работающий Heartbeat,
 чтобы в RAM не остался прежний shell с уже загруженными функциями.
 Туннель при исправном Xray не перезапускается. Остановленный Heartbeat

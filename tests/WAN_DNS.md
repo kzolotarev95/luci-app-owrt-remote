@@ -1,4 +1,4 @@
-# WAN IPv4 DNS fallback (local v119 fix)
+# WAN IPv4 DNS fallback (local v120 fix)
 
 `files/usr/lib/owrt-remote/wan.sh` now explicitly queries
 `nslookup -type=A -timeout=3 -retry=1 "$host" "$dns"`.
@@ -58,7 +58,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\
 ```
 
 The installer saves the first backup at
-`/root/owrt-remote-backup-before-wan-dns-v119/wan.sh`, checks shell syntax and
+`/root/owrt-remote-backup-before-wan-dns-v120/wan.sh`, checks shell syntax and
 reloads only the supervised heartbeat instance so it reads the new helper.
 It does not restart Xray or regenerate configuration/routing. Installation
 verification/reload failures restore the file from that attempt.

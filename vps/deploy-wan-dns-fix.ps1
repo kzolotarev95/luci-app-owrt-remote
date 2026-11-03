@@ -14,7 +14,7 @@ $RemoteScript = @'
 set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/usr/lib/owrt-remote/wan.sh
-backup_dir=/root/owrt-remote-backup-before-wan-dns-v119
+backup_dir=/root/owrt-remote-backup-before-wan-dns-v120
 changed=0
 phase=preflight
 heartbeat_pid() {

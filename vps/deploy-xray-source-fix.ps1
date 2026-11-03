@@ -14,7 +14,7 @@ $RemoteScript = @'
 set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/usr/sbin/owrt-remote
-backup_dir=/root/owrt-remote-backup-before-xray-source-v119
+backup_dir=/root/owrt-remote-backup-before-xray-source-v120
 runtime=/tmp/owrt-xray/xray
 changed=0
 phase=preflight

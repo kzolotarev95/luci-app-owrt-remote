@@ -15,7 +15,7 @@ set -eu
 
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/root/owrt-remote-backup-before-request-load-v119
+backup=/root/owrt-remote-backup-before-request-load-v120
 policy=/etc/nginx/conf.d/owrt-remote-log-policy.conf
 journal=/etc/systemd/journald.conf.d/owrt-remote-limits.conf
 logrotate=/etc/logrotate.d/owrt-remote
@@ -184,7 +184,7 @@ PY
 done
 [ "$healthy" = 1 ]
 
-printf '\nBackup: %s\nREQUEST_LOAD_FIX_V119_%s_OK\n' "$backup" '__ACTION__'
+printf '\nBackup: %s\nREQUEST_LOAD_FIX_V120_%s_OK\n' "$backup" '__ACTION__'
 '@
 
 $RemoteScript = $RemoteScript.Replace('__UPLOAD_NAME__', $UploadName).Replace('__ACTION__', $Action)

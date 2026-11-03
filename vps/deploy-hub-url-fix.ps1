@@ -34,7 +34,7 @@ if ($Target -eq 'Router') {
 #!/bin/sh
 set -eu
 stage=/tmp/__UPLOAD_NAME__
-backup=/root/owrt-remote-backup-before-hub-url-v119
+backup=/root/owrt-remote-backup-before-hub-url-v120
 chmod 700 "$stage"
 config=/etc/config/owrtremote
 changed=0
@@ -99,7 +99,7 @@ if [ '__ACTION__' = Install ]; then
     grep -F -q 'heartbeat_set_url_if_changed()' "$stage/agent"
     grep -F -q 'reason=https-downgrade' "$stage/agent"
     for item in agent wan.sh; do grep -F -q -- '--post301' "$stage/$item"; done
-    for item in cgi luci; do grep -F -q 'v119' "$stage/$item"; done
+    for item in cgi luci; do grep -F -q 'v120' "$stage/$item"; done
     if [ ! -e "$backup" ]; then
         save_files "$stage/retained-backup"
         mv "$stage/retained-backup" "$backup"
@@ -138,7 +138,7 @@ else
     changed=1
     restore_files "$backup"
 fi
-printf '\nBackup: %s\nHUB_URL_ROUTER_V119_%s_OK\n' "$backup" '__ACTION__'
+printf '\nBackup: %s\nHUB_URL_ROUTER_V120_%s_OK\n' "$backup" '__ACTION__'
 '@
 } else {
     $Payloads = @{
@@ -152,7 +152,7 @@ set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
 chmod 700 "$stage"
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-hub-url-v119
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-hub-url-v120
 candidate=$target.new-__UPLOAD_NAME__
 changed=0
 cleanup() {
@@ -174,7 +174,7 @@ python_bin=/opt/owrt-remote/venv/bin/python
 [ -x "$python_bin" ] || python_bin=python3
 if [ '__ACTION__' = Install ]; then
     grep -F -q 'def router_hub_origins(' "$stage/hub.py"
-    grep -F -q 'v119' "$stage/hub.py"
+    grep -F -q 'v120' "$stage/hub.py"
     "$python_bin" -m py_compile "$stage/hub.py"
     OWRT_HOST_POLICY_HUB_SOURCE="$stage/hub.py" "$python_bin" "$stage/host_policy.py" HostPolicyTests -v
     OWRT_RESOURCE_HUB_SOURCE="$stage/hub.py" "$python_bin" "$stage/resources.py" IntegrationTests -v
@@ -198,7 +198,7 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
 done
 test "$healthy" = 1
 cmp "$source_file" "$target"
-printf '\nBackup: %s\nHUB_URL_VPS_V119_%s_OK\n' "$backup" '__ACTION__'
+printf '\nBackup: %s\nHUB_URL_VPS_V120_%s_OK\n' "$backup" '__ACTION__'
 '@
 }
 $RemoteScript = $RemoteScript.Replace('__UPLOAD_NAME__', $UploadName).Replace('__ACTION__', $Action).Replace('__HUB_URL__', $HubUrl)

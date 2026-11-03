@@ -7,7 +7,7 @@ import test_update_status_ui_deploy as vps_deploy
 
 class ReverseRouterDeploymentTests(router_deploy.XrayValidationDeploymentTests):
     deploy_name = 'deploy-xray-reverse-fix.ps1'
-    backup_name = 'owrt-remote-backup-before-xray-reverse-v119'
+    backup_name = 'owrt-remote-backup-before-xray-reverse-v120'
     success_marker = 'XRAY_REVERSE_ROUTER_Install_OK'
 
     @staticmethod
@@ -78,7 +78,7 @@ test_restart() {
 
 class ReverseVpsDeploymentTests(vps_deploy.UpdateStatusDeployTests):
     deploy_file = 'deploy-xray-reverse-vps.ps1'
-    backup_name = 'hub.py.bak-before-xray-reverse-v119'
+    backup_name = 'hub.py.bak-before-xray-reverse-v120'
     success_marker = 'XRAY_REVERSE_VPS_Install_OK'
 
 

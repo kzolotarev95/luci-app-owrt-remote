@@ -17,7 +17,7 @@ $RemoteScript = @'
 #!/bin/sh
 set -eu
 stage=/tmp/__UPLOAD_NAME__
-backup_dir=/root/owrt-remote-backup-before-xray-validation-v119
+backup_dir=/root/owrt-remote-backup-before-xray-validation-v120
 changed=0
 phase=preflight
 item_path() {

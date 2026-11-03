@@ -6,7 +6,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$UploadName = 'owrt-group-colors-v119-' + [guid]::NewGuid().ToString('N')
+$UploadName = 'owrt-group-colors-v120-' + [guid]::NewGuid().ToString('N')
 $StageRoot = Join-Path ([System.IO.Path]::GetTempPath()) $UploadName
 $Utf8 = [System.Text.UTF8Encoding]::new($false)
 
@@ -15,7 +15,7 @@ $RemoteScript = @'
 set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-group-colors-v119
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-group-colors-v120
 candidate=$target.new-__UPLOAD_NAME__
 changed=0
 
@@ -57,7 +57,7 @@ if [ '__ACTION__' = Install ]; then
 from pathlib import Path
 import sys
 source = Path(sys.argv[1]).read_text(encoding='utf-8')
-required = ('v119', '#routerForm select option,#routerGroupFilter option', 'background-color:#221a34', 'id="backupDownload"', 'id="backupRestore"')
+required = ('v120', '#routerForm select option,#routerGroupFilter option', 'background-color:#221a34', 'id="backupDownload"', 'id="backupRestore"')
 if 'class="backupCmds"' in source:
     print('Old backup command instructions remain in candidate', file=sys.stderr)
     raise SystemExit(1)
@@ -106,7 +106,7 @@ if [ "$healthy" -ne 1 ]; then
     exit 1
 fi
 cmp "$source_file" "$target"
-printf '\nBackup: %s\nGROUP_COLORS_V119_%s_OK\n' "$backup" '__ACTION__'
+printf '\nBackup: %s\nGROUP_COLORS_V120_%s_OK\n' "$backup" '__ACTION__'
 '@
 
 $RemoteScript = $RemoteScript.Replace('__UPLOAD_NAME__', $UploadName).Replace('__ACTION__', $Action)

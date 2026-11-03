@@ -67,7 +67,7 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(fetch.call_args.args[0].full_url, source + '/vps/owrt-remote-hub.py')
             data = self.manager.snapshot()
             self.assertTrue(data['available'])
-            self.assertEqual(data['remote_version'], 'v119')
+            self.assertEqual(data['remote_version'], 'v120')
             self.assertEqual(data['remote_revision'], hashlib.sha256(NEW).hexdigest())
         self.assertEqual(self.target.read_bytes(), SOURCE)
 

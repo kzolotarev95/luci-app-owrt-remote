@@ -16,7 +16,7 @@ $RemoteScript = @'
 #!/bin/sh
 set -eu
 stage=/tmp/__UPLOAD_NAME__
-backup_dir=/root/owrt-remote-backup-before-xray-apk-v119
+backup_dir=/root/owrt-remote-backup-before-xray-apk-v120
 key_file=/etc/owrt-remote/web.key
 key_candidate=$key_file.new-__UPLOAD_NAME__
 changed=0

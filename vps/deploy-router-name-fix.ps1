@@ -1,13 +1,12 @@
 param(
-    [Parameter(Mandatory = $true, ParameterSetName = 'Vps')][ValidateNotNullOrEmpty()][string]$Vps,
-    [Parameter(Mandatory = $true, ParameterSetName = 'Router')][ValidateNotNullOrEmpty()][string]$Router,
+    [Parameter(Mandatory = $true)][ValidateNotNullOrEmpty()][string]$Vps,
     [ValidateSet('Install', 'Rollback')][string]$Action = 'Install',
     [switch]$PrepareOnly
 )
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$UploadName = 'owrt-version-v119-' + [guid]::NewGuid().ToString('N')
+$UploadName = 'owrt-router-name-fix-' + [guid]::NewGuid().ToString('N')
 $StageRoot = Join-Path ([System.IO.Path]::GetTempPath()) $UploadName
 $Utf8 = [System.Text.UTF8Encoding]::new($false)
 
@@ -16,7 +15,7 @@ $RemoteScript = @'
 set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-v119
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-router-name-fix-v120
 candidate=$target.new-__UPLOAD_NAME__
 changed=0
 
@@ -55,19 +54,22 @@ if [ '__ACTION__' = Install ]; then
     echo 'Validating candidate...'
     "$python_bin" -m py_compile "$stage/hub.py"
     "$python_bin" - "$stage/hub.py" <<'PY'
+import ast
+import json
 from pathlib import Path
+import re
 import sys
 source = Path(sys.argv[1]).read_text(encoding='utf-8')
-required = ('v119', 'def hub_update_require_version(', 'def hub_update_older_version(',
-            "else if (state.checked && !state.checking) message('');")
-if 'v' + '118' in source:
-    print('Old UI version remains in candidate', file=sys.stderr)
-    raise SystemExit(1)
-missing = [marker for marker in required if marker not in source]
-if missing:
-    for marker in missing:
-        print('Missing marker:', repr(marker), file=sys.stderr)
-    raise SystemExit(1)
+module = ast.parse(source)
+function = next(node for node in module.body
+                if isinstance(node, ast.FunctionDef) and node.name == 'router_update_name')
+namespace = {'json': json, 're': re}
+exec(compile(ast.Module(body=[function], type_ignores=[]), '<name-check>', 'exec'), namespace)
+row = {'id': 'main', 'custom_name': 'Renamed in Hub', 'status_json': '{"name":"Old heartbeat name"}'}
+if namespace['router_update_name'](row, 'Old SSH name') != row['custom_name']:
+    raise SystemExit('Candidate does not prioritize Hub router names')
+if "custom_names = {row['id']: router_update_name(row)" not in source:
+    raise SystemExit('Candidate does not refresh names in existing queues')
 print('Candidate validation OK')
 PY
     if [ ! -e "$backup" ]; then
@@ -133,82 +135,13 @@ if [ "$healthy" -ne 1 ]; then
 fi
 cat "$stage/health-check"
 cmp "$source_file" "$target"
-printf '\nBackup: %s\nHUB_V119_%s_OK\n' "$backup" '__ACTION__'
-'@
-
-$RouterScript = @'
-#!/bin/sh
-set -eu
-stage=/tmp/__UPLOAD_NAME__
-backup=/root/owrt-remote-backup-before-v119
-cgi=/www/cgi-bin/owrt-remote
-luci=/www/luci-static/resources/view/owrt_remote.js
-changed=0
-cleanup() {
-    code=$?
-    trap - EXIT
-    if [ "$code" -ne 0 ]; then
-        echo "Router version __ACTION__ failed (rc=$code)." >&2
-        if [ "$changed" = 1 ]; then
-            echo 'Restoring the previous router UI files...' >&2
-            cp -p "$stage/previous-cgi" "$cgi.new-__UPLOAD_NAME__" && mv -f "$cgi.new-__UPLOAD_NAME__" "$cgi" || true
-            cp -p "$stage/previous-luci" "$luci.new-__UPLOAD_NAME__" && mv -f "$luci.new-__UPLOAD_NAME__" "$luci" || true
-        fi
-    fi
-    rm -f "$cgi.new-__UPLOAD_NAME__" "$luci.new-__UPLOAD_NAME__"
-    rm -rf "$stage"
-    exit "$code"
-}
-trap cleanup EXIT
-test -s "$cgi"
-test -s "$luci"
+printf '\nBackup: %s\nROUTER_NAME_FIX_V120_%s_OK\n' "$backup" '__ACTION__'
 if [ '__ACTION__' = Install ]; then
-    sh -n "$stage/cgi"
-    grep -F -q 'v119' "$stage/cgi"
-    grep -F -q 'v119' "$stage/luci"
-    if grep -F -q 'v''118' "$stage/cgi" "$stage/luci"; then
-        echo 'Old UI version remains in candidate.' >&2
-        exit 1
-    fi
-    if [ ! -e "$backup" ]; then
-        mkdir -m 700 "$stage/retained"
-        cp -p "$cgi" "$stage/retained/cgi"
-        cp -p "$luci" "$stage/retained/luci"
-        : >"$stage/retained/complete"
-        mv "$stage/retained" "$backup"
-    fi
-    source_dir=$stage
-else
-    source_dir=$backup
+    echo 'Refresh the Hub and router updates tabs to check the renamed routers.'
+    echo 'This fix is LOCAL. The panel update button can replace it with the published repository build.'
 fi
-if [ ! -f "$backup/complete" ] || [ ! -s "$backup/cgi" ] || [ ! -s "$backup/luci" ]; then
-    echo "No complete backup: $backup. Nothing changed." >&2
-    exit 1
-fi
-sh -n "$source_dir/cgi"
-cp -p "$cgi" "$stage/previous-cgi"
-cp -p "$luci" "$stage/previous-luci"
-cp "$source_dir/cgi" "$cgi.new-__UPLOAD_NAME__"
-chmod 0755 "$cgi.new-__UPLOAD_NAME__"
-cp "$source_dir/luci" "$luci.new-__UPLOAD_NAME__"
-chmod 0644 "$luci.new-__UPLOAD_NAME__"
-changed=1
-mv -f "$cgi.new-__UPLOAD_NAME__" "$cgi"
-mv -f "$luci.new-__UPLOAD_NAME__" "$luci"
-cmp "$source_dir/cgi" "$cgi"
-cmp "$source_dir/luci" "$luci"
-[ ! -x /etc/init.d/rpcd ] || /etc/init.d/rpcd restart || true
-[ ! -x /etc/init.d/uhttpd ] || /etc/init.d/uhttpd reload || true
-printf '\nBackup: %s\nROUTER_V119_%s_OK\n' "$backup" '__ACTION__'
 '@
 
-if ($PSCmdlet.ParameterSetName -eq 'Router') {
-    $RemoteScript = $RouterScript
-    $TargetMachine = $Router
-}
-else {
-    $TargetMachine = $Vps
-}
 $RemoteScript = $RemoteScript.Replace('__UPLOAD_NAME__', $UploadName).Replace('__ACTION__', $Action)
 
 try {
@@ -220,15 +153,8 @@ try {
     )
 
     if ($Action -eq 'Install') {
-        $Files = if ($PSCmdlet.ParameterSetName -eq 'Router') {
-            @{ 'cgi' = 'files\www\cgi-bin\owrt-remote'; 'luci' = 'files\www\luci-static\resources\view\owrt_remote.js' }
-        } else {
-            @{ 'hub.py' = 'vps\owrt-remote-hub.py' }
-        }
-        foreach ($Name in $Files.Keys) {
-            $Content = [System.IO.File]::ReadAllText((Join-Path $RepoRoot $Files[$Name])).Replace("`r`n", "`n")
-            [System.IO.File]::WriteAllText((Join-Path $StageRoot $Name), $Content, $Utf8)
-        }
+        $Content = [System.IO.File]::ReadAllText((Join-Path $RepoRoot 'vps\owrt-remote-hub.py')).Replace("`r`n", "`n")
+        [System.IO.File]::WriteAllText((Join-Path $StageRoot 'hub.py'), $Content, $Utf8)
     }
 
     if ($PrepareOnly) {
@@ -236,11 +162,11 @@ try {
         return
     }
 
-    & scp -O -r -- $StageRoot "${TargetMachine}:/tmp/"
-    if ($LASTEXITCODE -ne 0) { throw 'Upload failed. Target was not changed.' }
-    & ssh -T -o ConnectTimeout=10 $TargetMachine "sh /tmp/$UploadName/run.sh"
+    & scp -O -r -- $StageRoot "${Vps}:/tmp/"
+    if ($LASTEXITCODE -ne 0) { throw 'Upload failed. VPS was not changed.' }
+    & ssh -T -o ConnectTimeout=10 $Vps "sh /tmp/$UploadName/run.sh"
     if ($LASTEXITCODE -ne 0) { throw "$Action failed. See the output above; success was not confirmed." }
-    Write-Host "Version v119 $Action finished successfully. Refresh the panel."
+    Write-Host "Router name fix $Action finished successfully."
 }
 finally {
     if (-not $PrepareOnly) {

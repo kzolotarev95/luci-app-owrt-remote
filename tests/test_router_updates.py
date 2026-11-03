@@ -450,9 +450,71 @@ class UpdatesTests(unittest.TestCase):
         self.assertEqual(hub.router_update_name({'id': 'node-5', 'name': 'Роутер node-5'}),
                          'Имя роутера не получено')
         self.assertEqual(hub.router_update_name({'id': 'node-5', 'custom_name': 'Имя карандашом'}, 'АНТОН ВПН'),
-                         'АНТОН ВПН')
+                         'Имя карандашом')
         self.assertEqual(hub.router_update_name({'id': 'node-5', 'custom_name': 'Имя карандашом',
-                                                'status_json': '{"name":"АНТОН ВПН"}'}), 'АНТОН ВПН')
+                                                'status_json': '{"name":"АНТОН ВПН"}'}), 'Имя карандашом')
+
+    def test_rename_updates_open_queue_even_when_ssh_reports_old_name(self):
+        class Quiet(hub.Handler):
+            def log_message(self, *args): pass
+        server = hub.HubHTTPServer(('127.0.0.1', 0), Quiet)
+        server.app = self.app
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        entered, release = threading.Event(), threading.Event()
+
+        def request(path, body=None):
+            headers = {'Cookie': hub.SESSION_COOKIE + '=owner-session',
+                       'Content-Type': 'application/json'}
+            conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+            try:
+                conn.request('POST' if body is not None else 'GET', path,
+                             json.dumps(body) if body is not None else None, headers)
+                response = conn.getresponse()
+                self.assertEqual(response.status, 200)
+                return json.loads(response.read())
+            finally:
+                conn.close()
+
+        def ssh(row, script, password):
+            if 'OWRT_UPDATE_READY=1' in script:
+                if row['id'] == 'main':
+                    entered.set()
+                    release.wait(3)
+                return 'OWRT_UPDATE_NAME_TEXT=Старое имя UCI\nOWRT_UPDATE_READY=1\n'
+            if 'OWRT_UPDATE_STARTED=1' in script:
+                return 'OWRT_UPDATE_STARTED=1\nOWRT_UPDATE_NAME_TEXT=Старое имя UCI\n'
+            return 'OWRT_UPDATE_STATE=done\nOWRT_UPDATE_RC=0\n'
+
+        try:
+            with mock.patch.object(self.manager, '_ssh', side_effect=ssh):
+                self.manager.start('echo install', '', 'request-rename-active')
+                self.assertTrue(entered.wait(2))
+                request('/api/router/main/rename', {'name': 'Новое имя карандашом'})
+                # A heartbeat from the unchanged router must not undo the rename.
+                with self.app.conn() as conn:
+                    hub.heartbeat(conn, {'id': 'main', 'name': 'Старое имя UCI'})
+                    self.assertEqual(hub.row_to_router(hub.get_router(conn, 'main'))['name'],
+                                     'Новое имя карандашом')
+                for finished in (False, True):
+                    if finished:
+                        release.set()
+                        self.finish()
+                    data = request('/api/router-updates')
+                    self.assertEqual(data['job']['state'], 'finished' if finished else 'running')
+                    self.assertEqual(data['routers'][0]['name'], 'Новое имя карандашом')
+                    self.assertEqual(data['job']['items'][0]['name'], 'Новое имя карандашом')
+                    self.assertEqual(data['job']['items'][0]['id'], 'main')
+                # A new queue must also keep the Hub name after reading UCI over SSH.
+                self.manager.start('echo install', '', 'request-rename-new-queue')
+                self.assertEqual(self.finish()['items'][0]['name'], 'Новое имя карандашом')
+        finally:
+            release.set()
+            if self.manager.thread:
+                self.manager.thread.join(timeout=3)
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
 
     def test_refresh_cannot_clear_running_or_newer_queue(self):
         entered, release = threading.Event(), threading.Event()

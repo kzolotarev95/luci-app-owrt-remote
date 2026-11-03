@@ -15,7 +15,7 @@ $RemoteScript = @'
 set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-update-status-ui-v119
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-update-status-ui-v120
 candidate=$target.new-__UPLOAD_NAME__
 changed=0
 
@@ -139,7 +139,7 @@ if [ "$healthy" -ne 1 ]; then
 fi
 cat "$stage/health-check"
 cmp "$source_file" "$target"
-printf '\nBackup: %s\nUPDATE_STATUS_UI_V119_%s_OK\n' "$backup" '__ACTION__'
+printf '\nBackup: %s\nUPDATE_STATUS_UI_V120_%s_OK\n' "$backup" '__ACTION__'
 if [ '__ACTION__' = Install ]; then
     echo 'Reload the Hub page (Ctrl+F5) to load the new UI.'
     echo 'This fix is LOCAL. The panel update button can replace it with the published repository build.'

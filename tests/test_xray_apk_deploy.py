@@ -6,7 +6,7 @@ import test_xray_validation_deploy as base
 
 class XrayApkDeploymentTests(base.XrayValidationDeploymentTests):
     deploy_name = 'deploy-xray-apk-fix.ps1'
-    backup_name = 'owrt-remote-backup-before-xray-apk-v119'
+    backup_name = 'owrt-remote-backup-before-xray-apk-v120'
     success_marker = 'XRAY_APK_ROUTER_Install_OK'
 
     def setUp(self):

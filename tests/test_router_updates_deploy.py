@@ -21,7 +21,7 @@ class RouterUpdatesDeployTests(unittest.TestCase):
         self.target = self.root / 'hub.py'
         self.previous = b'print("previous Hub")\n'
         self.target.write_bytes(self.previous)
-        self.backup = self.root / 'hub.py.bak-before-router-reboot-all-v119'
+        self.backup = self.root / 'hub.py.bak-before-router-reboot-all-v120'
         source = (ROOT / 'vps/deploy-router-updates.ps1').read_text(encoding='utf-8')
         self.script = source.split("$RemoteScript = @'\n", 1)[1].split("\n'@", 1)[0]
         self.script = self.script.replace('/opt/owrt-remote/owrt-remote-hub.py', self.target.as_posix())
@@ -56,7 +56,7 @@ sleep() { return 0; }
         for _ in range(2):
             result = self.deploy('Install')
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn('ROUTER_UPDATES_V119_Install_OK', result.stdout)
+            self.assertIn('ROUTER_UPDATES_V120_Install_OK', result.stdout)
             self.assertIn(b'class RouterUpdateManager:', self.target.read_bytes())
             self.assertEqual(self.backup.read_bytes(), self.previous)
         result = self.deploy('Rollback')

@@ -1,4 +1,4 @@
-# Несколько WAN интерфейсов и резервирование (v119)
+# Несколько WAN интерфейсов и резервирование (v120)
 
 Кнопка **Выбрать интерфейсы** раскрывает список с галочками. Можно отметить
 один, два, три и больше интерфейсов. Список содержит имена
@@ -46,7 +46,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\
 
 Скрипт устанавливает CGI, LuCI, агент, WAN helper и hotplug вместе. До замены
 сохраняются прежние файлы, UCI-настройки и Xray config в
-`/root/owrt-remote-backup-before-wan-multi-v119`.
+`/root/owrt-remote-backup-before-wan-multi-v120`.
 Успех подтверждает `WAN_MULTI_ROUTER_Install_OK`. После установки обновить
 панель роутера через Ctrl+F5, отметить интерфейсы и сохранить выбор.
 VPS обновлять не требуется. Старый `deploy-wan-interface-picker.ps1`

@@ -31,7 +31,7 @@ class WanStabilityRollbackTests(unittest.TestCase):
         source = (ROOT / "vps/deploy-wan-stability-fix.ps1").read_text(encoding="utf-8")
         script = source.split("$RemoteScript = @'\n", 1)[1].split("\n'@", 1)[0]
         script = script.replace('stage=/tmp/__UPLOAD_NAME__', 'stage=' + shlex.quote(self.stage.as_posix()))
-        script = script.replace('backup=/root/owrt-remote-backup-before-wan-stability-v119', 'backup=' + shlex.quote(self.backup.as_posix()))
+        script = script.replace('backup=/root/owrt-remote-backup-before-wan-stability-v120', 'backup=' + shlex.quote(self.backup.as_posix()))
         script = script.replace('config=/etc/config/owrtremote', 'config=' + shlex.quote(self.files["config"].as_posix()))
         for name, original in (("agent", "/usr/sbin/owrt-remote"), ("wan.sh", "/usr/lib/owrt-remote/wan.sh")):
             script = script.replace('printf ' + original + ' ;;', "printf '%s' " + shlex.quote(self.files[name].as_posix()) + ' ;;')
