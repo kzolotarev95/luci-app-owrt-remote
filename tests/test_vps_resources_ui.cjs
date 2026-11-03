@@ -20,7 +20,7 @@ function fixture(initialPending = false) {
   const metrics = {ok: true, cpu: {percent: 25, cores: 2}, memory: {percent: 40, used_bytes: 1024, total_bytes: 2048}, disk: {percent: 60, used_bytes: 2048, total_bytes: 4096}};
   const context = {
     Intl, AbortController,
-    document: {hidden: false, querySelectorAll() { return widgets; }, addEventListener(key, fn) { documentEvents[key] = fn; }},
+    document: {hidden: false, documentElement:{dataset:{hubDesign:'default'}}, querySelectorAll() { return widgets; }, addEventListener(key, fn) { documentEvents[key] = fn; }},
     window: {addEventListener(key, fn) { windowEvents[key] = fn; }},
     setInterval(fn, ms) { const id = nextId++; timers.set(id, {fn, ms, interval: true}); return id; },
     setTimeout(fn, ms) { const id = nextId++; timers.set(id, {fn, ms}); return id; },
@@ -91,6 +91,17 @@ function fixture(initialPending = false) {
   const count = f.calls.length;
   f.documentEvents.visibilitychange(); await flush();
   assert.equal(f.calls.length, count);
+
+  const lite = fixture(); await flush();
+  lite.context.document.documentElement.dataset.hubDesign = 'lite';
+  lite.windowEvents.hubdesignchange(); await flush();
+  assert.equal(lite.intervals().length, 1, 'changing design must not duplicate widget timers');
+  assert.equal(lite.intervals()[0].ms, 5000, 'lite mode polls resources every 5 seconds');
+  lite.context.document.documentElement.dataset.hubDesign = 'winter';
+  lite.windowEvents.hubdesignchange(); await flush();
+  assert.equal(lite.intervals().length, 1);
+  assert.equal(lite.intervals()[0].ms, 1000, 'winter restores the regular update interval');
+  lite.windowEvents.pagehide();
 
   const g = fixture(); await flush();
   g.context.respond = (url, options) => new Promise((resolve, reject) => options.signal.addEventListener('abort', () => reject(new Error('timeout'))));
