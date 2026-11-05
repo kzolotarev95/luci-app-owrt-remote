@@ -14,7 +14,7 @@ $RemoteScript = @'
 set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/usr/sbin/owrt-remote
-backup_dir=/root/owrt-remote-backup-before-xray-boot-v120
+backup_dir=/root/owrt-remote-backup-before-xray-boot-v121
 changed=0
 phase=preflight
 heartbeat_pid() {

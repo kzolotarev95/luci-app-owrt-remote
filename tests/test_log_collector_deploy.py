@@ -29,7 +29,7 @@ class CollectorDeploymentTests(unittest.TestCase):
         text = (ROOT / 'vps/deploy-log-collector-fix.ps1').read_text(encoding='utf-8')
         self.script = text.split("$RemoteScript = @'\n", 1)[1].split("\n'@", 1)[0]
         mapping = {target: (self.root / target.lstrip('/')).as_posix() for target in self.targets.values()}
-        mapping['/root/owrt-remote-backup-before-log-collector-v120'] = self.backup.as_posix()
+        mapping['/root/owrt-remote-backup-before-log-collector-v121'] = self.backup.as_posix()
         pattern = '|'.join(re.escape(path) for path in sorted(mapping, key=len, reverse=True))
         self.script = re.sub(pattern, lambda m: mapping[m.group()], self.script)
         mocks = r'''

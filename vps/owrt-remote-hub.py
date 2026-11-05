@@ -3623,6 +3623,19 @@ def init_db(conn):
         journal_id text not null default '', cursor integer not null default 0,
         updated_at integer not null default 0, last_sync integer not null default 0,
         clear_request text not null default '')''')
+    conn.execute('''create table if not exists router_xray_commands (
+        id text primary key,
+        router_id text not null,
+        action text not null,
+        status text not null default 'queued',
+        result text not null default '',
+        created_at integer not null,
+        started_at integer not null default 0,
+        completed_at integer not null default 0,
+        delivered_at integer not null default 0
+    )''')
+    conn.execute('create index if not exists router_xray_commands_router_idx on router_xray_commands(router_id, created_at)')
+    ensure_column(conn, 'router_xray_commands', 'hidden', 'integer not null default 0')
     ensure_column(conn, 'router_logs', 'state_json', "text not null default '{}'")
     ensure_column(conn, 'router_logs', 'state_at', 'integer not null default 0')
     ensure_column(conn, "routers", "custom_name", "text not null default ''")
@@ -4224,6 +4237,120 @@ def upsert_router(conn, values):
         )
     conn.commit()
     return get_router(conn, router_id)
+
+
+XRAY_CONTROL_ACTIONS = {'start': 'Запустить', 'stop': 'Остановить', 'restart': 'Перезапустить'}
+XRAY_CONTROL_TIMEOUT_SECONDS = 180
+XRAY_CONTROL_EXECUTION_SECONDS = 45
+
+
+def xray_control_audit(conn, router_id, message, level='OK'):
+    conn.execute('insert or ignore into router_logs(router_id) values (?)', (router_id,))
+    raw = bytes(conn.execute('select content from router_logs where router_id=?', (router_id,)).fetchone()[0])
+    raw = (raw + f'[{level}] {iso_time(now_ts())} Hub: Remote Xray: {message}\n'.encode())[-ROUTER_LOG_MAX_BYTES:]
+    conn.execute('update router_logs set content=?, updated_at=? where router_id=?', (raw, now_ts(), router_id))
+
+
+def xray_control_expire(conn, router_id):
+    ts = now_ts()
+    query = "select * from router_xray_commands where router_id=? and status in ('queued','delivered','running') and created_at < ?"
+    if not conn.execute(query, (router_id, ts - XRAY_CONTROL_TIMEOUT_SECONDS)).fetchone():
+        return
+    # Most UI polls stay read-only. Serialize expiry only when a command is actually overdue.
+    conn.execute('update routers set last_seen=last_seen where id=?', (router_id,))
+    rows = conn.execute(query, (router_id, ts - XRAY_CONTROL_TIMEOUT_SECONDS)).fetchall()
+    for row in rows:
+        if ts - row['created_at'] <= XRAY_CONTROL_TIMEOUT_SECONDS:
+            continue
+        message = ('Команда не доставлена: агент не вышел на связь за 3 минуты. Команда отменена.'
+                   if not row['delivered_at'] else
+                   'Результат не подтверждён: агент не прислал итог за 3 минуты. Проверь журнал и текущий статус Xray.')
+        status = 'expired' if not row['delivered_at'] else 'unconfirmed'
+        conn.execute('update router_xray_commands set status=?, result=?, completed_at=? where id=?', (status, message, ts, row['id']))
+        xray_control_audit(conn, router_id, message, 'WARN')
+
+
+def xray_control_enqueue(conn, router_id, action, request_id):
+    if not isinstance(action, str) or action not in XRAY_CONTROL_ACTIONS or not re.fullmatch(r'[a-f0-9]{32}', str(request_id or '')):
+        raise ValueError('Недопустимая команда или идентификатор запроса.')
+    # Acquire the DB writer before checking the queue; concurrent tabs cannot enqueue two operations.
+    conn.execute('update routers set last_seen=last_seen where id=?', (router_id,))
+    row = get_active_router(conn, router_id)
+    if not row:
+        raise ValueError('Роутер не найден.')
+    previous = conn.execute('select * from router_xray_commands where id=?', (request_id,)).fetchone()
+    if previous:
+        if previous['router_id'] != router_id or previous['action'] != action:
+            raise ValueError('Этот идентификатор уже использован другой командой.')
+        return
+    if router_reported_status(row).get('xray_control') != 1:
+        raise ValueError('Сначала обнови агент на этом роутере: управление через Heartbeat ещё не поддерживается.')
+    xray_control_expire(conn, router_id)
+    if conn.execute("select 1 from router_xray_commands where router_id=? and status in ('queued','delivered','running')", (router_id,)).fetchone():
+        raise ValueError('Предыдущая команда ещё выполняется или ожидает Heartbeat.')
+    conn.execute('insert into router_xray_commands(id,router_id,action,created_at) values (?,?,?,?)', (request_id, router_id, action, now_ts()))
+    conn.execute('delete from router_xray_commands where router_id=? and id not in (select id from router_xray_commands where router_id=? order by created_at desc,rowid desc limit 100)', (router_id, router_id))
+    xray_control_audit(conn, router_id, f'{XRAY_CONTROL_ACTIONS[action]} Xray: команда {request_id[:8]} поставлена в очередь.')
+
+
+def xray_control_exchange(conn, router_id, payload):
+    conn.execute('update routers set last_seen=last_seen where id=?', (router_id,))
+    result = payload.get('xray_control_result')
+    if isinstance(result, dict):
+        command = conn.execute('select * from router_xray_commands where id=? and router_id=?',
+                               (str(result.get('id') or ''), router_id)).fetchone()
+        state, rc, xray = result.get('status'), result.get('rc'), result.get('xray')
+        if (command and not command['hidden'] and command['delivered_at'] and command['action'] == result.get('action')
+                and command['status'] in {'delivered', 'running', 'unconfirmed'}
+                and state in {'running', 'succeeded', 'failed', 'interrupted'}
+                and not (command['status'] == 'unconfirmed' and state == 'running')
+                and type(rc) is int and 0 <= rc <= 255 and xray in {'running', 'stopped'}):
+            if state == 'succeeded' and (rc != 0 or xray != ('stopped' if command['action'] == 'stop' else 'running')):
+                state = 'failed'
+            message = str(result.get('message') or '')[:1500]
+            message = redact_router_log_bytes(message.encode()).decode('utf-8', 'replace')
+            if state != command['status']:
+                conn.execute('update router_xray_commands set status=?,result=?,started_at=case when started_at=0 then ? else started_at end,completed_at=? where id=?',
+                             (state, message, now_ts(), 0 if state == 'running' else now_ts(), command['id']))
+                xray_control_audit(conn, router_id, f'{XRAY_CONTROL_ACTIONS[command["action"]]} Xray: {message} (rc={rc}, Xray={xray}).',
+                                   'OK' if state in {'running', 'succeeded'} else 'ERROR')
+    xray_control_expire(conn, router_id)
+    if payload.get('xray_control') != 1:
+        return None
+    row = conn.execute("select * from router_xray_commands where router_id=? and status in ('queued','delivered') order by created_at limit 1", (router_id,)).fetchone()
+    if not row:
+        return None
+    conn.execute("update router_xray_commands set status='delivered',delivered_at=case when delivered_at=0 then ? else delivered_at end where id=?", (now_ts(), row['id']))
+    return {'id': row['id'], 'action': row['action']}
+
+
+def xray_control_clear_history(conn, router_id):
+    # Keep bounded ID tombstones for retry protection, but erase completed output.
+    # Active commands must remain visible and deliverable even from another tab.
+    conn.execute('update routers set last_seen=last_seen where id=?', (router_id,))
+    if not get_active_router(conn, router_id):
+        raise ValueError('Роутер не найден.')
+    xray_control_expire(conn, router_id)
+    conn.execute("update router_xray_commands set hidden=1,result='' where router_id=? and status not in ('queued','delivered','running')",
+                 (router_id,))
+
+
+def xray_control_snapshot(conn, router_id):
+    row = get_active_router(conn, router_id)
+    if not row:
+        raise ValueError('Роутер не найден.')
+    xray_control_expire(conn, router_id)
+    router = row_to_router(row)
+    try:
+        interval = int(router['status'].get('heartbeat_interval') or 30)
+    except (TypeError, ValueError):
+        interval = 30
+    return {'ok': True, 'router_id': router_id, 'name': router['name'], 'online': router['online'],
+            'last_seen': router['last_seen'], 'xray': router['status'].get('xray', 'unknown'),
+            'supported': router['status'].get('xray_control') == 1,
+            'server_time': now_ts(), 'heartbeat_interval': min(max(interval, 10), 3600),
+            'command_timeout_seconds': XRAY_CONTROL_TIMEOUT_SECONDS, 'execution_timeout_seconds': XRAY_CONTROL_EXECUTION_SECONDS,
+            'history': [dict(item) for item in conn.execute('select * from router_xray_commands where router_id=? and hidden=0 order by created_at desc,rowid desc limit 30', (router_id,))]}
 
 
 def heartbeat(conn, payload):
@@ -6299,7 +6426,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <div class="brand">
       <div class="desktopHeader">
         <div class="desktopHeaderTop">
-          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v120</span></span></h1>
+          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v121</span></span></h1>
           <button class="badge hubUpdateButton" data-hub-update type="button" {'hidden' if not is_owner else ''}>Проверить обновление панели</button>
           <div class="routerSearchDock" id="routerSearchDock">
             <button class="routerSearchToggle" id="routerSearchToggle" type="button" aria-expanded="false" aria-controls="routerSearchPanel" data-active="false">
@@ -6638,7 +6765,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     </div>
     {vps_resource_widgets_html(mobile=True, resources=vps_resources)}
     <div class="mobileSearchDock" id="mobileHubUpdateDock">
-      <span class="mobileSearchVersion">v120</span>
+      <span class="mobileSearchVersion">v121</span>
       <button class="badge hubUpdateButton" data-hub-update type="button" {'hidden' if not is_owner else ''}>Проверить обновление панели</button>
     </div>
     <div class="mobileSearchDock" id="mobileSeasonDock" aria-label="Зимние эффекты">
@@ -8310,6 +8437,7 @@ function render(list) {{
         ${{sshButton}}
         ${{wolButton}}
         ${{logsButton}}
+        ${{permissions.manage ? `<a class="btn" href="/router/${{encodeURIComponent(r.id)}}/xray-control" target="_blank" rel="noopener noreferrer">Remote управление Xray</a>` : ''}}
         ${{permissions.config ? `<a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>` : '<span class="btn disabled">OpenWrt config</span>'}}
         ${{permissions.delete ? `<button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>` : '<span class="btn disabled">Удалить</span>'}}
       </div>
@@ -8534,6 +8662,7 @@ render = function(list) {{
         ${{wolButton}}
         ${{notesButton}}
         ${{logsButton}}
+        ${{permissions.manage ? `<a class="btn" href="/router/${{encodeURIComponent(r.id)}}/xray-control" target="_blank" rel="noopener noreferrer">Remote управление Xray</a>` : ''}}
         ${{permissions.config ? `<a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>` : '<span class="btn disabled">OpenWrt config</span>'}}
         ${{permissions.delete ? `<button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>` : '<span class="btn disabled">Удалить</span>'}}
       </div>
@@ -12886,6 +13015,108 @@ label{display:block;margin:14px 0 6px;font-weight:700}textarea,input{display:blo
 </script></body></html>'''.replace('__COMMAND__', html.escape(default_command)).replace('__CSRF__', json.dumps(csrf))
 
 
+def router_xray_control_html(router, csrf):
+    title = html.escape(str(router.get('name') or router['id']))
+    endpoint = json.dumps('/api/router/' + urllib.parse.quote(router['id'], safe='') + '/xray-control')
+    return r'''<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Remote управление Xray — __TITLE__</title>
+<style>
+:root{color-scheme:dark;--bg:#07040f;--panel:#191226;--panel2:#30243e;--text:#f5f3ff;--muted:#c4b5d9;--line:#574267}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at top,#3d205b,transparent 70%),var(--bg);color:var(--text);font:14px/1.5 system-ui,sans-serif}
+.wrap{max-width:960px;margin:auto;padding:24px}.panel{padding:20px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
+.head,.actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.head{justify-content:space-between}h1{font-size:22px;margin:0}h2{font-size:17px;margin:12px 0;overflow-wrap:anywhere}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:10px 15px;border:1px solid var(--line);border-radius:9px;background:var(--panel2);color:var(--text);font:700 13px system-ui;cursor:pointer;text-decoration:none}
+.start{background:#166534}.stop{background:#991b1b}.restart{background:#854d0e}.btn:disabled{opacity:.5;cursor:default}
+.info{margin:16px 0;padding:12px;border:1px solid var(--line);border-radius:10px;overflow-wrap:anywhere}.muted{color:var(--muted)}
+.ok{color:#86efac}.warn{color:#fde68a}.error{color:#fca5a5}#result{overflow-wrap:anywhere}
+#resultOutput{margin:8px 0 0;white-space:pre-wrap;font:inherit}.operationTimer{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);color:var(--muted);font-variant-numeric:tabular-nums;white-space:pre-line}.clockLine{font-variant-numeric:tabular-nums}.journalHead{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:20px}.journalHead h2{margin:0}.clear{border-color:#ef444470}
+.history{display:grid;gap:10px;margin-top:14px}.entry{border:1px solid var(--line);border-radius:10px;padding:12px;overflow-wrap:anywhere}.entry p{margin:6px 0 0;white-space:pre-wrap}.entry small{color:var(--muted)}
+@media(max-width:600px){.wrap{padding:12px}.panel{padding:14px}.actions{display:grid;grid-template-columns:1fr}.head .btn,.journalHead .btn{width:100%}h1{font-size:20px}}
+</style></head><body><main class="wrap"><section class="panel">
+<div class="head"><h1>Remote управление Xray</h1><a href="/" class="btn">Вернуться в Hub</a></div><h2 id="routerName">__TITLE__</h2>
+<p class="muted">Управление Xray выбранного роутера через агент Hub. Команда доставляется при следующем Heartbeat. Остановка Xray сохраняет связь агента с Hub.</p>
+<div class="info" role="status"><strong id="xrayStatus">Получаю статус…</strong><div id="agentStatus" class="muted"></div></div>
+<div class="actions"><button class="btn start" data-action="start">Запустить Xray</button><button class="btn stop" data-action="stop">Остановить Xray</button><button class="btn restart" data-action="restart">Перезапустить Xray</button></div>
+<div class="info" id="result"><div role="status"><strong id="resultTitle">Получаю результаты команд…</strong><pre id="resultOutput"></pre></div><div id="operationTimer" class="operationTimer" role="timer" aria-live="off" hidden></div></div>
+<div class="journalHead"><h2>Журнал действий</h2><button type="button" class="btn clear" id="clearHistory" disabled title="Очистить завершённые записи и их вывод. Текущая команда продолжит работу.">Очистить логи</button></div><div id="history" class="history"></div>
+</section></main><script>
+(()=>{
+ const endpoint=__ENDPOINT__,csrf=__CSRF__,buttons=[...document.querySelectorAll('[data-action]')],result=document.getElementById('result'),history=document.getElementById('history');
+ const resultTitle=document.getElementById('resultTitle'),resultOutput=document.getElementById('resultOutput'),operationTimer=document.getElementById('operationTimer'),clearHistory=document.getElementById('clearHistory');
+ const labels={start:'Запустить Xray',stop:'Остановить Xray',restart:'Перезапустить Xray'}, states={queued:'Ожидает Heartbeat',delivered:'Доставлена агенту',running:'Выполняется на роутере',succeeded:'Успешно',failed:'Ошибка',interrupted:'Выполнение прервано',expired:'Не доставлена',unconfirmed:'Результат не подтверждён'};
+ let timer=null,clockTimer=null,request=null,stopped=false,busy=false,snapshot=null,posting=false,serverBase=0,clockBase=0;
+ const stamp=value=>value?new Date(value*1000).toLocaleString('ru-RU'):'нет данных';
+ const active=state=>['queued','delivered','running'].includes(state),tone=state=>state==='succeeded'?'ok':['failed','interrupted'].includes(state)?'error':'warn';
+ const duration=value=>{const seconds=Math.max(0,Math.floor(value));return String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0');};
+ const serverNow=()=>serverBase+(performance.now()-clockBase)/1000;
+ function controls(){buttons.forEach(button=>button.disabled=posting||!snapshot||!snapshot.supported||snapshot.history.some(item=>active(item.status)));clearHistory.disabled=posting||!snapshot||!snapshot.history.some(item=>!active(item.status));}
+ function timing(item,detail=false){
+   const now=serverNow(),elapsed=Math.max(0,(item.completed_at||now)-item.created_at);
+   if(!active(item.status))return 'Длительность ожидания и выполнения: '+duration(elapsed);
+   let text='Прошло: '+duration(elapsed);
+   if(!detail)return text;
+   const deadline=item.created_at+snapshot.command_timeout_seconds,remaining=Math.max(0,deadline-now),interval=snapshot.heartbeat_interval;
+   text+=' · До предела ожидания: '+duration(remaining);
+   if(remaining===0)return text+'\nПредел ожидания достигнут. Ожидается итоговый статус от Hub.';
+   if(!snapshot.online)return text+'\nАгент оффлайн. Ожидаем восстановления Heartbeat; время ответа пока неизвестно.';
+   const delivery=item.delivered_at||Math.max(snapshot.last_seen+interval,item.created_at);
+   const estimate=Math.min(deadline,delivery+snapshot.execution_timeout_seconds+interval+5);
+   if(item.status==='queued')text+='\n'+(snapshot.last_seen+interval>now?'До ближайшего Heartbeat: примерно '+duration(snapshot.last_seen+interval-now)+'.':'Ожидаем ближайший Heartbeat.');
+   text+='\n'+(estimate>now?'Ориентир до итогового ответа: ~'+duration(estimate-now)+'.':'Ответ задерживается. Ожидаем подтверждения агента.');
+   return text;
+ }
+ function drawTimings(){
+   if(!snapshot)return;
+   const latest=snapshot.history[0];operationTimer.hidden=!latest;
+   operationTimer.textContent=latest?timing(latest,true):'';
+   history.querySelectorAll('[data-timing-id]').forEach(node=>{const item=snapshot.history.find(item=>item.id===node.dataset.timingId);if(item)node.textContent=timing(item);});
+ }
+ function scheduleClock(){
+   if(clockTimer!==null)clearTimeout(clockTimer);clockTimer=null;drawTimings();
+   if(!stopped&&!document.hidden&&snapshot&&snapshot.history.some(item=>active(item.status)))clockTimer=setTimeout(scheduleClock,1000);
+ }
+ function showError(message){result.className='info error';resultTitle.textContent=message;resultOutput.textContent='';}
+ function render(data){
+   snapshot=data;serverBase=data.server_time;clockBase=performance.now();document.getElementById('routerName').textContent=data.name;
+   const status=document.getElementById('xrayStatus');status.className=data.online?(data.xray==='running'?'ok':'warn'):'warn';
+   status.textContent=(data.online?'Xray: ':'Последний известный статус Xray: ')+({running:'запущен',stopped:'остановлен'}[data.xray]||'неизвестен');
+   document.getElementById('agentStatus').textContent=(data.online?'Агент онлайн':'Агент оффлайн')+' · Подтверждено: '+stamp(data.last_seen)+(data.supported?'':' · Обнови агент роутера для управления через Heartbeat.');
+   const latest=data.history[0];result.className='info '+(latest?tone(latest.status):'muted');
+   resultTitle.textContent=latest?(states[latest.status]||latest.status)+' — '+labels[latest.action]:data.supported?'Журнал действий пуст.':'На роутере установлен агент без поддержки этой функции. Сначала обнови его.';
+   resultOutput.textContent=latest?(latest.result||'Ожидается ответ агента.'):'';
+   history.replaceChildren();
+   data.history.forEach(item=>{const entry=document.createElement('article');entry.className='entry';const title=document.createElement('strong');title.className=tone(item.status);title.textContent=labels[item.action]+' · '+(states[item.status]||item.status);const time=document.createElement('small');time.textContent=stamp(item.created_at);const clock=document.createElement('p');clock.className='muted clockLine';clock.dataset.timingId=item.id;const p=document.createElement('p');p.textContent=item.result||'Ожидание доставки и результата';entry.append(title,document.createElement('br'),time,clock,p);history.append(entry);});controls();scheduleClock();
+ }
+ async function api(payload){
+   request=new AbortController();const timeout=setTimeout(()=>request.abort(),10000);
+   try{const response=await fetch(endpoint,{cache:'no-store',signal:request.signal,...(payload?{method:'POST',headers:{'Content-Type':'application/json','X-Xray-Control-CSRF':csrf},body:JSON.stringify(payload)}:{})});const data=await response.json();if(!response.ok)throw new Error(data.error||'HTTP '+response.status);render(data);}
+   finally{clearTimeout(timeout);request=null;}
+ }
+ function schedule(){if(timer!==null)clearTimeout(timer);timer=null;if(!stopped&&!document.hidden)timer=setTimeout(refresh,3000);}
+ async function refresh(){if(busy||stopped||document.hidden)return;busy=true;try{await api();}catch(error){if(error.name!=='AbortError')showError('Не удалось получить состояние: '+error.message);}finally{busy=false;schedule();}}
+ buttons.forEach(button=>button.addEventListener('click',async()=>{
+   if(busy||posting)return;
+   const bytes=crypto.getRandomValues(new Uint8Array(16)),id=[...bytes].map(b=>b.toString(16).padStart(2,'0')).join('');
+   busy=true;posting=true;controls();if(timer!==null)clearTimeout(timer);
+   try{await api({action:button.dataset.action,request_id:id});}
+   catch(error){showError('Не удалось подтвердить отправку: '+error.message+'. Проверь журнал перед повтором.');}
+   finally{busy=false;posting=false;controls();schedule();}
+ }));
+ clearHistory.addEventListener('click',async()=>{
+   if(busy||posting||clearHistory.disabled)return;
+   busy=true;posting=true;controls();if(timer!==null)clearTimeout(timer);
+   try{await api({action:'clear_history'});}
+   catch(error){showError('Не удалось очистить журнал действий: '+error.message);}
+   finally{busy=false;posting=false;controls();schedule();}
+ });
+ function pauseTimers(){if(timer!==null)clearTimeout(timer);timer=null;if(clockTimer!==null)clearTimeout(clockTimer);clockTimer=null;}
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseTimers();else{scheduleClock();refresh();}});
+ window.addEventListener('pagehide',()=>{stopped=true;pauseTimers();if(request)request.abort();});
+ window.addEventListener('pageshow',()=>{stopped=false;scheduleClock();refresh();});refresh();
+})();
+</script></body></html>'''.replace('__TITLE__', title).replace('__ENDPOINT__', endpoint).replace('__CSRF__', json.dumps(csrf))
+
+
 def router_logs_html(router):
     title = html.escape(str(router.get('name') or router['id']))
     endpoint = json.dumps('/api/router/' + urllib.parse.quote(router['id'], safe='') + '/logs')
@@ -13521,7 +13752,7 @@ button:hover{{filter:brightness(1.06)}}
       <form class="login" method="post" action="/login">
     {error_html}
     <span class="brand">
-      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v120</span></span></h1>
+      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v121</span></span></h1>
     </span>
     <label for="hubUsername">Логин</label>
     <input id="hubUsername" name="username" autocomplete="off" autofocus required>
@@ -13993,7 +14224,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                 <circle cx="65" cy="59" r="3" fill="#E5F2FF"/>
               </svg>
             </div>
-            <h2 class="brandTitle">OpenWrt Remote Hub <span class="brandVersion">v120</span></h2>
+            <h2 class="brandTitle">OpenWrt Remote Hub <span class="brandVersion">v121</span></h2>
           </div>
         </div>
         <div class="brandBottom">
@@ -16002,6 +16233,7 @@ class App:
         self.agent_token = agent
         self.public_url = public_url.rstrip("/")
         self.router_state_lock = threading.Lock()
+        self.xray_control_csrf = secrets.token_urlsafe(32)
         self.router_state_snapshot = {}
         self.router_monitor_stop = threading.Event()
         self.router_monitor_thread = None
@@ -17545,6 +17777,45 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
             return
         self.send_bytes(200, router_logs_html(row_to_router(row)).encode('utf-8'), 'text/html; charset=utf-8',
                         [('Cache-Control', 'no-store')])
+
+    def router_xray_control_page(self, router_id):
+        if not self.require_router_access(router_id, 'G'):
+            return
+        with self.app.conn() as conn:
+            row = get_active_router(conn, router_id)
+        if not row:
+            self.send_text(404, 'router not found')
+            return
+        self.send_bytes(200, router_xray_control_html(row_to_router(row), self.app.xray_control_csrf).encode(), 'text/html; charset=utf-8')
+
+    def router_xray_control_api(self, router_id):
+        if not self.require_router_access(router_id, 'G', json_mode=True):
+            return
+        try:
+            payload = None
+            if self.command == 'POST':
+                if (not secrets.compare_digest(self.headers.get('X-Xray-Control-CSRF', ''), self.app.xray_control_csrf)
+                        or self.headers.get('Origin') and self.headers['Origin'] != self.request_origin()):
+                    self.send_json(403, {'ok': False, 'error': 'Обнови вкладку управления и повтори команду.'})
+                    return
+                length = self.headers.get('Content-Length', '')
+                if (self.headers.get('Transfer-Encoding') or not length.isdigit() or not 0 < int(length) <= 1024
+                        or 'application/json' not in self.headers.get('Content-Type', '')):
+                    self.send_json(400, {'ok': False, 'error': 'Ожидается небольшой запрос JSON.'})
+                    return
+                payload = self.read_payload()
+                if not isinstance(payload, dict):
+                    raise ValueError('Ожидается объект JSON.')
+            with self.app.conn() as conn:
+                if payload is not None:
+                    if payload.get('action') == 'clear_history':
+                        xray_control_clear_history(conn, router_id)
+                    else:
+                        xray_control_enqueue(conn, router_id, payload.get('action'), payload.get('request_id'))
+                snapshot = xray_control_snapshot(conn, router_id)
+            self.send_json(200, snapshot)
+        except ValueError as exc:
+            self.send_json(400, {'ok': False, 'error': str(exc)})
 
     def router_logs_api(self, router_id, mode='live'):
         if not self.require_router_access(router_id, 'G', json_mode=True):
@@ -19377,6 +19648,10 @@ exit 127
                 return
             self.send_json(200, push_status_snapshot())
             return
+        control_match = re.fullmatch(r'/api/router/([^/]+)/xray-control', path)
+        if control_match:
+            self.router_xray_control_api(urllib.parse.unquote(control_match[1]))
+            return
         log_match = re.fullmatch(r'/api/router/([^/]+)/logs(?:/(download))?', path)
         if log_match:
             self.router_logs_api(urllib.parse.unquote(log_match[1]), log_match[2] or 'live')
@@ -19401,6 +19676,9 @@ exit 127
                 self.send_json(400, {"ok": False, "error": str(exc), "router_id": router_id, "devices": []})
             return
         if path.startswith("/router/"):
+            if path.endswith('/xray-control'):
+                self.router_xray_control_page(self.router_id_from_path('/router/'))
+                return
             if path.endswith('/logs'):
                 self.router_logs_page(self.router_id_from_path('/router/'))
                 return
@@ -19419,6 +19697,10 @@ exit 127
 
     def do_POST(self):
         path = self.parsed().path
+        control_match = re.fullmatch(r'/api/router/([^/]+)/xray-control', path)
+        if control_match:
+            self.router_xray_control_api(urllib.parse.unquote(control_match[1]))
+            return
         if path in {'/api/hub-update/check', '/api/hub-update/start'}:
             self.hub_update_api(path.rsplit('/', 1)[-1])
             return
@@ -19457,6 +19739,7 @@ exit 127
                 payload = self.read_payload()
                 with self.app.conn() as conn:
                     router = heartbeat(conn, payload)
+                    xray_command = xray_control_exchange(conn, router['id'], payload)
                     if router and router.get('_became_online'):
                         record_router_connection_log(conn, router['id'], True)
                 if router and router.pop("_became_online", False):
@@ -19481,6 +19764,7 @@ exit 127
                         "ok": True,
                         "router": router,
                         "hub_update": canonical_router_hub_update(router, self.app.public_url, self.request_origin()),
+                        "xray_command": xray_command,
                         "xray_reload": xray_reload,
                         "xray_restart": xray_restart,
                     },

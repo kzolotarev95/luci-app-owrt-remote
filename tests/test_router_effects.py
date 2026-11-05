@@ -40,8 +40,8 @@ class RouterEffectsTests(unittest.TestCase):
         deploy = DEPLOY.read_text(encoding='utf-8')
         self.assertIn('install_file "www/luci-static/resources/owrt_remote_effects.js" 0644', install)
         self.assertIn('/www/luci-static/resources/owrt_remote_effects.js', deploy)
-        self.assertIn('ROUTER_EFFECTS_V120_', deploy)
-        self.assertIn('owrt-remote-backup-before-router-effects-v120', deploy)
+        self.assertIn('ROUTER_EFFECTS_V121_', deploy)
+        self.assertIn('owrt-remote-backup-before-router-effects-v121', deploy)
 
     def test_shell_and_javascript_parse(self):
         sh = shutil.which('sh')

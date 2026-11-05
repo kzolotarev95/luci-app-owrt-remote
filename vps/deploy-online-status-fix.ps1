@@ -14,7 +14,7 @@ $RemoteScript = @'
 set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-online-status-v120
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-online-status-v121
 candidate=$target.new-__UPLOAD_NAME__
 changed=0
 cleanup() {
@@ -59,7 +59,7 @@ for attempt in 1 2 3 4 5 6 7 8 9 10; do
 done
 test "$healthy" = 1
 cmp "$source_file" "$target"
-printf '\nBackup: %s\nONLINE_STATUS_V120_%s_OK\n' "$backup" '__ACTION__'
+printf '\nBackup: %s\nONLINE_STATUS_V121_%s_OK\n' "$backup" '__ACTION__'
 '@
 $RemoteScript = $RemoteScript.Replace('__UPLOAD_NAME__', $UploadName).Replace('__ACTION__', $Action)
 try {

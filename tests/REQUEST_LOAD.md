@@ -14,4 +14,4 @@ responses for these endpoints from `access.log`.
 logging policy: journald is capped at 256 MiB with a seven-day retention limit,
 and nginx logs rotate daily with seven compressed archives and a 50 MiB trigger.
 The deploy script keeps a backup at
-`/root/owrt-remote-backup-before-request-load-v120` and supports Rollback.
+`/root/owrt-remote-backup-before-request-load-v121` and supports Rollback.

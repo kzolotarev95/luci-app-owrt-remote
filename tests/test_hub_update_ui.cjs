@@ -10,7 +10,7 @@ execFileSync(process.env.TEST_PYTHON || 'python', ['tests/test_vps_resources.py'
 const pageHtml = fs.readFileSync(path.join(output, 'dashboard.html'), 'utf8');
 function state() {
   return {ok:true,checked:true,checking:false,error:'',source:'https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main',
-    current_revision:'a'.repeat(64),current_version:'v120',remote_revision:'b'.repeat(64),remote_version:'v120',source_older:false,available:true,job:{},csrf:'test-csrf'};
+    current_revision:'a'.repeat(64),current_version:'v121',remote_revision:'b'.repeat(64),remote_version:'v121',source_older:false,available:true,job:{},csrf:'test-csrf'};
 }
 async function createFixture(browser,width,height,mobile) {
   const page = await browser.newPage({viewport:{width,height},isMobile:mobile,hasTouch:mobile});

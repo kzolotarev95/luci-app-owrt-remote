@@ -222,6 +222,7 @@ fi
 
 install_file "usr/sbin/owrt-remote" 0755
 install_file "usr/lib/owrt-remote/wan.sh" 0644
+install_file "usr/lib/owrt-remote/control.sh" 0644
 install_file "usr/lib/owrt-remote/logs.sh" 0644
 install_file "etc/init.d/owrt-remote-logs" 0755
 install_file "etc/init.d/owrt-remote" 0755

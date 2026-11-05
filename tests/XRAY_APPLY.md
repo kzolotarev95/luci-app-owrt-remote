@@ -1,4 +1,4 @@
-# Применение OpenWrt config через панель роутера (v120)
+# Применение OpenWrt config через панель роутера (v121)
 
 При отправке textarea браузер кодирует переносы строк как CRLF. CGI
 декодировал их без нормализации и записывал CR в исполняемый shell-скрипт.
@@ -22,7 +22,7 @@ CRLF и LF, heredoc, пустые строки, кодированные сим�
 
 Скрипт обновляет только CGI на роутере. VPS обновлять для этого фикса
 не требуется. До замены сохраняется первая резервная копия CGI:
-`/root/owrt-remote-backup-before-xray-apply-v120/owrt-remote`.
+`/root/owrt-remote-backup-before-xray-apply-v121/owrt-remote`.
 
 Из PowerShell Windows 11; замените IP, если адрес роутера отличается:
 
@@ -53,7 +53,7 @@ python tests/test_xray_apply.py -v
 
 Переносы строк в формах описаны в [стандарте HTML](https://html.spec.whatwg.org/multipage/form-control-infrastructure.html).
 
-## Мобильная вставка команд (локальный фикс v120)
+## Мобильная вставка команд (локальный фикс v121)
 
 Воспроизведён отдельный случай `rc=255`: в строке
 `uci set owrtremote.main.router_name=‘Дом у моря’` типографские кавычки
@@ -77,7 +77,7 @@ python tests/test_xray_apply.py -v
 
 Обновляется только `/www/cgi-bin/owrt-remote` на роутере, без перезапуска
 служб и изменений настроек при установке. Резервная копия отдельная:
-`/root/owrt-remote-backup-before-xray-mobile-v120/owrt-remote`.
+`/root/owrt-remote-backup-before-xray-mobile-v121/owrt-remote`.
 
 Установка из PowerShell Windows 11:
 
@@ -101,7 +101,7 @@ python tests/test_xray_mobile_deploy.py -v
 ```
 
 
-## Проверка Xray и ошибка Heartbeat после применения (локальный фикс v120)
+## Проверка Xray и ошибка Heartbeat после применения (локальный фикс v121)
 
 В предоставленном журнале Xray 26.3.27 запускается успешно, а завершающая
 команда `owrt-remote heartbeat` возвращает `rc=1` с `Failed to allocate
@@ -153,7 +153,7 @@ CGI получает этап выполнения от агента. Ошибк
 Новый скрипт `vps/deploy-xray-validation-fix.ps1` обновляет CGI и агент,
 не пересобирает настройки и не перезапускает службы при установке/откате.
 Первая резервная копия обоих файлов:
-`/root/owrt-remote-backup-before-xray-validation-v120`. Если установка
+`/root/owrt-remote-backup-before-xray-validation-v121`. Если установка
 оборвалась или проверка файлов не прошла, возвращаются файлы до этой попытки.
 На роутере друга нужно указать его доступный SSH-адрес вместо локального IP.
 

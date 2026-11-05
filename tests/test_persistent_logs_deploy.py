@@ -42,7 +42,7 @@ class PersistentLogsDeploymentTests(unittest.TestCase):
         mappings['/etc/init.d/rpcd'] = (self.root / 'etc/init.d/rpcd').as_posix()
         mappings['/etc/init.d/uhttpd'] = (self.root / 'etc/init.d/uhttpd').as_posix()
         mappings['/tmp/owrt-remote-logs'] = (self.root / 'journal').as_posix()
-        mappings['/root/owrt-remote-backup-before-persistent-logs-v120'] = self.backup.as_posix()
+        mappings['/root/owrt-remote-backup-before-persistent-logs-v121'] = self.backup.as_posix()
         pattern = '|'.join(re.escape(target) for target in sorted(mappings, key=len, reverse=True))
         self.script = re.sub(pattern, lambda match: mappings[match.group()], self.script)
         # Existing sandbox service scripts only print markers. Mock readiness.
@@ -102,7 +102,7 @@ logger() { printf '%s\\n' "$3" | sh "$TEST_LOG_HELPER" append; }
             self.assertIn('PERSISTENT_LOGS_ROUTER_Install_OK', result.stdout)
             for item in ('cgi', 'luci'):
                 installed = self.root / self.targets[item].lstrip('/')
-                self.assertIn('v120', installed.read_text(encoding='utf-8'))
+                self.assertIn('v121', installed.read_text(encoding='utf-8'))
             for item, data in self.initial.items():
                 self.assertEqual(self.backup.joinpath(item).read_bytes(), data)
         result = self.deploy('Rollback')
@@ -129,7 +129,7 @@ logger() { printf '%s\\n' "$3" | sh "$TEST_LOG_HELPER" append; }
         self.assert_initial()
 
     def test_rollback_restores_existing_log_service_and_helper(self):
-        # This fix is normally applied on top of v120's already installed journal.
+        # This fix is normally applied on top of v121's already installed journal.
         for item in ('logs.sh', 'logs-init'):
             target = self.root / self.targets[item].lstrip('/')
             target.parent.mkdir(parents=True, exist_ok=True)

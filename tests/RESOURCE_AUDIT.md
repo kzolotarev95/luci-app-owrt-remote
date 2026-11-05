@@ -1,6 +1,6 @@
-# Аудит ресурсов OpenWrt Remote Hub v120
+# Аудит ресурсов OpenWrt Remote Hub v121
 
-Исправления внесены поверх `7f809fd`. Версия панели остаётся v120.
+Исправления внесены поверх `7f809fd`. Версия панели остаётся v121.
 
 ## SQLite
 
@@ -115,7 +115,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "vps\deploy-resource-fix
 
 Установщик загружает локальный файл без Git, запускает изолированные тесты,
 сохраняет исходный серверный файл:
-`/opt/owrt-remote/owrt-remote-hub.py.bak-before-resource-fix-v120`,
+`/opt/owrt-remote/owrt-remote-hub.py.bak-before-resource-fix-v121`,
 атомарно заменяет Python файл, перезапускает `owrt-remote` и проверяет health.
 Существующая резервная копия не перезаписывается. При ошибке установки
 восстанавливается файл, работавший непосредственно перед текущей попыткой.

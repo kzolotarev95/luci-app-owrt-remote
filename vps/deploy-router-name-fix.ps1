@@ -15,7 +15,7 @@ $RemoteScript = @'
 set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-router-name-fix-v120
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-router-name-fix-v121
 candidate=$target.new-__UPLOAD_NAME__
 changed=0
 
@@ -135,7 +135,7 @@ if [ "$healthy" -ne 1 ]; then
 fi
 cat "$stage/health-check"
 cmp "$source_file" "$target"
-printf '\nBackup: %s\nROUTER_NAME_FIX_V120_%s_OK\n' "$backup" '__ACTION__'
+printf '\nBackup: %s\nROUTER_NAME_FIX_V121_%s_OK\n' "$backup" '__ACTION__'
 if [ '__ACTION__' = Install ]; then
     echo 'Refresh the Hub and router updates tabs to check the renamed routers.'
     echo 'This fix is LOCAL. The panel update button can replace it with the published repository build.'

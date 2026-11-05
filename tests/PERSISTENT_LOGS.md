@@ -1,4 +1,4 @@
-# Persistent client journal (v120 local fix)
+# Persistent client journal (v121 local fix)
 
 The helper is `/usr/lib/owrt-remote/logs.sh`. It changes only Remote's private
 journal, not logd, network configuration, policy routing or Xray configuration.

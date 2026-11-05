@@ -1,4 +1,4 @@
-# Совместимость Xray с текущим VLESS reverse (v120)
+# Совместимость Xray с текущим VLESS reverse (v121)
 
 Причина `rc=23` подтверждена настоящими бинарниками: в Xray 26.7.11 и новее
 публичный VLESS outbound с `encryption=none` и `security=none` запрещён.
@@ -44,7 +44,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\
 ```
 
 Скрипт сохраняет агент и CGI в
-`/root/owrt-remote-backup-before-xray-compat-v120`, устанавливает код и
+`/root/owrt-remote-backup-before-xray-compat-v121`, устанавливает код и
 подготавливает совместимый core. Он не меняет рабочий JSON и не перезапускает
 туннель. После успеха (`XRAY_COMPAT_ROUTER_Install_OK`) повторно применить
 команды из «OpenWrt config» в «Xray настройки» панели роутера.
@@ -152,7 +152,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\Documents\openwrt overlay\vps\deploy-xray-apk-fix.ps1" -Router "root@192.168.2.1" -Action Rollback
 ```
 
-Резервная копия агента: `/root/owrt-remote-backup-before-xray-apk-v120`.
+Резервная копия агента: `/root/owrt-remote-backup-before-xray-apk-v121`.
 Откат возвращает агент, сохраняя подготовленный бинарник и boot-кэш.
 Рабочий JSON не пересобирается, туннель не перезапускается.
 

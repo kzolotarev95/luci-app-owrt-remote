@@ -12,7 +12,7 @@ from test_xray_mobile_deploy import SH, GIT_BIN, ROOT
 @unittest.skipUnless(SH, "POSIX shell required")
 class XrayValidationDeploymentTests(unittest.TestCase):
     deploy_name = 'deploy-xray-validation-fix.ps1'
-    backup_name = 'owrt-remote-backup-before-xray-validation-v120'
+    backup_name = 'owrt-remote-backup-before-xray-validation-v121'
     success_marker = 'XRAY_VALIDATION_ROUTER_Install_OK'
 
     def setUp(self):

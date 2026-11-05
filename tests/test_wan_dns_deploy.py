@@ -35,7 +35,7 @@ class WanDnsDeploymentTests(unittest.TestCase):
         source = (ROOT / "vps/deploy-wan-dns-fix.ps1").read_text(encoding="utf-8")
         self.script = source.split("$RemoteScript = @'\n", 1)[1].split("\n'@", 1)[0]
         self.script = self.script.replace("target=/usr/lib/owrt-remote/wan.sh", "target=" + shlex.quote(self.target.as_posix()))
-        self.script = self.script.replace("backup_dir=/root/owrt-remote-backup-before-wan-dns-v120",
+        self.script = self.script.replace("backup_dir=/root/owrt-remote-backup-before-wan-dns-v121",
                                           "backup_dir=" + shlex.quote(self.backup.as_posix()))
 
     def deploy(self, action="Install", bad=False, fail_verify=False, fail_signal=False):

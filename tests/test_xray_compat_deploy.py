@@ -4,7 +4,7 @@ from test_xray_validation_deploy import XrayValidationDeploymentTests as BaseDep
 
 class XrayCompatibilityDeploymentTests(BaseDeployment):
     deploy_name = 'deploy-xray-compat-fix.ps1'
-    backup_name = 'owrt-remote-backup-before-xray-compat-v120'
+    backup_name = 'owrt-remote-backup-before-xray-compat-v121'
     success_marker = 'XRAY_COMPAT_ROUTER_Install_OK'
 
     def setUp(self):

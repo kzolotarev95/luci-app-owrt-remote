@@ -1,4 +1,4 @@
-# Дизайн панели Hub (локально, v120)
+# Дизайн панели Hub (локально, v121)
 
 В разделе «Эффекты → Эффекты Hub» ниже переключателей эффектов добавлен
 раздел «Дизайн», одинаковый на ПК и мобильных устройствах:
@@ -37,7 +37,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\
 
 После установки обновить страницу и открыть «Эффекты → Дизайн».
 Откат — та же команда с `-Action Rollback`. Резервная копия:
-`/opt/owrt-remote/owrt-remote-hub.py.bak-before-hub-design-v120`.
+`/opt/owrt-remote/owrt-remote-hub.py.bak-before-hub-design-v121`.
 При сбое установки возвращается файл, который был до этой попытки.
 Скрипт подтверждает SHA-256 реально запущенного Hub через health endpoint.
 

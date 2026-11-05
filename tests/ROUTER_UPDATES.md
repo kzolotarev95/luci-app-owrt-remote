@@ -1,4 +1,4 @@
-# Обновление всех роутеров из Hub, v120
+# Обновление всех роутеров из Hub, v121
 
 В меню владельца «Доступ к Hub» добавлен блок «Обновить все роутеры разом».
 Ссылка «Открыть терминал обновления» открывает отдельную вкладку. В ней задаются
@@ -131,7 +131,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\Documents\openwrt overlay\vps\deploy-router-updates.ps1" -Vps "root@193.233.82.38" -Action Rollback
 ```
 
-Резервная копия: `/opt/owrt-remote/owrt-remote-hub.py.bak-before-router-reboot-all-v120`.
+Резервная копия: `/opt/owrt-remote/owrt-remote-hub.py.bak-before-router-reboot-all-v121`.
 Не устанавливай/не откатывай Hub, пока его очередь работает.
 
 ## Проверки

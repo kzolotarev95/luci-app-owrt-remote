@@ -13,7 +13,7 @@ $RemoteScript = @'
 #!/bin/sh
 set -eu
 stage=/tmp/__UPLOAD_NAME__
-backup=/root/owrt-remote-backup-before-persistent-logs-v120
+backup=/root/owrt-remote-backup-before-persistent-logs-v121
 items='cgi agent logs.sh logs-init luci'
 changed=0
 phase=preflight
@@ -106,7 +106,7 @@ if [ '__ACTION__' = Install ]; then
         exit 1
     fi
     grep -F -q 'globalLogsToggle' "$stage/cgi"
-    for item in cgi luci; do grep -F -q 'v120' "$stage/$item"; done
+    for item in cgi luci; do grep -F -q 'v121' "$stage/$item"; done
     grep -F -q 'LOG_BUFFER_LIMIT=16384' "$stage/logs.sh"
     grep -F -q 'LOG_KEEP_SECONDS=86400' "$stage/logs.sh"
     grep -F -q 'log_sync_loop' "$stage/logs.sh"

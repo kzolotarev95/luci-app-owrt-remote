@@ -28,7 +28,7 @@ const html = template.replace('window.ROUTERS = [];', 'window.ROUTERS = '+JSON.s
         if (url.pathname === '/api/router-groups') return route.fulfill({json:{groups:[]}});
         if (url.pathname === '/api/notifications/wait') return route.fulfill({status:429,json:{busy:true},headers:{'Retry-After':'5'}});
         if (url.pathname === '/api/vps/resources') return route.fulfill({json:{ok:true,cpu:{percent:15},memory:{percent:35},disk:{percent:40}}});
-        if (url.pathname === '/api/hub-update') return route.fulfill({json:{ok:true,checked:true,available:false,current_version:'v120'}});
+        if (url.pathname === '/api/hub-update') return route.fulfill({json:{ok:true,checked:true,available:false,current_version:'v121'}});
         if (url.pathname.startsWith('/api/')) return route.fulfill({json:{ok:true,auth:{username:'root',is_owner:true,can_add_router:true}}});
         return route.abort();
       });

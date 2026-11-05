@@ -29,7 +29,7 @@ class XrayMobileDeploymentTests(unittest.TestCase):
         source = (ROOT / "vps/deploy-xray-mobile-fix.ps1").read_text(encoding="utf-8")
         self.script = source.split("$RemoteScript = @'\n", 1)[1].split("\n'@", 1)[0]
         self.script = self.script.replace("target=/www/cgi-bin/owrt-remote", "target=" + shlex.quote(self.target.as_posix()))
-        self.script = self.script.replace("backup_dir=/root/owrt-remote-backup-before-xray-mobile-v120",
+        self.script = self.script.replace("backup_dir=/root/owrt-remote-backup-before-xray-mobile-v121",
                                           "backup_dir=" + shlex.quote(self.backup_dir.as_posix()))
 
     def deploy(self, action, content=None, fail_verify=False):

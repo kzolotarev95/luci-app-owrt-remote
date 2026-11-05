@@ -19,8 +19,8 @@ SH = str(GIT_BIN / 'sh.exe') if os.name == 'nt' else shutil.which('sh')
 @unittest.skipUnless(SH, 'POSIX shell required')
 class UpdateStatusDeployTests(unittest.TestCase):
     deploy_file = 'deploy-update-status-ui.ps1'
-    backup_name = 'hub.py.bak-before-update-status-ui-v120'
-    success_marker = 'UPDATE_STATUS_UI_V120_Install_OK'
+    backup_name = 'hub.py.bak-before-update-status-ui-v121'
+    success_marker = 'UPDATE_STATUS_UI_V121_Install_OK'
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='update-status-ui-')
@@ -130,9 +130,9 @@ sleep() { return 0; }
 
 
 class VersionDeployTests(UpdateStatusDeployTests):
-    deploy_file = 'deploy-version-v120.ps1'
-    backup_name = 'hub.py.bak-before-v120'
-    success_marker = 'HUB_V120_Install_OK'
+    deploy_file = 'deploy-version-v121.ps1'
+    backup_name = 'hub.py.bak-before-v121'
+    success_marker = 'HUB_V121_Install_OK'
 
 
 if __name__ == '__main__':

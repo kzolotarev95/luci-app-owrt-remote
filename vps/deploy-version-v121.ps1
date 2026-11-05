@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$UploadName = 'owrt-version-v120-' + [guid]::NewGuid().ToString('N')
+$UploadName = 'owrt-version-v121-' + [guid]::NewGuid().ToString('N')
 $StageRoot = Join-Path ([System.IO.Path]::GetTempPath()) $UploadName
 $Utf8 = [System.Text.UTF8Encoding]::new($false)
 
@@ -16,7 +16,7 @@ $RemoteScript = @'
 set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-v120
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-v121
 candidate=$target.new-__UPLOAD_NAME__
 changed=0
 
@@ -58,9 +58,9 @@ if [ '__ACTION__' = Install ]; then
 from pathlib import Path
 import sys
 source = Path(sys.argv[1]).read_text(encoding='utf-8')
-required = ('v120', 'def hub_update_require_version(', 'def hub_update_older_version(',
+required = ('v121', 'def hub_update_require_version(', 'def hub_update_older_version(',
             "else if (state.checked && !state.checking) message('');")
-if 'v' + str(120 - 1) in source:
+if 'v' + str(121 - 1) in source:
     print('Old UI version remains in candidate', file=sys.stderr)
     raise SystemExit(1)
 missing = [marker for marker in required if marker not in source]
@@ -133,14 +133,14 @@ if [ "$healthy" -ne 1 ]; then
 fi
 cat "$stage/health-check"
 cmp "$source_file" "$target"
-printf '\nBackup: %s\nHUB_V120_%s_OK\n' "$backup" '__ACTION__'
+printf '\nBackup: %s\nHUB_V121_%s_OK\n' "$backup" '__ACTION__'
 '@
 
 $RouterScript = @'
 #!/bin/sh
 set -eu
 stage=/tmp/__UPLOAD_NAME__
-backup=/root/owrt-remote-backup-before-v120
+backup=/root/owrt-remote-backup-before-v121
 cgi=/www/cgi-bin/owrt-remote
 luci=/www/luci-static/resources/view/owrt_remote.js
 changed=0
@@ -164,9 +164,9 @@ test -s "$cgi"
 test -s "$luci"
 if [ '__ACTION__' = Install ]; then
     sh -n "$stage/cgi"
-    grep -F -q 'v120' "$stage/cgi"
-    grep -F -q 'v120' "$stage/luci"
-    if grep -F -q "v$((120 - 1))" "$stage/cgi" "$stage/luci"; then
+    grep -F -q 'v121' "$stage/cgi"
+    grep -F -q 'v121' "$stage/luci"
+    if grep -F -q "v$((121 - 1))" "$stage/cgi" "$stage/luci"; then
         echo 'Old UI version remains in candidate.' >&2
         exit 1
     fi
@@ -199,7 +199,7 @@ cmp "$source_dir/cgi" "$cgi"
 cmp "$source_dir/luci" "$luci"
 [ ! -x /etc/init.d/rpcd ] || /etc/init.d/rpcd restart || true
 [ ! -x /etc/init.d/uhttpd ] || /etc/init.d/uhttpd reload || true
-printf '\nBackup: %s\nROUTER_V120_%s_OK\n' "$backup" '__ACTION__'
+printf '\nBackup: %s\nROUTER_V121_%s_OK\n' "$backup" '__ACTION__'
 '@
 
 if ($PSCmdlet.ParameterSetName -eq 'Router') {
@@ -240,7 +240,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Upload failed. Target was not changed.' }
     & ssh -T -o ConnectTimeout=10 $TargetMachine "sh /tmp/$UploadName/run.sh"
     if ($LASTEXITCODE -ne 0) { throw "$Action failed. See the output above; success was not confirmed." }
-    Write-Host "Version v120 $Action finished successfully. Refresh the panel."
+    Write-Host "Version v121 $Action finished successfully. Refresh the panel."
 }
 finally {
     if (-not $PrepareOnly) {

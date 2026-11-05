@@ -141,6 +141,14 @@ WAN_HELPER="${OWRT_REMOTE_WAN_HELPER:-/usr/lib/owrt-remote/wan.sh}"
 if [ -r "$WAN_HELPER" ]; then
 	. "$WAN_HELPER"
 fi
+CONTROL_HELPER="${OWRT_REMOTE_CONTROL_HELPER:-/usr/lib/owrt-remote/control.sh}"
+if [ -r "$CONTROL_HELPER" ]; then
+	. "$CONTROL_HELPER"
+else
+	xray_control_stopped() { return 1; }
+	xray_control_result_json() { printf null; }
+	xray_control_dispatch() { return 0; }
+fi
 
 host_model() {
 	if [ -r /tmp/sysinfo/model ]; then
@@ -863,6 +871,8 @@ heartbeat_json() {
   "flash": $(json_string "$(flash_text)"),
   "temperature": $(json_string "$(temperature_text)"),
   "xray": $(json_string "$xray_state"),
+  "xray_control": $([ -r "$CONTROL_HELPER" ] && printf 1 || printf 0),
+  "xray_control_result": $(xray_control_result_json || printf null),
   "ssh": $(json_string "$ssh_state"),
   "event": $(json_string "$event"),
   "service": $(json_string "$service_state")
@@ -1290,6 +1300,7 @@ send_heartbeat() {
 				printf '%s\n' "endpoint=$safe_endpoint; attempt=$attempt/$max_attempts; rc=0; reason=ok; elapsed_ms=$elapsed; $(tail -n 1 "$metrics")" >"$dir/last"
 				mv -f "$dir/last" "${TMPDIR:-/tmp}/owrt-remote-heartbeat-last"
 				cat "$response"
+				xray_control_dispatch "$response" || log 'Remote Xray: команда не принята; повторная доставка при следующем Heartbeat'
 				log "Heartbeat: OK; Hub=$safe_endpoint; WAN_direct=$(uci_get wan_direct 0); WAN_active=$(cat "$WAN_STATE/active-interface" 2>/dev/null)"
 				return 0
 			fi
@@ -1316,6 +1327,7 @@ send_heartbeat() {
 
 wan_reconcile_xray() {
 	local config bound device
+	xray_control_stopped && return 0
 	truthy "$(uci_get enabled 0)" || return 0
 	device="$(wan_device)" || return 1
 	if ! xray_running; then
@@ -1331,6 +1343,7 @@ wan_reconcile_xray() {
 
 wan_recover_xray() {
 	local lock owner rest state running heartbeat now last attempt
+	xray_control_stopped && return 0
 	(
 	umask 077
 	lock="${TMPDIR:-/tmp}/owrt-remote-xray-recovery"
@@ -2031,6 +2044,7 @@ wait_for_selected_wan() {
 
 run_xray() {
 	local enabled xray_bin xray_config
+	xray_control_stopped && { log 'Xray: остановлен через Remote; Heartbeat продолжает работать'; return 0; }
 	enabled="$(uci_get enabled 0)"
 	truthy "$enabled" || die "service disabled: set option enabled '1'"
 
@@ -2084,6 +2098,12 @@ case "$cmd" in
 		;;
 	stop-xray)
 		stop_xray
+		;;
+	xray-control-worker)
+		xray_control_worker "$@"
+		;;
+	xray-control-execute)
+		xray_control_execute "$@"
 		;;
 	render-client)
 		xray_apply_trace render-client

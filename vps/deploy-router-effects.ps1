@@ -15,7 +15,7 @@ set -eu
 stage=/tmp/__UPLOAD_NAME__
 cgi=/www/cgi-bin/owrt-remote
 effects=/www/luci-static/resources/owrt_remote_effects.js
-backup=/root/owrt-remote-backup-before-router-effects-v120
+backup=/root/owrt-remote-backup-before-router-effects-v121
 changed=0
 
 restore_file() {
@@ -85,7 +85,7 @@ if [ '__ACTION__' = Install ]; then
     grep -F -q 'id="routerEffectsPanel"' "$cgi"
     grep -F -q 'function initHubAppearance()' "$effects"
 fi
-printf '\nBackup: %s\nROUTER_EFFECTS_V120_%s_OK\n' "$backup" '__ACTION__'
+printf '\nBackup: %s\nROUTER_EFFECTS_V121_%s_OK\n' "$backup" '__ACTION__'
 '@
 
 $RemoteScript = $RemoteScript.Replace('__UPLOAD_NAME__', $UploadName).Replace('__ACTION__', $Action)

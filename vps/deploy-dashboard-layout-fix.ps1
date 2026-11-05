@@ -15,7 +15,7 @@ $RemoteScript = @'
 set -eu
 stage=/tmp/__UPLOAD_NAME__
 target=/opt/owrt-remote/owrt-remote-hub.py
-backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-dashboard-layout-v120
+backup=/opt/owrt-remote/owrt-remote-hub.py.bak-before-dashboard-layout-v121
 candidate=$target.new-__UPLOAD_NAME__
 changed=0
 
@@ -106,7 +106,7 @@ if [ "$healthy" -ne 1 ]; then
     exit 1
 fi
 cmp "$source_file" "$target"
-printf '\nBackup: %s\nDASHBOARD_LAYOUT_V120_%s_OK\n' "$backup" '__ACTION__'
+printf '\nBackup: %s\nDASHBOARD_LAYOUT_V121_%s_OK\n' "$backup" '__ACTION__'
 '@
 
 $RemoteScript = $RemoteScript.Replace('__UPLOAD_NAME__', $UploadName).Replace('__ACTION__', $Action)

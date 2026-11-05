@@ -17,7 +17,7 @@ $RemoteScript = @'
 #!/bin/sh
 set -eu
 stage=/tmp/__UPLOAD_NAME__
-backup_dir=/root/owrt-remote-backup-before-log-collector-v120
+backup_dir=/root/owrt-remote-backup-before-log-collector-v121
 changed=0
 phase=preflight
 items='logs.sh logs-init'

@@ -1,4 +1,4 @@
-# Восстановление Xray после перезагрузки (локальный фикс v120)
+# Восстановление Xray после перезагрузки (локальный фикс v121)
 
 В предоставленном журнале node-3 после перезагрузки отсутствовал
 `/tmp/owrt-xray/xray`. Повторная загрузка завершилась
@@ -56,7 +56,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\Users\k.zolotarev95\
 ```
 
 Скрипт заменяет только `/usr/sbin/owrt-remote`, сохраняет первую резервную
-копию в `/root/owrt-remote-backup-before-xray-boot-v120`, подготавливает кэш,
+копию в `/root/owrt-remote-backup-before-xray-boot-v121`, подготавливает кэш,
 перезагружает отдельный Heartbeat instance и запрашивает запуск Xray, если
 тот остановлен при работающем Heartbeat. Здоровый туннель не перезапускается.
 `XRAY_BOOT_ROUTER_Install_OK` подтверждает установку кода, а не установление
