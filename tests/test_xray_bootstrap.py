@@ -31,6 +31,11 @@ class XrayBootstrapTests(unittest.TestCase):
 xray_cache_dir() { printf '%s' "$TEST_ROOT/flash"; }
 xray_release_asset() { printf openwrt-xray_26.6.27-1_aarch64_cortex-a53-aarch64_cortex-a53.ipk; }
 xray_arch() { printf aarch64; }
+xray_discover_releases() {
+  printf 'v26.6.27|test.ipk|https://github.com/test|%s|%s\n' "$(xray_digest "$TEST_ROOT/release.pkg")" "$(wc -c <"$TEST_ROOT/release.pkg")" >"$1"
+}
+xray_probe_url() { return 0; }
+xray_check_package_metadata() { return 0; }
 xray_package_extract_binary() { cp "$TEST_ROOT/release.pkg" "$2"; }
 ensure_ca_certificates() { return 0; }
 ensure_fetch_tool() { return 0; }
@@ -72,13 +77,13 @@ xray_process_start() { [ "$1" != "$$" ] || printf 1; }
                               env={**self.env, **env}, timeout=40)
 
     def make_binary(self, text='Xray test version'):
-        data = f'#!/bin/sh\ncase "$1" in version) echo "{text}" ;; *) exit 0 ;; esac\n'.encode()
+        data = f'#!/bin/sh\ncase "$1" in version) echo "Xray 26.6.27 ({text})" ;; *) exit 0 ;; esac\n'.encode()
         self.binary.write_bytes(data)
         self.binary.chmod(0o755)
         return data
 
     def test_yichya_asset_uses_openwrt_opkg_architecture(self):
-        result = self.raw_shell('xray_release_asset', mocks=r'''
+        result = self.raw_shell('xray_arch', mocks=r'''
 opkg() {
     [ "$1" = print-architecture ] || return 1
     printf '%s\n' 'arch all 1' 'arch noarch 1' 'arch aarch64_cortex-a53 10'
@@ -86,7 +91,7 @@ opkg() {
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip().splitlines()[-1],
-                         'openwrt-xray_26.6.27-1_aarch64_cortex-a53-aarch64_cortex-a53.ipk')
+                         'aarch64_cortex-a53')
 
     def test_yichya_ipk_extracts_only_usr_bin_xray(self):
         binary = self.make_binary('package')
@@ -139,6 +144,12 @@ ensure_ca_certificates() { return 0; }
 ensure_fetch_tool() { return 0; }
 xray_cache_dir() { printf '%s' "$TEST_ROOT/flash"; }
 fetch_file() { echo "$1" >>"$TEST_ROOT/downloads"; cp "$TEST_ROOT/release.pkg" "$2"; }
+xray_discover_releases() {
+  printf 'v26.6.27|openwrt-xray-26.6.27-r1-aarch64_generic.apk|https://github.com/test/openwrt-xray-26.6.27-r1-aarch64_generic.apk|%s|%s\n' "$(xray_digest "$TEST_ROOT/release.pkg")" "$(wc -c <"$TEST_ROOT/release.pkg")" >"$1"
+}
+xray_probe_url() { return 0; }
+xray_check_package_metadata() { return 0; }
+
 '''
 
     def apk_fixture(self, binary=None):
@@ -158,7 +169,7 @@ fetch_file() { echo "$1" >>"$TEST_ROOT/downloads"; cp "$TEST_ROOT/release.pkg" "
         self.assertIn('/openwrt-xray-26.6.27-r1-aarch64_generic.apk',
                       (self.directory / 'downloads').read_text())
         self.assertTrue((self.directory / 'apk-calls').read_text().startswith('extract '))
-        self.assertTrue(list(self.store.glob('openwrt-xray-26.6.27-r1-aarch64_generic.apk.*.gz')))
+        self.assertTrue(list(self.store.glob('xray-aarch64_generic.*.gz')))
         self.assert_clean()
 
     def test_apk_extract_failure_reports_real_reason_and_preserves_working_state(self):
@@ -190,8 +201,8 @@ fetch_file() { echo "$1" >>"$TEST_ROOT/downloads"; cp "$TEST_ROOT/release.pkg" "
         self.apk_fixture(bad)
         original_uci = (self.directory / 'uci').read_bytes()
         result = self.raw_shell('install_xray_tmp', mocks=self.APK_EXTRACT_MOCK)
-        self.assertEqual(result.returncode, 23, result.stderr)
-        self.assertIn('vless without TLS', result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('binary version does not match release', result.stderr)
         self.assertEqual(self.binary.read_bytes(), good)
         self.assertEqual((self.directory / 'uci').read_bytes(), original_uci)
         self.assert_clean()
@@ -210,11 +221,12 @@ fetch_file() { echo "$1" >>"$TEST_ROOT/downloads"; cp "$TEST_ROOT/release.pkg" "
         self.assertFalse(list(self.runtime.glob('.compat.*')))
         self.assertFalse((self.runtime / 'xray.pkg').exists())
         self.assertFalse(list(self.runtime.glob('*.package-extract.*')))
+        self.assertFalse(list(self.runtime.glob('.download.*')))
 
-    def test_compatible_mipsel_ipk_and_apk_asset_names(self):
+    def test_cache_label_is_independent_of_download_version(self):
         for fmt, expected in (
-            ('ipk', 'openwrt-xray_26.6.27-1_mipsel_24kc-mipsel_24kc.ipk'),
-            ('apk', 'openwrt-xray-26.6.27-r1-mipsel_24kc.apk'),
+            ('ipk', 'xray-mipsel_24kc'),
+            ('apk', 'xray-mipsel_24kc'),
         ):
             result = self.raw_shell('xray_release_asset', mocks=
                 f'xray_arch() {{ printf mipsel_24kc; }}; xray_package_format() {{ printf {fmt}; }}')
@@ -238,8 +250,8 @@ exit 23
         (self.directory / 'release.pkg').write_bytes(bad)
         original_uci = (self.directory / 'uci').read_bytes()
         result = self.shell('install_xray_tmp', mocks='fetch_file() { cp "$TEST_ROOT/release.pkg" "$2"; }')
-        self.assertEqual(result.returncode, 23, result.stderr)
-        self.assertIn('vless without TLS', result.stderr)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('binary version does not match release', result.stderr)
         self.assertEqual(self.binary.read_bytes(), good)
         self.assertEqual((self.directory / 'uci').read_bytes(), original_uci)
         self.assertTrue(cached.exists())
@@ -365,12 +377,66 @@ fetch_file() { echo download >>"$TEST_ROOT/downloads"; cp "$TEST_ROOT/release.pk
         self.assertEqual(len(list(self.store.glob('*.gz'))), 1)
         self.assert_clean()
 
+    def test_release_checksum_mismatch_cannot_replace_binary_or_cache(self):
+        old = self.make_binary('working')
+        cached = self.cache(old)
+        (self.directory / 'release.pkg').write_bytes(old)
+        result = self.shell('install_xray_tmp', mocks=r'''
+xray_discover_releases() {
+    printf 'v26.6.27|test.ipk|https://github.com/test|%064d|%s\n' 0 "$(wc -c <"$TEST_ROOT/release.pkg")" >"$1"
+}
+fetch_file() { cp "$TEST_ROOT/release.pkg" "$2"; }
+''')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('SHA256 mismatch', result.stderr)
+        self.assertEqual(self.binary.read_bytes(), old)
+        self.assertEqual(gzip.decompress(cached.read_bytes()), old)
+        self.assert_clean()
+
+    def test_unavailable_asset_tries_next_published_candidate(self):
+        data = self.make_binary('candidate')
+        self.binary.unlink()
+        (self.directory / 'release.pkg').write_bytes(data)
+        result = self.shell('install_xray_tmp', mocks=r'''
+xray_discover_releases() {
+    printf 'v26.6.27|missing.ipk|https://github.com/missing|%s|%s\n' "$(xray_digest "$TEST_ROOT/release.pkg")" "$(wc -c <"$TEST_ROOT/release.pkg")" >"$1"
+    printf 'v26.6.27|published.ipk|https://github.com/published|%s|%s\n' "$(xray_digest "$TEST_ROOT/release.pkg")" "$(wc -c <"$TEST_ROOT/release.pkg")" >>"$1"
+}
+xray_probe_url() { case "$1" in */missing) return 22 ;; esac; }
+fetch_file() { cp "$TEST_ROOT/release.pkg" "$2"; }
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('URL unavailable (rc=22)', result.stderr)
+        self.assertEqual(self.binary.read_bytes(), data)
+        self.assert_clean()
+
+    def test_rejected_candidates_continue_with_older_release_page(self):
+        data = self.make_binary('older published candidate')
+        self.binary.unlink()
+        (self.directory / 'release.pkg').write_bytes(data)
+        result = self.shell('install_xray_tmp', mocks=r'''
+xray_discover_releases() {
+    case "$3" in
+        1) asset=rejected.ipk; printf '2\n' >"$2/next-release-page" ;;
+        2) asset=accepted.ipk; rm -f "$2/next-release-page" ;;
+        *) return 99 ;;
+    esac
+    printf 'v26.6.27|%s|https://github.com/test|%s|%s\n' "$asset" "$(xray_digest "$TEST_ROOT/release.pkg")" "$(wc -c <"$TEST_ROOT/release.pkg")" >"$1"
+}
+xray_check_package_metadata() { [ "$3" != rejected.ipk ]; }
+fetch_file() { cp "$TEST_ROOT/release.pkg" "$2"; }
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('searching older published releases', result.stderr)
+        self.assertEqual(self.binary.read_bytes(), data)
+        self.assert_clean()
+
     def test_full_or_unmounted_flash_never_breaks_existing_xray(self):
         self.make_binary()
         for mock in ('xray_cache_dir() { return 1; }',
                      'df() { printf "Filesystem blocks used available capacity mount\\nflash 100 99 1 99%% /overlay\\n"; }'):
             result = self.shell('prepare_xray', mocks=mock)
-            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotEqual(result.returncode, 0, result.stderr)
             self.assertTrue(self.binary.exists())
             self.assertFalse(list(self.store.glob('*.gz')))
         self.assert_clean()

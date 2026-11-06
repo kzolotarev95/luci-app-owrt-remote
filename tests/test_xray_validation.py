@@ -37,6 +37,7 @@ class XrayValidationTests(unittest.TestCase):
         self.target.write_text('{"working":true}\n', encoding="utf-8")
         binary = self.directory / "xray"
         binary.write_text(r'''#!/bin/sh
+if [ "$1" = version ]; then printf 'Xray 26.6.27 (validation fixture)\n'; exit 0; fi
 [ "$1" = -test ] && [ "$2" = -config ] || exit 99
 printf '%s\n' "$*" >>"$TEST_ROOT/xray-tests"
 case "$3" in *.json) ;; *) echo 'Failed to get format' >&2; exit 1 ;; esac

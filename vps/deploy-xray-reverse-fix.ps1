@@ -83,7 +83,7 @@ done
 if [ '__ACTION__' = Install ]; then
     for item in cgi agent; do test -s "$stage/$item"; sh -n "$stage/$item"; done
     grep -F -q 'xray_validate_transport_binary()' "$stage/agent"
-    grep -F -q '26.6.27' "$stage/agent"
+    grep -F -q 'xray_discover_releases()' "$stage/agent"
     grep -F -q '"finalRules"' "$stage/agent"
     grep -F -q 'OWRT_REMOTE_APPLY_TRACE' "$stage/cgi"
     if [ ! -e "$backup_dir" ]; then

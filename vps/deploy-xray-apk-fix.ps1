@@ -63,9 +63,9 @@ done
 if [ '__ACTION__' = Install ]; then
     for item in agent; do test -s "$stage/$item"; sh -n "$stage/$item"; done
     grep -F -q 'xray_validate_transport_binary()' "$stage/agent"
-    grep -F -q '26.6.27' "$stage/agent"
+    grep -F -q 'xray_discover_releases()' "$stage/agent"
     grep -F -q 'apk extract --allow-untrusted --no-chown --destination' "$stage/agent"
-    grep -F -q 'xray_package_extract_binary "$package" "$dir/xray.new" "$asset"' "$stage/agent"
+    grep -F -q 'xray_package_extract_binary "$package" "$work/xray.new" "$asset"' "$stage/agent"
     if [ ! -e "$backup_dir" ]; then
         mkdir -p "$stage/retained-backup"
         chmod 700 "$stage/retained-backup"

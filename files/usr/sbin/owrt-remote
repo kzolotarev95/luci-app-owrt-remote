@@ -5,14 +5,13 @@ export PATH="/bin:/sbin:/usr/bin:/usr/sbin:${PATH:-}"
 CONFIG="owrtremote"
 SECTION="main"
 # OpenWrt packages are published by yichya for the architectures reported by
-# opkg/apk. Keep the version explicit so a release cannot change underneath a
-# running router. 26.6.27 is the last release compatible with the existing
-# unencrypted VLESS reverse transport; 26.7.11+ rejects public destinations.
-# Changing the package source alone does not change that protocol requirement.
+# opkg/apk. The default is release discovery: the router asks GitHub for the
+# published assets and validates each candidate before replacing Xray. An
+# explicit XRAY_RELEASE_VERSION is retained as an administrator/test filter,
+# never as the default package version.
 XRAY_RELEASE_REPO="${XRAY_RELEASE_REPO:-https://github.com/yichya/openwrt-xray}"
-XRAY_RELEASE_VERSION="${XRAY_RELEASE_VERSION:-26.6.27}"
-XRAY_RELEASE_REVISION="${XRAY_RELEASE_REVISION:-1}"
-XRAY_RELEASE_BASE_URL="${XRAY_RELEASE_BASE_URL:-$XRAY_RELEASE_REPO/releases/download/v$XRAY_RELEASE_VERSION}"
+XRAY_RELEASE_VERSION="${XRAY_RELEASE_VERSION:-}"
+XRAY_RELEASE_API_URL="${XRAY_RELEASE_API_URL:-https://api.github.com/repos/yichya/openwrt-xray/releases}"
 
 log() {
 	# procd already captures stderr. Use only logger for managed processes.
@@ -32,6 +31,7 @@ usage() {
   owrt-remote doctor
   owrt-remote install-xray-tmp
   owrt-remote prepare-xray
+  owrt-remote xray-package-diagnostics
   owrt-remote stop-xray
   owrt-remote render-client [--stdout]
   owrt-remote run
@@ -396,160 +396,165 @@ xray_bin_path() {
 	printf '%s' "$configured"
 }
 
-fetch_file() {
-	local url dst
-	url="$1"
-	dst="$2"
-	if command -v wget >/dev/null 2>&1; then
-		wget -q -O "$dst" "$url"
-		return
-	fi
-	if command -v curl >/dev/null 2>&1; then
-		curl -fsSL "$url" -o "$dst"
-		return
-	fi
-	die "для скачивания нужен wget или curl"
-}
-
+xray_openwrt_info() (
+	. "${OWRT_REMOTE_RELEASE_FILE:-/etc/openwrt_release}" 2>/dev/null || return 1
+	case "$1" in arch) printf '%s' "${DISTRIB_ARCH:-}" ;; release) printf '%s' "${DISTRIB_RELEASE:-}" ;; esac
+)
 xray_arch() {
-	local arch machine_arch
-	# OpenWrt's package architecture is more precise than uname -m. In
-	# particular AX3000T reports aarch64 but requires aarch64_cortex-a53.
-	if command -v opkg >/dev/null 2>&1; then
-		arch="$(
-			opkg print-architecture 2>/dev/null | awk '
-				$1 == "arch" && $2 != "all" && $2 != "noarch" {
-					priority = $3 + 0
-					if (priority >= best_priority) {
-						best = $2
-						best_priority = priority
-					}
-				}
-				END {
-					if (best != "") {
-						print best
-					}
-				}
-			'
-		)"
-		[ -n "$arch" ] && {
-			printf '%s\n' "$arch"
-			return
-		}
-	fi
-
+	local arch precise
 	if command -v apk >/dev/null 2>&1; then
-		arch="$(apk --print-arch 2>/dev/null || true)"
-		case "$arch" in
-			aarch64) arch=aarch64_generic ;;
-			armv7|armv7l) arch=arm_cortex-a7_neon-vfpv4 ;;
-			x86_64) arch=x86_64 ;;
+		arch="$(apk --print-arch 2>/dev/null)" || return 1
+		precise="$(xray_openwrt_info arch)"
+		# Old APK reports a generic ABI (mipsel); the OpenWrt target gives
+		# the instruction set. Never guess 24kc/74kc from mipsel alone.
+		case "$arch:$precise" in
+			mipsel:mipsel_*|mips:mips_*|aarch64:aarch64_*|arm*:arm_*|x86:x86_*) arch="$precise" ;;
 		esac
-		[ -n "$arch" ] && {
-			printf '%s\n' "$arch"
-			return
-		}
+	elif command -v opkg >/dev/null 2>&1; then
+		arch="$(opkg print-architecture 2>/dev/null | awk '$1=="arch" && $2!="all" && $2!="noarch" && $3>=p {a=$2;p=$3} END {print a}')"
+	else
+		arch="$(xray_openwrt_info arch)"
 	fi
-
-	machine_arch="$(uname -m 2>/dev/null || true)"
-	case "$machine_arch" in
-		aarch64) arch=aarch64_generic ;;
-		armv7l|armv7*) arch=arm_cortex-a7_neon-vfpv4 ;;
-		armv6l|armv6*) arch=arm_arm1176jzf-s_vfp ;;
-		armv5l|armv5*) arch=arm_mpcore ;;
-		x86_64|amd64) arch=x86_64 ;;
-		i386|i686) arch=i386_pentium4 ;;
-		mips64el|mips64le) arch=mipsel_mips32 ;;
-		mipsel|mipsle) arch=mipsel_24kc ;;
-		mips64) arch=mips_mips32 ;;
-		mips) arch=mips_24kc ;;
-		*) arch="$machine_arch" ;;
-	esac
+	case "$arch" in ''|*[!A-Za-z0-9_.-]*) log 'Xray: cannot determine precise OpenWrt architecture'; return 1 ;; esac
 	printf '%s\n' "$arch"
 }
-
 xray_package_format() {
-	if command -v opkg >/dev/null 2>&1; then
-		printf '%s\n' ipk
-		return
-	fi
-	if command -v apk >/dev/null 2>&1; then
-		printf '%s\n' apk
-		return
-	fi
-	# OpenWrt uses opkg; retaining ipk as the default keeps the bootstrap
-	# deterministic on stripped images where the package manager is unavailable.
-	printf '%s\n' ipk
+	if command -v apk >/dev/null 2>&1; then printf 'apk\n'
+	elif command -v opkg >/dev/null 2>&1; then printf 'ipk\n'
+	else return 1; fi
 }
-
+xray_version_allowed() {
+	# A capability boundary, not a pinned download version. Every selected
+	# binary is also tested; newer releases reject our public VLESS transport.
+	LC_ALL=C awk -v v="${1#v}" 'BEGIN {n=split(v,a,"."); exit !(n==3 && v~/^[0-9]+\.[0-9]+\.[0-9]+$/ && a[1]*10000+a[2]*100+a[3]<260711)}'
+}
+xray_json() { jsonfilter -i "$1" -e "$2"; }
 xray_release_asset() {
-	local version arch package_arch
-	version="${XRAY_RELEASE_VERSION#v}"
+	local arch
+	# Naming the cache must never perform a network request.
 	arch="$(xray_arch)" || return 1
-	[ -n "$arch" ] || return 1
-	case "$(xray_package_format)" in
-		apk) printf 'openwrt-xray-%s-r%s-%s.apk\n' "$version" "$XRAY_RELEASE_REVISION" "$arch" ;;
-		*)
-			# These yichya releases include both package and target architecture
-			# in the IPK filename. APK filenames do not use this extra suffix.
-			case "$version" in
-				26.6.1|26.6.22|26.6.27)
-					package_arch="$arch"
-					case "$arch" in
-						i386_pentium) package_arch=i386_pentium-mmx ;;
-						arm_cortex-a5-vfpv4) package_arch=arm_cortex-a5_vfpv4 ;;
-						arm_cortex-a5_vfpv4) arch=arm_cortex-a5-vfpv4 ;;
-					esac
-					printf 'openwrt-xray_%s-%s_%s-%s.ipk\n' "$version" "$XRAY_RELEASE_REVISION" "$package_arch" "$arch"
-					;;
-				*) printf 'openwrt-xray_%s-%s_%s.ipk\n' "$version" "$XRAY_RELEASE_REVISION" "$arch" ;;
-			esac
-			;;
-	esac
+	printf 'xray-%s' "$arch"
 }
-
-install_package() {
-	local pkg
-	pkg="$1"
-	if command -v opkg >/dev/null 2>&1; then
-		opkg update || die "не смог обновить opkg для установки $pkg"
-		opkg install "$pkg" || die "не смог поставить $pkg через opkg"
-		return
-	fi
-	if command -v apk >/dev/null 2>&1; then
-		apk -U add "$pkg" ca-certificates || die "не смог поставить $pkg через apk"
-		return
-	fi
-	die "не найден пакетный менеджер opkg или apk для установки $pkg"
-}
-
-ensure_xray_available() {
-	local configured candidate found
-	configured="$(uci_get xray_bin /usr/bin/xray)"
-	[ -x "$configured" ] && return 0
-
-	for candidate in /usr/bin/xray /usr/bin/xray-core /usr/local/bin/xray /opt/bin/xray /tmp/owrt-xray/xray /tmp/xray; do
-		if [ -x "$candidate" ]; then
-			found="$candidate"
-			break
-		fi
-	done
-
-	if [ -z "$found" ]; then
-		found="$(command -v xray 2>/dev/null || command -v xray-core 2>/dev/null || true)"
-	fi
-
-	if [ -n "$found" ] && [ -x "$found" ]; then
-		[ "$found" = "$configured" ] || {
-			uci set "$CONFIG.$SECTION.xray_bin=$found"
-			uci commit "$CONFIG"
-			log "Xray найден: $found"
+xray_discover_releases() (
+	dest="$1"; work="$2"; arch="$(xray_arch)" || return 1
+	fmt="$(xray_package_format)" || return 1
+	command -v jsonfilter >/dev/null 2>&1 || install_package jsonfilter || return 1
+	log "Xray: detected architecture: $arch; packages=$fmt; OpenWrt=$(xray_openwrt_info release)"
+	log 'Xray: searching compatible releases...'
+	: >"$dest"
+	rm -f "$work/next-release-page"
+	# Bound API memory and calls: 20 releases/page, at most 200 releases.
+	# Older pages are fetched on demand after candidates fail validation.
+	page="${3:-1}"
+	while [ "$page" -le 10 ]; do
+		fetch_file "$XRAY_RELEASE_API_URL?per_page=20&page=$page" "$work/releases.json" || {
+			log 'ERROR: GitHub API unavailable; existing Xray preserved'; return 1;
 		}
-		return 0
-	fi
+		[ "$(wc -c <"$work/releases.json")" -le 2097152 ] || return 1
+		# Validate JSON, including an empty array. API error objects fail closed.
+		xray_json "$work/releases.json" '@' >"$work/parsed" || { log 'Xray: invalid Releases API JSON'; return 1; }
+		case "$(head -c 1 "$work/parsed")" in '[') ;; *) log 'Xray: Releases API returned an error object'; return 1 ;; esac
+		r=0; count=0
+		while [ "$r" -lt 20 ]; do
+			tag="$(xray_json "$work/releases.json" "@[$r].tag_name" 2>/dev/null)"
+			[ -n "$tag" ] || break
+			count=$((count+1))
+			rpath="@[$r]"; r=$((r+1))
+			[ "$(xray_json "$work/releases.json" "$rpath.draft")" = false ] || continue
+			[ "$(xray_json "$work/releases.json" "$rpath.prerelease")" = false ] || continue
+			xray_version_allowed "$tag" || continue
+			[ -z "$XRAY_RELEASE_VERSION" ] || [ "${tag#v}" = "${XRAY_RELEASE_VERSION#v}" ] || continue
+			# Field paths come only from numeric indexes and validated names.
+			xray_json "$work/releases.json" "$rpath.assets[*].name" >"$work/names" || continue
+			a=0
+			while IFS= read -r name; do
+				apath="$rpath.assets[$a]"; a=$((a+1))
+				case "$name" in *[!A-Za-z0-9_.+-]*|'') continue ;; esac
+				case "$fmt:$name" in
+					apk:openwrt-xray-*-"$arch".apk|ipk:openwrt-xray_*_"$arch".ipk|ipk:openwrt-xray_*-"$arch".ipk) ;;
+					*) continue ;;
+				esac
+				url="$(xray_json "$work/releases.json" "$apath.browser_download_url")"
+				digest="$(xray_json "$work/releases.json" "$apath.digest")"; digest="${digest#sha256:}"
+				size="$(xray_json "$work/releases.json" "$apath.size")"
+				[ "$(xray_json "$work/releases.json" "$apath.state")" = uploaded ] || continue
+				case "$url" in "$XRAY_RELEASE_REPO/releases/download/$tag/$name") ;; *) continue ;; esac
+				case "$digest" in *[!0-9a-f]*|'') continue ;; esac
+				[ "${#digest}" = 64 ] || continue
+				case "$size" in *[!0-9]*|'') continue ;; esac
+				[ "$size" -gt 0 ] && [ "$size" -le 33554432 ] || continue
+				printf '%s|%s|%s|%s|%s\n' "$tag" "$name" "$url" "$digest" "$size" >>"$dest"
+			done <"$work/names"
+		done
+		# Try matching assets newest-first; bookmark older pages for the caller
+		# if every candidate fails metadata/binary/transport validation.
+		if [ -s "$dest" ]; then
+			awk -F '|' '{v=$1; sub(/^v/,"",v); split(v,a,"."); print a[1]*10000+a[2]*100+a[3] "|" $0}' "$dest" |
+				sort -t '|' -k1,1nr | cut -d '|' -f2- >"$dest.sorted" || return 1
+			mv -f "$dest.sorted" "$dest" || return 1
+			if [ "$count" = 20 ] && [ "$page" -lt 10 ]; then
+				printf '%s\n' "$((page+1))" >"$work/next-release-page" || return 1
+			fi
+			return 0
+		fi
+		[ "$count" = 20 ] || break
+		page=$((page+1))
+	done
+	log "ERROR: No compatible Xray package found for this device ($arch/$fmt)"
+	return 1
+)
+xray_check_package_metadata() (
+	package="$1"; work="$2"; arch="$(xray_arch)" || return 1
+	case "$3" in
+		*.apk)
+			apk adbdump --format json "$package" >"$work/meta.json" 2>"$work/meta.err" || {
+				log 'Xray: APK metadata/format unsupported by installed apk'; head -c 4096 "$work/meta.err" >&2; return 1;
+			}
+			name="$(xray_json "$work/meta.json" '@.info.name')"
+			pkg_arch="$(xray_json "$work/meta.json" '@.info.arch')"
+			[ "$name" = openwrt-xray ] || { log 'Xray: unexpected APK package name'; return 1; }
+			# Metadata must match apk ABI as well as the precise asset target.
+			native="$(apk --print-arch)" || return 1
+			[ "$pkg_arch" = "$native" ] || [ "$pkg_arch" = "$arch" ] || { log "Xray: incompatible APK ABI: $pkg_arch (expected $native/$arch)"; return 1; }
+			# Resolve dependencies against THIS firmware/installed DB without
+			# installing the downloaded package or touching a running /usr/bin/xray.
+			apk add --simulate --no-network --allow-untrusted "$package" >"$work/deps.out" 2>&1 || {
+				log 'Xray: APK dependencies incompatible with this OpenWrt; candidate rejected'
+				head -c 4096 "$work/deps.out" >&2; return 1;
+			}
+			;;
+		*.ipk)
+			if command -v ar >/dev/null 2>&1 && ar t "$package" 2>/dev/null | grep -q control.tar.gz; then
+				ar p "$package" control.tar.gz >"$work/control.tar.gz" || return 1
+			else
+				(cd "$work" && tar -xzf "$package" ./control.tar.gz) || return 1
+			fi
+			(cd "$work" && tar -xzf control.tar.gz ./control) || return 1
+			name="$(sed -n 's/^Package: *//p' "$work/control" | tr -d '\r')"
+			[ "$name" = openwrt-xray ] || { log 'Xray: unexpected IPK package name'; return 1; }
+			pkg_arch="$(sed -n 's/^Architecture: *//p' "$work/control" | tr -d '\r')"
+			[ "$pkg_arch" = "$arch" ] || { log "Xray: incompatible IPK ABI: $pkg_arch (expected $arch)"; return 1; }
+			deps="$(sed -n 's/^Depends: *//p' "$work/control")"
+			# yichya Go packages normally depend only on libc. Unknown/versioned
+			# dependencies fail closed instead of ignoring another firmware ABI.
+			for dep in $(printf '%s' "$deps" | tr ',' ' '); do
+				case "$dep" in *[!A-Za-z0-9_+.-]*) log "Xray: unsupported IPK dependency constraint: $deps"; return 1 ;; esac
+				opkg status "$dep" | grep -q '^Status: .* installed$' || { log "Xray: missing dependency: $dep"; return 1; }
+			done
+			;;
+		*) return 1 ;;
+	esac
+)
 
-	log "Xray не найден ($configured), ставлю временный Xray в /tmp..."
-	install_xray_tmp
+xray_package_diagnostics() {
+	local bin store
+	printf 'OpenWrt: %s\nArchitecture: %s\nPackage format: %s\n' "$(xray_openwrt_info release)" "$(xray_arch)" "$(xray_package_format)"
+	bin="$(xray_bin_path)"
+	printf 'Xray binary: %s\n' "$bin"
+	if [ -x "$bin" ]; then "$bin" version | head -n 1; else printf 'Xray binary missing\n'; fi
+	store="$(xray_cache_dir)" || { printf 'Persistent cache unavailable\n'; return 1; }
+	printf 'Persistent cache: %s\n' "$store"
+	ls -ln "$store"/*.gz 2>/dev/null || return 1
 }
 
 service_enabled() {
@@ -634,7 +639,7 @@ EOF
 	else
 		rc=$?
 		head -c 8192 "$probe/result" >&2
-		log "ОШИБКА: пакет Xray несовместим с текущим VLESS reverse без TLS (rc=$rc). Нужна совместимая сборка $XRAY_RELEASE_VERSION; рабочий бинарник и кэш сохранены"
+		log "ОШИБКА: пакет Xray несовместим с текущим VLESS reverse без TLS (rc=$rc). Нужна сборка с поддержкой текущего транспорта; рабочий бинарник и кэш сохранены"
 		return "$rc"
 	fi
 )
@@ -801,23 +806,6 @@ EOF
 	mv -f "$out" "$xray_config" || return 1
 	printf '%s\n' "$xray_config"
 )
-
-run_xray() {
-	local enabled xray_bin xray_config
-	enabled="$(uci_get enabled 0)"
-	truthy "$enabled" || die "сервис выключен: включи option enabled '1'"
-
-	ensure_xray_available
-	xray_bin="$(xray_bin_path)"
-	xray_config="$(render_client_config)" || die "не удалось создать конфигурацию Xray"
-	[ -n "$xray_config" ] && [ -s "$xray_config" ] || die "конфигурация Xray отсутствует или пуста"
-	[ -x "$xray_bin" ] || die "xray не найден или не исполняемый: $xray_bin"
-
-	if "$xray_bin" help 2>/dev/null | grep -q 'run'; then
-		exec "$xray_bin" run -config "$xray_config"
-	fi
-	exec "$xray_bin" -config "$xray_config"
-}
 
 heartbeat_json() {
 	local router_id router_name role public_url hub_url xray_state service_state ssh_state event heartbeat_interval
@@ -1657,7 +1645,7 @@ xray_cache_save() (
 	digest="$(xray_digest "$bin")" || return 1
 	target="$store/$asset.$digest.gz"
 	# An existing valid copy requires no Flash writes, including after reboot.
-	if [ -s "$target" ] && gzip -t "$target" 2>/dev/null; then return 0; fi
+	if [ -s "$target" ] && gzip -t "$target" 2>/dev/null && [ "$(gzip -dc "$target" | sha256sum | cut -d' ' -f1)" = "$digest" ]; then return 0; fi
 	umask 077
 	mkdir -p "$store" || return 1
 	chmod 700 "$store" || return 1
@@ -1676,6 +1664,7 @@ xray_cache_save() (
 	trap 'rm -f "$temp"' EXIT
 	trap 'exit 1' INT TERM
 	gzip -c "$bin" >"$temp" && gzip -t "$temp" || return 1
+	[ "$(gzip -dc "$temp" | sha256sum | cut -d' ' -f1)" = "$digest" ] || return 1
 	[ "$(wc -c <"$temp")" -le 16777216 ] || return 1
 	mv -f "$temp" "$target" || return 1
 	# Once per binary update: commit the replacement before deleting the last
@@ -1687,15 +1676,14 @@ xray_cache_save() (
 )
 xray_cache_restore() (
 	store="$(xray_cache_dir)" || return 1
-	asset="$(xray_release_asset)" || return 1
 	dir="$(xray_runtime_dir)"; mkdir -p "$dir" || return 1
 	temp="$(mktemp "$dir/.restore.XXXXXX")" || return 1
 	trap 'rm -f "$temp"' EXIT
 	trap 'exit 1' INT TERM
-	for cache in "$store/$asset."*.gz; do
+	for cache in "$store"/*.gz; do
 		[ -s "$cache" ] || continue
 		[ "$(wc -c <"$cache")" -le 16777216 ] || continue
-		digest="${cache#"$store/$asset."}"; digest="${digest%.gz}"
+		digest="${cache%.gz}"; digest="${digest##*.}"
 		case "$digest" in ''|*[!0-9a-f]*) continue ;; esac
 		[ "${#digest}" = 64 ] || continue
 		# Bound even an invalid compressed file; verify bytes before execution.
@@ -1741,7 +1729,7 @@ xray_native_fetch() (
 # Bound one complete download, including redirects. In WAN mode use the
 # selected resolver on every HTTPS hop, retaining hostname verification/SNI.
 fetch_file() (
-	url="$1"; dst="$2"; rm -f "$dst"
+	url="$1"; dst="$2"; method="${3:-GET}"; rm -f "$dst"
 	stats=''
 	trap 'result=$?; rm -f "$stats"; [ "$result" = 0 ] || rm -f "$dst"' EXIT
 	trap 'exit 1' INT TERM
@@ -1753,6 +1741,7 @@ fetch_file() (
 			origin="$(remote_url_origin "$url")" || return 3
 			case "$origin" in https://*) ;; *) log 'Xray: отклонена загрузка без HTTPS'; return 3 ;; esac
 			set -- -q -fsS --connect-timeout 10 --noproxy '*' --proto '=https' --max-filesize 33554432
+			[ "$method" != HEAD ] || set -- "$@" -I
 			if truthy "$(uci_get wan_direct 0)"; then
 				host="${origin#https://}"; port="${host##*:}"; host="${host%:*}"
 				device="$(wan_device)" || return 1
@@ -1788,18 +1777,20 @@ fetch_file() (
 )
 
 install_package() {
-	local pkg
-	pkg="$1"
-	if command -v opkg >/dev/null 2>&1; then
-		opkg update >/dev/null 2>&1 || return 1
-		opkg install "$pkg" >/dev/null 2>&1 || return 1
-		return 0
-	fi
+	local rc
+	rc=0
 	if command -v apk >/dev/null 2>&1; then
-		apk -U add "$pkg" >/dev/null 2>&1 || return 1
-		return 0
+		log "Xray dependency: apk -U add $1"
+		apk -U add "$1" >&2 || rc=$?
+	elif command -v opkg >/dev/null 2>&1; then
+		log "Xray dependency: opkg update && opkg install $1"
+		opkg update >&2 && opkg install "$1" >&2 || rc=$?
+	else
+		log 'Xray: no supported package manager (apk/opkg)'
+		return 1
 	fi
-	return 1
+	[ "$rc" = 0 ] || log "Xray dependency: $1 failed (rc=$rc)"
+	return "$rc"
 }
 
 has_ca_certificates() {
@@ -1812,10 +1803,10 @@ has_ca_certificates() {
 ensure_ca_certificates() {
 	has_ca_certificates && return 0
 	if command -v apk >/dev/null 2>&1; then
-		install_package ca-certificates >/dev/null 2>&1 || true
+		install_package ca-certificates || true
 	fi
-	if command -v opkg >/dev/null 2>&1; then
-		install_package ca-bundle >/dev/null 2>&1 || install_package ca-certificates >/dev/null 2>&1 || true
+	if ! command -v apk >/dev/null 2>&1 && command -v opkg >/dev/null 2>&1; then
+		install_package ca-bundle || install_package ca-certificates || true
 	fi
 	has_ca_certificates
 }
@@ -1825,10 +1816,10 @@ ensure_fetch_tool() {
 	command -v uclient-fetch >/dev/null 2>&1 && return 0
 	command -v wget >/dev/null 2>&1 && return 0
 	if command -v apk >/dev/null 2>&1; then
-		install_package curl >/dev/null 2>&1 || install_package wget >/dev/null 2>&1 || true
+		install_package curl || install_package wget || true
 	fi
-	if command -v opkg >/dev/null 2>&1; then
-		install_package curl >/dev/null 2>&1 || install_package wget-ssl >/dev/null 2>&1 || install_package wget >/dev/null 2>&1 || true
+	if ! command -v apk >/dev/null 2>&1 && command -v opkg >/dev/null 2>&1; then
+		install_package curl || install_package wget-ssl || install_package wget || true
 	fi
 	command -v curl >/dev/null 2>&1 && return 0
 	command -v uclient-fetch >/dev/null 2>&1 && return 0
@@ -1850,8 +1841,8 @@ xray_package_extract_binary() (
 	trap cleanup_package_extract EXIT
 	trap 'exit 1' INT TERM
 	mkdir -p "$work/data" || return 1
-	# The bounded downloader stages every format as xray.pkg. Select the
-	# extractor from the release asset, not the temporary file's extension.
+	# Select the extractor from the published release asset. Callers may also
+	# supply a neutral temporary filename when reusing this helper.
 	case "${3:-$archive}" in
 		*.ipk|*.pkg)
 			# yichya's .ipk release is a gzip-compressed tar containing
@@ -1892,72 +1883,85 @@ xray_package_extract_binary() (
 	return 1
 )
 
+xray_binary_usable() {
+	[ -x "$1" ] && "$1" version >/dev/null 2>&1 && ! xray_requires_legacy_replacement "$1"
+}
+xray_probe_url() {
+	# Use the same TLS/WAN/redirect policy as the actual GET.
+	if command -v curl >/dev/null 2>&1; then
+		fetch_file "$1" "$2" HEAD
+	else
+		# uclient-fetch has no HEAD mode. A bounded HTTPS GET is the probe
+		# and payload together, with its size/digest checked before extraction.
+		return 0
+	fi
+}
 install_xray_tmp_locked() (
 	dir="$(xray_runtime_dir)"
-	package="$dir/xray.pkg"
-	asset="$(xray_release_asset)" || {
-		log "Xray: неизвестный пакет для архитектуры $(uname -m 2>/dev/null)"
-		return 1
-	}
-	url="$XRAY_RELEASE_BASE_URL/$asset"
-
 	mkdir -p "$dir" || return 1
-	# An interrupted package download is disposable; the working binary and
-	# compressed boot copy are never removed before a candidate is validated.
-	rm -f "$package.new" "$dir/xray.new"
-	trap 'rm -f "$package.new" "$package" "$dir/xray.new"' EXIT
+	work="$(mktemp -d "$dir/.download.XXXXXX")" || return 1
+	trap 'rm -rf "$work"' EXIT
 	trap 'exit 1' INT TERM
-	ensure_ca_certificates || log "CA certificates not found, trying download anyway"
-	ensure_fetch_tool || {
-		log "need curl, uclient-fetch or wget to download Xray"
-		return 1
-	}
-
-	log "Xray: загрузка пакета yichya/openwrt-xray/$asset; общий тайм-аут=120s"
-	fetch_file "$url" "$package.new" || {
-		log "Xray: не удалось загрузить $asset; рабочий бинарник и кэш сохранены"
-		return 1
-	}
-	[ -s "$package.new" ] || {
-		log "Xray: скачанный пакет пустой; рабочий бинарник сохранён"
-		return 1
-	}
-	mv -f "$package.new" "$package" || return 1
-	xray_package_extract_binary "$package" "$dir/xray.new" "$asset" || {
-		log "Xray: не удалось извлечь /usr/bin/xray из пакета $asset; рабочий бинарник сохранён"
-		return 1
-	}
-	[ -s "$dir/xray.new" ] || return 1
-	[ "$(wc -c <"$dir/xray.new")" -le 67108864 ] || {
-		log 'Xray: извлечённый бинарник больше 64 МиБ; рабочий бинарник сохранён'
-		return 1
-	}
-	chmod 755 "$dir/xray.new"
-	version="$("$dir/xray.new" version 2>&1)" || {
-		log 'Xray: извлечённый бинарник не запускается; рабочий бинарник сохранён'
-		return 1
-	}
-	version="$(printf '%s\n' "$version" | sed -n '1p')"
-	xray_validate_transport_binary "$dir/xray.new" || return $?
-	mv -f "$dir/xray.new" "$dir/xray" || return 1
-	uci set "$CONFIG.$SECTION.xray_bin=$dir/xray" && uci commit "$CONFIG" || return 1
-	xray_cache_save "$dir/xray" || true
-	rm -f "$package"
-	printf 'OK: Xray installed in %s\n' "$dir/xray"
-	printf 'OK: %s\n' "$version"
-	printf 'OK: xray_bin saved in /etc/config/owrtremote\n'
+	ensure_ca_certificates || { log 'Xray: trusted CA certificates unavailable; existing Xray preserved'; return 1; }
+	ensure_fetch_tool || { log 'Xray: need curl, uclient-fetch or wget'; return 1; }
+	rc=1
+	page=1
+	while [ "$page" -le 10 ]; do
+		xray_discover_releases "$work/candidates" "$work" "$page" || return 1
+		while IFS='|' read -r tag asset url digest bytes; do
+			# Keep the published name for native package-manager diagnostics.
+			rm -f "$work/xray.new" "${package:-$work/unused}"
+			package="$work/$asset"
+			log "Xray: candidate: $asset; checking download URL..."
+			xray_probe_url "$url" "$work/headers" || { rc=$?; log "Xray: URL unavailable (rc=$rc); candidate skipped"; continue; }
+			log "Xray: загрузка пакета yichya/openwrt-xray/$asset; общий тайм-аут=120s"
+			fetch_file "$url" "$package" || { rc=$?; log "ERROR: GitHub download unavailable (rc=$rc); existing Xray preserved"; continue; }
+			[ "$(wc -c <"$package")" = "$bytes" ] || { log 'Xray: package length mismatch'; rc=1; continue; }
+			log 'Xray: verifying package checksum...'
+			[ "$(xray_digest "$package")" = "$digest" ] || { log 'Xray: package SHA256 mismatch; existing Xray preserved'; rc=1; continue; }
+			xray_check_package_metadata "$package" "$work" "$asset" || { rc=$?; continue; }
+			xray_package_extract_binary "$package" "$work/xray.new" "$asset" || { rc=$?; log "Xray: extraction failed for $asset (rc=$rc)"; continue; }
+			[ -s "$work/xray.new" ] && [ "$(wc -c <"$work/xray.new")" -le 67108864 ] || { rc=1; continue; }
+			chmod 755 "$work/xray.new" || return 1
+			"$work/xray.new" version >"$work/version" 2>&1 || { rc=$?; log "Xray: binary cannot run on this firmware (rc=$rc)"; head -c 4096 "$work/version" >&2; continue; }
+			version="$(sed -n '1s/^Xray \([0-9][0-9.]*\) .*/\1/p' "$work/version")"
+			[ "$version" = "${tag#v}" ] || { log 'Xray: binary version does not match release'; rc=1; continue; }
+			xray_validate_transport_binary "$work/xray.new" || { rc=$?; continue; }
+			log "Xray: compatible package found: $asset"
+			# Publish and verify a bootable copy before replacing any executable.
+			# Failure leaves both the old binary and UCI completely untouched.
+			xray_cache_save "$work/xray.new" || { log 'Xray: persistent cache could not be created; existing Xray preserved'; return 1; }
+			log 'Xray: persistent cache created; installing Xray...'
+			mv -f "$work/xray.new" "$dir/xray" || return 1
+			if [ "$(uci_get xray_bin '')" != "$dir/xray" ]; then
+				uci set "$CONFIG.$SECTION.xray_bin=$dir/xray" && uci commit "$CONFIG" || return 1
+			fi
+			printf 'OK: Xray installed in %s\nOK: Xray %s\n' "$dir/xray" "$version"
+			return 0
+		done <"$work/candidates"
+		[ -s "$work/next-release-page" ] || break
+		read -r page <"$work/next-release-page" || return 1
+		case "$page" in ''|*[!0-9]*) return 1 ;; esac
+		log 'Xray: candidates rejected; searching older published releases...'
+	done
+	log 'ERROR: No compatible Xray package passed validation; existing Xray and cache preserved'
+	return "$rc"
 )
 
 ensure_xray_available() {
 	local configured candidate found
 	configured="$(uci_get xray_bin /usr/bin/xray)"
 	if [ -x "$configured" ]; then
-		if ! xray_requires_legacy_replacement "$configured"; then return 0; fi
-		log "Xray: установленная версия запрещает текущий VLESS без TLS; подготовка совместимой $XRAY_RELEASE_VERSION из yichya/openwrt-xray"
+		if xray_binary_usable "$configured"; then return 0; fi
+		if xray_requires_legacy_replacement "$configured"; then
+			log 'Xray: установленная версия запрещает текущий VLESS без TLS; поиск совместимой сборки из yichya/openwrt-xray'
+		else
+			log 'Xray: установленный бинарник не выполняет version; поиск проверенной рабочей сборки'
+		fi
 	fi
 
 	for candidate in /usr/bin/xray /usr/bin/xray-core /usr/local/bin/xray /opt/bin/xray /tmp/owrt-xray/xray /tmp/owrt-xray/xray_softfloat /tmp/xray /tmp/xray_softfloat; do
-		if [ -x "$candidate" ] && ! xray_requires_legacy_replacement "$candidate"; then
+		if xray_binary_usable "$candidate"; then
 			found="$candidate"
 			break
 		fi
@@ -1967,7 +1971,7 @@ ensure_xray_available() {
 		found="$(command -v xray 2>/dev/null || command -v xray-core 2>/dev/null || true)"
 	fi
 
-	if [ -n "$found" ] && [ -x "$found" ] && ! xray_requires_legacy_replacement "$found"; then
+	if [ -n "$found" ] && xray_binary_usable "$found"; then
 		[ "$found" = "$configured" ] || {
 			uci set "$CONFIG.$SECTION.xray_bin=$found"
 			uci commit "$CONFIG"
@@ -1984,7 +1988,7 @@ prepare_xray_tmp() (
 	trap 'exit 1' INT TERM
 	# Recheck after acquiring the lock: a concurrent installer may have finished.
 	configured="$(uci_get xray_bin /usr/bin/xray)"
-	if [ -x "$configured" ] && ! xray_requires_legacy_replacement "$configured"; then return 0; fi
+	if xray_binary_usable "$configured"; then return 0; fi
 	xray_cache_restore && return 0
 	log 'Xray: загрузочной копии нет; требуется загрузка из сети'
 	install_xray_tmp_locked
@@ -1997,7 +2001,7 @@ prepare_xray() (
 			xray_bootstrap_lock || return 1
 			trap 'xray_bootstrap_unlock' EXIT
 			trap 'exit 1' INT TERM
-			xray_cache_save "$bin" || log 'Xray: запускается из RAM; автономное восстановление после перезагрузки пока недоступно'
+			xray_cache_save "$bin" || { log 'Xray: запускается из RAM; автономное восстановление после перезагрузки пока недоступно'; return 1; }
 			;;
 	esac
 )
@@ -2095,6 +2099,9 @@ case "$cmd" in
 		;;
 	prepare-xray)
 		prepare_xray
+		;;
+	xray-package-diagnostics)
+		xray_package_diagnostics
 		;;
 	stop-xray)
 		stop_xray

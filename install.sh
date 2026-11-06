@@ -7,6 +7,41 @@ export PATH="/bin:/sbin:/usr/bin:/usr/sbin:${PATH:-}"
 RAW_URL="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 ROOT="${ROOT:-/}"
 SCRIPT_DIR="$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd)"
+INSTALL_DIAGNOSTIC="${OWRT_REMOTE_INSTALL_DIAGNOSTIC:-0}"
+INSTALL_STAGE=init
+INSTALL_CANDIDATE=''
+umask 077
+INSTALL_TMP="$(mktemp -d "${TMPDIR:-/tmp}/owrt-install.XXXXXX")"
+cleanup_install() {
+	code=$?
+	trap - EXIT
+	[ "$code" = 0 ] || printf 'ERROR: installation stage=%s rc=%s\n' "$INSTALL_STAGE" "$code" >&2
+	[ -z "$INSTALL_CANDIDATE" ] || rm -f "$INSTALL_CANDIDATE"
+	rm -rf "$INSTALL_TMP"
+	exit "$code"
+}
+trap cleanup_install EXIT
+trap 'exit 1' INT TERM
+
+# No shell xtrace: it could expose UCI keys or the generated panel access key.
+# Each external step has an explicit label, return code and separate streams.
+run_step() {
+	local rc label
+	label="$1"; shift
+	INSTALL_STAGE="$label"
+	printf 'Install [%s]: %s\n' "$label" "$*" >&2
+	rc=0
+	"$@" >"$INSTALL_TMP/stdout" 2>"$INSTALL_TMP/stderr" || rc=$?
+	if [ "$rc" != 0 ] || [ "$INSTALL_DIAGNOSTIC" = 1 ]; then
+		printf 'Install [%s]: rc=%s; stdout:\n' "$label" "$rc" >&2
+		head -c 32768 "$INSTALL_TMP/stdout" >&2
+		printf '\nInstall [%s]: stderr:\n' "$label" >&2
+		head -c 32768 "$INSTALL_TMP/stderr" >&2
+		printf '\n' >&2
+	fi
+	: >"$INSTALL_TMP/stdout"; : >"$INSTALL_TMP/stderr"
+	return "$rc"
+}
 
 info() {
 	printf '%s\n' "$*"
@@ -45,13 +80,16 @@ install_file() {
 	src="$SCRIPT_DIR/files/$rel"
 	dst="$(target_path "$rel")"
 	mkdir -p "$(dirname "$dst")"
+	INSTALL_CANDIDATE="$(mktemp "$dst.new.XXXXXX")"
 	if [ -f "$src" ]; then
-		cp "$src" "$dst"
+		run_step "file:$rel" cp "$src" "$INSTALL_CANDIDATE"
 	else
 		bust="$(date +%s 2>/dev/null || echo $$)"
-		fetch "$RAW_URL/files/$rel?v=$bust" "$dst"
+		run_step "file:$rel" fetch "$RAW_URL/files/$rel?v=$bust" "$INSTALL_CANDIDATE"
 	fi
-	chmod "$mode" "$dst"
+	chmod "$mode" "$INSTALL_CANDIDATE"
+	mv -f "$INSTALL_CANDIDATE" "$dst"
+	INSTALL_CANDIDATE=''
 }
 
 install_config() {
@@ -160,12 +198,12 @@ install_packages() {
 	manager="$(package_manager)"
 	case "$manager" in
 		opkg)
-			opkg update >/dev/null 2>&1 || warn "не удалось обновить список opkg, пробую ставить пакеты как есть"
-			opkg install "$@"
+			run_step packages-index opkg update || return $?
+			run_step packages-install opkg install "$@"
 			;;
 		apk)
-			apk update >/dev/null 2>&1 || warn "не удалось обновить список apk, пробую ставить пакеты как есть"
-			apk add "$@"
+			run_step packages-index apk update || return $?
+			run_step packages-install apk add "$@"
 			;;
 		*)
 			return 1
@@ -211,15 +249,46 @@ install_xray_runtime() {
 	remote_bin="$(target_path usr/sbin/owrt-remote)"
 	[ -x "$remote_bin" ] || die "missing $remote_bin after install"
 	info "Preparing Xray and its persistent boot cache..."
-	"$remote_bin" prepare-xray || die "failed to prepare Xray"
+	run_step prepare-xray "$remote_bin" prepare-xray || die "failed to prepare Xray; see stage/command/rc above"
+}
+
+verify_heartbeat() {
+	# The response may contain a command or fresh Hub configuration; show only
+	# the existing redacted diagnostic fields, never the raw HTTP body.
+	local rc
+	rc=0
+	/usr/sbin/owrt-remote heartbeat >/dev/null || rc=$?
+	/usr/sbin/owrt-remote heartbeat-diagnostics
+	return "$rc"
+}
+
+verify_xray_start() {
+	local attempt
+	if [ -e /etc/owrt-remote/control/stopped ]; then
+		info 'Xray remains intentionally stopped by Remote; Heartbeat is independent.'
+		return 0
+	fi
+	attempt=0
+	while [ "$attempt" -lt 30 ]; do
+		if /usr/sbin/owrt-remote status | grep -Fq 'xray_state: running'; then
+			info 'Xray process verified.'
+			return 0
+		fi
+		attempt=$((attempt+1)); sleep 1
+	done
+	warn 'Xray did not start within 30 seconds; configuration retained. Check Global logs on the router.'
+	return 1
 }
 
 # Stop the old log writer before replacing its storage code. Its bounded legacy
 # archive is migrated by the new log service, without moving any other /tmp data.
 if [ "${ROOT%/}" = "" ] && [ -x /etc/init.d/owrt-remote-logs ]; then
-	/etc/init.d/owrt-remote-logs stop || true
+	if /etc/init.d/owrt-remote-logs running >/dev/null 2>&1; then
+		run_step logs-stop /etc/init.d/owrt-remote-logs stop
+	fi
 fi
 
+INSTALL_STAGE=files
 install_file "usr/sbin/owrt-remote" 0755
 install_file "usr/lib/owrt-remote/wan.sh" 0644
 install_file "usr/lib/owrt-remote/control.sh" 0644
@@ -237,22 +306,50 @@ install_file "www/luci-static/resources/view/owrt_remote.js" 0644
 ensure_wol_support
 
 if [ "${ROOT%/}" = "" ]; then
-	/etc/init.d/owrt-remote-logs enable
-	/etc/init.d/owrt-remote-logs restart
+	run_step logs-enable /etc/init.d/owrt-remote-logs enable
+	# restart calls procd service delete, which returns "Not found" on the
+	# first installation. start is an idempotent procd service set operation.
+	run_step logs-start /etc/init.d/owrt-remote-logs start
 fi
 
 rm -f "$(target_path usr/lib/lua/luci/controller/owrt_remote.lua)" 2>/dev/null || true
 rm -rf "$(target_path tmp/luci-indexcache)" "$(target_path tmp/luci-modulecache)" "$(target_path tmp/luci-indexcache.)"* "$(target_path tmp/luci-modulecache.)"* 2>/dev/null || true
 
 if [ -x "$(target_path etc/init.d/rpcd)" ]; then
-	"$(target_path etc/init.d/rpcd)" restart >/dev/null 2>&1 || true
+	if "$(target_path etc/init.d/rpcd)" running >/dev/null 2>&1; then
+		run_step rpcd-reload "$(target_path etc/init.d/rpcd)" reload || die "rpcd reload failed"
+	else
+		run_step rpcd-start "$(target_path etc/init.d/rpcd)" start || die "rpcd start failed"
+	fi
 fi
 
 if [ -x "$(target_path etc/init.d/uhttpd)" ]; then
-	"$(target_path etc/init.d/uhttpd)" reload >/dev/null 2>&1 || "$(target_path etc/init.d/uhttpd)" restart >/dev/null 2>&1 || true
+	if "$(target_path etc/init.d/uhttpd)" running >/dev/null 2>&1; then
+		run_step uhttpd-reload "$(target_path etc/init.d/uhttpd)" reload || die "uhttpd reload failed"
+	else
+		run_step uhttpd-start "$(target_path etc/init.d/uhttpd)" start || die "uhttpd start failed"
+	fi
 fi
 
 install_xray_runtime
+
+if [ "${ROOT%/}" = "" ]; then
+	# Respect disabled clients and an intentional Remote stop. First-time
+	# installs need OpenWrt config from Hub before a tunnel can be started.
+	if [ "$(uci -q get owrtremote.main.enabled 2>/dev/null || true)" = 1 ]; then
+		run_step config-test /usr/sbin/owrt-remote render-client || die "Xray configuration validation failed"
+		run_step service-enable /etc/init.d/owrt-remote enable
+		if /etc/init.d/owrt-remote running >/dev/null 2>&1; then
+			run_step service-reload /etc/init.d/owrt-remote reload || die "Remote service reload failed"
+		else
+			run_step service-start /etc/init.d/owrt-remote start || die "Remote service start failed"
+		fi
+		run_step xray-running verify_xray_start || die "Xray start verification failed"
+		run_step heartbeat verify_heartbeat || die "Heartbeat verification failed (files and working Xray retained)"
+	else
+		info 'Remote is disabled; apply OpenWrt config from Hub to start the tunnel and Heartbeat.'
+	fi
+fi
 
 key="$(make_key)"
 ip="$(router_ip)"
