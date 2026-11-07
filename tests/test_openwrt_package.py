@@ -1,6 +1,7 @@
 """Native package contents, release discovery, and safe target setup."""
 import importlib.util
 import gzip
+import http.server
 import io
 import os
 from pathlib import Path
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -237,6 +239,46 @@ class PackageTests(unittest.TestCase):
                 p.download("https://downloads.openwrt.org/example", destination, "a" * 64)
         self.assertEqual(destination.read_bytes(), b"working old archive")
         self.assertFalse(destination.with_name(destination.name + ".partial").exists())
+
+    def test_sdk_download_recovers_after_real_http_connection_closes_early(self):
+        body = b"first second"
+        destination, expected = self.root / "sdk.tar.xz", self.root / "expected"
+        destination.write_bytes(b"working old archive")
+        expected.write_bytes(body)
+        requests, working_copies = [], []
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                requests.append(self.headers.get("Range"))
+                working_copies.append(destination.read_bytes())
+                if len(requests) == 1:
+                    self.send_response(200)
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body[:5])
+                    self.close_connection = True
+                else:
+                    self.send_response(206)
+                    self.send_header("Content-Range", "bytes 5-11/12")
+                    self.send_header("Content-Length", "7")
+                    self.end_headers()
+                    self.wfile.write(body[5:])
+
+        with http.server.HTTPServer(("127.0.0.1", 0), Handler) as server:
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            try:
+                with mock.patch.object(p.time, "sleep"):
+                    p.download(f"http://127.0.0.1:{server.server_port}/sdk.tar.xz", destination, p.sha256(expected))
+            finally:
+                server.shutdown()
+                worker.join(timeout=5)
+        self.assertEqual(requests, [None, "bytes=5-"])
+        self.assertEqual(working_copies, [b"working old archive"] * 2)
+        self.assertEqual(destination.read_bytes(), body)
 
     def test_openwrt_disk_image_accepts_fwtool_footer_and_rejects_truncation(self):
         source, destination = self.root / "image.gz", self.root / "image.raw"
