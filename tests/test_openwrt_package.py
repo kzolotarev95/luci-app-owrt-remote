@@ -4,6 +4,7 @@ import gzip
 import io
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -106,7 +107,9 @@ class PackageTests(unittest.TestCase):
         helper = (p.RECIPE / "root/usr/lib/owrt-remote/package.sh").read_text()
         # Redirect target paths in the harness. The production hook never
         # honors arbitrary ROOT/host variables supplied to a package manager.
-        helper = helper.replace("/etc/", target.as_posix() + "/etc/").replace("/tmp/", target.as_posix() + "/tmp/")
+        # One pass is essential on Linux: a temporary target itself starts
+        # with /tmp/, so sequential replacements would rewrite inserted paths.
+        helper = re.sub(r"/(?:etc|tmp)/", lambda match: target.as_posix() + match.group(0), helper)
         result = subprocess.run([SH, "-s", "--", "configure"], input=helper, capture_output=True, text=True, env=self.env)
         return result, key, config
 

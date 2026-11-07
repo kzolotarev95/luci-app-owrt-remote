@@ -8,6 +8,15 @@ on:
   pull_request:
     paths: ['files/**', 'package/**', 'scripts/*openwrt*', 'tests/test_openwrt_package.py', '.github/workflows/openwrt-packages.yml']
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Attach successful builds to the existing version tag
+        type: boolean
+        default: false
+      release_tag:
+        description: Existing tag (empty means v plus PKG_VERSION)
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -23,6 +32,7 @@ jobs:
     outputs:
       builds: ${{ steps.targets.outputs.builds }}
       smoke: ${{ steps.targets.outputs.smoke }}
+      release_tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - name: Test package tooling and shell syntax
@@ -30,17 +40,28 @@ jobs:
           python3 -m unittest discover -s tests -p test_openwrt_package.py -v
           sh -n scripts/build-openwrt-package.sh
           sh -n package/luci-app-owrt-remote/root/usr/lib/owrt-remote/package.sh
-      - name: Validate tag against package version
-        if: startsWith(github.ref, 'refs/tags/')
+      - id: release
+        name: Validate release tag and source payload
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_tag }}
+          MANUAL_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+          PUBLISH_REQUESTED: ${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release) }}
         run: |
           python3 - <<'PY'
-          import os, sys
+          import os, subprocess, sys
           sys.path.insert(0, 'scripts')
           import openwrt_package as p
-          if os.environ['RELEASE_TAG'] != 'v' + p.versions()[0]:
+          expected = 'v' + p.versions()[0]
+          tag = os.environ['RELEASE_TAG'] or expected
+          if os.environ['PUBLISH_REQUESTED'] == 'true' and tag != expected:
               raise SystemExit('Release tag must match PKG_VERSION in package/luci-app-owrt-remote/Makefile')
+          if os.environ['MANUAL_PUBLISH'] == 'true':
+              # Retry corrected build tooling without moving an existing tag.
+              # The application payload and package recipe must still match it.
+              subprocess.run(['git', 'fetch', '--no-tags', 'origin', 'tag', tag], check=True)
+              subprocess.run(['git', 'diff', '--exit-code', tag, 'HEAD', '--', 'files', 'package/luci-app-owrt-remote'], check=True)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('tag=' + tag + '\n')
           PY
       - id: targets
         name: Resolve latest maintenance versions for each supported series
@@ -129,8 +150,8 @@ jobs:
 
   publish:
     name: Attach verified packages to GitHub Release
-    needs: [build, install-test]
-    if: startsWith(github.ref, 'refs/tags/v') && github.event_name != 'workflow_dispatch'
+    needs: [matrix, build, install-test]
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -151,7 +172,7 @@ jobs:
           while read -r name; do cp "$name" ../publish-files/; done < ../release-files.txt
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ needs.matrix.outputs.release_tag }}
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
