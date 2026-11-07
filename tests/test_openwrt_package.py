@@ -165,6 +165,24 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(destination.read_bytes(), b"previous download")
         self.assertFalse(destination.with_name(destination.name + ".partial").exists())
 
+    def test_verified_sdk_cache_needs_no_network(self):
+        destination = self.root / "sdk.tar.xz"
+        destination.write_bytes(b"verified SDK archive")
+        with mock.patch.object(p.urllib.request, "urlopen") as network:
+            p.download("https://downloads.openwrt.org/example", destination, p.sha256(destination))
+        network.assert_not_called()
+
+    def test_invalid_sdk_cache_is_replaced_only_by_verified_download(self):
+        destination = self.root / "sdk.tar.xz"
+        destination.write_bytes(b"invalid cache")
+        expected = self.root / "expected.tar.xz"
+        expected.write_bytes(b"verified SDK archive")
+        with mock.patch.object(p.urllib.request, "urlopen", return_value=io.BytesIO(expected.read_bytes())) as network:
+            p.download("https://downloads.openwrt.org/example", destination, p.sha256(expected))
+        network.assert_called_once()
+        self.assertEqual(destination.read_bytes(), expected.read_bytes())
+        self.assertFalse(destination.with_name(destination.name + ".partial").exists())
+
     def test_openwrt_disk_image_accepts_fwtool_footer_and_rejects_truncation(self):
         source, destination = self.root / "image.gz", self.root / "image.raw"
         body = b"OpenWrt disk sectors" * 10000

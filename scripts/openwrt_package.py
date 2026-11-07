@@ -96,11 +96,14 @@ def sha256(path):
 def download(url, path, expected):
     path = Path(path)
     if path.is_file() and sha256(path) == expected:
+        print("Verified download cache: " + path.name, flush=True)
         return
     partial = path.with_name(path.name + ".partial")
     for attempt in range(3):
         try:
             digest = hashlib.sha256()
+            started = progress = time.monotonic()
+            print(f"Downloading {path.name}; attempt {attempt + 1}/3", flush=True)
             request = urllib.request.Request(url, headers={"User-Agent": "OpenWrt-Remote-package-builder"})
             with urllib.request.urlopen(request, timeout=60) as response, partial.open("wb") as output:
                 size = 0
@@ -110,9 +113,14 @@ def download(url, path, expected):
                         raise ValueError("SDK download exceeded 2 GiB")
                     output.write(data)
                     digest.update(data)
+                    now = time.monotonic()
+                    if now - progress >= 15:
+                        print(f"Download progress: {path.name}: {size / 1024 ** 2:.1f} MiB; elapsed={now - started:.0f}s", flush=True)
+                        progress = now
             if digest.hexdigest() != expected:
                 raise ValueError("SDK SHA256 mismatch: " + url)
             partial.replace(path)
+            print(f"Download SHA256 verified: {path.name}; elapsed={time.monotonic() - started:.1f}s", flush=True)
             return
         except Exception:
             partial.unlink(missing_ok=True)
@@ -410,7 +418,9 @@ def build(args):
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="owrt-package-") as folder:
         work = Path(folder)
-        archive = work / name
+        cache = os.environ.get("OPENWRT_SDK_CACHE")
+        archive = (Path(cache).expanduser() if cache else work) / name
+        archive.parent.mkdir(parents=True, exist_ok=True)
         print("Downloading verified SDK: " + base + name, flush=True)
         download(base + name, archive, expected)
         subprocess.run(["tar", "-xf", str(archive), "-C", str(work)], check=True)
