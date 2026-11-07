@@ -1,4 +1,6 @@
 *.ipk
+*.apk
+artifacts/
 *.tar.gz
 *.tar.gz.sha256
 .test-output/

@@ -182,6 +182,17 @@ owrt-remote doctor
 owrt-remote status
 ```
 
+<h3> Готовые пакеты для OpenWrt</h3>
+
+Подготовлена сборка IPK для OpenWrt 23.05/24.10 и APK для 25.12. Пакеты
+архитектурно независимые (`all`/`noarch`): содержат тот же агент и LuCI-файлы,
+что и `install.sh`, сохраняют `/etc/config/owrtremote` и существующий Xray.
+GitHub Actions проверяет SDK разных архитектур, установку/обновление/удаление
+в OpenWrt VM и при выпуске тега `v*` прикладывает пакеты к GitHub Release.
+Для APK в штатной LuCI нужен доверенный ключ подписи; неподписанный локальный
+APK ставится через SSH. Инструкция, подпись и локальная сборка:
+[docs/OPENWRT_PACKAGES.md](docs/OPENWRT_PACKAGES.md).
+
 </div>
 
 ---

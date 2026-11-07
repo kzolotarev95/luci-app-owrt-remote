@@ -1,0 +1,19 @@
+{
+  "releases": [
+    {"series": "23.05", "baseline": "23.05.5", "format": "ipk"},
+    {"series": "24.10", "baseline": "24.10.3", "format": "ipk"},
+    {"series": "25.12", "baseline": "25.12.2", "format": "apk"}
+  ],
+  "targets": [
+    {"id": "aarch64_cortex-a53", "target": "mvebu", "subtarget": "cortexa53"},
+    {"id": "aarch64_cortex-a72", "target": "mvebu", "subtarget": "cortexa72"},
+    {"id": "aarch64_generic", "target": "armsr", "subtarget": "armv8"},
+    {"id": "arm_cortex-a7", "target": "bcm27xx", "subtarget": "bcm2709"},
+    {"id": "arm_cortex-a9", "target": "mvebu", "subtarget": "cortexa9"},
+    {"id": "mips_24kc", "target": "ath79", "subtarget": "generic"},
+    {"id": "mipsel_24kc", "target": "ramips", "subtarget": "mt7621"},
+    {"id": "mips64", "target": "octeon", "subtarget": "generic"},
+    {"id": "x86", "target": "x86", "subtarget": "generic"},
+    {"id": "x86_64", "target": "x86", "subtarget": "64", "publish": true}
+  ]
+}

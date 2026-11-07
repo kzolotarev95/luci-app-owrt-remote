@@ -1,0 +1,158 @@
+name: OpenWrt IPK and APK
+
+on:
+  push:
+    tags: ['v*']
+  release:
+    types: [published]
+  pull_request:
+    paths: ['files/**', 'package/**', 'scripts/*openwrt*', 'tests/test_openwrt_package.py', '.github/workflows/openwrt-packages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openwrt-packages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  matrix:
+    name: Validate source and resolve stable SDKs
+    runs-on: ubuntu-24.04
+    outputs:
+      builds: ${{ steps.targets.outputs.builds }}
+      smoke: ${{ steps.targets.outputs.smoke }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test package tooling and shell syntax
+        run: |
+          python3 -m unittest discover -s tests -p test_openwrt_package.py -v
+          sh -n scripts/build-openwrt-package.sh
+          sh -n package/luci-app-owrt-remote/root/usr/lib/owrt-remote/package.sh
+      - name: Validate tag against package version
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          sys.path.insert(0, 'scripts')
+          import openwrt_package as p
+          if os.environ['RELEASE_TAG'] != 'v' + p.versions()[0]:
+              raise SystemExit('Release tag must match PKG_VERSION in package/luci-app-owrt-remote/Makefile')
+          PY
+      - id: targets
+        name: Resolve latest maintenance versions for each supported series
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          sys.path.insert(0, 'scripts')
+          import openwrt_package as p
+          builds = p.matrix()
+          smoke = {'include': [x for x in builds['include'] if x.get('publish')]}
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('builds=' + json.dumps(builds, separators=(',', ':')) + '\n')
+              f.write('smoke=' + json.dumps(smoke, separators=(',', ':')) + '\n')
+          PY
+
+  build:
+    name: SDK ${{ matrix.version }} / ${{ matrix.id }}
+    needs: matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix: ${{ fromJSON(needs.matrix.outputs.builds) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install official SDK prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib gettext git libncurses-dev libssl-dev python3-setuptools rsync swig unzip zlib1g-dev file wget zstd
+      - name: Build and verify the native package
+        env:
+          OPENWRT_APK_SIGNING_KEY: ${{ secrets.OPENWRT_APK_SIGNING_KEY }}
+        run: |
+          extra=()
+          if [[ '${{ matrix.publish }}' == 'true' ]]; then extra+=(--upgrade-fixture); fi
+          python3 scripts/openwrt_package.py build \
+            --release '${{ matrix.version }}' \
+            --target '${{ matrix.target }}' \
+            --subtarget '${{ matrix.subtarget }}' \
+            --arch '${{ matrix.id }}' \
+            --output artifacts "${extra[@]}"
+      - name: Keep SDK verification report
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdk-report-${{ matrix.series }}-${{ matrix.id }}
+          path: artifacts/report-*.json
+          if-no-files-found: error
+      - name: Keep universal packages for LuCI and SSH
+        if: matrix.publish == true
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-${{ matrix.series }}
+          path: artifacts/*
+          if-no-files-found: error
+
+  install-test:
+    name: Install, upgrade, remove / OpenWrt ${{ matrix.version }}
+    needs: [matrix, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.smoke) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages-${{ matrix.series }}
+          path: artifacts
+      - name: Install VM test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y qemu-system-x86 openssh-client
+      - name: Test with the real OpenWrt package manager and BusyBox ash
+        run: |
+          python3 scripts/test-openwrt-package-vm.py \
+            --release '${{ matrix.version }}' --package-dir artifacts \
+            --output vm-test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: install-test-${{ matrix.series }}
+          path: vm-test/*
+          if-no-files-found: warn
+
+  publish:
+    name: Attach verified packages to GitHub Release
+    needs: [build, install-test]
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: packages-*
+          path: release-assets
+          merge-multiple: true
+      - name: Write combined SHA256 checksums
+        run: |
+          cd release-assets
+          sha256sum *.ipk *.apk > SHA256SUMS
+          if [[ -f owrt-remote-packages.pem ]]; then sha256sum owrt-remote-packages.pem >> SHA256SUMS; fi
+          printf '%s\n' *.ipk *.apk SHA256SUMS report-*.json > ../release-files.txt
+          if [[ -f owrt-remote-packages.pem ]]; then echo owrt-remote-packages.pem >> ../release-files.txt; fi
+          mkdir ../publish-files
+          while read -r name; do cp "$name" ../publish-files/; done < ../release-files.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            publish-files/*
