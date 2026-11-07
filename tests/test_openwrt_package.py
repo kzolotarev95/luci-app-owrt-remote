@@ -183,6 +183,61 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(destination.read_bytes(), expected.read_bytes())
         self.assertFalse(destination.with_name(destination.name + ".partial").exists())
 
+    def test_interrupted_sdk_download_resumes_only_with_matching_content_range(self):
+        class Interrupted(io.BytesIO):
+            status = 200
+            headers = {"Content-Length": "12"}
+
+            def read(self, size=-1):
+                data = super().read(size)
+                if not data:
+                    raise TimeoutError("network interrupted")
+                return data
+
+        class Remaining(io.BytesIO):
+            status = 206
+            headers = {"Content-Range": "bytes 5-11/12"}
+
+        destination = self.root / "sdk.tar.xz"
+        destination.write_bytes(b"working old archive")
+        expected = self.root / "expected"
+        expected.write_bytes(b"first second")
+        seen = []
+
+        def network(request, **kwargs):
+            self.assertEqual(destination.read_bytes(), b"working old archive")
+            seen.append(request.get_header("Range"))
+            return Interrupted(b"first") if len(seen) == 1 else Remaining(b" second")
+
+        with mock.patch.object(p.urllib.request, "urlopen", side_effect=network), mock.patch.object(p.time, "sleep"):
+            p.download("https://downloads.openwrt.org/example", destination, p.sha256(expected))
+        self.assertEqual(seen, [None, "bytes=5-"])
+        self.assertEqual(destination.read_bytes(), expected.read_bytes())
+
+    def test_download_ignoring_range_restarts_without_appending(self):
+        destination = self.root / "sdk.tar.xz"
+        destination.with_name(destination.name + ".partial").write_bytes(b"first")
+        expected = self.root / "expected"
+        expected.write_bytes(b"first second")
+        with mock.patch.object(p.urllib.request, "urlopen", return_value=io.BytesIO(expected.read_bytes())) as network:
+            p.download("https://downloads.openwrt.org/example", destination, p.sha256(expected))
+        self.assertEqual(network.call_args.args[0].get_header("Range"), "bytes=5-")
+        self.assertEqual(destination.read_bytes(), expected.read_bytes())
+
+    def test_download_rejects_mismatched_range_without_replacing_working_file(self):
+        class WrongRange(io.BytesIO):
+            status = 206
+            headers = {"Content-Range": "bytes 4-11/12"}
+
+        destination = self.root / "sdk.tar.xz"
+        destination.write_bytes(b"working old archive")
+        destination.with_name(destination.name + ".partial").write_bytes(b"first")
+        with mock.patch.object(p.urllib.request, "urlopen", side_effect=lambda *a, **k: WrongRange(b" second")), mock.patch.object(p.time, "sleep"):
+            with self.assertRaises(ValueError):
+                p.download("https://downloads.openwrt.org/example", destination, "a" * 64)
+        self.assertEqual(destination.read_bytes(), b"working old archive")
+        self.assertFalse(destination.with_name(destination.name + ".partial").exists())
+
     def test_openwrt_disk_image_accepts_fwtool_footer_and_rejects_truncation(self):
         source, destination = self.root / "image.gz", self.root / "image.raw"
         body = b"OpenWrt disk sectors" * 10000

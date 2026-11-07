@@ -101,31 +101,68 @@ def download(url, path, expected):
     partial = path.with_name(path.name + ".partial")
     for attempt in range(3):
         try:
-            digest = hashlib.sha256()
+            if partial.is_file() and sha256(partial) == expected:
+                partial.replace(path)
+                print("Recovered verified download: " + path.name, flush=True)
+                return
             started = progress = time.monotonic()
-            print(f"Downloading {path.name}; attempt {attempt + 1}/3", flush=True)
-            request = urllib.request.Request(url, headers={"User-Agent": "OpenWrt-Remote-package-builder"})
-            with urllib.request.urlopen(request, timeout=60) as response, partial.open("wb") as output:
-                size = 0
-                while data := response.read(1024 * 1024):
-                    size += len(data)
-                    if size > 2 * 1024 ** 3:
-                        raise ValueError("SDK download exceeded 2 GiB")
-                    output.write(data)
-                    digest.update(data)
-                    now = time.monotonic()
-                    if now - progress >= 15:
-                        print(f"Download progress: {path.name}: {size / 1024 ** 2:.1f} MiB; elapsed={now - started:.0f}s", flush=True)
-                        progress = now
+            offset = partial.stat().st_size if partial.is_file() else 0
+            if offset > 2 * 1024 ** 3:
+                raise ValueError("SDK download exceeded 2 GiB")
+            print(f"Downloading {path.name}; attempt {attempt + 1}/3; resume_bytes={offset}", flush=True)
+            headers = {"User-Agent": "OpenWrt-Remote-package-builder"}
+            if offset:
+                headers["Range"] = f"bytes={offset}-"
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=60) as response:
+                response_headers = getattr(response, "headers", {})
+                status = getattr(response, "status", 200)
+                if status == 206 and offset:
+                    span = re.fullmatch(r"bytes ([0-9]+)-([0-9]+)/([0-9]+)", response_headers.get("Content-Range", ""))
+                    if not span or int(span[1]) != offset or not offset <= int(span[2]) < int(span[3]) <= 2 * 1024 ** 3:
+                        raise ValueError("invalid SDK download Content-Range")
+                    total = int(span[3])
+                elif status == 200:
+                    # A server may ignore Range; replace the partial file.
+                    offset = 0
+                    length = response_headers.get("Content-Length")
+                    total = int(length) if length is not None else None
+                    if total is not None and not 0 <= total <= 2 * 1024 ** 3:
+                        raise ValueError("invalid SDK download Content-Length")
+                else:
+                    raise ValueError("unexpected SDK download HTTP status: " + str(status))
+                digest = hashlib.sha256()
+                if offset:
+                    with partial.open("rb") as existing:
+                        while data := existing.read(1024 * 1024):
+                            digest.update(data)
+                size = offset
+                with partial.open("ab" if offset else "wb") as output:
+                    while data := response.read(1024 * 1024):
+                        size += len(data)
+                        if size > 2 * 1024 ** 3 or (total is not None and size > total):
+                            raise ValueError("SDK download exceeded declared size or 2 GiB")
+                        output.write(data)
+                        digest.update(data)
+                        now = time.monotonic()
+                        if now - progress >= 15:
+                            print(f"Download progress: {path.name}: {size / 1024 ** 2:.1f} MiB; elapsed={now - started:.0f}s", flush=True)
+                            progress = now
+                if total is not None and size != total:
+                    raise OSError("incomplete SDK download")
             if digest.hexdigest() != expected:
                 raise ValueError("SDK SHA256 mismatch: " + url)
             partial.replace(path)
             print(f"Download SHA256 verified: {path.name}; elapsed={time.monotonic() - started:.1f}s", flush=True)
             return
-        except Exception:
-            partial.unlink(missing_ok=True)
+        except Exception as error:
+            # Preserve bounded partial bytes only for transport failures.
+            # Invalid range, content, or digest always starts a fresh download.
+            if isinstance(error, ValueError) or getattr(error, "code", None) == 416 or attempt == 2:
+                partial.unlink(missing_ok=True)
             if attempt == 2:
                 raise
+            print(f"Download retry: {path.name}: {type(error).__name__}: {error}", flush=True)
             time.sleep(2)
 
 
