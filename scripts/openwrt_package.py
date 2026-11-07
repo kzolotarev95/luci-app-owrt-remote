@@ -400,6 +400,8 @@ def build(args):
     for value in (args.target, args.subtarget, args.arch):
         if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
             raise ValueError("invalid target/architecture")
+    if any(data.startswith(b"\x7fELF") for data, _ in payload().values()):
+        raise ValueError("noarch script-only build cannot contain ELF binaries")
     series = ".".join(args.release.split(".")[:2])
     base = DOWNLOADS + f"{args.release}/targets/{args.target}/{args.subtarget}/"
     name = sdk_name(get_text(base))
@@ -418,7 +420,7 @@ def build(args):
         sdk = directories[0]
         prepare(sdk / "package" / PACKAGE)
         # Use feed revisions from THIS SDK, not today's unrelated feed heads.
-        subprocess.run(["./scripts/feeds", "update", "-a"], cwd=sdk, check=True)
+        subprocess.run(["./scripts/feeds", "update", "base", "packages", "luci"], cwd=sdk, check=True)
         subprocess.run(["./scripts/feeds", "install", "luci-base", "rpcd-mod-file", "uhttpd", "jsonfilter", "curl", "ca-bundle", "etherwake"], cwd=sdk, check=True)
         with (sdk / ".config").open("a") as config:
             config.write(f"\nCONFIG_PACKAGE_{PACKAGE}=m\nCONFIG_SIGNED_PACKAGES=n\n")
@@ -427,7 +429,10 @@ def build(args):
         is_apk = "CONFIG_USE_APK=y" in config
         if is_apk != (series == "25.12"):
             raise ValueError("SDK package format disagrees with the selected OpenWrt series")
-        subprocess.run(["make", f"package/{PACKAGE}/compile", "V=s", f"-j{args.jobs}"], cwd=sdk, check=True)
+        # This package only copies scripts. Keep runtime dependencies declared
+        # and resolved by Kconfig, but do not rebuild curl/LuCI/crypto libraries
+        # for each SDK. Real installation tests resolve those from OpenWrt.
+        subprocess.run(["make", f"package/{PACKAGE}/compile", "NO_DEPS=1", "V=s", f"-j{args.jobs}"], cwd=sdk, check=True)
         extension = "apk" if is_apk else "ipk"
         packages = list((sdk / "bin/packages").rglob(f"{PACKAGE}*.{extension}"))
         if len(packages) != 1:
@@ -451,6 +456,7 @@ def build(args):
                 print("APK is unsigned: SSH needs --allow-untrusted; LuCI requires a trusted maintainer signing key.", flush=True)
         verified["file"] = dest.name
         report = {"package": PACKAGE, "version": version, "package_release": release,
+                  "source_commit": os.environ.get("GITHUB_SHA"),
                   "openwrt": args.release, "series": series, "target": f"{args.target}/{args.subtarget}",
                   "architecture_test": args.arch, "sdk": {"url": base + name, "sha256": expected},
                   "package_asset": verified, "signed": bool(signing_key)}
@@ -463,7 +469,7 @@ def build(args):
             next_release = str(int(release) + 1)
             recipe.write_text(recipe.read_text().replace("PKG_RELEASE:=" + release, "PKG_RELEASE:=" + next_release))
             subprocess.run(["make", f"package/{PACKAGE}/clean", "V=s"], cwd=sdk, check=True)
-            subprocess.run(["make", f"package/{PACKAGE}/compile", "V=s"], cwd=sdk, check=True)
+            subprocess.run(["make", f"package/{PACKAGE}/compile", "NO_DEPS=1", "V=s"], cwd=sdk, check=True)
             candidate = list((sdk / "bin/packages").rglob(f"{PACKAGE}*.{extension}"))
             if len(candidate) != 1:
                 raise ValueError("upgrade fixture was not built")

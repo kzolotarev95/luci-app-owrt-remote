@@ -57,9 +57,9 @@ jobs:
               raise SystemExit('Release tag must match PKG_VERSION in package/luci-app-owrt-remote/Makefile')
           if os.environ['MANUAL_PUBLISH'] == 'true':
               # Retry corrected build tooling without moving an existing tag.
-              # The application payload and package recipe must still match it.
+              # Runtime files must match; packaging tools/metadata may be fixed.
               subprocess.run(['git', 'fetch', '--no-tags', 'origin', 'tag', tag], check=True)
-              subprocess.run(['git', 'diff', '--exit-code', tag, 'HEAD', '--', 'files', 'package/luci-app-owrt-remote'], check=True)
+              subprocess.run(['git', 'diff', '--exit-code', tag, 'HEAD', '--', 'files', 'package/luci-app-owrt-remote/root'], check=True)
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write('tag=' + tag + '\n')
           PY

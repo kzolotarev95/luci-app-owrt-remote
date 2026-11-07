@@ -10,6 +10,7 @@ PKGARCH:=all
 include $(INCLUDE_DIR)/package.mk
 
 define Package/luci-app-owrt-remote
+  PKGARCH:=all
   SECTION:=luci
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
