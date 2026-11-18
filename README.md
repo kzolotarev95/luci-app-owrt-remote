@@ -338,15 +338,15 @@ APK ставится через SSH. Инструкция, подпись и л�
 
 <br><br>
 
-<a href="https://youtu.be/BCVIQgHkbYA?si=BDRAt2uyqRwz8A2Y" target="_blank">
-  <img src="https://img.youtube.com/vi/BCVIQgHkbYA/maxresdefault.jpg"
+<a href="https://www.youtube.com/watch?v=B8pPh8JvDOY" target="_blank">
+  <img src="https://img.youtube.com/vi/B8pPh8JvDOY/maxresdefault.jpg"
        alt="OpenWrt Remote Hub Demo"
        width="720">
 </a>
 
 <br><br>
 
-<a href="https://youtu.be/BCVIQgHkbYA?si=BDRAt2uyqRwz8A2Y">
+<a href="https://www.youtube.com/watch?v=B8pPh8JvDOY">
   <img alt="Watch on YouTube"
        src="https://img.shields.io/badge/%20Watch%20Demo%20on-YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white">
 </a>
