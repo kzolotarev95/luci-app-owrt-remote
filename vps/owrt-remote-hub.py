@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import ast
 import base64
 import datetime as dt
 import dataclasses
@@ -37,6 +38,7 @@ import urllib.parse
 import urllib.request
 import uuid
 import warnings
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -15979,6 +15981,115 @@ class RouterUpdateManager:
 
 HUB_UPDATE_LIMIT = 4 * 1024 * 1024
 HUB_UPDATE_ACTIVE = {'starting', 'installing', 'restarting', 'rollback'}
+HUB_LOG_MAINTENANCE_RESULT = Path('/var/lib/owrt-remote-log-maintenance/result.json')
+
+# BEGIN EMBEDDED LOG MAINTENANCE
+HUB_LOG_MAINTENANCE_SHA256 = '03c6a6843ed2e0b287502f165f716cb56305acc8f8798afd51f57d394862455d'
+HUB_LOG_MAINTENANCE_BUNDLE = (
+    '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'
+    'SZ3wc5+giWdw7i5/I9ZY4wbv7oU5Kvb/A/M9qWg='
+)
+# END EMBEDDED LOG MAINTENANCE
 
 
 def hub_update_write(path, data, mode=0o600):
@@ -15995,6 +16106,115 @@ def hub_update_write(path, data, mode=0o600):
         os.replace(name, path)
     finally:
         Path(name).unlink(missing_ok=True)
+
+
+def hub_log_maintenance_payload(source=None):
+    """The confirmed Hub includes its exact maintenance script: no second URL."""
+    digest, bundle = HUB_LOG_MAINTENANCE_SHA256, HUB_LOG_MAINTENANCE_BUNDLE
+    if source is not None:
+        values = {}
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', SyntaxWarning)
+            tree = ast.parse(source)
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                name = node.targets[0].id
+                if name in {'HUB_LOG_MAINTENANCE_SHA256', 'HUB_LOG_MAINTENANCE_BUNDLE'}:
+                    values[name] = ast.literal_eval(node.value)
+        digest, bundle = values.get('HUB_LOG_MAINTENANCE_SHA256'), values.get('HUB_LOG_MAINTENANCE_BUNDLE')
+    if not isinstance(digest, str) or not re.fullmatch('[a-f0-9]{64}', digest) or not isinstance(bundle, str):
+        raise ValueError('В обновлении нет проверяемого скрипта обслуживания журналов.')
+    unpack = zlib.decompressobj()
+    data = unpack.decompress(base64.b64decode(bundle, validate=True), 131073)
+    if not unpack.eof or unpack.unused_data or not 5000 <= len(data) <= 131072:
+        raise ValueError('Некорректный размер скрипта обслуживания журналов.')
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise ValueError('Контрольная сумма скрипта обслуживания журналов не совпала.')
+    compile(data, 'log-maintenance.py', 'exec', dont_inherit=True)
+    return data, digest
+
+
+def hub_log_maintenance_directory(directory, job_id):
+    if not re.fullmatch('[a-f0-9]{32}', str(job_id)):
+        raise ValueError('Некорректный идентификатор обновления.')
+    return Path(directory) / ('log-maintenance-' + job_id)
+
+
+def hub_log_maintenance_receipt(directory, job_id):
+    try:
+        path = hub_log_maintenance_directory(directory, job_id) / 'receipt.json'
+        with path.open('rb') as stream:
+            data = json.loads(stream.read(8193))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def hub_log_maintenance_command(args, deadline):
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise RuntimeError('Истекло время настройки обслуживания журналов.')
+    result = subprocess.run(args, capture_output=True, text=True, errors='replace',
+                            timeout=remaining, env={**os.environ, 'DEBIAN_FRONTEND': 'noninteractive'})
+    if result.returncode:
+        detail = ((result.stdout or '') + '\n' + (result.stderr or '')).strip()[-2000:]
+        raise RuntimeError('Обслуживание журналов: rc=' + str(result.returncode) + '; ' + detail)
+    return result
+
+
+def hub_rollback_log_maintenance(directory, job_id):
+    stage = hub_log_maintenance_directory(directory, job_id)
+    if (stage / 'backup/manifest.json').is_file():
+        hub_log_maintenance_command([sys.executable, str(stage / 'log-maintenance.py'), 'rollback',
+                                     '--backup', str(stage / 'backup')], time.monotonic() + 45)
+
+
+def hub_install_log_maintenance(directory, job_id, source=None, budget=120):
+    data, digest = hub_log_maintenance_payload(source)
+    stage = hub_log_maintenance_directory(directory, job_id)
+    stage.mkdir(mode=0o700, parents=True, exist_ok=True)
+    script, backup = stage / 'log-maintenance.py', stage / 'backup'
+    receipt = {'job_id': job_id, 'sha256': digest, 'status': 'installing'}
+    def save(status, error=''):
+        receipt.update(status=status, error=error[:2000], updated_at=time.time())
+        hub_update_write(stage / 'receipt.json', json.dumps(receipt, ensure_ascii=False).encode())
+    hub_update_write(script, data, 0o700)
+    save('installing')
+    deadline = time.monotonic() + budget
+    try:
+        if not shutil.which('logrotate'):
+            if not shutil.which('apt-get'):
+                raise RuntimeError('Не найден logrotate и пакетный менеджер apt-get.')
+            # Existing Ubuntu/Debian package indexes; never an unbounded apt update.
+            hub_log_maintenance_command(['apt-get', '-o', 'DPkg::Lock::Timeout=5', 'install', '-y', 'logrotate'],
+                                        min(deadline, time.monotonic() + 25))
+        hub_log_maintenance_command([sys.executable, str(script), 'install', '--backup', str(backup)], deadline)
+        hub_log_maintenance_command([sys.executable, str(script), 'run'], deadline)
+        result = json.loads(HUB_LOG_MAINTENANCE_RESULT.read_text())
+        if not result.get('ok') or result.get('day') != dt.date.today().isoformat():
+            raise RuntimeError('Успешное обслуживание журналов за текущие сутки не подтверждено: ' + str(result.get('error', 'нет результата'))[:500])
+        hub_log_maintenance_command(['systemctl', 'is-active', 'logrotate.timer'], deadline)
+        hub_log_maintenance_command(['systemctl', 'is-enabled', 'logrotate.timer'], deadline)
+        save('ready')
+    except Exception as exc:
+        reason = str(exc)
+        try:
+            hub_rollback_log_maintenance(directory, job_id)
+        except Exception as rollback:
+            reason += '; ошибка отката настроек журналов: ' + str(rollback)
+        save('failed', reason)
+        raise RuntimeError(reason) from exc
+    return receipt
+
+
+def hub_prune_log_maintenance_backups(directory, job_id):
+    """Keep this update's snapshot and one prior snapshot, never router data."""
+    current = hub_log_maintenance_directory(directory, job_id)
+    old = sorted((p for p in Path(directory).iterdir() if p != current and not p.is_symlink()
+                  and p.is_dir() and re.fullmatch('log-maintenance-[a-f0-9]{32}', p.name)),
+                 key=lambda p: p.stat().st_mtime, reverse=True)
+    for path in old[1:]:
+        shutil.rmtree(path)
 
 
 def hub_update_state(directory, value=None):
@@ -16075,6 +16295,7 @@ def run_hub_update_worker(job_id, directory=None, target=None):
         if job.get('id') != job_id or job.get('status') != 'starting':
             raise RuntimeError('Задача обновления устарела или уже запущена.')
         changed = False
+        maintenance_installed = False
         previous = None
         candidate = directory / 'candidate.py'
         def report(status, message):
@@ -16090,6 +16311,9 @@ def run_hub_update_worker(job_id, directory=None, target=None):
                 raise RuntimeError('Файл Hub изменился после подтверждения; обнови страницу.')
             hub_update_require_version(data, hub_update_version(previous))
             hub_update_write(directory / 'previous.py', previous, 0o700)
+            report('installing', 'Устанавливается обслуживание журналов; проверяется очистка и таймер…')
+            hub_install_log_maintenance(directory, job_id, source=data)
+            maintenance_installed = True
             report('installing', 'Устанавливается новая сборка панели…')
             hub_update_write(target, data, 0o755)
             changed = True
@@ -16097,10 +16321,19 @@ def run_hub_update_worker(job_id, directory=None, target=None):
             subprocess.run(['systemctl', 'restart', 'owrt-remote'], check=True, capture_output=True, timeout=35)
             if not hub_update_health(job['health_url'], job['revision']):
                 raise RuntimeError('Новая сборка не прошла проверку работоспособности.')
-            report('succeeded', 'Панель успешно обновлена. Страница будет перезагружена.')
+            report('succeeded', 'Панель обновлена. Обслуживание журналов и таймер проверены. Страница будет перезагружена.')
+            try:
+                hub_prune_log_maintenance_backups(directory, job_id)
+            except OSError as cleanup_error:
+                print('Не удалось убрать старую резервную копию обслуживания журналов: ' + str(cleanup_error), file=sys.stderr)
             return 0
         except Exception as exc:
             reason = str(exc)[:500]
+            if maintenance_installed:
+                try:
+                    hub_rollback_log_maintenance(directory, job_id)
+                except Exception as rollback_exc:
+                    reason += ' Ошибка отката настроек журналов: ' + str(rollback_exc)[:300]
             if changed and previous is not None:
                 try:
                     report('rollback', 'Ошибка обновления; восстанавливается предыдущая сборка…')
@@ -16135,6 +16368,45 @@ class HubUpdateManager:
         self.remote_revision = ''
         self.remote_version = ''
         self.health_url = 'http://127.0.0.1:8088/health'
+        self.log_maintenance_status = ''
+        self.log_maintenance_error = ''
+
+    def resume_log_maintenance(self):
+        """Bridge the first update, whose still-running worker is from old Hub.
+
+        That worker waits for the new Hub's revision health. Hold only that
+        health confirmation until installation finishes; heartbeat stays live.
+        New workers install the component beforehand and already have a receipt.
+        """
+        if self.log_maintenance_status:
+            return
+        job = hub_update_state(self.directory)
+        if (job.get('status') not in {'restarting', 'succeeded'} or job.get('revision') != HUB_LOADED_REVISION
+                or time.time() - job.get('started_at', 0) > 420):
+            return
+        receipt = hub_log_maintenance_receipt(self.directory, job.get('id'))
+        if receipt.get('status') == 'ready' and receipt.get('sha256') == HUB_LOG_MAINTENANCE_SHA256:
+            return
+        self.log_maintenance_status = 'installing'
+        def install():
+            try:
+                # The old worker's health wait is about a minute. Fail/restore
+                # within that budget rather than install after its rollback.
+                hub_install_log_maintenance(self.directory, job['id'], budget=40)
+                self.log_maintenance_status = 'ready'
+                try:
+                    hub_prune_log_maintenance_backups(self.directory, job['id'])
+                except OSError as cleanup_error:
+                    print('Не удалось убрать старую резервную копию обслуживания журналов: ' + str(cleanup_error), file=sys.stderr)
+            except Exception as exc:
+                self.log_maintenance_error = str(exc)[:2000]
+                self.log_maintenance_status = 'failed'
+                print('Ошибка установки обслуживания журналов при обновлении: ' + str(exc), file=sys.stderr)
+        try:
+            threading.Thread(target=install, name='owrt-log-maintenance-bootstrap', daemon=True).start()
+        except Exception as exc:
+            self.log_maintenance_error = str(exc)[:2000]
+            self.log_maintenance_status = 'failed'
 
     def check(self, force=False):
         with self.lock:
@@ -16166,6 +16438,7 @@ class HubUpdateManager:
         try:
             data = self.fetch_candidate()
             hub_update_validate(data)
+            hub_log_maintenance_payload(data)
         except Exception as exc:
             error = 'Не удалось проверить обновление: ' + str(exc)[:300]
         with self.lock:
@@ -16179,6 +16452,11 @@ class HubUpdateManager:
     def snapshot(self):
         with self.lock:
             job = hub_update_state(self.directory)
+            if job.get('revision') == HUB_LOADED_REVISION:
+                if self.log_maintenance_status == 'installing':
+                    job = {**job, 'status': 'installing', 'message': 'Настраивается обслуживание журналов; ожидается проверка очистки и таймера…'}
+                elif self.log_maintenance_status == 'failed':
+                    job = {**job, 'status': 'failed', 'message': 'Обслуживание журналов не установлено: ' + self.log_maintenance_error}
             if job.get('status') in HUB_UPDATE_ACTIVE and time.time() - job.get('started_at', 0) > 420:
                 job.update(status='failed', message='Процесс обновления прерван. Итог не подтверждён; проверь сервис owrt-remote на VPS.')
                 hub_update_state(self.directory, job)
@@ -16197,6 +16475,8 @@ class HubUpdateManager:
                 job = hub_update_state(self.directory)
                 if job.get('status') in HUB_UPDATE_ACTIVE:
                     raise RuntimeError('Обновление панели уже выполняется.')
+                if self.log_maintenance_status == 'installing':
+                    raise RuntimeError('Ещё устанавливается обслуживание журналов.')
                 if not revision or revision != self.remote_revision or not self.candidate or self.error or self.checking:
                     raise ValueError('Результат проверки устарел. Проверь обновление ещё раз.')
                 if revision == HUB_LOADED_REVISION:
@@ -19412,6 +19692,11 @@ exit 127
             result = {"ok": True}
             if self.query().get('panel-update') == ['1']:
                 result['revision'] = HUB_LOADED_REVISION
+                maintenance = self.app.hub_update
+                if maintenance.log_maintenance_status in {'installing', 'failed'}:
+                    result['ok'] = False
+                    result['log_maintenance'] = {'status': maintenance.log_maintenance_status,
+                                                 'error': maintenance.log_maintenance_error}
             if self.query().get("request-load-fix") == ["1"]:
                 result["notification_wait"] = notification_wait_metrics()
             self.send_json(200, result)
@@ -21064,6 +21349,7 @@ def cmd_serve(args):
         extra_servers.append((extra, thread))
 
     try:
+        app.hub_update.resume_log_maintenance()
         app.start_router_state_monitor()
         tls_ports = parse_extra_ports(args.tls_ports) if args.tls_cert and args.tls_key else []
         tls_port_set = set(tls_ports)

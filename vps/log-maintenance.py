@@ -522,6 +522,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("install", "rollback", "run", "status"))
     parser.add_argument("--hub-candidate")
+    parser.add_argument("--backup", type=Path, default=BACKUP,
+                        help="Configuration snapshot for this installation/rollback")
     parser.add_argument("--force", action="store_true", help="Explicit manual retry; daily timer never uses this")
     args = parser.parse_args()
     if os.geteuid() != 0:
@@ -535,14 +537,14 @@ def main():
             except BlockingIOError:
                 raise RuntimeError("Log maintenance/install already running; retry after completion")
             if args.action == "install":
-                install(args.hub_candidate)
+                install(args.hub_candidate, backup=args.backup)
             else:
-                restore(BACKUP)
+                restore(args.backup)
         if args.action == "install":
             try:
                 command(["systemctl", "start", "logrotate.timer"])
             except Exception:
-                restore(BACKUP)
+                restore(args.backup)
                 raise
     elif args.action == "run":
         run(args.force)

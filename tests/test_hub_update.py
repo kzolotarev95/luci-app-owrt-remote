@@ -46,6 +46,9 @@ class UpdateTests(unittest.TestCase):
         self.manager = hub.HubUpdateManager(self.target, self.directory)
         self.addCleanup(mock.patch.stopall)
         mock.patch.object(hub, 'hub_update_lock', side_effect=lambda *a, **k: nullcontext()).start()
+        self.install_logs = mock.patch.object(hub, 'hub_install_log_maintenance').start()
+        self.rollback_logs = mock.patch.object(hub, 'hub_rollback_log_maintenance').start()
+        mock.patch.object(hub, 'hub_prune_log_maintenance_backups').start()
 
     def response(self, data=NEW, url=None):
         response = io.BytesIO(data)
@@ -164,6 +167,7 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(manager_after_restart.snapshot()['job']['status'], 'succeeded')
         self.assertFalse((self.directory / 'candidate.py').exists())
         self.assertEqual(run.call_args.args[0], ['systemctl', 'restart', 'owrt-remote'])
+        self.install_logs.assert_called_once_with(self.directory, job['id'], source=NEW)
 
     def test_failed_health_restores_previous_bytes_and_restarts(self):
         job = self.prepare()
@@ -172,6 +176,7 @@ class UpdateTests(unittest.TestCase):
             self.assertEqual(hub.run_hub_update_worker(job['id'], self.directory, self.target), 1)
         self.assertEqual(self.target.read_bytes(), SOURCE)
         self.assertEqual(run.call_count, 2)
+        self.rollback_logs.assert_called_once_with(self.directory, job['id'])
         self.assertIn('Предыдущий файл восстановлен', hub.hub_update_state(self.directory)['message'])
 
     def test_failure_to_write_rollback_progress_does_not_prevent_restoration(self):
@@ -222,6 +227,53 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(self.target.read_bytes(), SOURCE)
         self.assertFalse(list(self.root.glob('.hub.py-*')))
 
+    def test_failed_maintenance_does_not_replace_or_restart_hub(self):
+        job = self.prepare()
+        self.install_logs.side_effect = RuntimeError('nginx validation failed')
+        with mock.patch.object(hub.time, 'sleep'), mock.patch.object(hub.subprocess, 'run') as run:
+            self.assertEqual(hub.run_hub_update_worker(job['id'], self.directory, self.target), 1)
+        self.assertEqual(self.target.read_bytes(), SOURCE)
+        self.assertFalse(run.called)
+        self.assertIn('nginx validation failed', hub.hub_update_state(self.directory)['message'])
+
+    def test_embedded_payload_matches_source_and_tampering_is_rejected(self):
+        actual, digest = hub.hub_log_maintenance_payload(SOURCE)
+        self.assertEqual(actual, (ROOT / 'vps/log-maintenance.py').read_bytes().replace(b'\r\n', b'\n'))
+        self.assertEqual(hashlib.sha256(actual).hexdigest(), digest)
+        with self.assertRaisesRegex(ValueError, 'сумма'):
+            hub.hub_log_maintenance_payload(SOURCE.replace(digest.encode(), b'0' * 64, 1))
+
+    def test_first_update_from_old_worker_waits_for_maintenance(self):
+        job = {'id': 'a' * 32, 'status': 'restarting', 'revision': hub.HUB_LOADED_REVISION,
+               'started_at': hub.time.time()}
+        hub.hub_update_state(self.directory, job)
+        self.install_logs.side_effect = None
+        captured = {}
+        def thread(**kwargs):
+            captured['install'] = kwargs['target']
+            return mock.Mock()
+        with mock.patch.object(hub.threading, 'Thread', side_effect=thread):
+            self.manager.resume_log_maintenance()
+        self.assertEqual(self.manager.log_maintenance_status, 'installing')
+        self.assertEqual(self.manager.snapshot()['job']['status'], 'installing')
+        captured['install']()
+        self.assertEqual(self.manager.log_maintenance_status, 'ready')
+        self.install_logs.assert_called_once_with(self.directory, job['id'], budget=40)
+        self.install_logs.side_effect = RuntimeError('disk full')
+        captured['install']()
+        self.assertEqual(self.manager.snapshot()['job']['status'], 'failed')
+        self.assertIn('disk full', self.manager.snapshot()['job']['message'])
+
+    def test_new_worker_receipt_prevents_duplicate_startup_installation(self):
+        job = {'id': 'b' * 32, 'status': 'restarting', 'revision': hub.HUB_LOADED_REVISION,
+               'started_at': hub.time.time()}
+        hub.hub_update_state(self.directory, job)
+        with mock.patch.object(hub, 'hub_log_maintenance_receipt', return_value={
+                'status': 'ready', 'sha256': hub.HUB_LOG_MAINTENANCE_SHA256}), \
+                mock.patch.object(hub.threading, 'Thread') as thread:
+            self.manager.resume_log_maintenance()
+        self.assertFalse(thread.called)
+
 
 class HttpTests(unittest.TestCase):
     def test_owner_csrf_origin_validation_and_revision_health(self):
@@ -257,6 +309,12 @@ class HttpTests(unittest.TestCase):
                 start.assert_called_once_with('abc')
             self.assertEqual(request('/health')[1], {'ok': True})
             self.assertEqual(request('/health?panel-update=1')[1]['revision'], hub.HUB_LOADED_REVISION)
+            app.hub_update.log_maintenance_status = 'installing'
+            self.assertTrue(request('/health')[1]['ok'], 'normal heartbeat health is independent')
+            self.assertFalse(request('/health?panel-update=1')[1]['ok'])
+            app.hub_update.log_maintenance_status = 'failed'
+            app.hub_update.log_maintenance_error = 'test maintenance failure'
+            self.assertEqual(request('/health?panel-update=1')[1]['log_maintenance']['error'], 'test maintenance failure')
         finally:
             server.shutdown()
             server.server_close()

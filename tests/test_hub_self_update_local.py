@@ -99,7 +99,8 @@ class LocalTestTests(unittest.TestCase):
             self.start_server()
             return SimpleNamespace(returncode=0)
         with mock.patch.object(hub, 'hub_update_lock', side_effect=lambda *a, **k: nullcontext()), \
-                mock.patch.object(hub.subprocess, 'run', side_effect=restart), mock.patch.object(hub.time, 'sleep'):
+                mock.patch.object(hub.subprocess, 'run', side_effect=restart), mock.patch.object(hub.time, 'sleep'), \
+                mock.patch.object(hub, 'hub_install_log_maintenance'), mock.patch.object(hub, 'hub_prune_log_maintenance_backups'):
             self.assertEqual(hub.run_hub_update_worker(job['id']), 0)
         self.assertEqual(self.target.read_bytes(), (self.fixture / 'candidate.py').read_bytes())
         new_manager = self.server.app.hub_update
