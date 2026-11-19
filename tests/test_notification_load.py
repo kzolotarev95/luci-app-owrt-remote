@@ -94,6 +94,40 @@ class NotificationLoadTests(unittest.TestCase):
         self.assertIn("500", output.getvalue())
         self.assertNotIn("200", output.getvalue())
 
+    def test_heartbeat_and_log_upload_keep_errors_debug_and_application_messages(self):
+        class Handler:
+            path = "/api/heartbeat?unused=1"
+            def address_string(self): return "127.0.0.1"
+            def log_date_time_string(self): return "now"
+        handler = Handler()
+        for path in ("/api/heartbeat", "/api/router-logs", "/api/ssh-session/test/read"):
+            handler.path = path + "?test=1"
+            with self.subTest(path=path), mock.patch.dict(os.environ, {"OWRT_REMOTE_HTTP_DEBUG": "0"}):
+                output = io.StringIO()
+                with mock.patch.object(self.hub.sys, "stderr", output):
+                    for status in (200, 201, 204, 301, 304):
+                        self.hub.Handler.log_message(handler, '"%s" %s %s', "POST /test HTTP/1.1", str(status), "0")
+                    for status in (400, 401, 403, 429, 500, 503, 599):
+                        self.hub.Handler.log_message(handler, '"%s" %s %s', "POST /test HTTP/1.1", str(status), "0")
+                    self.hub.Handler.log_message(handler, "database failed: %s", "disk full")
+                    self.hub.Handler.log_message(handler, "custom numeric error: %s %s", "bad", 200)
+                lines = output.getvalue().splitlines()
+                self.assertEqual(len(lines), 9)
+                self.assertIn("database failed", output.getvalue())
+                with mock.patch.dict(os.environ, {"OWRT_REMOTE_HTTP_DEBUG": "1"}), mock.patch.object(self.hub.sys, "stderr", output):
+                    self.hub.Handler.log_message(handler, '"%s" %s %s', "POST /test HTTP/1.1", "200", "0")
+                self.assertEqual(len(output.getvalue().splitlines()), 10)
+
+    def test_malformed_http_request_without_path_is_still_logged(self):
+        class Handler:
+            def address_string(self): return '127.0.0.1'
+            def log_date_time_string(self): return 'now'
+        output = io.StringIO()
+        with mock.patch.object(self.hub.sys, 'stderr', output):
+            self.hub.Handler.log_message(Handler(), 'code %d, message %s', 400, 'Bad request syntax')
+        self.assertIn('400', output.getvalue())
+        self.assertIn('Bad request syntax', output.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -16314,22 +16314,22 @@ class Handler(BaseHTTPRequestHandler):
         return self.server.app
 
     def log_message(self, fmt, *args):
-        # Successful long-poll and terminal-read responses are expected to be
-        # frequent.  Nginx and journald already retain their failures; avoid
-        # writing a line for every normal 200 response while keeping 4xx/5xx
-        # diagnostics visible.
-        path = urllib.parse.urlsplit(str(self.path or "")).path
+        # Only suppress ordinary successful access records. Application errors,
+        # audit events and 4xx/5xx responses must still reach stderr/journald.
+        path = urllib.parse.urlsplit(str(getattr(self, "path", "") or "")).path
         status = 0
-        if len(args) > 1:
+        if fmt == '"%s" %s %s' and len(args) == 3:
             try:
                 status = int(str(args[1]))
             except (TypeError, ValueError):
                 status = 0
         quiet = (
             path == "/api/notifications/wait"
+            or path in ("/api/heartbeat", "/api/router-logs")
             or re.fullmatch(r"/api/ssh-session/[^/]+/read", path or "")
         )
-        if quiet and 200 <= status < 400:
+        debug = os.environ.get("OWRT_REMOTE_HTTP_DEBUG", "").lower() in ("1", "true", "yes")
+        if quiet and 200 <= status < 400 and not debug:
             return
         sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(), self.log_date_time_string(), fmt % args))
 
