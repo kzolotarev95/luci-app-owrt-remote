@@ -48,6 +48,7 @@ class UpdateTests(unittest.TestCase):
         mock.patch.object(hub, 'hub_update_lock', side_effect=lambda *a, **k: nullcontext()).start()
         self.install_logs = mock.patch.object(hub, 'hub_install_log_maintenance').start()
         self.rollback_logs = mock.patch.object(hub, 'hub_rollback_log_maintenance').start()
+        self.bootstrap_logs = mock.patch.object(hub, 'hub_run_log_maintenance_unit').start()
         mock.patch.object(hub, 'hub_prune_log_maintenance_backups').start()
 
     def response(self, data=NEW, url=None):
@@ -247,7 +248,7 @@ class UpdateTests(unittest.TestCase):
         job = {'id': 'a' * 32, 'status': 'restarting', 'revision': hub.HUB_LOADED_REVISION,
                'started_at': hub.time.time()}
         hub.hub_update_state(self.directory, job)
-        self.install_logs.side_effect = None
+        self.bootstrap_logs.side_effect = None
         captured = {}
         def thread(**kwargs):
             captured['install'] = kwargs['target']
@@ -258,8 +259,9 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(self.manager.snapshot()['job']['status'], 'installing')
         captured['install']()
         self.assertEqual(self.manager.log_maintenance_status, 'ready')
-        self.install_logs.assert_called_once_with(self.directory, job['id'], budget=40)
-        self.install_logs.side_effect = RuntimeError('disk full')
+        self.bootstrap_logs.assert_called_once_with(self.directory, job['id'], self.target)
+        self.install_logs.assert_not_called()
+        self.bootstrap_logs.side_effect = RuntimeError('disk full')
         captured['install']()
         self.assertEqual(self.manager.snapshot()['job']['status'], 'failed')
         self.assertIn('disk full', self.manager.snapshot()['job']['message'])

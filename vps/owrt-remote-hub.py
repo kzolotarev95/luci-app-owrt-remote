@@ -16217,6 +16217,39 @@ def hub_prune_log_maintenance_backups(directory, job_id):
         shutil.rmtree(path)
 
 
+def run_hub_log_maintenance_worker(job_id, directory=None):
+    directory = Path(directory or STATE_DIR / 'panel-update')
+    job = hub_update_state(directory)
+    if (job.get('id') != job_id or job.get('revision') != HUB_LOADED_REVISION
+            or job.get('status') not in {'restarting', 'succeeded'}):
+        raise RuntimeError('Задача установки обслуживания журналов устарела.')
+    hub_install_log_maintenance(directory, job_id, budget=40)
+
+
+def hub_run_log_maintenance_unit(directory, job_id, target):
+    """PID 1 launches the worker outside Hub's restricted capability set.
+
+    Keep the worker independent of Hub's service: an old updater can roll back
+    the Hub while this unit safely finishes restoration of logging settings.
+    Never chmod nginx logs or broaden the web service's capabilities.
+    """
+    hub_log_maintenance_directory(directory, job_id)  # Validate before naming a unit.
+    result = subprocess.run([
+        'systemd-run', '--quiet', '--wait', '--pipe', '--collect',
+        '--unit=owrt-remote-log-maintenance-' + job_id,
+        '--property=Type=exec', '--property=RuntimeMaxSec=100',
+        '--setenv=OWRT_REMOTE_STATE_DIR=' + str(STATE_DIR),
+        sys.executable, str(target), 'panel-log-maintenance-worker',
+        '--job-id', job_id, '--directory', str(directory),
+    ], capture_output=True, text=True, errors='replace', timeout=110)
+    if result.returncode:
+        detail = ((result.stdout or '') + '\n' + (result.stderr or '')).strip()[-2000:]
+        raise RuntimeError('Задача обслуживания журналов: rc=' + str(result.returncode) + '; ' + detail)
+    receipt = hub_log_maintenance_receipt(directory, job_id)
+    if receipt.get('status') != 'ready' or receipt.get('sha256') != HUB_LOG_MAINTENANCE_SHA256:
+        raise RuntimeError('Задача обслуживания журналов не подтвердила установку: ' + str(receipt.get('error', 'нет результата'))[:1000])
+
+
 def hub_update_state(directory, value=None):
     path = Path(directory) / 'job.json'
     if value is not None:
@@ -16390,9 +16423,9 @@ class HubUpdateManager:
         self.log_maintenance_status = 'installing'
         def install():
             try:
-                # The old worker's health wait is about a minute. Fail/restore
-                # within that budget rather than install after its rollback.
-                hub_install_log_maintenance(self.directory, job['id'], budget=40)
+                # Hub has only CAP_NET_BIND_SERVICE. Provision via PID 1, like
+                # the regular updater, so nginx tests/rotation have root caps.
+                hub_run_log_maintenance_unit(self.directory, job['id'], self.target)
                 self.log_maintenance_status = 'ready'
                 try:
                     hub_prune_log_maintenance_backups(self.directory, job['id'])
@@ -21469,6 +21502,11 @@ def parser():
     update_worker = sub.add_parser('panel-update-worker', help=argparse.SUPPRESS)
     update_worker.add_argument('--job-id', required=True)
     update_worker.set_defaults(func=lambda args: sys.exit(run_hub_update_worker(args.job_id)))
+
+    log_worker = sub.add_parser('panel-log-maintenance-worker', help=argparse.SUPPRESS)
+    log_worker.add_argument('--job-id', required=True)
+    log_worker.add_argument('--directory', required=True, type=Path)
+    log_worker.set_defaults(func=lambda args: run_hub_log_maintenance_worker(args.job_id, args.directory))
 
     serve = sub.add_parser("serve", help="run web dashboard")
     serve.add_argument("--host", default=os.environ.get("OWRT_REMOTE_BIND", "0.0.0.0"))

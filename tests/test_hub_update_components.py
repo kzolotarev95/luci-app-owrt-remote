@@ -92,6 +92,38 @@ class ComponentTests(unittest.TestCase):
         self.assertTrue(hub.hub_log_maintenance_directory(self.directory, 'b' * 32).exists())
         self.assertTrue(other.exists())
 
+    def test_bootstrap_runs_in_separate_system_service_and_checks_receipt(self):
+        target = self.directory / 'hub.py'
+        with mock.patch.object(hub.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')) as run, \
+                mock.patch.object(hub, 'hub_log_maintenance_receipt', return_value={
+                    'status': 'ready', 'sha256': hub.HUB_LOG_MAINTENANCE_SHA256}):
+            hub.hub_run_log_maintenance_unit(self.directory, self.job_id, target)
+        args = run.call_args.args[0]
+        self.assertEqual(args[0], 'systemd-run')
+        self.assertIn('--wait', args)
+        self.assertIn('--pipe', args)
+        self.assertIn('panel-log-maintenance-worker', args)
+        self.assertIn(str(target), args)
+        self.assertNotIn('--scope', args, 'a scope would inherit restricted Hub capabilities')
+        self.assertFalse(any('CapabilityBoundingSet' in arg for arg in args))
+        self.assertEqual(args[-2:], ['--directory', str(self.directory)])
+
+    def test_bootstrap_rejects_failed_unit_or_missing_receipt(self):
+        for status, receipt, message in ((1, {}, 'Permission denied'), (0, {}, 'нет результата')):
+            with self.subTest(status=status), \
+                    mock.patch.object(hub.subprocess, 'run', return_value=subprocess.CompletedProcess([], status, '', 'Permission denied')), \
+                    mock.patch.object(hub, 'hub_log_maintenance_receipt', return_value=receipt):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    hub.hub_run_log_maintenance_unit(self.directory, self.job_id, self.directory / 'hub.py')
+
+    def test_stale_privileged_worker_never_installs(self):
+        for job in ({'id': 'd' * 32}, {'id': self.job_id, 'status': 'failed', 'revision': hub.HUB_LOADED_REVISION}):
+            with mock.patch.object(hub, 'hub_update_state', return_value=job), \
+                    mock.patch.object(hub, 'hub_install_log_maintenance') as install:
+                with self.assertRaisesRegex(RuntimeError, 'устарела'):
+                    hub.run_hub_log_maintenance_worker(self.job_id, self.directory)
+                install.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()
