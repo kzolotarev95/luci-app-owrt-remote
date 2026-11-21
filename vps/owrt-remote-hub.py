@@ -6372,6 +6372,76 @@ def inject_hub_appearance(path, body, content_type):
     return text.encode("utf-8")
 
 
+def donate_payment_logos_html():
+    # Small inline vector marks keep the thank-you page self-contained.
+    return '''<div class="donatePaymentBlock">
+  <div class="donatePaymentBrands" role="img" aria-label="Логотипы: СБП, Сбер, Альфа-Банк, ВТБ, Т-Банк">
+    <span class="donatePaymentBrand paymentSbp"><svg width="23" height="24" viewBox="0 0 24 26" aria-hidden="true" focusable="false"><path fill="#5b57a2" d="M1 1l7 4v8L1 17z"/><path fill="#0d90cd" d="M1 1l7 12H1z"/><path fill="#e5234e" d="M8 5l7 4-7 4z"/><path fill="#f9b229" d="M15 9l8 4-8 4-7-4z"/><path fill="#72b22c" d="M8 13l7 4-7 4z"/><path fill="#00743e" d="M1 17l7-4v8l-7 4z"/><path fill="#0d90cd" d="M8 21l7-4v4l-7 4z"/></svg><span>СБП</span></span>
+    <span class="donatePaymentBrand paymentSber"><svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.8 10a9 9 0 1 1-6.4-6.7" fill="none" stroke="#21a038" stroke-width="2.5" stroke-linecap="round"/><path d="M7 10.5l4.2 3.2L21 6.2" fill="none" stroke="#21a038" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>СБЕР</span></span>
+    <span class="donatePaymentBrand paymentAlfa"><svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect width="24" height="24" rx="2" fill="#ef3124"/><path fill="#fff" d="M10.3 4h3.4l4.5 13h-3.5l-.8-2.6h-4L9.1 17H5.8zm.4 7.8h2.4L12 7.5zM6 19h12v2H6z"/></svg><span>Альфа Банк</span></span>
+    <span class="donatePaymentBrand paymentVtb"><svg width="21" height="20" viewBox="0 0 24 20" aria-hidden="true" focusable="false"><path fill="#3980d9" d="M6 2h18l-2 4H4zM3 8h18l-2 4H1zM2 14h15l-2 4H0z"/></svg><span>ВТБ</span></span>
+    <span class="donatePaymentBrand paymentTbank"><svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect width="24" height="24" rx="3" fill="#ffdd2d"/><path fill="#1b1b1b" d="M5 5h14v5h-4.5v10h-5V10H5z"/></svg><span>Т-БАНК</span></span>
+  </div>
+</div>'''
+
+
+def donate_html():
+    return f"""<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сказать спасибо — OpenWrt Remote Hub</title>
+{branding_head_tags()}
+<style>
+:root{{--bg:#140d21;--panel:#21192e;--panel2:#30243e;--text:#f7f2ff;--muted:#c4b5d5;--line:rgba(180,150,220,.25);--cyan:#67e8f9;--blue:#7c3aed}}
+*{{box-sizing:border-box}}
+body{{margin:0;min-height:100vh;min-height:100svh;display:grid;place-items:center;padding:24px;color:var(--text);background:radial-gradient(ellipse at 0 0,#4b2766,transparent 65%),radial-gradient(ellipse at 100% 100%,#222451,transparent 60%),var(--bg);font:14px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
+.donateCard{{position:relative;z-index:1;width:min(100%,560px);padding:30px;border:1px solid var(--line);border-radius:22px;background:var(--panel);box-shadow:0 20px 60px #0004;text-align:center}}
+.donateHeading{{margin-bottom:22px;text-align:center}}
+.donateEyebrow{{color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.04em}}
+h1{{margin:6px 0 0;font-size:26px;line-height:1.3}}
+.donateTitleTail{{display:inline-block;white-space:nowrap}}
+.donateLinks{{display:grid;gap:10px;margin-bottom:22px}}
+.donateLinkCard{{display:grid;justify-items:center;gap:3px;padding:13px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);color:var(--text);text-decoration:none;overflow-wrap:anywhere;text-align:center;transition:border-color .15s ease,background .15s ease}}
+.donateLinkCard:hover{{border-color:var(--cyan)}}
+.donateLinkCard:focus-visible,.donateBack:focus-visible{{outline:2px solid var(--cyan);outline-offset:3px}}
+.donateLinkCard strong{{font-size:13px}}
+.donateLinkCard span{{color:var(--muted);font-size:13px}}
+.donateMessage p{{margin:0 0 12px}}
+.donateMessage p:last-child{{margin-bottom:0}}
+.donatePaymentBlock{{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}}
+.donatePaymentBrands{{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:12px}}
+.donatePaymentBrand{{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:26px;color:var(--text);font-size:11px;font-weight:800;line-height:1.2;white-space:nowrap}}
+.donatePaymentBrand svg{{display:block;flex:none}}
+.paymentSber{{color:#36b65c}}.paymentAlfa{{color:#ef5045;font-size:10px}}
+.paymentVtb,.paymentTbank{{font-weight:900}}
+@media(max-width:400px){{.donatePaymentBrands{{gap:9px}}.donatePaymentBrand{{gap:4px;font-size:10px}}.paymentAlfa{{font-size:9px}}}}
+.donateFooter{{margin-top:24px;padding-top:16px;border-top:1px solid var(--line);text-align:center}}
+.donateBack{{color:var(--muted);font-size:13px;text-underline-offset:4px}}
+@media(max-width:600px){{body{{padding:12px}}.donateCard{{padding:22px 18px;border-radius:18px}}h1{{font-size:23px}}}}
+</style>
+{hub_design_head()}
+</head>
+<body>
+<main class="panel donateCard" aria-labelledby="donateTitle">
+  <header class="donateHeading"><div class="donateEyebrow">OpenWrt Remote Hub</div><h1 id="donateTitle">Сказать спасибо ❤️ <span class="donateTitleTail">Donate 💲</span></h1></header>
+  <div class="donateLinks">
+    <a class="donateLinkCard" href="https://donate.zks95.ugnss.ru" target="_blank" rel="noopener noreferrer"><strong>Основная ссылка:</strong><span>https://donate.zks95.ugnss.ru</span></a>
+    <a class="donateLinkCard" href="https://donate.zks95.ugnss.ru:8443" target="_blank" rel="noopener noreferrer"><strong>Резервная ссылка:</strong><span>https://donate.zks95.ugnss.ru:8443</span></a>
+  </div>
+  <div class="donateMessage">
+    <p><strong>Буду искренне благодарен за любой донат!</strong></p>
+    <p>Совершенно не важно, какая сумма - важна ваша поддержка. Даже небольшой вклад помогает развивать проект и двигаться дальше.</p>
+    <p>Спасибо каждому, кто рядом! Всех обнял! 🤝🚀</p>
+  </div>
+  {donate_payment_logos_html()}
+  <footer class="donateFooter"><a class="donateBack" href="/">Вернуться в Hub</a></footer>
+</main>
+</body>
+</html>"""
+
+
 def dashboard_html(routers, username, sessions=None, notifications=None, auth_bootstrap=None, vps_resources=None):
     routers_json = json.dumps(routers, ensure_ascii=False)
     sessions_json = json.dumps(sessions or [], ensure_ascii=False)
@@ -6432,6 +6502,19 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 @media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){{body{{font-size:13px;background-attachment:scroll}}.wrap{{padding:10px}}.top{{gap:12px;padding:14px 0;align-items:flex-start}}.brand,.brand>div{{width:100%}}h1{{font-size:22px;line-height:1.18}}.appBanner{{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}}.links,.headerActions,.summary,.mobileOwnerTools{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%;gap:8px;max-width:none}}.links{{margin-top:10px}}.links a,.badge,.headerActions .btn,.mobileOwnerTools .btn,.mobileOwnerTools .badge,.miniStat{{width:100%;min-width:0;padding:9px 10px;font-size:12px}}.headerStack{{margin-top:0;width:100%;min-width:0}}.headerStack .badge{{width:100%;min-width:0}}.authMenu{{position:fixed;left:10px;right:10px;top:74px;width:auto;max-height:calc(100svh - 90px);overflow:auto}}.authMenuHead{{min-height:40px;padding:0 104px 8px 0}}.authMenu h2{{margin:2px 104px 0 0;line-height:1.2}}.authMenuClose{{display:inline-flex;top:0;right:0;min-height:32px;padding:6px 12px}}.cards,.routerGroupCards,.toolbar,.authGrid{{grid-template-columns:1fr}}.authRow{{grid-template-columns:1fr;gap:7px;padding:8px}}.authRowTitle{{font-size:13px}}.authRowMeta{{font-size:11px;line-height:1.3}}.authRouterFlags{{justify-content:flex-start;gap:6px}}.authFlagPill{{min-height:25px;padding:3px 7px;gap:5px}}.authFlagPill input{{width:12px;height:12px;flex-basis:12px}}.authFlagPill span{{font-size:10px}}.routerStats{{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;margin-bottom:7px}}.statCard{{min-height:52px;padding:7px 6px}}.statCard span{{font-size:8px;letter-spacing:.015em}}.statCard strong{{font-size:20px}}.statCard em{{display:none}}.statCardHead{{min-height:16px}}.statValueRow,.offlineStatRow{{min-height:20px;margin-top:4px}}.offlineMoreBtn{{right:2px;min-height:16px;padding:0 5px;font-size:7px}}.offlinePopover{{right:3px;width:min(230px,calc(100vw - 20px));padding:8px}}.offlineItem{{padding:6px 7px}}.offlineName{{font-size:10px}}.toolbar{{padding:10px;margin:12px 0}}.card.main{{grid-column:span 1}}.card{{padding:12px;min-height:0}}.card>.metaLine,.card>.tagRow{{display:none}}.nameRow{{gap:6px;margin-top:10px}}.nameRow::before{{flex-basis:26px;width:26px;height:26px}}.name{{font-size:12px;max-width:190px}}.nameEditBtn{{flex-basis:26px;width:26px;height:26px}}.mobilePanelToggle,.routerFormToggle{{display:inline-flex}}.routerSearchDock{{width:100%}}.seasonDock{{width:100%}}#mobileSeasonDock{{width:100%;min-width:0;max-width:none;padding:0;border:0;background:none;box-shadow:none;backdrop-filter:none}}.routerSearchToggle,.seasonToggle{{width:100%}}.routerSearchPanel,.seasonPanel{{position:static;width:100%;margin-top:8px}}.routerSearchCard,.seasonCard{{width:100%;min-height:0;padding:10px 11px;border-radius:16px}}.routerSearchTitle{{font-size:11px}}.routerSearchField{{min-height:36px}}.routerSearchMeta{{text-align:center}}.metrics{{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}}.metric{{padding:8px}}.diagnosticPanel{{padding:12px}}.diagnosticTop{{gap:8px}}.diagnosticTop h2{{font-size:17px}}.diagnosticLead{{font-size:11px}}.diagnosticGrid{{grid-template-columns:1fr;gap:10px}}.diagnosticGrid label{{font-size:13px}}.diagnosticGrid textarea{{min-height:118px;padding:12px 13px;font-size:15px;line-height:1.35}}.diagBlock{{padding:11px}}.actions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}.actions .btn,.actions button{{width:100%;min-width:0;padding:9px 8px;font-size:12px}}.wolControls,.trafficControls{{grid-template-columns:1fr}}.wolField span,.wolMeta{{text-align:center}}.wolControls .btn,.wolControls button,.trafficControls .btn,.trafficControls button{{width:100%}}.trafficSummary{{justify-content:center}}.trafficViewport{{max-height:360px;padding-right:0}}.trafficRowTop{{grid-template-columns:1fr}}.trafficTotalBadge{{min-width:0;text-align:left}}}}
 @media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){{.desktopHeader{{display:none}}#hubMenuPanelHost{{display:block;width:100%}}#hubMenuPanelHost:empty{{display:none}}.mobileOwnerTools{{display:grid;margin:0 0 8px}}.mobileOwnerTools[hidden]{{display:none!important}}.top{{padding:6px 0 0;gap:0}}.mobileSearchDock{{display:block;margin:0}}.mobilePanelToggle,.routerFormToggle,.actionToggle{{width:100%;min-height:38px;margin:7px 0;padding:9px 12px;border-radius:999px;font-size:12px;line-height:1}}.actionToggle{{display:inline-flex}}body.preload-mobile-panels .headerActions,body.preload-mobile-panels .routerFormWrap,body.preload-mobile-panels .mobileOwnerTools{{display:none!important}}.card .actions.mobileCollapsed:not(.open){{display:none}}.cardTop{{gap:0}}}}
 @media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){{.headerActions .badge,.headerActions .btn,.mobileOwnerTools .badge,.mobileOwnerTools .btn{{width:100%;min-width:0;max-width:none}}}}
+.routerCardSlot{{position:relative;min-width:0;align-self:start}}
+.routerCardSlot>.card{{min-height:0;width:100%}}
+.cardDetailsToggle{{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;min-height:36px;margin-top:12px;padding:9px 12px;color:var(--text);border:1px solid var(--line);background:rgba(255,255,255,.08)}}
+.cardDetailsToggle::after{{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-2px) rotate(45deg);transition:transform .2s ease}}
+.cardDetailsToggle[aria-expanded="true"]::after{{transform:translateY(2px) rotate(225deg)}}
+.cardDetailsToggle:focus-visible{{outline:2px solid var(--cyan);outline-offset:3px}}
+.cardBody{{margin-top:10px;min-width:0}}
+.routerCardSlot.isFloating{{z-index:45}}
+.routerCardSlot.isFloating>.card{{position:fixed;display:flex;flex-direction:column;max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);margin:0;overflow:hidden;background:var(--panel);box-shadow:0 24px 64px rgba(0,0,0,.45)}}
+.routerCardSlot.isFloating>.card>.cardTop,.routerCardSlot.isFloating>.card>.nameRow,.routerCardSlot.isFloating>.card>.routerCardGroup,.routerCardSlot.isFloating>.card>.cardDetailsToggle{{flex-shrink:0}}
+.routerCardSlot.isFloating>.card>.nameRow{{align-self:center}}
+.routerCardSlot.isFloating .cardBody{{min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-gutter:stable;padding:0 3px 3px}}
+@media(prefers-reduced-motion:reduce){{.cardDetailsToggle::after{{transition:none}}}}
 @media(max-width:420px){{.links,.headerActions,.summary,.actions,.mobileOwnerTools{{grid-template-columns:1fr}}.metrics{{grid-template-columns:1fr}}.metric.span2{{grid-column:span 1}}}}
 @media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){{.desktopHeader{{width:100%}}.summary{{justify-content:center}}}}
 @media(min-width:681px){{.trafficPanel{{width:min(100%,332px);justify-self:center;padding:9px 9px 8px;border-radius:10px;gap:9px}}.trafficControls{{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:6px}}.trafficPanel .wolField{{gap:4px;font-size:11px}}.trafficPanel .wolField span{{text-align:center}}.trafficPanel .wolField input{{min-height:32px;padding:0 9px;font-size:13px}}.trafficStatusField .wolMeta{{min-height:32px;font-size:11px;line-height:1.18;text-align:center}}.trafficPanel .btn{{min-height:32px;padding:6px 7px;font-size:11px}}.trafficSummary{{justify-content:center}}.trafficSummaryChip{{min-height:20px;padding:0 7px;font-size:9.5px}}.trafficViewport{{max-height:min(42svh,350px)}}.trafficList{{gap:6px}}.trafficRow{{gap:6px;padding:8px}}.trafficRowTop{{grid-template-columns:1fr;gap:7px}}.trafficIdentity{{text-align:center!important}}.trafficName{{display:block;width:100%;font-size:13px;text-align:center!important}}.trafficMetaLine{{font-size:10px;line-height:1.32;text-align:center!important}}.trafficTotalBadge{{display:grid;width:fit-content;min-width:136px;max-width:186px;justify-self:center!important;margin:0 auto;place-self:center;padding:6px 10px;text-align:center!important}}.trafficTotalBadge span{{font-size:9px}}.trafficTotalBadge strong{{font-size:12px}}.trafficStat{{padding:6px 5px}}.trafficStat span{{font-size:9px}}.trafficStat strong{{font-size:11px}}}}
@@ -6501,6 +6584,11 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
   .hubUpdateConfirmActions{{gap:8px;margin-top:14px}}
   .hubUpdateConfirmActions button{{min-height:44px;padding:9px 8px;font-size:12px}}
 }}
+.desktopHeader .links .donateLink{{grid-column:1/span 2;min-width:0;max-width:none;min-height:36px;padding:8px 14px;font-size:13px;font-weight:800;line-height:1;white-space:normal;text-align:center}}
+.links a.appBanner{{border-color:rgba(34,211,238,.38);background:linear-gradient(110deg,rgba(34,211,238,.14),rgba(124,58,237,.24),rgba(236,72,153,.14));box-shadow:0 10px 24px rgba(124,58,237,.16),inset 0 1px 0 rgba(255,255,255,.10)}}
+.headerActions .donateLinkMobile{{display:none}}
+@media(min-width:681px) and (max-width:1100px){{.desktopHeaderBottom{{width:100%;grid-template-columns:repeat(4,minmax(0,1fr))}}.desktopHeader .links{{grid-column:1/-1;grid-template-columns:repeat(4,minmax(0,1fr))}}.desktopHeader .links .nethavenTop{{grid-column:3/span 2}}.desktopHeaderBottom>.headerActions{{grid-column:1/-1;grid-template-columns:repeat(5,minmax(0,1fr))}}}}
+@media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){{.headerActions .donateLinkMobile{{display:flex;grid-column:1/-1;min-height:36px;padding:8px 12px;font-size:13px;font-weight:800;line-height:1}}}}
 </style>
 {hub_design_head()}
 </head>
@@ -6573,14 +6661,14 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
         </div>
         <div class="desktopHeaderBottom">
           <div class="links">
-            <a href="https://t.me/kzolotarev95" target="_blank" rel="noopener noreferrer">Telegram</a>
-            <a href="https://github.com/kzolotarev95" target="_blank" rel="noopener noreferrer">GitHub</a>
+            <a class="appBanner donateLink" href="/donate/" target="_blank" rel="noopener noreferrer"><span>Сказать спасибо ❤️ Donate 💲</span></a>
             <a class="nethavenTop" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">NetHaven VPN</a>
           </div>
           <div class="headerActions">
             <a class="badge" id="vpsTerminalLink" href="/vps-terminal/" target="_blank" rel="noopener noreferrer" {'hidden' if not is_owner else ''}>Терминал VPS</a>
             <button class="badge" id="xrayReload" type="button" {'hidden' if not is_owner else ''}>Обновить Xray CFG</button>
             <button class="badge" id="xrayRestart" type="button" {'hidden' if not is_owner else ''}>Рестарт Xray VPS</button>
+            <a class="badge donateLinkMobile" href="/donate/" target="_blank" rel="noopener noreferrer">Сказать спасибо ❤️ Donate 💲</a>
             <button class="badge authToggle" id="authToggle" type="button">{safe_username}</button>
             <a class="btn" href="/logout">Выйти</a>
             <div class="authMenu" id="authMenu" hidden>
@@ -7034,6 +7122,8 @@ const diagnosticSummary = document.getElementById('diagnosticSummary');
 const diagnosticBlocks = document.getElementById('diagnosticBlocks');
 const expandedActionPanels = new Set();
 const expandedCardDetails = new Set();
+const cardDetailsAnimations = new Map();
+let cardDetailsPositionFrame = 0;
 const expandedGroupPickers = new Set();
 const diagnosticDrafts = new Map();
 const noteStateByRouter = new Map();
@@ -7204,6 +7294,128 @@ function syncActionToggleStates(root = cards) {{
   }});
 }}
 
+function positionCardDetails(card) {{
+  const slot = card.parentElement;
+  if (!slot.classList.contains('isFloating')) return;
+  const rect = slot.getBoundingClientRect();
+  const gap = 12;
+  card.style.width = Math.min(rect.width, window.innerWidth - gap * 2) + 'px';
+  card.style.left = Math.max(gap, Math.min(rect.left, window.innerWidth - card.offsetWidth - gap)) + 'px';
+  const roomBelow = window.innerHeight - gap - Math.max(gap, rect.top);
+  const minimum = Math.min(400, window.innerHeight - gap * 2);
+  const maximum = Math.min(720, window.innerHeight - gap * 2);
+  // Grow down from the card when there is room; lift it only at the viewport edge.
+  card.style.maxHeight = (roomBelow >= minimum ? Math.min(maximum, roomBelow) : maximum) + 'px';
+  const height = card.getBoundingClientRect().height;
+  card.style.top = Math.max(gap, Math.min(rect.top, window.innerHeight - height - gap)) + 'px';
+}}
+
+function resetCardDetailsPosition(card) {{
+  card.parentElement.classList.remove('isFloating');
+  card.parentElement.style.height = '';
+  card.style.removeProperty('width');
+  card.style.removeProperty('left');
+  card.style.removeProperty('top');
+  card.style.removeProperty('max-height');
+}}
+
+function setCardDetailsExpanded(body, open, animate = true) {{
+  const card = body.closest('.card');
+  const slot = card.parentElement;
+  const toggle = card.querySelector('[data-card-toggle]');
+  const previousAnimation = cardDetailsAnimations.get(body.id);
+  const before = card.getBoundingClientRect();
+  if (previousAnimation) {{
+    cardDetailsAnimations.delete(body.id);
+    previousAnimation.cancel();
+  }}
+  if (open && !mobileCardsMq.matches) {{
+    cards.querySelectorAll('.routerCardSlot.isFloating .cardBody').forEach(other => {{
+      if (other !== body) setCardDetailsExpanded(other, false, false);
+    }});
+  }}
+  if (open) expandedCardDetails.add(body.id);
+  else expandedCardDetails.delete(body.id);
+  toggle.setAttribute('aria-expanded', String(open));
+  toggle.textContent = open ? 'Скрыть данные' : 'Открыть данные';
+  body.inert = !open;
+  const finishClose = () => {{
+    body.hidden = true;
+    resetCardDetailsPosition(card);
+  }};
+  const motion = animate && !mobileCardsMq.matches && typeof card.animate === 'function'
+    && document.documentElement.dataset.hubDesign !== 'lite'
+    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let after;
+  if (open) {{
+    // Measure the compact card before taking its expanded copy out of the grid.
+    body.hidden = true;
+    resetCardDetailsPosition(card);
+    if (!mobileCardsMq.matches) {{
+      slot.style.height = card.getBoundingClientRect().height + 'px';
+      slot.classList.add('isFloating');
+    }}
+    body.hidden = false;
+    positionCardDetails(card);
+    after = card.getBoundingClientRect();
+  }} else if (slot.classList.contains('isFloating') && motion) {{
+    after = slot.getBoundingClientRect();
+  }} else {{
+    finishClose();
+    return;
+  }}
+  if (!motion) return;
+  const animation = card.animate([
+    {{height: before.height + 'px', transform: open ? `translateY(${{before.top - after.top}}px)` : 'none'}},
+    {{height: after.height + 'px', transform: open ? 'none' : `translateY(${{after.top - before.top}}px)`}}
+  ], {{duration: 230, easing: 'cubic-bezier(.2,.8,.2,1)'}});
+  cardDetailsAnimations.set(body.id, animation);
+  animation.finished.then(() => {{
+    if (cardDetailsAnimations.get(body.id) !== animation) return;
+    cardDetailsAnimations.delete(body.id);
+    if (!open) finishClose();
+    flushDeferredRouterRender();
+  }}).catch(() => {{}});
+}}
+
+function syncCardDetails() {{
+  cardDetailsAnimations.forEach(animation => animation.cancel());
+  cardDetailsAnimations.clear();
+  cards.querySelectorAll('.cardBody').forEach(body => {{
+    setCardDetailsExpanded(body, expandedCardDetails.has(body.id), false);
+  }});
+}}
+
+function closeDesktopCardDetails(restoreFocus = false) {{
+  if (mobileCardsMq.matches) return;
+  cards.querySelectorAll('.routerCardSlot.isFloating .cardBody').forEach(body => {{
+    if (!expandedCardDetails.has(body.id)) return;
+    if (restoreFocus) body.closest('.card').querySelector('[data-card-toggle]').focus({{preventScroll: true}});
+    setCardDetailsExpanded(body, false);
+  }});
+}}
+
+document.addEventListener('pointerdown', ev => {{
+  if (!ev.target.closest('.routerCardSlot.isFloating')) closeDesktopCardDetails();
+}});
+document.addEventListener('keydown', ev => {{
+  if (ev.key === 'Escape' && !ev.defaultPrevented) closeDesktopCardDetails(true);
+}});
+function scheduleCardDetailsPosition() {{
+  if (cardDetailsPositionFrame || mobileCardsMq.matches) return;
+  cardDetailsPositionFrame = window.requestAnimationFrame(() => {{
+    cardDetailsPositionFrame = 0;
+    cards.querySelectorAll('.routerCardSlot.isFloating>.card').forEach(card => {{
+      const rect = card.parentElement.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) {{
+        setCardDetailsExpanded(card.querySelector('.cardBody'), false, false);
+      }} else positionCardDetails(card);
+    }});
+  }});
+}}
+window.addEventListener('scroll', scheduleCardDetailsPosition, {{passive: true}});
+window.addEventListener('resize', scheduleCardDetailsPosition, {{passive: true}});
+
 function getDiagnosticDraft(routerId) {{
   const key = String(routerId || '');
   if (!diagnosticDrafts.has(key)) {{
@@ -7273,7 +7485,7 @@ function activeWolInteractiveField() {{
 }}
 
 function shouldDeferRouterRender() {{
-  return Boolean(activeWolInteractiveField());
+  return Boolean(activeWolInteractiveField() || cardDetailsAnimations.size);
 }}
 
 function clearPendingWolBlurFlush() {{
@@ -8461,7 +8673,8 @@ function renderTachyon(router) {{
   const button = (router.permissions || {{}}).admin
     ? `<a class="btn" href="${{escapeAttr(t.url)}}" target="_blank" rel="noopener noreferrer">Открыть Tachyon</a>`
     : '<span class="btn disabled">Открыть Tachyon</span>';
-  return `<div class="tachyonIntegration" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:10px;margin-top:10px;border:1px solid var(--line,rgba(180,150,220,.25));border-radius:12px"><div class="tachyonMeta" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;min-height:24px;max-width:100%"><strong style="min-width:0;max-width:100%;overflow-wrap:anywhere;text-align:center">Tachyon${{t.version ? ' ' + escapeHtml(t.version) : ''}}</strong><span style="color:${{t.online ? '#74e3ac' : '#f2bc6b'}}">${{label}}</span></div><div class="tachyonAction">${{button}}</div></div>`;
+  const crown = '<svg class="tachyonCrown" width="18" height="16" viewBox="0 0 24 20" style="flex:0 0 18px;color:#fbbf24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 5l4.5 4L12 2l4.5 7L21 5l-2 10H5z"/><path fill="#f59e0b" d="M5 16h14v3H5z"/><g fill="#fde68a"><circle cx="3" cy="4" r="1.5"/><circle cx="12" cy="2" r="1.5"/><circle cx="21" cy="4" r="1.5"/></g></svg>';
+  return `<div class="tachyonIntegration" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:10px;margin-top:10px;border:1px solid var(--line,rgba(180,150,220,.25));border-radius:12px"><div class="tachyonMeta" style="display:flex;align-items:center;justify-content:center;gap:8px;min-height:40px;max-width:100%"><strong class="tachyonName" style="display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:0;max-width:100%;text-align:center">${{crown}}<span style="min-width:0;overflow-wrap:anywhere">Tachyon${{t.version ? ' ' + escapeHtml(t.version) : ''}}</span></strong><span class="status tachyonStatus${{t.online ? '' : ' off'}}" style="flex-shrink:0"><i aria-hidden="true"></i>${{label}}</span></div><div class="tachyonAction">${{button}}</div></div>`;
 }}
 
 function render(list) {{
@@ -8516,7 +8729,7 @@ function render(list) {{
     const actionsId = actionPanelId(r.id);
     const actionsOpen = expandedActionPanels.has(actionsId);
     const detailsId = 'router-details-' + String(r.id).replace(/[^a-zA-Z0-9_-]/g, '-');
-    const collapseCards = mobileCardsMq.matches && !expandedCardDetails.has(detailsId);
+    const collapseCards = !expandedCardDetails.has(detailsId);
     const groupHeading = idx === 0 || groupName(groupedList[idx - 1].group_id) !== groupName(r.group_id)
       ? `<div class="routerGroupHeading"><span>${{escapeHtml(groupName(r.group_id))}}</span><em>${{groupedList.filter((item) => groupName(item.group_id) === groupName(r.group_id)).length}} роутера</em></div>`
       : '';
@@ -8532,13 +8745,13 @@ function render(list) {{
       metricHtml('Температура', formatTemperatureHtml(temperature), tempClass(temperature)),
       metric('Нагрузка', load, 'span2')
     ].join('');
-    return `${{groupHeading}}<article class="card ${{isMain ? 'main' : ''}} ${{online ? 'online' : 'off'}}">
+    return `${{groupHeading}}<div class="routerCardSlot"><article class="card ${{isMain ? 'main' : ''}} ${{online ? 'online' : 'off'}}">
       <div class="cardTop">
         <div class="status ${{stateClass}}"><i></i>${{stateText}}</div>
       </div>
       <div class="nameRow"><div class="name">${{escapeHtml(r.name)}}</div>${{renameButton}}</div>
-      ${{mobileCardsMq.matches ? `<button class="mobileToggle" type="button" data-card-toggle="${{escapeAttr(detailsId)}}" aria-expanded="${{collapseCards ? 'false' : 'true'}}">${{collapseCards ? 'Открыть данные' : 'Скрыть данные'}}</button>` : ''}}
-      <div class="cardBody" id="${{escapeAttr(detailsId)}}"${{collapseCards ? ' hidden' : ''}}>
+      <button class="mobileToggle cardDetailsToggle" type="button" data-card-toggle="${{escapeAttr(detailsId)}}" aria-controls="${{escapeAttr(detailsId)}}" aria-expanded="${{collapseCards ? 'false' : 'true'}}">${{collapseCards ? 'Открыть данные' : 'Скрыть данные'}}</button>
+      <div class="cardBody" id="${{escapeAttr(detailsId)}}" role="region" aria-label="${{escapeAttr('Данные роутера ' + (r.name || r.id))}}"${{collapseCards ? ' hidden' : ''}}>
       <div class="metrics">
         ${{metricsHtml}}
       </div>
@@ -8555,9 +8768,10 @@ function render(list) {{
       </div>
       ${{wolReady ? renderWolPanelResponsive(r) : ''}}
       </div>
-    </article>`;
+    </article></div>`;
   }}).join('');
   syncActionToggleStates();
+  syncCardDetails();
 }}
 
 function escapeHtml(s) {{
@@ -8724,7 +8938,7 @@ render = function(list) {{
     const actionsId = actionPanelId(r.id);
     const actionsOpen = expandedActionPanels.has(actionsId);
     const detailsId = 'router-details-' + String(r.id).replace(/[^a-zA-Z0-9_-]/g, '-');
-    const collapseCards = mobileCardsMq.matches && !expandedCardDetails.has(detailsId);
+    const collapseCards = !expandedCardDetails.has(detailsId);
     const routerKey = String(r.id || '');
     const groupPickerOpen = expandedGroupPickers.has(routerKey);
     const selectedGroupName = groupName(r.group_id);
@@ -8755,14 +8969,14 @@ render = function(list) {{
       metricHtml('Температура', formatTemperatureHtml(temperature), tempClass(temperature)),
       metric('Нагрузка', load, 'span2')
     ].join('');
-    return `${{groupStart}}<article class="card ${{isMain ? 'main' : ''}} ${{online ? 'online' : 'off'}}">
+    return `${{groupStart}}<div class="routerCardSlot"><article class="card ${{isMain ? 'main' : ''}} ${{online ? 'online' : 'off'}}">
       <div class="cardTop">
         <div class="status ${{stateClass}}"><i></i>${{stateText}}</div>
       </div>
       <div class="nameRow"><div class="name">${{escapeHtml(r.name)}}</div>${{renameButton}}</div>
       ${{groupSelectHtml}}
-      ${{mobileCardsMq.matches ? `<button class="mobileToggle" type="button" data-card-toggle="${{escapeAttr(detailsId)}}" aria-expanded="${{collapseCards ? 'false' : 'true'}}">${{collapseCards ? 'Открыть данные' : 'Скрыть данные'}}</button>` : ''}}
-      <div class="cardBody" id="${{escapeAttr(detailsId)}}"${{collapseCards ? ' hidden' : ''}}>
+      <button class="mobileToggle cardDetailsToggle" type="button" data-card-toggle="${{escapeAttr(detailsId)}}" aria-controls="${{escapeAttr(detailsId)}}" aria-expanded="${{collapseCards ? 'false' : 'true'}}">${{collapseCards ? 'Открыть данные' : 'Скрыть данные'}}</button>
+      <div class="cardBody" id="${{escapeAttr(detailsId)}}" role="region" aria-label="${{escapeAttr('Данные роутера ' + (r.name || r.id))}}"${{collapseCards ? ' hidden' : ''}}>
       ${{notesPreview ? `<div class="notesPreview"><strong>Заметки:</strong> <span>${{escapeHtml(notesPreview)}}</span></div>` : ''}}
       <div class="metrics">
         ${{metricsHtml}}
@@ -8781,14 +8995,18 @@ render = function(list) {{
       </div>
       ${{wolReady ? renderWolPanelResponsive(r) : ''}}
       </div>
-    </article>${{groupEnd}}`;
+    </article></div>${{groupEnd}}`;
   }}).join('');
   syncActionToggleStates();
+  syncCardDetails();
 }};
 
 function renderRouterView() {{
   const pageScrollX = window.scrollX || window.pageXOffset || 0;
   const pageScrollY = window.scrollY || window.pageYOffset || 0;
+  const cardDetailsScrollTops = new Map();
+  cards.querySelectorAll('.cardBody').forEach(body => cardDetailsScrollTops.set(body.id, body.scrollTop));
+  const focusedCardToggle = document.activeElement?.dataset?.cardToggle;
   const wolPickerScrollTops = new Map();
   document.querySelectorAll('[data-wol-picker-list]').forEach((list) => {{
     const routerId = String(list.dataset.wolPickerList || '');
@@ -8805,6 +9023,14 @@ function renderRouterView() {{
     return;
   }}
   render(visibleRouters);
+  cardDetailsScrollTops.forEach((scrollTop, id) => {{
+    const body = document.getElementById(id);
+    if (body) body.scrollTop = scrollTop;
+  }});
+  if (focusedCardToggle) {{
+    const body = document.getElementById(focusedCardToggle);
+    body?.closest('.card').querySelector('[data-card-toggle]')?.focus({{preventScroll: true}});
+  }}
   if (pendingRouterViewRestore) {{
     window.cancelAnimationFrame(pendingRouterViewRestore);
     pendingRouterViewRestore = 0;
@@ -8816,6 +9042,7 @@ function renderRouterView() {{
       if (list) list.scrollTop = scrollTop;
     }});
     pendingRouterViewRestore = 0;
+    scheduleCardDetailsPosition();
   }});
 }}
 
@@ -9608,15 +9835,11 @@ cards.addEventListener('click', async (ev) => {{
     ev.stopPropagation();
     return;
   }}
-  const toggleId = ev.target?.dataset?.cardToggle;
+  const toggleId = ev.target.closest('[data-card-toggle]')?.dataset.cardToggle;
   if (toggleId) {{
     const body = document.getElementById(toggleId);
     if (!body) return;
-    body.hidden = !body.hidden;
-    if (body.hidden) expandedCardDetails.delete(toggleId);
-    else expandedCardDetails.add(toggleId);
-    ev.target.setAttribute('aria-expanded', body.hidden ? 'false' : 'true');
-    ev.target.textContent = body.hidden ? 'Открыть данные' : 'Скрыть данные';
+    setCardDetailsExpanded(body, !expandedCardDetails.has(toggleId));
     return;
   }}
   const actionsToggleId = ev.target?.dataset?.actionsToggle;
@@ -19906,6 +20129,9 @@ exit 127
             return
         if path == "/ssh-key-manual/":
             self.send_bytes(200, ssh_key_manual_html().encode("utf-8"), "text/html; charset=utf-8")
+            return
+        if path in ("/donate", "/donate/"):
+            self.send_bytes(200, donate_html().encode("utf-8"), "text/html; charset=utf-8")
             return
         if path == "/logout":
             revoke_hub_session(token=self.current_session_token())

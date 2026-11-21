@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'Vps')][string]$Vps,
     [Parameter(Mandatory = $true, ParameterSetName = 'Router')][string]$Router,
     [ValidateSet('Install', 'Rollback')][string]$Action = 'Install',
-    [ValidateSet('tachyon-integration', 'tachyon-layout', 'tachyon-detection')][string]$BackupName = 'tachyon-integration',
+    [ValidateSet('tachyon-integration', 'tachyon-layout', 'tachyon-detection', 'router-card-details', 'donate-ui')][string]$BackupName = 'tachyon-integration',
     [ValidateSet('v121', 'v122')][string]$BackupVersion = 'v121',
     [ValidateRange(1, 65535)][int]$Port = 22,
     [string]$JumpHost = '',

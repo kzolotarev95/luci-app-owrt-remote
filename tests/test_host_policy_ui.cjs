@@ -73,9 +73,9 @@ const eventFor = (selector, node) => ({target: {closest(wanted) { return wanted 
     expandedActionPanels: new Set(), expandedCardDetails: new Set(),
     expandedGroupPickers: new Set(), openRouterGroups: new Set(['__ungrouped__']),
     mobileCardsMq: {matches: false}, authIsOwner: () => true, groupPickerButtonsHtml: empty,
-    renderModelMetric: empty, modelGetsLegendBadge: () => false, metric: empty,
+    renderModelMetric: empty, modelGetsLegendBadge: () => false, metric: empty, renderTachyon: empty,
     statusRu: identity, ago: empty, metricHtml: empty, formatMemoryHtml: empty,
-    memoryClass: empty, formatFlashHtml: empty, flashClass: empty,
+    memoryClass: empty, formatFlashHtml: empty, flashClass: empty, syncCardDetails: empty,
     formatTemperatureHtml: empty, tempClass: empty, syncActionToggleStates: empty,
   });
   vm.runInContext(source.slice(renderBegin, renderEnd), context);
