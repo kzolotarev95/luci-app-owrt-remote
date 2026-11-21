@@ -3,7 +3,7 @@
 KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
 AGENT="${AGENT:-/usr/sbin/owrt-remote}"
 LOG_HELPER="${OWRT_REMOTE_LOG_HELPER:-/usr/lib/owrt-remote/logs.sh}"
-OWRT_REMOTE_UI_VERSION="2026-07-02-mobile-terminal-batch-v25"
+OWRT_REMOTE_UI_VERSION="2026-11-21-v122"
 PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
 RESULT_TITLE=""
 RESULT_BODY=""
@@ -515,7 +515,7 @@ render_page() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="owrt-remote-ui-version" content="$OWRT_REMOTE_UI_VERSION">
-<title>OpenWrt Remote Hub v121</title>
+<title>OpenWrt Remote Hub v122</title>
 <script>
 try {
   const design = localStorage.getItem('owrtRemote:hubDesign');
@@ -564,7 +564,7 @@ html[data-hub-shared-effects="1"] body::before,html[data-hub-shared-effects="1"]
     <div class="brand">
       <div class="brandPanel">
         <div class="titleRow">
-          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v121</span></span></h1>
+          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v122</span></span></h1>
         </div>
         <div class="links">
           <a class="uiPill" href="https://t.me/kzolotarev95" target="_blank" rel="noopener noreferrer">Telegram</a>

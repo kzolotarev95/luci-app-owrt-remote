@@ -57,7 +57,7 @@ if [ '__ACTION__' = Install ]; then
 from pathlib import Path
 import sys
 source = Path(sys.argv[1]).read_text(encoding='utf-8')
-required = ('v121', '#routerForm select option,#routerGroupFilter option', 'background-color:#221a34', 'id="backupDownload"', 'id="backupRestore"')
+required = ('v122', '#routerForm select option,#routerGroupFilter option', 'background-color:#221a34', 'id="backupDownload"', 'id="backupRestore"')
 if 'class="backupCmds"' in source:
     print('Old backup command instructions remain in candidate', file=sys.stderr)
     raise SystemExit(1)

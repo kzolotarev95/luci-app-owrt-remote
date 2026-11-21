@@ -99,7 +99,7 @@ if [ '__ACTION__' = Install ]; then
     grep -F -q 'heartbeat_set_url_if_changed()' "$stage/agent"
     grep -F -q 'reason=https-downgrade' "$stage/agent"
     for item in agent wan.sh; do grep -F -q -- '--post301' "$stage/$item"; done
-    for item in cgi luci; do grep -F -q 'v121' "$stage/$item"; done
+    for item in cgi luci; do grep -F -q 'v122' "$stage/$item"; done
     if [ ! -e "$backup" ]; then
         save_files "$stage/retained-backup"
         mv "$stage/retained-backup" "$backup"
@@ -174,7 +174,7 @@ python_bin=/opt/owrt-remote/venv/bin/python
 [ -x "$python_bin" ] || python_bin=python3
 if [ '__ACTION__' = Install ]; then
     grep -F -q 'def router_hub_origins(' "$stage/hub.py"
-    grep -F -q 'v121' "$stage/hub.py"
+    grep -F -q 'v122' "$stage/hub.py"
     "$python_bin" -m py_compile "$stage/hub.py"
     OWRT_HOST_POLICY_HUB_SOURCE="$stage/hub.py" "$python_bin" "$stage/host_policy.py" HostPolicyTests -v
     OWRT_RESOURCE_HUB_SOURCE="$stage/hub.py" "$python_bin" "$stage/resources.py" IntegrationTests -v

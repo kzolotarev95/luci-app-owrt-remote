@@ -25,9 +25,11 @@ fi
 
 rmf usr/sbin/owrt-remote
 rmf usr/lib/owrt-remote/wan.sh
+rmf usr/lib/owrt-remote/tachyon.sh
 rmf usr/lib/owrt-remote/logs.sh
 rmf etc/init.d/owrt-remote-logs
 rm -rf "$(target_path tmp/owrt-remote-logs)"
+rm -rf "$(target_path tmp/owrt-remote-tachyon)"
 rmdir "$(target_path usr/lib/owrt-remote)" 2>/dev/null || true
 rmf etc/init.d/owrt-remote
 rmf www/cgi-bin/owrt-remote

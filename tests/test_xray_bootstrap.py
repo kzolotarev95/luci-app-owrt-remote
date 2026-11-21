@@ -402,11 +402,13 @@ xray_discover_releases() {
     printf 'v26.6.27|missing.ipk|https://github.com/missing|%s|%s\n' "$(xray_digest "$TEST_ROOT/release.pkg")" "$(wc -c <"$TEST_ROOT/release.pkg")" >"$1"
     printf 'v26.6.27|published.ipk|https://github.com/published|%s|%s\n' "$(xray_digest "$TEST_ROOT/release.pkg")" "$(wc -c <"$TEST_ROOT/release.pkg")" >>"$1"
 }
-xray_probe_url() { case "$1" in */missing) return 22 ;; esac; }
-fetch_file() { cp "$TEST_ROOT/release.pkg" "$2"; }
+fetch_file() {
+    case "$1" in */missing) printf '22 HTTP 404\n' >"$DOWNLOAD_RESULT_FILE"; return 22 ;; esac
+    cp "$TEST_ROOT/release.pkg" "$2"
+}
 ''')
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('URL unavailable (rc=22)', result.stderr)
+        self.assertIn('http=404', result.stderr)
         self.assertEqual(self.binary.read_bytes(), data)
         self.assert_clean()
 
@@ -544,7 +546,7 @@ curl() {
         calls = (self.directory / 'fetches').read_text().splitlines()
         for call, host in zip(calls, ('github.com', 'release-assets.githubusercontent.com')):
             self.assertIn('--connect-timeout 10', call)
-            self.assertIn('--max-time 120.000', call)
+            self.assertRegex(call, r'--max-time [1-9][0-9]*\.000')
             self.assertIn('--resolve ' + host + ':443:192.0.2.42', call)
             self.assertIn('--interface wan', call)
             self.assertNotIn('--insecure', call)
@@ -561,6 +563,10 @@ curl() {
     def test_download_timeout_removes_partial_data_and_preserves_error(self):
         result = self.shell('fetch_file https://github.com/test "$TEST_ROOT/download"', mocks=r'''
 curl() { local arg previous; previous=''; for arg in "$@"; do [ "$previous" != -o ] || echo partial >"$arg"; previous="$arg"; done; return 28; }
+command() {
+    if [ "$1" = -v ]; then case "$2" in wget|uclient-fetch) return 1 ;; esac; fi
+    builtin command "$@"
+}
 ''')
         self.assertEqual(result.returncode, 28, result.stderr)
         self.assertFalse((self.directory / 'download').exists())

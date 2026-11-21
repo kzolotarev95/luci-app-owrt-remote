@@ -52,6 +52,13 @@ Xray и недоступном SSH-туннеле, если агент прод�
 <a href="docs/VPS_LOG_MAINTENANCE.md">Установка, проверка и откат</a>.
 </p>
 
+<p>
+<b>Tachyon:</b> автоматическое обнаружение пакета на каждом роутере,
+версия и Online/Offline, открытие отдельного веб-интерфейса или старого LuCI
+через авторизованный туннель Hub.
+<a href="docs/TACHYON_INTEGRATION.md">Локальная установка, проверка и откат</a>.
+</p>
+
 
 <table>
 <tr>
@@ -189,9 +196,13 @@ owrt-remote doctor
 owrt-remote status
 ```
 
+Если загрузка Xray прерывается: общий загрузчик с переключением клиентов,
+диагностика DNS/TLS/HTTP, локальная установка исправления и откат описаны в
+[docs/XRAY_DOWNLOAD_RECOVERY.md](docs/XRAY_DOWNLOAD_RECOVERY.md).
+
 <h3> Готовые пакеты для OpenWrt</h3>
 
-OpenWrt 23.05/24.10 и APK для 25.12. Пакеты
+IPK для OpenWrt 23.05/24.10 и APK для 25.12. Пакеты
 архитектурно независимые (`all`/`noarch`): содержат тот же агент и LuCI-файлы,
 что и `install.sh`, сохраняют `/etc/config/owrtremote` и существующий Xray.
 GitHub Actions проверяет SDK разных архитектур, установку/обновление/удаление

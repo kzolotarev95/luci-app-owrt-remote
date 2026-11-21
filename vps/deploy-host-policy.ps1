@@ -90,7 +90,7 @@ test -s "$config"
 if [ '__ACTION__' = Install ]; then
     for item in agent wan.sh cgi init; do test -s "$stage/$item"; sh -n "$stage/$item"; done
     test -s "$stage/luci"
-    for item in cgi luci; do grep -F -q 'v121' "$stage/$item"; done
+    for item in cgi luci; do grep -F -q 'v122' "$stage/$item"; done
     # curl is needed to preserve HTTPS SNI and bypass the local DNS/proxy.
     if ! command -v curl >/dev/null 2>&1; then
         if command -v opkg >/dev/null 2>&1; then opkg update && opkg install curl ca-bundle
@@ -156,8 +156,8 @@ if [ '__ACTION__' = Install ]; then
         exit 1
     fi
     /usr/sbin/owrt-remote status
-    grep -F -q 'v121' /www/cgi-bin/owrt-remote
-    grep -F -q 'v121' /www/luci-static/resources/view/owrt_remote.js
+    grep -F -q 'v122' /www/cgi-bin/owrt-remote
+    grep -F -q 'v122' /www/luci-static/resources/view/owrt_remote.js
     echo HOST_POLICY_ROUTER_V121_OK
 else
     test -f "$backup/complete"
@@ -200,7 +200,7 @@ test -s "$target"
 python_bin=/opt/owrt-remote/venv/bin/python
 [ -x "$python_bin" ] || python_bin=python3
 if [ '__ACTION__' = Install ]; then
-    grep -F -q 'v121' "$stage/hub.py"
+    grep -F -q 'v122' "$stage/hub.py"
     "$python_bin" -m py_compile "$stage/hub.py"
     OWRT_HOST_POLICY_HUB_SOURCE="$stage/hub.py" "$python_bin" "$stage/test_host_policy.py" HostPolicyTests -v
     OWRT_RESOURCE_HUB_SOURCE="$stage/hub.py" "$python_bin" "$stage/resources.py" -v

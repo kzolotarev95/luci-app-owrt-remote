@@ -189,5 +189,28 @@ fetch_file() {
         self.assertEqual(self.directory.joinpath('next-release-page').read_text().strip(),'2')
         self.assertEqual(len(self.directory.joinpath('fetched').read_text().splitlines()),1)
 
+    def test_same_selector_matches_only_the_exact_published_target_for_apk_and_ipk(self):
+        architectures = ('aarch64_cortex-a53', 'aarch64_cortex-a72', 'aarch64_generic',
+                         'arm_cortex-a7', 'arm_cortex-a7_neon-vfpv4', 'arm_cortex-a9',
+                         'mips_24kc', 'mipsel_24kc', 'mips64', 'i386', 'x86_64')
+        for fmt in ('apk', 'ipk'):
+            assets = []
+            for arch in architectures:
+                item = self.asset(arch=arch)
+                if fmt == 'ipk':
+                    name = f'openwrt-xray_26.6.22-2_{arch}.ipk'
+                    item['browser_download_url'] = item['browser_download_url'].replace(item['name'], name)
+                    item['name'] = name
+                assets.append(item)
+            self.manifest([self.release(assets=assets)])
+            for arch in architectures:
+                with self.subTest(format=fmt, arch=arch):
+                    result = self.run_case('xray_discover_releases "$TEST_ROOT/candidates" "$TEST_ROOT"; cat "$TEST_ROOT/candidates"',
+                                           mocks=f'xray_package_format() {{ printf {fmt}; }}', TEST_ARCH=arch)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    selected = result.stdout.strip().splitlines()
+                    self.assertEqual(len(selected), 1, result.stdout)
+                    self.assertIn(('-' if fmt == 'apk' else '_') + arch + '.' + fmt, selected[0])
+
 
 if __name__=='__main__': unittest.main()

@@ -106,7 +106,7 @@ if [ '__ACTION__' = Install ]; then
         exit 1
     fi
     grep -F -q 'globalLogsToggle' "$stage/cgi"
-    for item in cgi luci; do grep -F -q 'v121' "$stage/$item"; done
+    for item in cgi luci; do grep -F -q 'v122' "$stage/$item"; done
     grep -F -q 'LOG_BUFFER_LIMIT=16384' "$stage/logs.sh"
     grep -F -q 'LOG_KEEP_SECONDS=86400' "$stage/logs.sh"
     grep -F -q 'log_sync_loop' "$stage/logs.sh"

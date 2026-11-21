@@ -3644,6 +3644,7 @@ def init_db(conn):
     ensure_column(conn, "routers", "group_id", "text not null default ''")
     ensure_column(conn, "routers", "deleted_at", "integer not null default 0")
     ensure_column(conn, "routers", "ssh_entry_port", "integer not null default 0")
+    ensure_column(conn, "routers", "tachyon_entry_port", "integer not null default 0")
     ensure_column(conn, "routers", "ssh_vless_uuid", "text not null default ''")
     ensure_column(conn, "routers", "ssh_reverse_tag", "text not null default ''")
     ensure_column(conn, "routers", "ssh_host", "text not null default '127.0.0.1'")
@@ -3734,15 +3735,15 @@ def get_active_router(conn, router_id):
 
 def get_router_by_entry_port(conn, entry_port, exclude_id=""):
     return conn.execute(
-        "select * from routers where coalesce(deleted_at, 0) = 0 and (entry_port = ? or ssh_entry_port = ?) and id != ?",
-        (int(entry_port), int(entry_port), exclude_id),
+        "select * from routers where coalesce(deleted_at, 0) = 0 and (entry_port = ? or ssh_entry_port = ? or tachyon_entry_port = ?) and id != ?",
+        (int(entry_port), int(entry_port), int(entry_port), exclude_id),
     ).fetchone()
 
 
 def get_router_by_any_port(conn, port, exclude_id=""):
     return conn.execute(
-        "select * from routers where coalesce(deleted_at, 0) = 0 and (entry_port = ? or ssh_entry_port = ?) and id != ?",
-        (int(port), int(port), exclude_id),
+        "select * from routers where coalesce(deleted_at, 0) = 0 and (entry_port = ? or ssh_entry_port = ? or tachyon_entry_port = ?) and id != ?",
+        (int(port), int(port), int(port), exclude_id),
     ).fetchone()
 
 
@@ -3764,6 +3765,53 @@ def list_router_rows(conn):
         order by case role when 'main' then 0 else 1 end, lower(id)
         """
     ).fetchall()
+
+
+def normalize_tachyon(value):
+    if not isinstance(value, dict) or value.get('checked') is not True:
+        return None
+    if value.get('installed') is False:
+        return {'checked': True, 'installed': False}
+    if value.get('installed') is not True:
+        return None
+    mode = value.get('mode')
+    if mode not in {'standalone', 'luci'}:
+        return None
+    port = value.get('port', 0)
+    if isinstance(port, bool) or not isinstance(port, int):
+        return None
+    if mode == 'standalone' and not 1024 <= port <= 65535:
+        return None
+    return {'checked': True, 'installed': True, 'mode': mode,
+            'port': port if mode == 'standalone' else 0,
+            'version': re.sub(r'[^a-zA-Z0-9.+~_-]', '', str(value.get('version') or ''))[:80],
+            'package_version': re.sub(r'[^a-zA-Z0-9.+~_-]', '', str(value.get('package_version') or value.get('version') or ''))[:80],
+            'service': value.get('service') if value.get('service') in {'running', 'stopped'} else 'unknown',
+            'available': value.get('available') is True,
+            'api': value.get('api') if value.get('api') in {'/api/agent/v1', '/cgi-bin/tachyon-api', '/cgi-bin/tachyon-agent'} else ''}
+
+
+def router_tachyon(row):
+    try:
+        status = row.get('status') if isinstance(row, dict) and 'status' in row else json.loads(row['status_json'] or '{}')
+        return normalize_tachyon(status.get('tachyon')) or {}
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+        return {}
+
+
+def allocate_tachyon_entry(conn):
+    used = {int(row[0]) for column in ('entry_port', 'ssh_entry_port', 'tachyon_entry_port')
+            for row in conn.execute('select ' + column + ' from routers') if row[0]}
+    for port in range(24000, 65000):
+        if port in used:
+            continue
+        with socket.socket() as probe:
+            try:
+                probe.bind(('127.0.0.1', port))
+            except OSError:
+                continue
+        return port
+    raise RuntimeError('Нет свободного локального порта для Tachyon.')
 
 
 def row_to_router(row):
@@ -3804,6 +3852,10 @@ def row_to_router(row):
     data["status"] = status
     data["service_enabled"] = service_enabled
     data["online"] = online
+    tachyon = router_tachyon(data)
+    if tachyon.get('installed'):
+        data['tachyon'] = {**tachyon, 'online': bool(online and status.get('xray') == 'running' and tachyon.get('available')),
+                          'url': f"/tachyon/{urllib.parse.quote(data['id'], safe='')}/"}
     data["last_seen_iso"] = iso_time(last_seen)
     data["access_url"] = f"/access/{urllib.parse.quote(data['id'])}/"
     data["ssh_url"] = f"/ssh/{urllib.parse.quote(data['id'])}/"
@@ -4187,6 +4239,8 @@ def upsert_router(conn, values):
         payload["entry_port"],
         payload["ssh_entry_port"],
     )
+    if current and int(current['tachyon_entry_port'] or 0) in {payload['entry_port'], payload['ssh_entry_port']} - {0}:
+        raise ValueError('Этот локальный порт уже используется интеграцией Tachyon.')
     if current:
         conn.execute(
             """
@@ -4358,6 +4412,13 @@ def xray_control_snapshot(conn, router_id):
 def heartbeat(conn, payload):
     router_id = clean_router_id(payload.get("id"))
     row = get_router(conn, router_id)
+    payload = dict(payload)
+    tachyon = normalize_tachyon(payload.get('tachyon'))
+    if tachyon is None:
+        tachyon = router_tachyon(row) if row else {}
+        if tachyon:
+            tachyon = {**tachyon, 'available': False}
+    payload['tachyon'] = tachyon
     ts = now_ts()
     status_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     was_deleted = router_deleted(row)
@@ -4425,6 +4486,17 @@ def heartbeat(conn, payload):
         ),
     )
     conn.commit()
+    old_tachyon = router_tachyon(row)
+    old_endpoint = old_tachyon.get('port', 0) if old_tachyon.get('installed') and old_tachyon.get('mode') == 'standalone' else 0
+    new_endpoint = tachyon.get('port', 0) if tachyon.get('installed') and tachyon.get('mode') == 'standalone' else 0
+    tachyon_reload = old_endpoint != new_endpoint
+    if tachyon.get('installed') and tachyon.get('mode') == 'standalone' and not row['tachyon_entry_port']:
+        conn.execute('begin immediate')
+        current_entry = conn.execute('select tachyon_entry_port from routers where id=?', (router_id,)).fetchone()[0]
+        if not current_entry:
+            conn.execute('update routers set tachyon_entry_port=? where id=?', (allocate_tachyon_entry(conn), router_id))
+            tachyon_reload = True
+        conn.commit()
     router = row_to_router(get_router(conn, router_id))
     entry_now = int(router.get("entry_port") or 0)
     ssh_entry_now = int(router.get("ssh_entry_port") or 0)
@@ -4432,6 +4504,7 @@ def heartbeat(conn, payload):
         (entry_now or ssh_entry_now)
         and (
             was_deleted
+            or tachyon_reload
             or created_with_xray_ports
             or old_entry_port != entry_now
             or old_ssh_entry_port != ssh_entry_now
@@ -4618,6 +4691,14 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
                 "outboundTag": reverse_out,
             }
         )
+        tachyon = router_tachyon(row)
+        tachyon_entry = int(dict(row).get('tachyon_entry_port') or 0)
+        if tachyon.get('installed') and tachyon.get('mode') == 'standalone' and tachyon_entry:
+            tag = f'tachyon-{router_id}'
+            inbounds.append({'tag': tag, 'listen': '127.0.0.1', 'port': tachyon_entry,
+                             'protocol': 'tunnel', 'settings': {'allowedNetwork': 'tcp',
+                              'rewriteAddress': '127.0.0.1', 'rewritePort': tachyon['port']}})
+            rules.append({'type': 'field', 'inboundTag': [tag], 'outboundTag': reverse_out})
         if ssh_entry_port > 0:
             ssh_in = f"ssh-{router_id}"
             inbounds.append(
@@ -4641,6 +4722,16 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
                 }
             )
 
+    # Xray 26.3.27 accepts the tunnel alias but only reads the original
+    # dokodemo address/port/network fields. Without them it forwards the
+    # inbound listener's local port, so the router's Tachyon rule never matches
+    # and the admin fallback receives the connection. Emit both spellings with
+    # identical values; newer cores use the explicit rewrite fields.
+    for inbound in inbounds:
+        if inbound.get('protocol') == 'tunnel':
+            settings = inbound['settings']
+            settings.update(network=settings['allowedNetwork'], address=settings['rewriteAddress'],
+                            port=settings['rewritePort'])
     return {
         "log": {"loglevel": "warning"},
         "inbounds": inbounds,
@@ -4653,7 +4744,7 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
 def make_router_xray_config(row):
     bridge_tag = row["reverse_tag"]
     ssh_bridge_tag = row["ssh_reverse_tag"] or f"{bridge_tag}-ssh"
-    return {
+    config = {
         "log": {"loglevel": "warning"},
         "inbounds": [],
         "outbounds": [
@@ -4718,6 +4809,14 @@ def make_router_xray_config(row):
         },
         "remarks": f"OpenWrt Remote client for {row['id']}",
     }
+    tachyon = router_tachyon(row)
+    if tachyon.get('installed') and tachyon.get('mode') == 'standalone':
+        port = tachyon['port']
+        config['outbounds'].insert(0, {'tag': 'router-tachyon', 'protocol': 'freedom', 'settings': {
+            'redirect': f'127.0.0.1:{port}', 'finalRules': [{'action': 'allow', 'network': 'tcp', 'port': port}]}})
+        config['routing']['rules'].insert(0, {'type': 'field', 'inboundTag': [bridge_tag],
+                                              'ip': ['127.0.0.1'], 'port': port, 'outboundTag': 'router-tachyon'})
+    return config
 
 
 def reload_vps_xray(db_path=DB_PATH):
@@ -6259,7 +6358,7 @@ def inject_hub_appearance(path, body, content_type):
     if "text/html" not in (content_type or "").lower():
         return body
     request_path = str(path or "").split("?", 1)[0]
-    if request_path.startswith(("/access/", "/api/", "/cgi-bin/")):
+    if request_path.startswith(("/access/", "/tachyon/", "/api/", "/cgi-bin/")):
         return body
     try:
         text = body.decode("utf-8")
@@ -6428,7 +6527,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <div class="brand">
       <div class="desktopHeader">
         <div class="desktopHeaderTop">
-          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v121</span></span></h1>
+          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v122</span></span></h1>
           <button class="badge hubUpdateButton" data-hub-update type="button" {'hidden' if not is_owner else ''}>Проверить обновление панели</button>
           <div class="routerSearchDock" id="routerSearchDock">
             <button class="routerSearchToggle" id="routerSearchToggle" type="button" aria-expanded="false" aria-controls="routerSearchPanel" data-active="false">
@@ -6767,7 +6866,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     </div>
     {vps_resource_widgets_html(mobile=True, resources=vps_resources)}
     <div class="mobileSearchDock" id="mobileHubUpdateDock">
-      <span class="mobileSearchVersion">v121</span>
+      <span class="mobileSearchVersion">v122</span>
       <button class="badge hubUpdateButton" data-hub-update type="button" {'hidden' if not is_owner else ''}>Проверить обновление панели</button>
     </div>
     <div class="mobileSearchDock" id="mobileSeasonDock" aria-label="Зимние эффекты">
@@ -8355,6 +8454,16 @@ function formatLoad(value) {{
   return value || 'Неизвестно';
 }}
 
+function renderTachyon(router) {{
+  const t = router.tachyon;
+  if (!t || !t.installed) return '';
+  const label = t.online ? 'Online' : 'Offline';
+  const button = (router.permissions || {{}}).admin
+    ? `<a class="btn" href="${{escapeAttr(t.url)}}" target="_blank" rel="noopener noreferrer">Открыть Tachyon</a>`
+    : '<span class="btn disabled">Открыть Tachyon</span>';
+  return `<div class="tachyonIntegration" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;padding:10px;margin-top:10px;border:1px solid var(--line,rgba(180,150,220,.25));border-radius:12px"><strong>Tachyon ${{escapeHtml(t.version || '')}}</strong><span style="color:${{t.online ? '#74e3ac' : '#f2bc6b'}}">${{label}}</span>${{button}}</div>`;
+}}
+
 function render(list) {{
   syncExpandedActionPanels(list);
   if (!list.length) {{
@@ -8433,6 +8542,7 @@ function render(list) {{
       <div class="metrics">
         ${{metricsHtml}}
       </div>
+      ${{renderTachyon(r)}}
       <button class="actionToggle primary" type="button" data-actions-toggle="${{escapeAttr(actionsId)}}" aria-expanded="${{actionsOpen ? 'true' : 'false'}}">${{actionsOpen ? 'Скрыть действия' : 'Открыть действия'}}</button>
       <div class="actions mobileCollapsed${{actionsOpen ? ' open' : ''}}" id="${{escapeAttr(actionsId)}}">
         ${{adminButton}}
@@ -8657,6 +8767,7 @@ render = function(list) {{
       <div class="metrics">
         ${{metricsHtml}}
       </div>
+      ${{renderTachyon(r)}}
       <button class="actionToggle primary" type="button" data-actions-toggle="${{escapeAttr(actionsId)}}" aria-expanded="${{actionsOpen ? 'true' : 'false'}}">${{actionsOpen ? 'Скрыть действия' : 'Открыть действия'}}</button>
       <div class="actions mobileCollapsed${{actionsOpen ? ' open' : ''}}" id="${{escapeAttr(actionsId)}}">
         ${{adminButton}}
@@ -13754,7 +13865,7 @@ button:hover{{filter:brightness(1.06)}}
       <form class="login" method="post" action="/login">
     {error_html}
     <span class="brand">
-      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v121</span></span></h1>
+      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v122</span></span></h1>
     </span>
     <label for="hubUsername">Логин</label>
     <input id="hubUsername" name="username" autocomplete="off" autofocus required>
@@ -14226,7 +14337,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                 <circle cx="65" cy="59" r="3" fill="#E5F2FF"/>
               </svg>
             </div>
-            <h2 class="brandTitle">OpenWrt Remote Hub <span class="brandVersion">v121</span></h2>
+            <h2 class="brandTitle">OpenWrt Remote Hub <span class="brandVersion">v122</span></h2>
           </div>
         </div>
         <div class="brandBottom">
@@ -19830,6 +19941,9 @@ exit 127
         if path.startswith("/ssh/"):
             self.ssh_page()
             return
+        if path.startswith("/tachyon/"):
+            self.proxy_access(path, tachyon=True)
+            return
         if path.startswith("/access/"):
             self.proxy_access(path)
             return
@@ -20090,6 +20204,9 @@ exit 127
             except Exception as exc:
                 self.log_message("heartbeat error: %s", exc)
                 self.send_json(400, {"ok": False, "error": str(exc)})
+            return
+        if path.startswith("/tachyon/"):
+            self.proxy_access(path, tachyon=True)
             return
         if path.startswith("/access/"):
             self.proxy_access(path)
@@ -20711,7 +20828,17 @@ exit 127
             return
         self.send_text(404, "not found")
 
-    def proxy_access(self, path):
+    def do_PUT(self):
+        path = self.parsed().path
+        if path.startswith('/tachyon/'):
+            self.proxy_access(path, tachyon=True)
+        else:
+            self.send_text(405, 'Method not allowed')
+
+    do_PATCH = do_PUT
+    do_DELETE = do_PUT
+
+    def proxy_access(self, path, tachyon=False):
         parts = path.split("/", 3)
         if len(parts) < 3 or not parts[2]:
             self.redirect("/")
@@ -20719,6 +20846,12 @@ exit 127
         router_id = urllib.parse.unquote(parts[2])
         if not self.require_router_access(router_id, "A"):
             return
+        if tachyon and self.command not in ('GET', 'HEAD', 'OPTIONS'):
+            origin = self.headers.get('Origin') or self.headers.get('Referer', '')
+            parsed_origin = urllib.parse.urlsplit(origin)
+            if not origin or f'{parsed_origin.scheme}://{parsed_origin.netloc}' != self.request_origin():
+                self.send_text(403, 'Недопустимый источник запроса Tachyon.')
+                return
         rest = "/" + parts[3] if len(parts) == 4 else "/"
         with self.app.conn() as conn:
             row = get_active_router(conn, router_id)
@@ -20726,6 +20859,17 @@ exit 127
             self.send_text(404, "router not found")
             return
         port = int(row["entry_port"] or 0)
+        prefix = f"/{'tachyon' if tachyon else 'access'}/{urllib.parse.quote(router_id, safe='')}"
+        if tachyon:
+            integration = router_tachyon(row)
+            if not integration.get('installed'):
+                self.send_text(404, 'Tachyon не обнаружен на этом роутере.')
+                return
+            if integration.get('mode') == 'standalone':
+                port = int(row['tachyon_entry_port'] or 0)
+            elif rest == '/':
+                self.redirect(f"/access/{urllib.parse.quote(router_id, safe='')}/cgi-bin/luci/admin/services/tachyon")
+                return
         if port <= 0:
             self.send_text(400, "router has no entry_port")
             return
@@ -20737,7 +20881,7 @@ exit 127
             target += "?" + urllib.parse.urlencode(query)
 
         is_static = self.command in ("GET", "HEAD") and is_luci_static_target(target)
-        cache_key = static_cache_key(router_id, target) if is_static else None
+        cache_key = static_cache_key(('tachyon:' if tachyon else '') + router_id, target) if is_static else None
         if cache_key:
             cached = static_cache_get(cache_key)
             if cached:
@@ -20746,7 +20890,7 @@ exit 127
                 self.send_raw_bytes(status, resp_body, content_type, resp_headers)
                 return
 
-        body = self.read_body() if self.command in ("POST", "PUT", "PATCH") else None
+        body = self.read_body() if self.command in ("POST", "PUT", "PATCH", "DELETE") else None
         headers = {}
         skip = {"host", "connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailers", "transfer-encoding", "upgrade", "content-length", "accept-encoding"}
         for key, value in self.headers.items():
@@ -20757,14 +20901,19 @@ exit 127
                 if not value:
                     continue
             elif key.lower() == "referer":
-                value = rewrite_forward_url(value, router_id, port)
+                if tachyon:
+                    parsed = urllib.parse.urlsplit(value)
+                    ref_path = parsed.path.removeprefix(prefix)
+                    value = urllib.parse.urlunsplit(('http', f'127.0.0.1:{port}', ref_path or '/', parsed.query, ''))
+                else:
+                    value = rewrite_forward_url(value, router_id, port)
             elif key.lower() == "origin":
                 value = f"http://127.0.0.1:{port}"
             headers[key] = value
         headers["Host"] = f"127.0.0.1:{port}"
         headers["Connection"] = "close"
         headers["X-Forwarded-Host"] = self.headers.get("Host", "")
-        headers["X-Forwarded-Prefix"] = f"/access/{urllib.parse.quote(router_id)}"
+        headers["X-Forwarded-Prefix"] = prefix
         headers["X-Forwarded-Proto"] = "http"
         if body is not None:
             headers["Content-Length"] = str(len(body))
@@ -20802,7 +20951,6 @@ exit 127
             if last_exc is not None:
                 raise last_exc
             resp_headers = []
-            prefix = f"/access/{urllib.parse.quote(router_id)}"
             public_hosts = normalize_public_hosts(
                 self.headers.get("Host", ""),
                 self.app.public_url,
@@ -20820,7 +20968,7 @@ exit 127
                 if low == "location":
                     value = rewrite_location(value, prefix, port)
                 if low == "set-cookie":
-                    value = rewrite_cookie_path(value, "/")
+                    value = rewrite_cookie_path(value, prefix + '/' if tachyon else "/")
                 resp_headers.append((key, value))
             if should_rewrite_body(content_type):
                 resp_body = rewrite_html(resp_body, prefix, content_type, public_hosts)
@@ -20832,7 +20980,7 @@ exit 127
                     content_type or "application/octet-stream",
                     static_cache_headers(resp_headers),
                 )
-            if not is_static:
+            if not is_static and not tachyon:
                 resp_headers.append(("Set-Cookie", current_router_cookie(router_id)))
             if is_static:
                 self.send_raw_bytes(
@@ -20885,6 +21033,7 @@ def proxy_runtime_script(prefix):
 (function() {
   const prefix = %s;
   const roots = ["/ubus", "/cgi-bin/luci", "/luci-static"];
+  if (prefix.startsWith("/tachyon/")) roots.push("/api", "/login", "/cgi-bin/cgi-exec", "/cgi-bin/cgi-download", "/assets", "/favicon.ico");
   window.__owrtRemotePrefix = prefix;
   function fixUrl(url) {
     const original = url;
@@ -21147,6 +21296,11 @@ def rewrite_html(body, prefix, content_type="", public_hosts=None):
         text = text.replace(old, new)
     text = rewrite_public_absolute_urls(text, prefix, public_hosts or [])
     text = rewrite_remaining_luci_roots(text, prefix)
+    if prefix.startswith('/tachyon/'):
+        # Match only the beginning of a quoted URL. Replacing every /login
+        # would corrupt /api/login, and replacing every /api can corrupt IDs.
+        text = re.sub(r"""(["'])(/(?:api|login|assets|favicon[.]ico|cgi-bin/cgi-exec|cgi-bin/cgi-download))(?=[/?#"'\\])""",
+                      lambda m: m[1] + prefix + m[2], text)
     text = restore_luci_resource_root(text, protected_resource_roots)
     if "text/html" in (content_type or "").lower():
         script = proxy_runtime_script(prefix)

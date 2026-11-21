@@ -67,7 +67,7 @@ class ReverseTransportTests(unittest.TestCase):
         server.server_close()
         thread.join(timeout=3)
 
-    def check_pair(self, server_bin, shell_client=False):
+    def check_pair(self, server_bin, shell_client=False, tachyon=False):
         processes, streams = [], []
         row = dict(id='probe', name='probe', entry_port=free_port(), ssh_entry_port=free_port(),
                    vps_host='127.0.0.1', vless_port=free_port(), vless_uuid=str(uuid.uuid4()),
@@ -75,6 +75,18 @@ class ReverseTransportTests(unittest.TestCase):
                    reverse_tag='reverse-in', ssh_reverse_tag='reverse-in-ssh',
                    admin_host='127.0.0.1', admin_port=self.http_server.server_port,
                    ssh_host='127.0.0.1', ssh_port=self.ssh_server.server_address[1])
+        if tachyon:
+            class TachyonProbe(HTTPProbe):
+                def do_GET(self):
+                    data = b'TACHYON_SELECTED_ROUTER_OK'
+                    self.send_response(200); self.send_header('Content-Length', str(len(data)))
+                    self.end_headers(); self.wfile.write(data)
+            service = ThreadingHTTPServer(('127.0.0.1', 0), TachyonProbe)
+            thread = threading.Thread(target=service.serve_forever, daemon=True); thread.start()
+            self.addCleanup(self.close_server, service, thread)
+            row['tachyon_entry_port'] = free_port()
+            row['status_json'] = json.dumps({'tachyon': {'checked': True, 'installed': True,
+                'mode': 'standalone', 'port': service.server_port, 'available': True}})
         configs = dict(server=hub.make_server_xray_config([row], listen_host='127.0.0.1',
                                                          listen_port=row['vless_port']),
                        client=hub.make_router_xray_config(row))
@@ -87,7 +99,8 @@ class ReverseTransportTests(unittest.TestCase):
                                reverse_tag=row['reverse_tag'], ssh_reverse_tag=row['ssh_reverse_tag'],
                                admin_host=row['admin_host'], admin_port=row['admin_port'],
                                ssh_host=row['ssh_host'], ssh_port=row['ssh_port'])
-                result = harness.run_shell('render_client_config --stdout')
+                injection = ('tachyon_tunnel_port() { printf ' + str(service.server_port) + '; }\n') if tachyon else ''
+                result = harness.run_shell(injection + 'render_client_config --stdout')
                 self.assertEqual(result.returncode, 0, result.stderr)
                 configs['client'] = json.loads(result.stdout)
             finally:
@@ -127,6 +140,14 @@ class ReverseTransportTests(unittest.TestCase):
             with socket.create_connection(('127.0.0.1', row['ssh_entry_port']), timeout=3) as sock:
                 sock.settimeout(3)
                 self.assertEqual(sock.recv(128), b'SSH-2.0-OWRT_TEST\r\n', logs)
+            if tachyon:
+                connection = http.client.HTTPConnection('127.0.0.1', row['tachyon_entry_port'], timeout=5)
+                try:
+                    connection.request('GET', '/')
+                    with connection.getresponse() as result:
+                        self.assertEqual((result.status, result.read()), (200, b'TACHYON_SELECTED_ROUTER_OK'), logs)
+                finally:
+                    connection.close()
         finally:
             for process in processes:
                 process.terminate()
@@ -148,6 +169,19 @@ class ReverseTransportTests(unittest.TestCase):
     @unittest.skipUnless(SH and os.environ.get('OWRT_TEST_NEW_XRAY_BIN'), 'POSIX shell and modern server required')
     def test_real_router_shell_config_with_modern_server(self):
         self.check_pair(Path(os.environ['OWRT_TEST_NEW_XRAY_BIN']).resolve(), shell_client=True)
+
+    @unittest.skipUnless(SH and os.environ.get('OWRT_TEST_NEW_XRAY_BIN'), 'POSIX shell and modern server required')
+    def test_tachyon_admin_and_ssh_share_reverse_without_cross_routing(self):
+        self.check_pair(Path(os.environ['OWRT_TEST_NEW_XRAY_BIN']).resolve(), shell_client=True, tachyon=True)
+
+    @unittest.skipUnless(SH and os.environ.get('OWRT_TEST_OLD_XRAY_BIN'), 'Legacy server Xray binary required')
+    def test_tachyon_with_26327_server_preserves_destination_port(self):
+        self.check_pair(Path(os.environ['OWRT_TEST_OLD_XRAY_BIN']).resolve(), shell_client=True, tachyon=True)
+
+    @unittest.skipUnless(SH and os.environ.get('OWRT_TEST_OLD_XRAY_BIN'), 'Legacy Xray binaries required')
+    def test_tachyon_with_26327_router_and_server(self):
+        self.client_bin = Path(os.environ['OWRT_TEST_OLD_XRAY_BIN']).resolve()
+        self.check_pair(self.client_bin, shell_client=True, tachyon=True)
 
 
 if __name__ == '__main__':

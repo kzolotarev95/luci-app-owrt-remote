@@ -38,6 +38,7 @@ usage() {
   owrt-remote heartbeat
   owrt-remote heartbeat-loop
   owrt-remote heartbeat-diagnostics
+  owrt-remote tachyon-status
   owrt-remote logs-sync
   owrt-remote network-diagnostics
 
@@ -148,6 +149,14 @@ else
 	xray_control_stopped() { return 1; }
 	xray_control_result_json() { printf null; }
 	xray_control_dispatch() { return 0; }
+fi
+TACHYON_HELPER="${OWRT_REMOTE_TACHYON_HELPER:-/usr/lib/owrt-remote/tachyon.sh}"
+if [ -r "$TACHYON_HELPER" ]; then
+    . "$TACHYON_HELPER"
+else
+    tachyon_json() { printf '{"checked":false}'; }
+    tachyon_tunnel_port() { printf 0; }
+    tachyon_reconcile_xray() { :; }
 fi
 
 host_model() {
@@ -447,8 +456,8 @@ xray_discover_releases() (
 	# Older pages are fetched on demand after candidates fail validation.
 	page="${3:-1}"
 	while [ "$page" -le 10 ]; do
-		fetch_file "$XRAY_RELEASE_API_URL?per_page=20&page=$page" "$work/releases.json" || {
-			log 'ERROR: GitHub API unavailable; existing Xray preserved'; return 1;
+		DOWNLOAD_STAGE=xray-releases fetch_file "$XRAY_RELEASE_API_URL?per_page=20&page=$page" "$work/releases.json" || {
+			rc=$?; log "ERROR: GitHub API unavailable (rc=$rc); existing Xray preserved"; return "$rc";
 		}
 		[ "$(wc -c <"$work/releases.json")" -le 2097152 ] || return 1
 		# Validate JSON, including an empty array. API error objects fail closed.
@@ -645,6 +654,8 @@ EOF
 )
 
 render_client_config() (
+    local tachyon_port
+    tachyon_port="$(tachyon_tunnel_port)"
 	local temp_dir rc xray_host out stdout router_id vps_host vps_port uuid ssh_uuid encryption flow reverse_tag ssh_reverse_tag admin_host admin_port ssh_host ssh_port xray_config xray_config_dir
 	temp_dir=""
 	out=""
@@ -718,6 +729,7 @@ render_client_config() (
   },
   "inbounds": [],
   "outbounds": [
+    $([ "$tachyon_port" = 0 ] || printf '{"tag":"router-tachyon","protocol":"freedom","settings":{"redirect":"127.0.0.1:%s","finalRules":[{"action":"allow","network":"tcp","port":%s}]}},' "$tachyon_port" "$tachyon_port")
     {
       "tag": "router-admin",
       "protocol": "freedom",
@@ -773,6 +785,7 @@ render_client_config() (
   ],
   "routing": {
     "rules": [
+      $([ "$tachyon_port" = 0 ] || printf '{"type":"field","inboundTag":["%s"],"ip":["127.0.0.1"],"port":%s,"outboundTag":"router-tachyon"},' "$(json_escape "$reverse_tag")" "$tachyon_port")
       {
         "type": "field",
         "inboundTag": [
@@ -862,6 +875,7 @@ heartbeat_json() {
   "xray_control": $([ -r "$CONTROL_HELPER" ] && printf 1 || printf 0),
   "xray_control_result": $(xray_control_result_json || printf null),
   "ssh": $(json_string "$ssh_state"),
+  "tachyon": $(tachyon_json),
   "event": $(json_string "$event"),
   "service": $(json_string "$service_state")
 }
@@ -1289,6 +1303,7 @@ send_heartbeat() {
 				mv -f "$dir/last" "${TMPDIR:-/tmp}/owrt-remote-heartbeat-last"
 				cat "$response"
 				xray_control_dispatch "$response" || log 'Remote Xray: команда не принята; повторная доставка при следующем Heartbeat'
+				tachyon_reconcile_xray || log 'Tachyon: обновление маршрута отложено'
 				log "Heartbeat: OK; Hub=$safe_endpoint; WAN_direct=$(uci_get wan_direct 0); WAN_active=$(cat "$WAN_STATE/active-interface" 2>/dev/null)"
 				return 0
 			fi
@@ -1703,77 +1718,184 @@ xray_cache_restore() (
 	return 1
 )
 
-# Keep a finite wait even without BusyBox's optional timeout applet. The
-# foreground poll avoids a racing/orphaned watchdog when downloads finish fast.
-xray_native_fetch() (
-	dst="$1"; shift
-	client=''
-	trap 'result=$?; [ -z "$client" ] || { kill -KILL "$client" 2>/dev/null || true; wait "$client" 2>/dev/null || true; }; [ "$result" = 0 ] || rm -f "$dst"' EXIT
-	trap 'exit 1' INT TERM
-	# Shells report file blocks in 512 or 1024 bytes: either limit stays <=32 MiB.
-	ulimit -f 32768 || return 1
-	"$@" & client=$!
+# BEGIN SHARED ROUTER DOWNLOADER
+# Shared, embedded in install.sh and the router agent by embed-router-download.py.
+# No dependency on curl/jsonfilter/timeout is needed to bootstrap curl itself.
+download_clock() {
+	if [ -r /proc/uptime ]; then cut -d. -f1 /proc/uptime; else date +%s; fi
+}
+download_note() {
+	if command -v log >/dev/null 2>&1; then log "$*"; else printf '%s\n' "$*" >&2; fi
+}
+download_origin() {
+	local authority
+	case "$1" in https://?*) ;; *) return 3 ;; esac
+	authority="${1#https://}"; authority="${authority%%/*}"
+	case "$authority" in ''|*[@\?\#\ ]*|*[!A-Za-z0-9.:-]*) return 3 ;; esac
+	case "$authority" in *:*) ;; *) authority="$authority:443" ;; esac
+	printf 'https://%s' "$authority"
+}
+download_signal_tree() {
+	local child
+	# Kill descendants first: a timed-out shell function may own a DNS client.
+	if [ -r "/proc/$1/task/$1/children" ]; then
+		for child in $(cat "/proc/$1/task/$1/children"); do download_signal_tree "$child" "$2"; done
+	fi
+	kill -"$2" "$1" 2>/dev/null || true
+}
+download_kill_tree() {
+	local ticks
+	download_signal_tree "$1" TERM
+	# Allow shell EXIT traps to release locks and staging files first.
 	ticks=0
-	while kill -0 "$client" 2>/dev/null; do
-		if [ "$ticks" -ge 120 ]; then
-			kill -KILL "$client" 2>/dev/null || true
-			wait "$client" 2>/dev/null || true
-			client=''; return 28
-		fi
+	while kill -0 "$1" 2>/dev/null && [ "$ticks" -lt 2 ]; do sleep 1; ticks=$((ticks+1)); done
+	download_signal_tree "$1" KILL
+}
+download_run() (
+	seconds="$1"; shift; child=''
+	trap 'result=$?; [ -z "$child" ] || { download_kill_tree "$child"; wait "$child" 2>/dev/null || true; }; exit "$result"' EXIT
+	trap 'exit 28' INT TERM
+	"$@" & child=$!
+	ticks=0
+	while kill -0 "$child" 2>/dev/null; do
+		[ "$ticks" -lt "$seconds" ] || return 28
 		sleep 1; ticks=$((ticks+1))
 	done
-	rc=0; wait "$client" || rc=$?; client=''
+	rc=0; wait "$child" || rc=$?; child=''; return "$rc"
+)
+download_curl() (
+	url="$1"; dst="$2"; stats="$3"; method="$4"; deadline="$5"; hop=0
+	while [ "$hop" -le 5 ]; do
+		origin="$(download_origin "$url")" || return 3
+		set -- -q -fsS --connect-timeout 10 --noproxy '*' --proto '=https' --max-filesize 33554432
+		[ "$method" != HEAD ] || set -- "$@" -I
+		DL_DEVICE=''; DL_RESOLVE=''
+		# The agent resolves every redirect through its selected WAN. The
+		# installer has no routing hook and uses the router's system resolver.
+		if command -v download_route >/dev/null 2>&1; then download_route "$origin" || return $?; fi
+		[ -z "$DL_DEVICE" ] || set -- "$@" --interface "$DL_DEVICE"
+		[ -z "$DL_RESOLVE" ] || set -- "$@" --resolve "$DL_RESOLVE"
+		remaining=$((deadline - $(download_clock)))
+		[ "$remaining" -gt 0 ] || return 28
+		rc=0
+		curl "$@" --max-time "$remaining.000" -o "$dst" -w '%{http_code} %{redirect_url}\n' "$url" >"$stats" || rc=$?
+		[ "$rc" = 0 ] || return "$rc"
+		code=''; redirect=''; read -r code redirect <"$stats" || true
+		case "$code" in
+			301|302|303|307|308) [ -n "$redirect" ] || return 47; url="$redirect"; hop=$((hop+1)) ;;
+			200) [ -s "$dst" ] || return 52; return 0 ;;
+			*) return 22 ;;
+		esac
+	done
+	return 47
+)
+download_reason() {
+	case "$1" in
+		3) printf invalid_https_url; return ;; 6) printf DNS; return ;;
+		23|27) printf write; return ;; 28|124|137) printf timeout; return ;;
+		35|51|58|60|77|80|82|83|90|91) printf TLS; return ;;
+	esac
+	if LC_ALL=C grep -Eqi 'no space|permission denied|read-only|write error|file too large' "$2"; then printf write
+	elif LC_ALL=C grep -Eqi 'resolv|bad address|name or service|DNS' "$2"; then printf DNS
+	elif LC_ALL=C grep -qi 'uclient context' "$2"; then printf client_context
+	elif LC_ALL=C grep -Eqi 'TLS|SSL|certificate' "$2"; then printf TLS
+	elif LC_ALL=C grep -Eqi 'timed out|timeout' "$2"; then printf timeout
+	elif [ "$3" != 000 ]; then printf HTTP
+	else printf network; fi
+}
+download_tools() {
+	local tool path identity seen
+	seen='|'
+	for tool in curl uclient-fetch wget; do
+		path="$(command -v "$tool" 2>/dev/null)" || continue
+		identity="$(readlink -f "$path" 2>/dev/null)"; identity="${identity:-$path}"
+		case "$seen" in *"|$identity|"*) continue ;; esac
+		seen="$seen$identity|"; printf '%s\n' "$tool"
+	done
+}
+remote_download() (
+	url="$1"; dst="$2"; method="${3:-GET}"
+	work="$(mktemp -d "${TMPDIR:-/tmp}/owrt-download.XXXXXX")" || return 23
+	trap 'result=$?; rm -rf "$work"; [ "$result" = 0 ] || rm -f "$dst"; exit "$result"' EXIT
+	trap 'exit 28' INT TERM
+	unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
+	# Also bound native clients and their error/response files on small RAM.
+	ulimit -f 32768 || return 23
+	deadline=$(( $(download_clock) + 120 ))
+	[ -z "${DOWNLOAD_RESULT_FILE:-}" ] || : >"$DOWNLOAD_RESULT_FILE"
+	for outer in "${XRAY_PREPARE_DEADLINE:-}" "${XRAY_FILE_DEADLINE:-}" "${DOWNLOAD_SOURCE_DEADLINE:-}"; do
+		[ -z "$outer" ] || [ "$outer" -ge "$deadline" ] || deadline="$outer"
+	done
+	origin="$(download_origin "$url")" || { download_note 'Download: reason=invalid_https_url; rc=3'; return 3; }
+	tools="$(download_tools)"; set -- $tools; left="$#"; rc=127
+	[ "$left" -gt 0 ] || download_note 'Download: stage=tools; reason=no_http_client; rc=127'
+	for tool in $tools; do
+		remaining=$((deadline - $(download_clock)))
+		[ "$remaining" -gt 0 ] || { rc=28; reason=timeout; break; }
+		# Reserve time for genuinely different fallback clients. No blind
+		# retries on dozens of releases when their common host is unavailable.
+		seconds=$((remaining / left)); [ "$seconds" -gt 0 ] || seconds=1
+		left=$((left-1)); attempt_end=$(( $(download_clock) + seconds ))
+		rm -f "$dst"; : >"$work/stats"; : >"$work/error"; rc=0
+		case "$tool" in
+			curl) download_run "$seconds" download_curl "$url" "$dst" "$work/stats" "$method" "$attempt_end" 2>"$work/error" || rc=$? ;;
+			*)
+				if command -v download_native_notice >/dev/null 2>&1; then download_native_notice; fi
+				download_run "$seconds" "$tool" -T "$seconds" -O "$dst" "$url" >"$work/stats" 2>"$work/error" || rc=$? ;;
+		esac
+		code=000
+		if [ "$tool" = curl ]; then
+			read -r code ignored <"$work/stats" || true
+			case "$code" in [1-5][0-9][0-9]) ;; *) code=000 ;; esac
+		else
+			code="$(LC_ALL=C sed -n -e 's/.*HTTP\/[0-9.]*  *\([1-5][0-9][0-9]\).*/\1/p' -e 's/.*HTTP error \([1-5][0-9][0-9]\).*/\1/p' -e 's/.*awaiting response[. ]*\([1-5][0-9][0-9]\).*/\1/p' "$work/error" | tail -n 1)"
+			code="${code:-000}"
+		fi
+		if [ "$rc" = 0 ]; then
+			[ -s "$dst" ] && [ "$(wc -c <"$dst")" -le 33554432 ] || rc=23
+		fi
+		reason="$(download_reason "$rc" "$work/error" "$code")"
+		[ "$rc" != 0 ] || reason=ok
+		# Never print URLs, query strings, redirect signatures or raw headers.
+		download_note "Download: stage=${DOWNLOAD_STAGE:-file}; tool=$tool; host=$origin; http=$code; rc=$rc; reason=$reason"
+		[ -z "${DOWNLOAD_RESULT_FILE:-}" ] || printf '%s %s %s\n' "$rc" "$reason" "$code" >"$DOWNLOAD_RESULT_FILE"
+		[ "$rc" != 0 ] || return 0
+		case "$reason" in write|invalid_https_url) break ;; esac
+	done
+	[ "$rc" != 28 ] || download_note 'Download: reason=timeout; file/preparation deadline reached or HTTP client timed out'
+	[ -z "${DOWNLOAD_RESULT_FILE:-}" ] || printf '%s %s %s\n' "$rc" "${reason:-no_http_client}" "${code:-000}" >"$DOWNLOAD_RESULT_FILE"
 	return "$rc"
 )
+# END SHARED ROUTER DOWNLOADER
 
-# Bound one complete download, including redirects. In WAN mode use the
-# selected resolver on every HTTPS hop, retaining hostname verification/SNI.
-fetch_file() (
-	url="$1"; dst="$2"; method="${3:-GET}"; rm -f "$dst"
-	stats=''
-	trap 'result=$?; rm -f "$stats"; [ "$result" = 0 ] || rm -f "$dst"' EXIT
-	trap 'exit 1' INT TERM
-	unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY
-	if command -v curl >/dev/null 2>&1; then
-		stats="$(mktemp "${TMPDIR:-/tmp}/owrt-xray-http.XXXXXX")" || return 1
-		started="$(remote_clock_ms)"; hop=0; rc=1
-		while [ "$hop" -le 5 ]; do
-			origin="$(remote_url_origin "$url")" || return 3
-			case "$origin" in https://*) ;; *) log 'Xray: отклонена загрузка без HTTPS'; return 3 ;; esac
-			set -- -q -fsS --connect-timeout 10 --noproxy '*' --proto '=https' --max-filesize 33554432
-			[ "$method" != HEAD ] || set -- "$@" -I
-			if truthy "$(uci_get wan_direct 0)"; then
-				host="${origin#https://}"; port="${host##*:}"; host="${host%:*}"
-				device="$(wan_device)" || return 1
-				ip="$(wan_resolve_host "$host")" || return 6
-				set -- "$@" --interface "$device" --resolve "$host:$port:$ip"
-			fi
-			remaining=$((120000 - $(remote_clock_ms) + started))
-			[ "$remaining" -gt 0 ] || return 28
-			remaining="$(LC_ALL=C awk -v ms="$remaining" 'BEGIN { printf "%.3f", ms/1000 }')"
-			rc=0
-			curl "$@" --max-time "$remaining" -o "$dst" -w '%{http_code} %{redirect_url}\n' "$url" >"$stats" || rc=$?
-			[ "$rc" = 0 ] || return "$rc"
-			code=''; redirect=''; read -r code redirect <"$stats" || true
-			case "$code" in
-				301|302|303|307|308) rc=47; [ -n "$redirect" ] || return 47; url="$redirect"; hop=$((hop+1)) ;;
-				200) [ -s "$dst" ] || { rc=1; return 1; }; return 0 ;;
-				*) rc=22; return 22 ;;
-			esac
-		done
-		return 47
-	fi
-	# Minimal images without curl keep bounded native HTTPS clients. These do
-	# not offer curl's per-host resolver override.
-	if truthy "$(uci_get wan_direct 0)"; then log 'Xray: curl отсутствует; загрузчик использует системный DNS'; fi
-	rc=1
-	case "$url" in https://*) ;; *) return 3 ;; esac
-	if command -v uclient-fetch >/dev/null 2>&1; then
-		xray_native_fetch "$dst" uclient-fetch -q -T 15 -O "$dst" "$url" && rc=0
-	elif command -v wget >/dev/null 2>&1; then
-		xray_native_fetch "$dst" wget -q -T 15 -O "$dst" "$url" && rc=0
-	fi
-	[ "$rc" = 0 ] && [ -s "$dst" ] && [ "$(wc -c <"$dst")" -le 33554432 ]
+# Keep WAN policy for every curl redirect; native fallback uses system DNS.
+download_route() {
+    local host port ip
+    truthy "$(uci_get wan_direct 0)" || return 0
+    host="${1#https://}"; port="${host##*:}"; host="${host%:*}"
+    DL_DEVICE="$(wan_device)" || return 1
+    ip="$(wan_resolve_host "$host")" || return 6
+    DL_RESOLVE="$host:$port:$ip"
+}
+fetch_file() { remote_download "$@"; }
+download_native_notice() {
+	if truthy "$(uci_get wan_direct 0)"; then log 'Download: native fallback uses system DNS; WAN settings unchanged'; fi
+}
+xray_native_fetch() (
+    dst="$1"; shift
+    trap 'result=$?; [ "$result" = 0 ] || rm -f "$dst"' EXIT
+    ulimit -f 32768 || return 23
+    download_run 120 "$@"
+)
+xray_prepare_timed() (
+    now="$(download_clock)"; deadline=$((now + 300))
+    [ -z "${XRAY_PREPARE_DEADLINE:-}" ] || [ "$XRAY_PREPARE_DEADLINE" -ge "$deadline" ] || deadline="$XRAY_PREPARE_DEADLINE"
+    XRAY_PREPARE_DEADLINE="$deadline"
+    export XRAY_PREPARE_DEADLINE
+    remaining=$((deadline - now)); [ "$remaining" -gt 0 ] || return 28
+    rc=0; download_run "$remaining" "$@" || rc=$?
+    [ "$rc" != 28 ] || log 'Xray: preparation timeout (300s); existing Xray and cache preserved'
+    return "$rc"
 )
 
 install_package() {
@@ -1781,10 +1903,10 @@ install_package() {
 	rc=0
 	if command -v apk >/dev/null 2>&1; then
 		log "Xray dependency: apk -U add $1"
-		apk -U add "$1" >&2 || rc=$?
+		download_run 120 apk -U add "$1" >&2 || rc=$?
 	elif command -v opkg >/dev/null 2>&1; then
 		log "Xray dependency: opkg update && opkg install $1"
-		opkg update >&2 && opkg install "$1" >&2 || rc=$?
+		download_run 120 opkg update >&2 && download_run 120 opkg install "$1" >&2 || rc=$?
 	else
 		log 'Xray: no supported package manager (apk/opkg)'
 		return 1
@@ -1886,39 +2008,66 @@ xray_package_extract_binary() (
 xray_binary_usable() {
 	[ -x "$1" ] && "$1" version >/dev/null 2>&1 && ! xray_requires_legacy_replacement "$1"
 }
-xray_probe_url() {
-	# Use the same TLS/WAN/redirect policy as the actual GET.
-	if command -v curl >/dev/null 2>&1; then
-		fetch_file "$1" "$2" HEAD
-	else
-		# uclient-fetch has no HEAD mode. A bounded HTTPS GET is the probe
-		# and payload together, with its size/digest checked before extraction.
-		return 0
-	fi
-}
+xray_download_package() (
+    url="$1"; package="$2"; tag="$3"; asset="$4"
+    XRAY_FILE_DEADLINE=$(( $(download_clock) + 120 ))
+    export XRAY_FILE_DEADLINE
+    # No third-party proxy is assumed trusted. Opt-in mirrors serve only
+    # published assets; the caller still verifies the OFFICIAL API digest.
+    mirror="${XRAY_PACKAGE_MIRROR:-$(uci_get xray_package_mirror '')}"
+    if [ -n "$mirror" ]; then
+        case "$mirror" in *[\?\#\@]*|*[!A-Za-z0-9_./:+-]*) log 'Xray: invalid HTTPS mirror configuration'; return 3 ;; esac
+        download_origin "$mirror" >/dev/null || return 3
+        DOWNLOAD_SOURCE_DEADLINE=$(( $(download_clock) + 60 ))
+    fi
+    DOWNLOAD_STAGE=xray-package
+    rc=0; fetch_file "$url" "$package" || rc=$?
+    [ "$rc" != 0 ] || return 0
+    unset DOWNLOAD_SOURCE_DEADLINE
+    if [ -n "$mirror" ]; then
+        log 'Xray: official asset download failed; trying configured HTTPS mirror with official SHA256'
+        DOWNLOAD_STAGE=xray-mirror
+        fetch_file "${mirror%/}/$tag/$asset" "$package" && return 0
+        rc=$?
+    else
+        log 'Xray: HTTPS mirror not configured; no third-party download proxy used'
+    fi
+    return "$rc"
+)
+
 install_xray_tmp_locked() (
+    XRAY_PREPARE_DEADLINE="${XRAY_PREPARE_DEADLINE:-$(( $(download_clock) + 300 ))}"
+    export XRAY_PREPARE_DEADLINE
 	dir="$(xray_runtime_dir)"
 	mkdir -p "$dir" || return 1
 	work="$(mktemp -d "$dir/.download.XXXXXX")" || return 1
 	trap 'rm -rf "$work"' EXIT
 	trap 'exit 1' INT TERM
-	ensure_ca_certificates || { log 'Xray: trusted CA certificates unavailable; existing Xray preserved'; return 1; }
-	ensure_fetch_tool || { log 'Xray: need curl, uclient-fetch or wget'; return 1; }
+	ensure_ca_certificates || { log 'Xray: stage=dependencies; trusted CA certificates unavailable; existing Xray preserved'; return 1; }
+	ensure_fetch_tool || { log 'Xray: stage=dependencies; need curl, uclient-fetch or wget'; return 1; }
+    command -v jsonfilter >/dev/null 2>&1 || install_package jsonfilter || { log 'Xray: stage=dependencies; jsonfilter unavailable'; return 1; }
 	rc=1
 	page=1
 	while [ "$page" -le 10 ]; do
-		xray_discover_releases "$work/candidates" "$work" "$page" || return 1
+		[ "$(download_clock)" -lt "$XRAY_PREPARE_DEADLINE" ] || return 28
+        xray_discover_releases "$work/candidates" "$work" "$page" || return $?
 		while IFS='|' read -r tag asset url digest bytes; do
 			# Keep the published name for native package-manager diagnostics.
 			rm -f "$work/xray.new" "${package:-$work/unused}"
 			package="$work/$asset"
-			log "Xray: candidate: $asset; checking download URL..."
-			xray_probe_url "$url" "$work/headers" || { rc=$?; log "Xray: URL unavailable (rc=$rc); candidate skipped"; continue; }
-			log "Xray: загрузка пакета yichya/openwrt-xray/$asset; общий тайм-аут=120s"
-			fetch_file "$url" "$package" || { rc=$?; log "ERROR: GitHub download unavailable (rc=$rc); existing Xray preserved"; continue; }
-			[ "$(wc -c <"$package")" = "$bytes" ] || { log 'Xray: package length mismatch'; rc=1; continue; }
+            log "Xray: candidate: $asset; downloading verified GET (file <=120s, preparation <=300s)"
+            DOWNLOAD_RESULT_FILE="$work/download-result"
+            xray_download_package "$url" "$package" "$tag" "$asset" || {
+                rc=$?; http=''; reason=''; ignored=''
+                [ ! -s "$DOWNLOAD_RESULT_FILE" ] || read -r ignored reason http <"$DOWNLOAD_RESULT_FILE"
+                log "ERROR: published Xray package found but download failed (rc=$rc; reason=${reason:-network}; http=${http:-unknown}); existing Xray preserved"
+                # Only a confirmed missing asset may select another candidate.
+                # DNS/TLS/timeout/403 must not trigger a storm of old downloads.
+                case "$http" in 404|410) continue ;; *) return "$rc" ;; esac
+            }
+			[ "$(wc -c <"$package")" = "$bytes" ] || { log 'Xray: stage=verify; reason=size; package length mismatch'; rc=1; continue; }
 			log 'Xray: verifying package checksum...'
-			[ "$(xray_digest "$package")" = "$digest" ] || { log 'Xray: package SHA256 mismatch; existing Xray preserved'; rc=1; continue; }
+			[ "$(xray_digest "$package")" = "$digest" ] || { log 'Xray: stage=verify; reason=SHA256; package SHA256 mismatch; existing Xray preserved'; rc=1; continue; }
 			xray_check_package_metadata "$package" "$work" "$asset" || { rc=$?; continue; }
 			xray_package_extract_binary "$package" "$work/xray.new" "$asset" || { rc=$?; log "Xray: extraction failed for $asset (rc=$rc)"; continue; }
 			[ -s "$work/xray.new" ] && [ "$(wc -c <"$work/xray.new")" -le 67108864 ] || { rc=1; continue; }
@@ -1991,10 +2140,10 @@ prepare_xray_tmp() (
 	if xray_binary_usable "$configured"; then return 0; fi
 	xray_cache_restore && return 0
 	log 'Xray: загрузочной копии нет; требуется загрузка из сети'
-	install_xray_tmp_locked
+	xray_prepare_timed install_xray_tmp_locked
 )
 prepare_xray() (
-	ensure_xray_available || return 1
+	ensure_xray_available || return $?
 	bin="$(xray_bin_path)"
 	case "$bin" in
 		/tmp/*|"$(xray_runtime_dir)"/*)
@@ -2095,10 +2244,10 @@ case "$cmd" in
 		heartbeat_diagnostics
 		;;
 	install-xray-tmp)
-		install_xray_tmp
+		xray_prepare_timed install_xray_tmp
 		;;
 	prepare-xray)
-		prepare_xray
+		xray_prepare_timed prepare_xray
 		;;
 	xray-package-diagnostics)
 		xray_package_diagnostics
@@ -2112,6 +2261,12 @@ case "$cmd" in
 	xray-control-execute)
 		xray_control_execute "$@"
 		;;
+    tachyon-status)
+        tachyon_json force
+        ;;
+    tachyon-reconfigure)
+        tachyon_reconfigure
+        ;;
 	render-client)
 		xray_apply_trace render-client
 		render_client_config "$@" || exit $?

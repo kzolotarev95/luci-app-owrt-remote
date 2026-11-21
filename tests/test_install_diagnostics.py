@@ -97,5 +97,78 @@ esac
             self.assertEqual(calls.read_text().splitlines(),['rpcd running','rpcd '+operation,
                                                            'uhttpd running','uhttpd '+operation])
 
+    def dependencies_driver(self, fail=False):
+        source=self.installer.read_text(encoding='utf-8').split('# Stop the old log writer')[0]
+        source=source.replace('/etc/ssl/cert.pem', self.root.joinpath('cert.pem').as_posix())
+        source=source.replace('/etc/ssl/certs/ca-certificates.crt', self.root.joinpath('ca.crt').as_posix())
+        source+='''
+ROOT=/
+command() {
+    if [ "$1" = -v ]; then
+        case "$2" in curl|jsonfilter) [ -f "$TMPDIR/deps-ready" ]; return $? ;; esac
+    fi
+    builtin command "$@"
+}
+package_manager() { printf apk; }
+install_packages() {
+    printf '%s\\n' "$*" >"$TMPDIR/packages"
+    [ "$DEPS_FAIL" != 1 ] || { echo 'apk repository unavailable' >&2; return 19; }
+    printf CA >"$TMPDIR/ca.crt"; touch "$TMPDIR/deps-ready"
+}
+ensure_install_dependencies
+echo DEPENDENCIES_READY
+'''
+        script=self.root/'deps.sh'; script.write_text(source,encoding='utf-8',newline='\n')
+        return subprocess.run(self.args+[script.as_posix()],capture_output=True,encoding='utf-8',timeout=20,
+                              env={**self.env,'DEPS_FAIL':'1' if fail else '0'})
+
+    def test_missing_curl_ca_jsonfilter_are_prepared_with_apk_before_files(self):
+        result=self.dependencies_driver()
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(self.root.joinpath('packages').read_text().split(), ['curl','jsonfilter','ca-certificates'])
+        self.assertIn('DEPENDENCIES_READY',result.stdout)
+
+    def test_dependency_failure_has_separate_stage_and_never_reaches_xray(self):
+        result=self.dependencies_driver(fail=True)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('stage=dependencies',result.stderr)
+        self.assertIn('apk repository unavailable',result.stderr)
+        self.assertNotIn('DEPENDENCIES_READY',result.stdout)
+
+    def runtime_driver(self, rc):
+        installer=self.installer.read_text(encoding='utf-8')
+        prefix=installer.split('# Stop the old log writer')[0]
+        main=installer.split('\ninstall_xray_runtime\n',1)[1].split('\nkey=',1)[0]
+        agent=self.root/'agent'
+        agent.write_text('''#!/bin/sh
+echo "$1" >>"$TMPDIR/agent-calls"
+[ "$TEST_PREPARE_RC" = 0 ] || echo 'download failed: reason=DNS' >&2
+exit "$TEST_PREPARE_RC"
+''',encoding='utf-8',newline='\n')
+        agent.chmod(0o755)
+        source=prefix+'''
+ROOT=/
+target_path() { printf '%s/agent' "$TMPDIR"; }
+uci() { printf 0; }
+install_xray_runtime
+'''+main+'\necho FIRST_INSTALL_FINISHED\n'
+        script=self.root/'runtime.sh';script.write_text(source,encoding='utf-8',newline='\n')
+        return subprocess.run(self.args+[script.as_posix()],env={**self.env,'TEST_PREPARE_RC':str(rc)},
+                              capture_output=True,encoding='utf-8',timeout=20)
+
+    def test_prepared_first_install_without_hub_config_finishes_successfully(self):
+        result=self.runtime_driver(0)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('Установлено. Добавьте OpenWrt config из Hub для запуска туннеля',result.stdout)
+        self.assertIn('FIRST_INSTALL_FINISHED',result.stdout)
+        self.assertEqual(self.root.joinpath('agent-calls').read_text().splitlines(),['prepare-xray'])
+
+    def test_prepare_failure_keeps_original_rc_at_installer_boundary(self):
+        result=self.runtime_driver(6)
+        self.assertEqual(result.returncode,6,result.stderr)
+        self.assertIn('stage=prepare-xray rc=6',result.stderr)
+        self.assertIn('reason=DNS',result.stderr)
+        self.assertNotIn('FIRST_INSTALL_FINISHED',result.stdout)
+
 
 if __name__=='__main__': unittest.main()

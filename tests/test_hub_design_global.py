@@ -33,6 +33,16 @@ def preview_pages():
             for path, page in pages.items()}
 
 
+def tachyon_layout_preview():
+    page = b'''<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0}.tachyon-bg-layer{position:fixed;inset:0;pointer-events:none}
+.tachyon-bg-layer svg{width:100%;height:100%;display:block}
+#maincontent{position:relative;padding:8px;box-sizing:border-box}main{height:400px}</style>
+</head><body><div class="tachyon-bg-layer"><svg viewBox="0 0 1600 900"></svg></div>
+<div id="maincontent"><main>Tachyon dashboard</main></div></body></html>'''
+    return {'synthetic': hub.inject_hub_appearance('/tachyon/node-10/', page, 'text/html').decode()}
+
+
 class GlobalHubDesignTests(unittest.TestCase):
     def test_generated_pages_receive_the_shared_head(self):
         pages = {
@@ -54,10 +64,14 @@ class GlobalHubDesignTests(unittest.TestCase):
         self.assertEqual(dashboard.count("owrt-hub-design-head"), 1)
         luci = b"<html><head><title>LuCI</title></head><body>router</body></html>"
         self.assertEqual(hub.inject_hub_appearance("/access/main/", luci, "text/html"), luci)
+        for path in ('/tachyon/node-10/', '/tachyon/node-10/cgi-bin/luci/?view=main'):
+            self.assertEqual(hub.inject_hub_appearance(path, luci, 'text/html; charset=utf-8'), luci)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3 and sys.argv[1] == "--export-preview":
+    if len(sys.argv) == 3 and sys.argv[1] == "--export-tachyon-layout":
+        pathlib.Path(sys.argv[2]).write_text(json.dumps(tachyon_layout_preview()), encoding='utf-8')
+    elif len(sys.argv) == 3 and sys.argv[1] == "--export-preview":
         pathlib.Path(sys.argv[2]).write_text(json.dumps(preview_pages(), ensure_ascii=False), encoding="utf-8")
     else:
         unittest.main()
