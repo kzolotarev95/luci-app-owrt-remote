@@ -65,6 +65,33 @@ def release_tag():
     return 'v' + version + (('-r' + revision) if revision != '1' else '')
 
 
+def release_asset(tag, filename):
+    """Resolve the official prior package even if its SHA256SUMS was removed."""
+    repository = 'https://github.com/kzolotarev95/luci-app-owrt-remote'
+    api = 'https://api.github.com/repos/kzolotarev95/luci-app-owrt-remote/releases/tags/'
+    if not re.fullmatch(r'v[0-9]+(?:-r[0-9]+)?', tag) or not re.fullmatch(r'[A-Za-z0-9_.+-]+', filename):
+        raise ValueError('invalid previous release identifier')
+    headers = {'User-Agent': 'OpenWrt-Remote-package-builder', 'Accept': 'application/vnd.github+json'}
+    token = os.environ.get('GITHUB_TOKEN')
+    if token:
+        headers['Authorization'] = 'Bearer ' + token
+    with urllib.request.urlopen(urllib.request.Request(api + tag, headers=headers), timeout=45) as response:
+        data = response.read(4 * 1024 * 1024 + 1)
+    if len(data) > 4 * 1024 * 1024:
+        raise ValueError('oversized previous Release metadata')
+    assets = [asset for asset in json.loads(data).get('assets', []) if asset.get('name') == filename]
+    if len(assets) != 1:
+        raise ValueError('previous Release package missing or ambiguous: ' + filename)
+    asset = assets[0]
+    expected_url = repository + '/releases/download/' + tag + '/' + filename
+    digest = asset.get('digest') or ''
+    if asset.get('browser_download_url') != expected_url or not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
+        raise ValueError('previous Release package has no official SHA256: ' + filename)
+    if not 0 < int(asset.get('size') or 0) <= 16 * 1024 * 1024:
+        raise ValueError('invalid previous Release package size')
+    return expected_url, digest.removeprefix('sha256:')
+
+
 def latest_release(series, html):
     candidates = [link.rstrip("/") for link in Links(html).links
                   if re.fullmatch(re.escape(series) + r"\.[0-9]+/", link)]

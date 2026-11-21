@@ -64,10 +64,9 @@ def main():
         tag = 'v' + version + (('-r' + previous) if previous != '1' else '')
         series = '.'.join(args.release.split('.')[:2])
         name = f'{package.PACKAGE}_{version}-r{previous}_openwrt-{series}_{"noarch" if apk else "all"}{candidate.suffix}'
-        origin = 'https://github.com/kzolotarev95/luci-app-owrt-remote/releases/download/' + tag + '/'
-        expected = package.checksum(package.get_text(origin + 'SHA256SUMS'), name)
+        url, expected = package.release_asset(tag, name)
         baseline = source / 'test-fixtures' / ('previous-release' + candidate.suffix)
-        package.download(origin + name, baseline, expected)
+        package.download(url, baseline, expected)
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     port = free_port()

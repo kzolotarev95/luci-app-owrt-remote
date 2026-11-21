@@ -89,6 +89,18 @@ class PackageTests(unittest.TestCase):
             with self.subTest(values=values), mock.patch.object(p,'versions',return_value=values):
                 self.assertEqual(p.release_tag(), expected)
 
+    def test_previous_package_uses_official_api_digest_without_checksum_asset(self):
+        filename = 'luci-app-owrt-remote_122-r1_openwrt-25.12_noarch.apk'
+        url = 'https://github.com/kzolotarev95/luci-app-owrt-remote/releases/download/v122/' + filename
+        asset = {'name':filename,'browser_download_url':url,'digest':'sha256:'+'a'*64,'size':83000}
+        data = p.json.dumps({'assets':[asset]}).encode()
+        with mock.patch.object(p.urllib.request,'urlopen',return_value=io.BytesIO(data)):
+            self.assertEqual(p.release_asset('v122',filename),(url,'a'*64))
+        for change in ({'digest':None},{'browser_download_url':'https://other.example/package.apk'}):
+            invalid = dict(asset,**change)
+            with mock.patch.object(p.urllib.request,'urlopen',return_value=io.BytesIO(p.json.dumps({'assets':[invalid]}).encode())):
+                with self.assertRaises(ValueError):p.release_asset('v122',filename)
+
     def test_package_scripts_defer_procd_lifecycle_to_openwrt_for_apk_and_ipk(self):
         script = p.package_hook("postinst")
         self.assertNotIn("configure ]", script)
