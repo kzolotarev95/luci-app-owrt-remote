@@ -3,6 +3,7 @@
 import argparse
 import contextlib
 import functools
+import hashlib
 import http.server
 import os
 from pathlib import Path
@@ -54,6 +55,19 @@ def main():
         parser.error("one main package and one real upgrade fixture are required")
     candidate, fixture = candidates[0], fixtures[0]
     apk = candidate.suffix == ".apk"
+    # Verify upgrades from the previously published package as well as the
+    # synthetic next revision. Old Release assets/tags remain immutable.
+    version, revision = package.versions()
+    baseline = None
+    if int(revision) > 1:
+        previous = str(int(revision) - 1)
+        tag = 'v' + version + (('-r' + previous) if previous != '1' else '')
+        series = '.'.join(args.release.split('.')[:2])
+        name = f'{package.PACKAGE}_{version}-r{previous}_openwrt-{series}_{"noarch" if apk else "all"}{candidate.suffix}'
+        origin = 'https://github.com/kzolotarev95/luci-app-owrt-remote/releases/download/' + tag + '/'
+        expected = package.checksum(package.get_text(origin + 'SHA256SUMS'), name)
+        baseline = source / 'test-fixtures' / ('previous-release' + candidate.suffix)
+        package.download(origin + name, baseline, expected)
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     port = free_port()
@@ -141,6 +155,16 @@ def main():
             print("Testing remove, preserved state, and migration from unowned overlay files", flush=True)
             remote(remove + " " + package.PACKAGE, timeout=180)
             remote("set -e; test ! -e /usr/sbin/owrt-remote; test ! -e /www/cgi-bin/owrt-remote; test ! -e /etc/init.d/owrt-remote; sha256sum -c /tmp/remote-before.sha256")
+            if baseline:
+                print('Testing upgrade from the previous published Release', flush=True)
+                remote('wget -qO /tmp/remote-previous' + candidate.suffix + ' ' + shlex.quote(origin + 'test-fixtures/' + baseline.name))
+                baseline_install = 'apk add --allow-untrusted' if apk else 'opkg install'
+                remote(baseline_install + ' /tmp/remote-previous' + candidate.suffix, timeout=300)
+                remote(install + ' /tmp/remote-package' + candidate.suffix, timeout=300)
+                helper = 'usr/lib/owrt-remote/tachyon.sh'
+                digest = hashlib.sha256(package.payload()[helper][0]).hexdigest()
+                remote('set -e; sha256sum -c /tmp/remote-before.sha256; test "$(sha256sum /' + helper + ' | cut -d\" \" -f1)" = ' + digest)
+                remote(remove + ' ' + package.PACKAGE, timeout=180)
             # Configuration left by install.sh is unowned by a package manager.
             # A fresh package install must preserve it just like an upgrade.
             remote(install + " /tmp/remote-package" + candidate.suffix, timeout=300)

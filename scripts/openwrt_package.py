@@ -60,6 +60,11 @@ def versions():
     return version, release
 
 
+def release_tag():
+    version, revision = versions()
+    return 'v' + version + (('-r' + revision) if revision != '1' else '')
+
+
 def latest_release(series, html):
     candidates = [link.rstrip("/") for link in Links(html).links
                   if re.fullmatch(re.escape(series) + r"\.[0-9]+/", link)]

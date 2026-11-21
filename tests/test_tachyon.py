@@ -137,7 +137,7 @@ curl() {
     [ "$TEST_HTTP" != fail ] || return 7
     for last do :; done
     case "$last" in
-        */api/agent/v1/health) printf '{"core_running":false}' ;;
+        */api/agent/v1/health) [ "${TEST_API:-1}" = 1 ] || return 22; printf '{"core_running":false}' ;;
         */api/agent/v1/openapi.json) printf '{"info":{"version":"2.0.0-beta.14"}}' ;;
         *) printf '%s' "$TEST_HTTP" ;;
     esac
@@ -180,16 +180,54 @@ print(str(value).lower() if isinstance(value,bool) else value)' "$@"
 
     def test_apk_discovery_and_legacy_luci(self):
         code = r'''
-apk() { if [ "$2" = -v ]; then echo tachyon-2.0.0-r1; else printf 'base-files\ntachyon\n'; fi; }
+apk() {
+    case "$1" in
+        info) printf 'base-files\ntachyon\n' ;;
+        list) printf 'tachyon 2.0.0-r1\n' ;;
+        *) return 1 ;;
+    esac
+}
 tachyon_json force
 '''
         result = self.run_shell(code)
         self.assertEqual(json.loads(result.stdout)['package_version'], '2.0.0-r1')
         with (self.root / 'uci').open('a') as config:
             config.write('tachyon.settings.listen_port=1602\n')
-        result = self.harness.run_shell(self.mocks + 'tachyon_json force', TEST_VERSION='1.3.13', TEST_HTTP='403', TEST_SERVICE='true')
+        result = self.harness.run_shell(self.mocks + 'tachyon_json force', TEST_VERSION='1.3.13', TEST_HTTP='403', TEST_SERVICE='true', TEST_API='0')
         self.assertEqual(json.loads(result.stdout)['mode'], 'luci')
         self.assertEqual(json.loads(result.stdout)['port'], 0)
+
+    def test_apk_305_description_is_not_a_version_and_manifest_selects_standalone(self):
+        result = self.run_shell(r'''
+apk() {
+    case "$1:$2" in
+        info:) printf 'base-files\ntachyon\n' ;;
+        info:-v) printf 'tachyon: Pure-Rust routing orchestrator and web panel for OpenWrt (aarch64)\ntachyon: https://github.com/Dushnilin/tachyon\ntachyon: 7136 KiB\n' ;;
+        list:--installed) printf 'tachyon 2.0.0~beta.15-r1\n' ;;
+        *) return 1 ;;
+    esac
+}
+tachyon_json force
+''')
+        status = json.loads(result.stdout)
+        self.assertEqual(status['mode'], 'standalone')
+        self.assertEqual(status['port'], 1680)
+        self.assertEqual(status['package_version'], '2.0.0~beta.15-r1')
+        self.assertTrue(status['available'])
+
+    def test_actual_api_recovers_missing_or_stale_package_version(self):
+        for version in ('', '1.3.13'):
+            result = self.harness.run_shell(self.mocks + 'tachyon_json force',
+                                            TEST_VERSION=version, TEST_HTTP='200', TEST_SERVICE='true')
+            status = json.loads(result.stdout)
+            self.assertEqual(status['mode'], 'standalone')
+            self.assertEqual(status['port'], 1680)
+            self.assertEqual(status['version'], '2.0.0-beta.14')
+
+    def test_luci_login_response_is_not_proof_of_an_unknown_tachyon_ui(self):
+        result = self.harness.run_shell(self.mocks + 'tachyon_json force',
+                                        TEST_VERSION='', TEST_API='0', TEST_HTTP='403', TEST_SERVICE='true')
+        self.assertFalse(json.loads(result.stdout)['available'])
 
     def test_custom_web_port_and_no_reconfigure_when_manually_stopped(self):
         with (self.root / 'uci').open('a') as config:

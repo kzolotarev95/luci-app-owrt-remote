@@ -5,6 +5,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import sys
 import unittest
 
 from test_host_policy import ROOT, SH
@@ -17,6 +18,7 @@ class DeployTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.env = dict(os.environ)
+        self.env['TEST_PYTHON'] = Path(sys.executable).as_posix()
         if os.name == 'nt':
             self.env['PATH'] = str(Path(SH).parent) + os.pathsep + self.env['PATH']
         self.targets = {name: self.root / name for name in ('agent', 'tachyon.sh')}
@@ -29,8 +31,14 @@ class DeployTests(unittest.TestCase):
             original = {'agent': '/usr/sbin/owrt-remote', 'tachyon.sh': '/usr/lib/owrt-remote/tachyon.sh'}[name]
             self.script = self.script.replace('echo ' + original, 'echo ' + shlex.quote(target.as_posix()))
         self.script = self.script.replace('/etc/init.d/owrt-remote restart', 'test_restart')
+        self.script = self.script.replace('/usr/sbin/owrt-remote tachyon-status', "printf '{\"checked\":true}'")
         mocks = '''
-ubus() { printf '{}'; }
+ubus() {
+    case "$1:$2:$3" in
+        call:service:add) "$TEST_PYTHON" -c 'import json,sys; data=json.loads(sys.argv[1]); assert data["instances"]["once"]["command"][0]=="/bin/sh"' "$4" ;;
+        *) printf '{}' ;;
+    esac
+}
 jsonfilter() { printf true; }
 timeout() { return 0; }
 busybox() { return 127; }
@@ -39,7 +47,7 @@ sleep() { :; }
 '''
         self.script = mocks + self.script.replace('test -r /usr/lib/owrt-remote/control.sh', 'true')
 
-    def deploy(self, action='Install', bad=False, fail=False, no_timeout=False):
+    def deploy(self, action='Install', bad=False, fail=False, no_timeout=False, deferred=False):
         stage = self.root / 'stage'
         stage.mkdir()
         for name, source in {'agent': 'files/usr/sbin/owrt-remote', 'tachyon.sh': 'files/usr/lib/owrt-remote/tachyon.sh'}.items():
@@ -47,6 +55,7 @@ sleep() { :; }
             stage.joinpath(name).write_text(text, encoding='utf-8', newline='\n')
         script = self.script.replace('stage=/tmp/__UPLOAD_NAME__', 'stage=' + shlex.quote(stage.as_posix()))
         script = script.replace('__UPLOAD_NAME__', 'sandbox').replace('__KIND__', 'Router').replace('__ACTION__', action)
+        script = script.replace('__DEFER_RESTART__', '1' if deferred else '0')
         if no_timeout:
             # Model the optional applet missing from both PATH and BusyBox.
             script = script.replace('command -v timeout >/dev/null 2>&1', 'false')
@@ -96,6 +105,15 @@ sleep() { :; }
         self.assertIn('Failed during preflight', result.stderr)
         self.assertNotIn('restoring files', result.stderr)
         self.assert_original()
+
+    def test_reverse_ssh_install_queues_independent_restart_after_file_checks(self):
+        # A direct restart would close the SSH connection carrying deployment.
+        # The old restart mock intentionally fails; deferred mode must skip it.
+        result = self.deploy(deferred=True, fail=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('TACHYON_RESTART_QUEUED', result.stdout)
+        self.assertNotIn('TACHYON_INTEGRATION_Router_Install_OK', result.stdout)
+        self.assertNotIn('restoring files', result.stderr)
 
 
 if __name__ == '__main__':

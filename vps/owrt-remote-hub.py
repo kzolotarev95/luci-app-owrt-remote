@@ -8461,7 +8461,7 @@ function renderTachyon(router) {{
   const button = (router.permissions || {{}}).admin
     ? `<a class="btn" href="${{escapeAttr(t.url)}}" target="_blank" rel="noopener noreferrer">Открыть Tachyon</a>`
     : '<span class="btn disabled">Открыть Tachyon</span>';
-  return `<div class="tachyonIntegration" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;padding:10px;margin-top:10px;border:1px solid var(--line,rgba(180,150,220,.25));border-radius:12px"><strong>Tachyon ${{escapeHtml(t.version || '')}}</strong><span style="color:${{t.online ? '#74e3ac' : '#f2bc6b'}}">${{label}}</span>${{button}}</div>`;
+  return `<div class="tachyonIntegration" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:10px;margin-top:10px;border:1px solid var(--line,rgba(180,150,220,.25));border-radius:12px"><div class="tachyonMeta" style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;min-height:24px;max-width:100%"><strong style="min-width:0;max-width:100%;overflow-wrap:anywhere;text-align:center">Tachyon${{t.version ? ' ' + escapeHtml(t.version) : ''}}</strong><span style="color:${{t.online ? '#74e3ac' : '#f2bc6b'}}">${{label}}</span></div><div class="tachyonAction">${{button}}</div></div>`;
 }}
 
 function render(list) {{

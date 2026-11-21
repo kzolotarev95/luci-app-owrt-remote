@@ -3,6 +3,74 @@
 Интеграция включена в Remote Hub v122. Обновить нужно Hub на VPS и агент
 на роутере; Tachyon устанавливается отдельно и автоматически не загружается.
 
+## Исправление APK 3.0.5 в пакетах 122-r2
+
+На node-12 с OpenWrt 25.12.5 команда `apk info -v tachyon` вернула описание,
+а не версию. Прежний парсер ожидал `tachyon-VERSION`, получил пустую строку
+и выбрал старую LuCI-страницу вместо самостоятельной панели на порту 1680.
+Поэтому в карточке исчезла версия, а кнопка открывала LuCI с внешней ссылкой.
+
+Теперь версия читается через `apk list --installed --manifest`, с резервным
+структурированным `apk query`. Наличие самостоятельного интерфейса подтверждает
+локальный read-only API `/api/agent/v1/health`; старый номер пакета не мешает
+обнаружить работающий современный интерфейс. HTTP 403 страницы LuCI сам по себе
+не означает, что неизвестный Tachyon работает. Версия работающего приложения
+по-прежнему берётся из его OpenAPI, если он доступен.
+
+Блок карточки имеет две строки: название/версия/состояние и ниже кнопка.
+Отсутствие версии больше не переносит кнопку в верхнюю строку и не меняет высоту
+обычного блока. Проверены ПК, мобильная вертикальная и горизонтальная ориентация.
+
+Установить исправление интерфейса VPS из локальных исходников:
+
+```powershell
+$Fix = Join-Path $env:USERPROFILE 'Documents\openwrt overlay\vps\deploy-tachyon-detection-fix.ps1'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Fix -Vps root@132.243.19.232 -Action Install
+```
+
+Установить агент на удалённый node-12 через существующий SSH-туннель VPS:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Fix -Vps root@132.243.19.232 -RouterId node-12 -Action Install
+```
+
+SSH отдельно запрашивает пароль VPS и пароль выбранного роутера; они могут
+отличаться. Скрипт читает `ssh_entry_port` выбранного роутера из базы в режиме
+read-only и подключается через ProxyJump. Туннель не публикуется наружу.
+Перезапуск выполняет отдельный procd worker после завершения записи файлов,
+чтобы не оборвать установку вместе с SSH. После него VPS ждёт свежий Heartbeat
+и проверяет настоящий Tachyon API через обратный маршрут выбранного роутера.
+При отсутствии подтверждения выводится ошибка, успех не подставляется.
+
+Проверить node-12 отдельно, без переустановки и без изменения файлов:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Fix -Vps root@132.243.19.232 -RouterId node-12 -Action Status
+```
+
+Ожидается `TACHYON_CHECK_OK: node-12`. Команда показывает версию, режим, порт,
+состояние Xray, возраст Heartbeat и результат запроса к API через туннель.
+Страница LuCI вместо JSON Tachyon не считается успешной проверкой.
+
+Для обычного локального SSH:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Fix -Router root@192.168.2.1 -Action Install
+```
+
+Отдельная резервная копия на каждом устройстве:
+`/root/owrt-remote-backup-before-tachyon-detection-v122`.
+Откат удалённого роутера и затем VPS:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Fix -Vps root@132.243.19.232 -RouterId node-12 -Action Rollback
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Fix -Vps root@132.243.19.232 -Action Rollback
+```
+
+В рамках исправления не меняются настройки и пакет самого Tachyon.
+Исправленные пакеты выпускаются с тегом v122-r2. Прежние IPK/APK 122-r1
+и тег v122 сохраняются.
+
 ## Обнаружение
 
 Агент проверяет установленные пакеты tachyon и luci-app-tachyon через

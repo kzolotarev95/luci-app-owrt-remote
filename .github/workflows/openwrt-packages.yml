@@ -51,10 +51,10 @@ jobs:
           import os, subprocess, sys
           sys.path.insert(0, 'scripts')
           import openwrt_package as p
-          expected = 'v' + p.versions()[0]
+          expected = p.release_tag()
           tag = os.environ['RELEASE_TAG'] or expected
           if os.environ['PUBLISH_REQUESTED'] == 'true' and tag != expected:
-              raise SystemExit('Release tag must match PKG_VERSION in package/luci-app-owrt-remote/Makefile')
+              raise SystemExit('Release tag must match PKG_VERSION and PKG_RELEASE (vVERSION or vVERSION-rREVISION)')
           if os.environ['MANUAL_PUBLISH'] == 'true':
               # Retry corrected build tooling without moving an existing tag.
               # Runtime files must match; packaging tools/metadata may be fixed.

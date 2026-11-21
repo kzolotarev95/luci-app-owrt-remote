@@ -9,7 +9,7 @@ tachyon_inventory_failed() {
 }
 
 tachyon_json() (
-    local dir package version package_version mode port service available api code pkg rc now last admin_port
+    local dir package version package_version mode port service available api code pkg rc now last admin_port candidate_port probe
     umask 077
     ulimit -f 64
     mkdir -p "$TACHYON_RUNTIME" || { printf '{"checked":false}'; return; }
@@ -29,7 +29,14 @@ tachyon_json() (
         for pkg in tachyon luci-app-tachyon; do
             grep -qx "$pkg" "$dir/package" || continue
             package="$pkg"
-            version="$(apk info -v "$pkg" 2>/dev/null | sed -n "s/^$pkg-//p" | head -n 1 | awk '{print $1}')"
+            # apk info -v prints the package description on OpenWrt 25.12.
+            # The installed version is available through the manifest.
+            version="$(apk list --installed --manifest "$pkg" 2>/dev/null | awk -v wanted="$pkg" '
+                $1 == wanted && $2 != "" {print $2; exit}
+                $1 ~ ("^" wanted "-") {sub("^" wanted "-", "", $1); print $1; exit}
+            ')"
+            [ -n "$version" ] || version="$(apk query --installed --from system --fields name,version --format json "$pkg" 2>/dev/null |
+                jsonfilter -e '@[0].version' 2>/dev/null)"
             break
         done
     elif command -v opkg >/dev/null 2>&1; then
@@ -43,24 +50,33 @@ tachyon_json() (
     else
         tachyon_inventory_failed; return
     fi
+    case "$version" in ''|*[!0-9a-zA-Z.+~_-]*) version='' ;; esac
+    [ "${#version}" -le 80 ] || version=''
     case "$package" in tachyon|luci-app-tachyon) ;; *) package='' ;; esac
     if [ -z "$package" ]; then
         printf '{"checked":true,"installed":false}\n' >"$dir/json"
     else
         package_version="$version"
-        port=0
-        mode=luci
-        # Older Tachyon can use listen_port for a proxy, not its web UI.
-        case "$version" in 2.*|[3-9].*)
-            mode=standalone
-            port="$(uci -q get tachyon.settings.listen_port 2>/dev/null)"
-            ;;
+        port=0; mode=luci; api=''
+        candidate_port="$(uci -q get tachyon.settings.listen_port 2>/dev/null)"
+        case "$candidate_port" in ''|*[!0-9]*) candidate_port=1680 ;; esac
+        [ "${#candidate_port}" -le 5 ] || candidate_port=1680
+        [ "$candidate_port" -ge 1024 ] && [ "$candidate_port" -le 65535 ] || candidate_port=1680
+        candidate_port="$(printf '%s' "$candidate_port" | awk '{printf "%d", $1}')"
+        # Older versions can use this port for a proxy. A real read-only
+        # Tachyon API response confirms the standalone UI, even if package
+        # metadata is missing or stale. An open port alone proves nothing.
+        probe="$(curl -q -fsS --noproxy '*' --connect-timeout 1 --max-time 2 --max-filesize 65536 \
+            "http://127.0.0.1:$candidate_port/api/agent/v1/health" 2>/dev/null |
+            jsonfilter -e '@.core_running' 2>/dev/null)"
+        case "$probe" in
+            true|false) mode=standalone; port="$candidate_port"; api='/api/agent/v1' ;;
+            *)
+                # Keep v2 routed to its own port when it is temporarily down;
+                # never substitute an available LuCI page for an offline UI.
+                case "$version" in 2.*|[3-9].*) mode=standalone; port="$candidate_port" ;; esac
+                ;;
         esac
-        case "$port" in ''|*[!0-9]*) port=0 ;; esac
-        [ "${#port}" -le 5 ] || port=0
-        [ "$port" -ge 1024 ] && [ "$port" -le 65535 ] || port=0
-        port="$(printf '%s' "$port" | awk '{printf "%d", $1}')"
-        [ "$mode" != standalone ] || [ "$port" != 0 ] || port=1680
         service=unknown
         for pkg in tachyon tachyon-core; do
             rc="$(ubus call service list "{\"name\":\"$pkg\"}" 2>/dev/null |
@@ -68,7 +84,7 @@ tachyon_json() (
             if printf '%s\n' "$rc" | grep -qx true; then service=running; break; fi
             [ -z "$rc" ] || service=stopped
         done
-        available=false; api=''
+        available=false
         if [ "$mode" = standalone ]; then
             code="$(curl -q -s --noproxy '*' --connect-timeout 1 --max-time 2 -o /dev/null \
                 -w '%{http_code}' "http://127.0.0.1:$port/" 2>/dev/null)"
@@ -81,16 +97,11 @@ tachyon_json() (
                 -w '%{http_code}' "http://127.0.0.1:$admin_port/cgi-bin/luci/admin/services/tachyon" 2>/dev/null)"
         fi
         case "$code" in 2??|3??|401|403) [ "$service" = stopped ] || available=true ;; esac
-        if [ "$mode" = standalone ] && [ "$available" = true ]; then
-            rc="$(curl -q -fsS --noproxy '*' --max-time 1 "http://127.0.0.1:$port/api/agent/v1/health" 2>/dev/null |
-                jsonfilter -e '@.core_running' 2>/dev/null)"
-            case "$rc" in true|false)
-                api='/api/agent/v1'
-                rc="$(curl -q -fsS --noproxy '*' --max-time 1 --max-filesize 65536 \
-                    "http://127.0.0.1:$port/api/agent/v1/openapi.json" 2>/dev/null | jsonfilter -e '@.info.version' 2>/dev/null)"
-                case "$rc" in ''|*[!a-zA-Z0-9.+~_-]*) ;; *) [ "${#rc}" -gt 80 ] || version="$rc" ;; esac
-                ;;
-            esac
+        [ -n "$version" ] || [ "$mode" = standalone ] || available=false
+        if [ "$mode" = standalone ] && [ "$available" = true ] && [ "$api" = /api/agent/v1 ]; then
+            rc="$(curl -q -fsS --noproxy '*' --connect-timeout 1 --max-time 1 --max-filesize 65536 \
+                "http://127.0.0.1:$port/api/agent/v1/openapi.json" 2>/dev/null | jsonfilter -e '@.info.version' 2>/dev/null)"
+            case "$rc" in ''|*[!a-zA-Z0-9.+~_-]*) ;; *) [ "${#rc}" -gt 80 ] || version="$rc" ;; esac
         fi
         for pkg in tachyon-api tachyon-agent; do
             [ -z "$api" ] || break

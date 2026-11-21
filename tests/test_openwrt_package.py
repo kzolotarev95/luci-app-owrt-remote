@@ -84,6 +84,11 @@ class PackageTests(unittest.TestCase):
             text = (ROOT / "files" / name).read_text(encoding="utf-8")
             self.assertIn("OpenWrt Remote Hub v" + version, text)
 
+    def test_package_revision_has_its_own_tag_without_renaming_the_panel(self):
+        for values, expected in [(('122','1'),'v122'), (('122','2'),'v122-r2'), (('123','1'),'v123')]:
+            with self.subTest(values=values), mock.patch.object(p,'versions',return_value=values):
+                self.assertEqual(p.release_tag(), expected)
+
     def test_package_scripts_defer_procd_lifecycle_to_openwrt_for_apk_and_ipk(self):
         script = p.package_hook("postinst")
         self.assertNotIn("configure ]", script)

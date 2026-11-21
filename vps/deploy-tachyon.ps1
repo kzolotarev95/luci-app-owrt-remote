@@ -2,7 +2,11 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'Vps')][string]$Vps,
     [Parameter(Mandatory = $true, ParameterSetName = 'Router')][string]$Router,
     [ValidateSet('Install', 'Rollback')][string]$Action = 'Install',
-    [ValidateSet('tachyon-integration', 'tachyon-layout')][string]$BackupName = 'tachyon-integration',
+    [ValidateSet('tachyon-integration', 'tachyon-layout', 'tachyon-detection')][string]$BackupName = 'tachyon-integration',
+    [ValidateSet('v121', 'v122')][string]$BackupVersion = 'v121',
+    [ValidateRange(1, 65535)][int]$Port = 22,
+    [string]$JumpHost = '',
+    [switch]$DeferRestart,
     [switch]$PrepareOnly
 )
 
@@ -13,6 +17,7 @@ $StageRoot = Join-Path ([System.IO.Path]::GetTempPath()) $UploadName
 $Utf8 = [System.Text.UTF8Encoding]::new($false)
 $TargetKind = $PSCmdlet.ParameterSetName
 $Destination = if ($TargetKind -eq 'Vps') { $Vps } else { $Router }
+if ($DeferRestart -and $TargetKind -ne 'Router') { throw 'Deferred restart requires a router target.' }
 
 $RemoteScript = @'
 #!/bin/sh
@@ -23,6 +28,7 @@ action=__ACTION__
 backup=/root/owrt-remote-backup-before-__BACKUP_NAME__-v121
 changed=0
 step=preflight
+defer_restart=__DEFER_RESTART__
 
 if [ "$kind" = Vps ]; then
     names=hub.py
@@ -155,8 +161,15 @@ snapshot "$stage/previous"
 changed=1
 step=apply-files
 apply_files "$source_dir"
+if [ "$kind" = Router ] && [ "$action" = Install ]; then
+    step=refresh-discovery
+    # Refresh the bounded RAM cache before rendering Xray, so an old LuCI
+    # classification cannot keep the standalone route absent for another beat.
+    /usr/sbin/owrt-remote tachyon-status >"$stage/tachyon-status"
+    cat "$stage/tachyon-status"
+fi
 step=restart
-restart
+if [ "$defer_restart" != 1 ]; then restart; fi
 
 step=verify-health
 if [ "$kind" = Vps ]; then
@@ -190,12 +203,21 @@ for name in $names; do
     path="$(target "$name")"
     if [ -e "$source_dir/$name.absent" ]; then test ! -e "$path"; else cmp "$source_dir/$name" "$path"; fi
 done
-printf '\nBackup: %s\nTACHYON_INTEGRATION_%s_%s_OK\n' "$backup" "$kind" "$action"
+if [ "$defer_restart" = 1 ]; then
+    step=queue-restart
+    # An SSH connection through Xray must finish before Xray stops. This
+    # bounded procd worker is independent of the service being restarted.
+    ubus call service add '{"name":"owrt-remote-tachyon-refresh","instances":{"once":{"command":["/bin/sh","-c","sleep 3; /etc/init.d/owrt-remote restart","__UPLOAD_NAME__"],"stdout":true,"stderr":true}}}' >/dev/null
+    printf '\nBackup: %s\nTACHYON_RESTART_QUEUED\n' "$backup"
+else
+    printf '\nBackup: %s\nTACHYON_INTEGRATION_%s_%s_OK\n' "$backup" "$kind" "$action"
+fi
 '@
 
 try {
     [System.IO.Directory]::CreateDirectory($StageRoot) | Out-Null
-    $RemoteScript = $RemoteScript.Replace('__UPLOAD_NAME__', $UploadName).Replace('__KIND__', $TargetKind).Replace('__ACTION__', $Action).Replace('__BACKUP_NAME__', $BackupName)
+    if ($BackupVersion -eq 'v122') { $RemoteScript = $RemoteScript.Replace('-__BACKUP_NAME__-v121', '-__BACKUP_NAME__-v122') }
+    $RemoteScript = $RemoteScript.Replace('__UPLOAD_NAME__', $UploadName).Replace('__KIND__', $TargetKind).Replace('__ACTION__', $Action).Replace('__BACKUP_NAME__', $BackupName).Replace('__DEFER_RESTART__', $(if ($DeferRestart) { '1' } else { '0' }))
     [System.IO.File]::WriteAllText((Join-Path $StageRoot 'run.sh'), $RemoteScript.Replace("`r`n", "`n") + "`n", $Utf8)
     if ($Action -eq 'Install') {
         $Sources = if ($TargetKind -eq 'Vps') {
@@ -209,11 +231,17 @@ try {
         }
     }
     if ($PrepareOnly) { Write-Host "Prepared only: $StageRoot"; return }
-    & scp -O -o ConnectTimeout=20 -r -- $StageRoot "${Destination}:/tmp/"
+    $JumpOptions = if ($JumpHost) { @('-o', "ProxyJump=$JumpHost") } else { @() }
+    & scp -O -P $Port @JumpOptions -o ConnectTimeout=20 -r -- $StageRoot "${Destination}:/tmp/"
     if ($LASTEXITCODE -ne 0) { throw 'Upload failed. Target was not changed.' }
-    & ssh -T -o ConnectTimeout=20 -o ServerAliveInterval=15 $Destination "sh /tmp/$UploadName/run.sh"
-    if ($LASTEXITCODE -ne 0) { throw "$Action failed. Success was not confirmed; see output above." }
-    Write-Host "Tachyon integration $TargetKind $Action finished successfully."
+    $RemoteOutput = & ssh -T -p $Port @JumpOptions -o ConnectTimeout=20 -o ServerAliveInterval=15 $Destination "sh /tmp/$UploadName/run.sh"
+    $RemoteCode = $LASTEXITCODE
+    $RemoteOutput | Write-Output
+    if ($RemoteCode -ne 0 -and -not ($DeferRestart -and $RemoteCode -eq 255 -and @($RemoteOutput) -contains 'TACHYON_RESTART_QUEUED')) {
+        throw "$Action failed. Success was not confirmed; see output above."
+    }
+    if ($DeferRestart) { Write-Host 'Files applied; restart queued. Runtime verification follows.' }
+    else { Write-Host "Tachyon integration $TargetKind $Action finished successfully." }
 } finally {
     if (-not $PrepareOnly -and (Test-Path -LiteralPath $StageRoot)) {
         $Resolved = [System.IO.Path]::GetFullPath($StageRoot)
