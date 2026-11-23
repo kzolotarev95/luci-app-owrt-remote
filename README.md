@@ -216,108 +216,63 @@ APK ставится через SSH. Инструкция, подпись и л�
 
 <h2> Скриншоты интерфейса</h2>
 
+<p>Актуальный интерфейс <b>OWRT Hub v123</b> на ПК и телефоне.<br>
+Снимки сделаны локально из текущих страниц проекта с демонстрационными данными.</p>
+
+<table>
+<tr><td align="center">
+<img src="assets/screenshots/v123-hub-dashboard.jpg" alt="OWRT Hub v123 — дашборд VPS с боковым меню, графиком доступности и карточками роутеров" width="100%" />
+<br><b>Дашборд VPS</b><br>
+<sub>Боковое меню, доступность за 24 часа, ресурсы VPS и статусы роутеров.</sub>
+</td></tr>
+</table>
+
 <table>
 <tr>
-<td align="center">
-
-<img src="assets/screenshots/hub-router-dashboard.jpg" alt="OWRT Hub dashboard" width="100%" />
-
-<br>
-<b>Hub-панель</b>
-<br>
-<sub>Карточки роутеров, статусы Online/Offline, LuCI, SSH, OpenWrt config и Client JSON.</sub>
-
+<td width="50%" align="center" valign="top">
+<img src="assets/screenshots/v123-router-card.jpg" alt="OWRT Hub v123 — раскрытая карточка роутера и Tachyon" width="420" />
+<br><b>Данные роутера</b><br>
+<sub>Модель, OpenWrt, Xray, SSH, память, Flash, температура и Tachyon.</sub>
+</td>
+<td width="50%" align="center" valign="top">
+<img src="assets/screenshots/v123-hub-access.jpg" alt="OWRT Hub v123 — настройки доступа к Hub" width="520" />
+<br><b>Доступ к Hub</b><br>
+<sub>Безопасность, привязанные сервисы, сессии, пользователи, уведомления и резервные копии.</sub>
+</td>
+</tr>
+<tr>
+<td width="50%" align="center" valign="top">
+<img src="assets/screenshots/v123-hub-login.jpg" alt="OWRT Hub v123 — экран авторизации без поля выключенной 2FA" width="400" />
+<br><b>Авторизация</b><br>
+<sub>Вход по паролю и быстрый вход. Поле 2FA появляется только при включённой защите.</sub>
+</td>
+<td width="50%" align="center" valign="top">
+<img src="assets/screenshots/v123-hub-effects.jpg" alt="OWRT Hub v123 — выбор эффектов и дизайна панели" width="310" />
+<br><b>Дизайн и эффекты</b><br>
+<sub>Обычный и зимний дизайн, режим для слабых устройств и выбор анимации.</sub>
 </td>
 </tr>
 </table>
 
 <table>
+<tr><td align="center">
+<img src="assets/screenshots/v123-router-panel.jpg" alt="OWRT Hub v123 — панель роутера OpenWrt с боковым меню" width="100%" />
+<br><b>Панель роутера</b><br>
+<sub>Общее оформление с VPS: состояние агента и Xray, настройки Remote и боковое меню.</sub>
+</td></tr>
+</table>
+
+<table>
 <tr>
-<td width="50%" align="center">
-
-<img src="assets/screenshots/hub-login-password-2fa.jpg" alt="Hub login with password and 2FA" width="320" />
-
-<br>
-<b>Вход по паролю + 2FA</b>
-<br>
-<sub>Основной экран входа в Hub: логин, пароль, 6-значный TOTP-код и reCAPTCHA.</sub>
-
+<td width="50%" align="center" valign="top">
+<img src="assets/screenshots/v123-hub-mobile.jpg" alt="OWRT Hub v123 — мобильный дашборд VPS" width="360" />
+<br><b>Hub на телефоне</b><br>
+<sub>Компактная шапка, статистика, график доступности и ресурсы VPS.</sub>
 </td>
-<td width="50%" align="center">
-
-<img src="assets/screenshots/hub-quick-login.jpg" alt="Quick login methods in Hub" width="420" />
-
-<br>
-<b>Быстрый вход</b>
-<br>
-<sub>Passkey, SSH ED25519 подпись и вход через привязанные GitHub / VK ID аккаунты.</sub>
-
-</td>
-</tr>
-<tr>
-<td width="50%" align="center">
-
-<img src="assets/screenshots/hub-access-security.jpg" alt="Hub access and security settings" width="420" />
-
-<br>
-<b>Безопасность и доступ</b>
-<br>
-<sub>Пароль, 2FA, Passkey, SSH ED25519, привязанные сервисы, ограниченные пользователи и уведомления.</sub>
-
-</td>
-<td width="50%" align="center">
-
-<img src="assets/screenshots/hub-vps-terminal.jpg" alt="VPS web terminal" width="100%" />
-
-<br>
-<b>VPS Terminal</b>
-<br>
-<sub>Веб-терминал VPS с быстрыми командами для обслуживания Hub, Xray, HTTPS и диагностики сервиса.</sub>
-
-</td>
-</tr>
-<tr>
-<td width="50%" align="center">
-
-<img src="assets/screenshots/router-traffic-clients.jpg" alt="Router traffic clients panel" width="360" />
-
-<br>
-<b>Клиенты Traffic</b>
-<br>
-<sub>Список клиентов роутера с SSH-опросом и счетчиками входящего/исходящего трафика прямо в Hub.</sub>
-
-</td>
-<td width="50%" align="center">
-
-<img src="assets/screenshots/router-wake-on-lan.jpg" alt="Wake-on-LAN panel in router card" width="360" />
-
-<br>
-<b>Wake-on-LAN</b>
-<br>
-<sub>Пробуждение устройств по MAC-адресу прямо из карточки роутера без отдельной админки.</sub>
-
-</td>
-</tr>
-<tr>
-<td width="50%" align="center">
-
-<img src="assets/screenshots/hub-effects-panel.jpg" alt="Hub effects panel" width="360" />
-
-<br>
-<b>Эффекты Hub</b>
-<br>
-<sub>Набор визуальных эффектов интерфейса: снег, дождь, орбиты, туманность, лучи и другие режимы.</sub>
-
-</td>
-<td width="50%" align="center">
-
-<img src="assets/screenshots/hub-router-dashboard.jpg" alt="OpenWrt router dashboard cards" width="360" />
-
-<br>
-<b>Карточки роутеров</b>
-<br>
-<sub>Живые карточки со статусом, моделью, памятью, температурой, SSH, LuCI и быстрыми действиями.</sub>
-
+<td width="50%" align="center" valign="top">
+<img src="assets/screenshots/v123-router-mobile.jpg" alt="OWRT Hub v123 — мобильная панель роутера" width="360" />
+<br><b>Панель роутера на телефоне</b><br>
+<sub>Состояние Remote и Xray, кнопки управления и настройки в одну колонку.</sub>
 </td>
 </tr>
 </table>
