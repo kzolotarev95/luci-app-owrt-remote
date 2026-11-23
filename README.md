@@ -175,27 +175,6 @@ owrt-remote doctor
 owrt-remote status
 ```
 
-Если загрузка Xray прерывается: общий загрузчик с переключением клиентов,
-диагностика DNS/TLS/HTTP, локальная установка исправления и откат описаны в
-[docs/XRAY_DOWNLOAD_RECOVERY.md](docs/XRAY_DOWNLOAD_RECOVERY.md).
-
-<h3> Готовые пакеты для OpenWrt</h3>
-
-IPK для OpenWrt 23.05/24.10 и APK для 25.12. Пакеты
-архитектурно независимые (`all`/`noarch`): содержат тот же агент и LuCI-файлы,
-что и `install.sh`, сохраняют `/etc/config/owrtremote` и существующий Xray.
-Версия интерфейсов — v123, версия пакета — 123-r1.
-Готовые IPK/APK публикуются в <a href="https://github.com/kzolotarev95/luci-app-owrt-remote/releases/tag/v123">Releases → v123</a> после успешных проверок сборки.
-GitHub Actions проверяет SDK разных архитектур, установку/обновление/удаление
-в OpenWrt VM и при выпуске тега `v*` прикладывает пакеты к GitHub Release.
-Для APK в штатной LuCI нужен доверенный ключ подписи; неподписанный локальный
-APK ставится через SSH. Инструкция, подпись и локальная сборка:
-[docs/OPENWRT_PACKAGES.md](docs/OPENWRT_PACKAGES.md).
-
-</div>
-
----
-
 <div align="center">
 
 <h2> Схема работы</h2>
