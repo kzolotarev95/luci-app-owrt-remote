@@ -1,6 +1,6 @@
 {
 	"admin/services/owrt-remote": {
-		"title": "OpenWrt Remote Hub",
+		"title": "OWRT Hub",
 		"order": 91,
 		"action": {
 			"type": "view",

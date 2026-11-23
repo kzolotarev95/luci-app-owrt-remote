@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'Vps')][string]$Vps,
     [Parameter(Mandatory = $true, ParameterSetName = 'Router')][string]$Router,
     [ValidateSet('Install', 'Rollback')][string]$Action = 'Install',
-    [ValidateSet('tachyon-integration', 'tachyon-layout', 'tachyon-detection', 'router-card-details', 'donate-ui')][string]$BackupName = 'tachyon-integration',
+    [ValidateSet('tachyon-integration', 'tachyon-layout', 'tachyon-detection', 'router-card-details', 'donate-ui', 'sidebar-ui')][string]$BackupName = 'tachyon-integration',
     [ValidateSet('v121', 'v122')][string]$BackupVersion = 'v121',
     [ValidateRange(1, 65535)][int]$Port = 22,
     [string]$JumpHost = '',
@@ -69,7 +69,7 @@ apply_files() {
 restart() {
     if [ "$kind" = Vps ]; then
         systemctl restart owrt-remote
-        if [ "$action" = Rollback ] && systemctl is-active --quiet owrt-remote-xray; then
+        if [ "$action" = Rollback ] && [ '__BACKUP_NAME__' != sidebar-ui ] && systemctl is-active --quiet owrt-remote-xray; then
             /opt/owrt-remote/owrt-remote-run.sh render-xray --out /etc/xray/owrt-remote.json
             systemctl restart owrt-remote-xray
         fi

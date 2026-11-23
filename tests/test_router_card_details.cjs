@@ -44,9 +44,10 @@ const settled = page => page.waitForFunction(() => cardDetailsAnimations.size ==
 async function fitsViewport(page) {
   const r = await page.locator('.isFloating>.card').evaluate(el => {
     const r=el.getBoundingClientRect();
-    return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,w:innerWidth,h:innerHeight};
+    const body=el.querySelector('.cardBody').getBoundingClientRect();
+    return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height,bodyHeight:body.height,position:getComputedStyle(el).position,w:document.documentElement.clientWidth,h:innerHeight};
   });
-  assert(r.left>=11 && r.right<=r.w-11 && r.top>=11 && r.bottom<=r.h-11, JSON.stringify(r));
+  assert(r.position==='fixed' && r.left>=11 && r.right<=r.w-11 && r.top>=11 && r.bottom<=r.h-11 && r.bodyHeight>=60, JSON.stringify(r));
   assert(await page.evaluate(() => document.documentElement.scrollWidth<=innerWidth));
 }
 (async () => {
@@ -55,6 +56,7 @@ async function fitsViewport(page) {
   try {
     for (const scenario of [
       {name:'desktop', width:1280,height:900},
+      {name:'short-grid',width:1280,height:1000,limit:2},
       {name:'two-columns',width:900,height:700},
       {name:'winter',width:1280,height:900,design:'winter'},
       {name:'lite',width:1280,height:900,design:'lite',noMotion:true},
@@ -62,6 +64,8 @@ async function fitsViewport(page) {
       {name:'portrait',width:390,height:844,mobile:true},
       {name:'landscape',width:844,height:390,mobile:true},
     ]) {
+      const scenarioRouters=routers.slice(0,scenario.limit || routers.length);
+      const scenarioHtml=html.replace(/window\.ROUTERS = (\[.*\]);/, 'window.ROUTERS = '+JSON.stringify(scenarioRouters)+';');
       const context=await browser.newContext({viewport:{width:scenario.width,height:scenario.height},
         hasTouch:!!scenario.mobile,isMobile:!!scenario.mobile,reducedMotion:scenario.reducedMotion || 'no-preference'});
       try {
@@ -71,8 +75,8 @@ async function fitsViewport(page) {
         },scenario.design || 'default');
         await context.route('**/*', async route => {
           const u=new URL(route.request().url());
-          if (u.pathname === '/') return route.fulfill({contentType:'text/html; charset=utf-8',body:html});
-          if (u.pathname === '/api/routers') return route.fulfill({json:{routers}});
+          if (u.pathname === '/') return route.fulfill({contentType:'text/html; charset=utf-8',body:scenarioHtml});
+          if (u.pathname === '/api/routers') return route.fulfill({json:{routers:scenarioRouters}});
           if (u.pathname === '/api/auth/meta') return route.fulfill({json:{ok:true,auth:{username:'owner',is_owner:true}}});
           if (u.pathname === '/api/notifications/wait') return route.abort();
           if (u.pathname.startsWith('/api/')) return route.fulfill({json:{ok:true,groups:[],notifications:[]}});
@@ -81,14 +85,15 @@ async function fitsViewport(page) {
         const page=await context.newPage();
         const errors=[];page.on('pageerror', e=>errors.push(e.message));
         await page.goto('http://hub.test/',{waitUntil:'domcontentloaded'});
-        await page.locator('.routerCardSlot').nth(8).waitFor();
+        await page.locator('.routerCardSlot').nth(scenarioRouters.length-1).waitFor();
         const toggles=page.locator('[data-card-toggle]');
-        assert.equal(await toggles.count(),9,scenario.name);
+        assert.equal(await toggles.count(),scenarioRouters.length,scenario.name);
         assert.equal(await page.locator('.cardBody:visible').count(),0,'compact at entry');
         await toggles.first().scrollIntoViewIfNeeded();
         await page.waitForTimeout(50);
         const before=await geometry(page);
         const docHeight=await page.evaluate(()=>document.documentElement.scrollHeight);
+        const scrollBefore=await page.evaluate(()=>scrollY);
         await toggles.first().click();
         assert.equal(await toggles.first().getAttribute('aria-expanded'),'true');
         if (!scenario.mobile) {
@@ -97,17 +102,22 @@ async function fitsViewport(page) {
           sameGrid(before,await geometry(page),scenario.name+' during animation');
           await settled(page);
           sameGrid(before,await geometry(page),scenario.name+' open');
-          if (scenario.height-before[0].y-12>=400) {
-            assert(Math.abs((await page.locator('.isFloating>.card').boundingBox()).y-before[0].y)<1,'expansion stays anchored when there is room');
-          }
-          assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight),docHeight,'page height stable');
+          assert.equal(await page.evaluate(()=>scrollY),scrollBefore,'opening does not scroll the page');
+          assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight),docHeight,'overlay does not create empty space below the grid');
           await fitsViewport(page);
+          assert.equal(await page.locator('.modelLegendBadge').count(),0,'Legend badge removed for every model');
+          const model=await page.locator('.isFloating .modelMetricName').evaluate(el=>{
+            const text=el.getBoundingClientRect(),metric=el.closest('.metric').getBoundingClientRect();
+            return {text:getComputedStyle(el).textAlign,offset:(text.left+text.right-metric.left-metric.right)/2};
+          });
+          assert(model.text==='center' && Math.abs(model.offset)<1,'long model name is centered in its metric: '+JSON.stringify(model));
           const body=page.locator('.isFloating .cardBody');
           const scrolled=await body.evaluate(el=>{el.scrollTop=80;return el.scrollTop;});
           await page.evaluate(()=>loadRouters());
           await page.waitForTimeout(60);
           assert.equal(await page.locator('.isFloating .cardBody').evaluate(el=>el.scrollTop),scrolled,'poll preserves scroll');
           sameGrid(before,await geometry(page),scenario.name+' polling');
+          assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight),docHeight,'poll keeps the page height unchanged');
           await toggles.first().focus();
           await page.evaluate(()=>loadRouters());
           assert.equal(await toggles.first().evaluate(el=>el===document.activeElement),true,'poll preserves keyboard focus');
@@ -122,7 +132,14 @@ async function fitsViewport(page) {
           assert.equal(await page.locator('.isFloating').count(),0,'Escape closes');
           sameGrid(before,await geometry(page),scenario.name+' close');
           await toggles.last().scrollIntoViewIfNeeded();
+          const lastGrid=await geometry(page);
+          const lastScroll=await page.evaluate(()=>scrollY);
           await toggles.last().click();await settled(page);await fitsViewport(page);
+          sameGrid(lastGrid,await geometry(page),scenario.name+' last row');
+          assert.equal(await page.evaluate(()=>scrollY),lastScroll,'last row does not move the page');
+          assert.equal(await page.evaluate(()=>document.documentElement.scrollHeight),docHeight,'last row overlay does not extend the page');
+          await page.locator('.isFloating>.card').evaluate(el=>el.scrollIntoView({block:'end',behavior:'instant'}));
+          assert.equal(await toggles.last().getAttribute('aria-expanded'),'true','expanded content stays accessible');
           await page.locator('#routerStats').evaluate(el=>el.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true})));
           await settled(page);
           assert.equal(await page.locator('.isFloating').count(),0,'outside pointer closes');
@@ -143,6 +160,8 @@ async function fitsViewport(page) {
         } else {
           assert.equal(await page.locator('.isFloating').count(),0,'mobile stays inline');
           assert.equal(await page.locator('.cardBody:visible').count(),1);
+          assert(Math.abs((await page.locator('.card').first().boundingBox()).y-before[0].y)<1,'mobile expansion keeps the card in place');
+          assert.equal(await page.evaluate(()=>scrollY),scrollBefore,'mobile expansion does not move the page');
           await page.evaluate(()=>loadRouters());
           assert.equal(await toggles.first().getAttribute('aria-expanded'),'true','mobile poll preserves state');
           await page.screenshot({path:path.join(output,scenario.name+'.png'),fullPage:false});

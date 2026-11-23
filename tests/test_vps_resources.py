@@ -111,7 +111,7 @@ class ResourceHttpTests(unittest.TestCase):
                     page = response.read().decode("utf-8")
                 snapshot.assert_called_once_with()
             values = re.findall(r'<strong data-vps-resource-value>([^<]+)</strong>', page)
-            self.assertEqual(values, ["12,5%", "40%", "60%"] * 2, "desktop and mobile have values in HTML")
+            self.assertEqual(values, ["12,5%", "40%", "60%"], "one responsive resource panel has values before the browser fetch")
             self.assertIn('aria-label="ЦП: 12,5%"', page)
         finally:
             server.shutdown()

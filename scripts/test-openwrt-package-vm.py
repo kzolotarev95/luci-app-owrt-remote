@@ -143,7 +143,7 @@ def main():
                    "test $(uci -q get owrtremote.main.enabled) = 0; "
                    "/etc/init.d/owrt-remote-logs running; "
                    "for script in /usr/sbin/owrt-remote /usr/lib/owrt-remote/*.sh /etc/init.d/owrt-remote* /www/cgi-bin/owrt-remote; do /bin/ash -n $script; done; "
-                   "curl -fsS \"http://127.0.0.1/cgi-bin/owrt-remote?key=$(cat /etc/owrt-remote/web.key)\" | grep -q 'OpenWrt Remote Hub'")
+                   "curl -fsS \"http://127.0.0.1/cgi-bin/owrt-remote?key=$(cat /etc/owrt-remote/web.key)\" | grep -q 'OWRT Hub'")
             remote("set -e; uci set owrtremote.main.router_name='Package upgrade test'; uci set owrtremote.main.hub_token='local-test-only'; uci commit owrtremote; "
                    "mkdir -p /etc/xray /tmp/owrt-xray; printf 'preserve JSON\\n' >/etc/xray/owrt-remote-client.json; "
                    "printf 'preserve Xray binary\\n' >/tmp/owrt-xray/xray; chmod 755 /tmp/owrt-xray/xray; "

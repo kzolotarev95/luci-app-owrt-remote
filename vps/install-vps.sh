@@ -1,7 +1,7 @@
 #!/bin/sh
 set -u
 
-APP_NAME="OpenWrt Remote Hub"
+APP_NAME="OWRT Hub"
 INSTALLER_VERSION="2026-08-17-https-bootstrap-v1"
 RAW_BASE="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 XRAY_INSTALL_SCRIPT_URL="${XRAY_INSTALL_SCRIPT_URL:-https://github.com/XTLS/Xray-install/raw/main/install-release.sh}"

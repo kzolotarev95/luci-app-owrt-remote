@@ -108,7 +108,7 @@ PY
     changed=1
     mkdir -p "$(dirname "$policy")" "$(dirname "$journal")" "$(dirname "$logrotate")"
     cat > "$policy" <<'EOF'
-# OpenWrt Remote Hub: keep successful long-poll traffic out of access.log.
+# OWRT Hub: keep successful long-poll traffic out of access.log.
 # 4xx/5xx responses remain logged for diagnostics.
 map "$request_uri:$status" $owrt_remote_access_log {
     default 1;

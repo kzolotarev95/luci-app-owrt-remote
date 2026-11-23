@@ -3,7 +3,7 @@
 KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
 AGENT="${AGENT:-/usr/sbin/owrt-remote}"
 LOG_HELPER="${OWRT_REMOTE_LOG_HELPER:-/usr/lib/owrt-remote/logs.sh}"
-OWRT_REMOTE_UI_VERSION="2026-11-21-v122"
+OWRT_REMOTE_UI_VERSION="2026-11-22-v123-branding"
 PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
 RESULT_TITLE=""
 RESULT_BODY=""
@@ -469,8 +469,87 @@ metric_link() {
 render_unauthorized() {
 	http_html
 	cat <<'EOF'
-<!doctype html><html><head><meta charset="utf-8"><title>OpenWrt Remote</title></head>
+<!doctype html><html><head><meta charset="utf-8"><title>OWRT Hub</title></head>
 <body><h1>Доступ запрещен</h1><p>Открой панель из LuCI или по ссылке, которую показал install.sh.</p></body></html>
+EOF
+}
+
+render_donate_page() {
+	local key
+	key="$(param key)"
+	http_html
+	cat <<EOF
+<!doctype html>
+<html lang="ru" data-hub-shared-effects="1">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="owrt-remote-ui-version" content="$OWRT_REMOTE_UI_VERSION">
+<title>Поддержать разработку — OWRT Hub v123</title>
+<script>
+try {
+  const design = localStorage.getItem('owrtRemote:hubDesign');
+  document.documentElement.dataset.hubDesign = ['winter', 'lite'].includes(design) ? design : 'default';
+} catch (error) { document.documentElement.dataset.hubDesign = 'default'; }
+</script>
+<style>
+:root{color-scheme:dark;--bg:#0b0b0c;--panel:#111113;--panel2:#19191d;--text:#f5f5f7;--muted:#9999a6;--line:#2b2b32;--blue:#165895;--cyan:#5eaeff}
+:root[data-hub-design="winter"]{--bg:#061426;--panel:#0c2238;--panel2:#16324b;--text:#ecf9ff;--muted:#a9c9dd;--line:#31516a;--blue:#036b99;--cyan:#7dd3fc}
+:root[data-hub-design="lite"]{--bg:#0f172a;--panel:#182235;--panel2:#253247;--text:#f1f5f9;--muted:#bac7d8;--line:#42516a;--blue:#315b9b;--cyan:#93c5fd}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;min-height:100svh;display:grid;place-items:center;padding:24px;color:var(--text);background:var(--bg);font:550 12px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.donateCard{position:relative;z-index:1;width:min(100%,560px);padding:30px;border:1px solid var(--line);border-radius:22px;background:var(--panel);box-shadow:0 20px 60px #0004;text-align:center}
+.donateLinks{display:grid;gap:10px;margin-bottom:22px}
+.donateLinkCard{display:grid;justify-items:center;gap:3px;padding:13px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);color:var(--text);text-decoration:none;overflow-wrap:anywhere;text-align:center;transition:border-color .15s ease,background .15s ease}
+.donateLinkCard:hover{border-color:var(--cyan)}
+.donateLinkCard:focus-visible,.donateBack:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+.donateLinkCard strong{font-size:13px}
+.donateLinkCard span{color:var(--muted);font-size:13px}
+.donateMessage p{margin:0 0 12px}
+.donateMessage p:last-child{margin-bottom:0}
+.donatePaymentBlock{margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+.donatePaymentBrands{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:12px}
+.donatePaymentBrand{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:26px;color:var(--text);font-size:11px;font-weight:800;line-height:1.2;white-space:nowrap}
+.donatePaymentBrand svg{display:block;flex:none}
+.paymentSber{color:#36b65c}.paymentAlfa{color:#ef5045;font-size:10px}
+.paymentVtb,.paymentTbank{font-weight:900}
+@media(max-width:400px){.donatePaymentBrands{gap:9px}.donatePaymentBrand{gap:4px;font-size:10px}.paymentAlfa{font-size:9px}}
+.donateFooter{margin-top:24px;padding-top:16px;border-top:1px solid var(--line);text-align:center}
+.donateBack{color:var(--muted);font-size:13px;text-underline-offset:4px}
+@media(max-width:600px){body{padding:12px}.donateCard{padding:22px 18px;border-radius:18px}}
+body :is(a,p,span,strong){font-family:inherit;font-size:12px;font-weight:550}
+.seasonalFx{position:fixed;inset:0;display:block;width:100vw;height:100vh;z-index:0;pointer-events:none;opacity:.9;mix-blend-mode:screen}
+.seasonalFx[hidden]{display:none!important}
+html[data-hub-design="lite"] *,html[data-hub-design="lite"] *::before,html[data-hub-design="lite"] *::after{animation:none!important;transition:none!important;box-shadow:none!important;backdrop-filter:none!important}
+</style>
+</head>
+<body class="routerDonatePage">
+<canvas class="seasonalFx" id="seasonalFx" aria-hidden="true" hidden></canvas>
+<main class="panel donateCard" aria-label="Поддержать разработку">
+  <div class="donateLinks">
+    <a class="donateLinkCard" href="https://donate.zks95.ugnss.ru" target="_blank" rel="noopener noreferrer"><strong>Основная ссылка:</strong><span>https://donate.zks95.ugnss.ru</span></a>
+    <a class="donateLinkCard" href="https://donate.zks95.ugnss.ru:8443" target="_blank" rel="noopener noreferrer"><strong>Резервная ссылка:</strong><span>https://donate.zks95.ugnss.ru:8443</span></a>
+  </div>
+  <div class="donateMessage">
+    <p><strong>Буду искренне благодарен за любой донат!</strong></p>
+    <p>Совершенно не важно, какая сумма - важна ваша поддержка. Даже небольшой вклад помогает развивать проект и двигаться дальше.</p>
+    <p>Спасибо каждому, кто рядом! Всех обнял! 🤝🚀</p>
+  </div>
+  <div class="donatePaymentBlock">
+  <div class="donatePaymentBrands" role="img" aria-label="Логотипы: СБП, Сбер, Альфа-Банк, ВТБ, Т-Банк">
+    <span class="donatePaymentBrand paymentSbp"><svg width="23" height="24" viewBox="0 0 24 26" aria-hidden="true" focusable="false"><path fill="#5b57a2" d="M1 1l7 4v8L1 17z"/><path fill="#0d90cd" d="M1 1l7 12H1z"/><path fill="#e5234e" d="M8 5l7 4-7 4z"/><path fill="#f9b229" d="M15 9l8 4-8 4-7-4z"/><path fill="#72b22c" d="M8 13l7 4-7 4z"/><path fill="#00743e" d="M1 17l7-4v8l-7 4z"/><path fill="#0d90cd" d="M8 21l7-4v4l-7 4z"/></svg><span>СБП</span></span>
+    <span class="donatePaymentBrand paymentSber"><svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.8 10a9 9 0 1 1-6.4-6.7" fill="none" stroke="#21a038" stroke-width="2.5" stroke-linecap="round"/><path d="M7 10.5l4.2 3.2L21 6.2" fill="none" stroke="#21a038" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span>СБЕР</span></span>
+    <span class="donatePaymentBrand paymentAlfa"><svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect width="24" height="24" rx="2" fill="#ef3124"/><path fill="#fff" d="M10.3 4h3.4l4.5 13h-3.5l-.8-2.6h-4L9.1 17H5.8zm.4 7.8h2.4L12 7.5zM6 19h12v2H6z"/></svg><span>Альфа Банк</span></span>
+    <span class="donatePaymentBrand paymentVtb"><svg width="21" height="20" viewBox="0 0 24 20" aria-hidden="true" focusable="false"><path fill="#3980d9" d="M6 2h18l-2 4H4zM3 8h18l-2 4H1zM2 14h15l-2 4H0z"/></svg><span>ВТБ</span></span>
+    <span class="donatePaymentBrand paymentTbank"><svg width="21" height="21" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect width="24" height="24" rx="3" fill="#ffdd2d"/><path fill="#1b1b1b" d="M5 5h14v5h-4.5v10h-5V10H5z"/></svg><span>Т-БАНК</span></span>
+  </div>
+</div>
+  <footer class="donateFooter"><a class="donateBack" href="?key=$(h "$key")">Вернуться в панель роутера</a></footer>
+</main>
+<script src="/luci-static/resources/owrt_remote_effects.js?v=$OWRT_REMOTE_UI_VERSION"></script>
+</body>
+</html>
 EOF
 }
 
@@ -515,7 +594,7 @@ render_page() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="owrt-remote-ui-version" content="$OWRT_REMOTE_UI_VERSION">
-<title>OpenWrt Remote Hub v122</title>
+<title>OWRT Hub v123</title>
 <script>
 try {
   const design = localStorage.getItem('owrtRemote:hubDesign');
@@ -555,35 +634,133 @@ html[data-hub-shared-effects="1"] body::before,html[data-hub-shared-effects="1"]
 :root[data-hub-design="winter"]{--bg:#061426;--panel:#0c2238;--panel2:#16324b;--text:#ecf9ff;--muted:#a9c9dd;--line:rgba(139,211,236,.3);--blue:#036b99;--cyan:#7dd3fc;--teal:#38bdf8;--grid:rgba(125,211,252,.07)}html[data-hub-design="winter"] body{background-color:var(--bg);background-image:radial-gradient(ellipse at 10% 0%,#164d6e 0,transparent 45%),radial-gradient(ellipse at 100% 100%,#123c54 0,transparent 50%),linear-gradient(160deg,#061426,#0b2238 60%,#071524);background-size:100% 100%;animation:none}html[data-hub-design="winter"] body::before{inset:0;opacity:.55;filter:none;animation:none;background-image:radial-gradient(circle at 16px 22px,#c9f3ff 1px,transparent 2px),radial-gradient(circle at 80px 100px,#b2e7f7 1px,transparent 2px);background-size:180px 180px,260px 260px}html[data-hub-design="winter"] .panel{background:linear-gradient(160deg,rgba(180,231,250,.09),transparent 55%),var(--panel);backdrop-filter:none;box-shadow:0 8px 24px #0003}html[data-hub-design="winter"] :is(.metric,.code,.notice,.wanPicker,.globalLogsText,.seasonCard){background:var(--panel);border-color:var(--line)}
 :root[data-hub-design="lite"]{--bg:#0f172a;--panel:#182235;--panel2:#253247;--text:#f1f5f9;--muted:#bac7d8;--line:#42516a;--blue:#315b9b;--cyan:#93c5fd}html[data-hub-design="lite"] body{background:var(--bg)!important;background-image:none!important}html[data-hub-design="lite"] *,html[data-hub-design="lite"] *::before,html[data-hub-design="lite"] *::after{animation:none!important;transition:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;filter:none!important;box-shadow:none!important;text-shadow:none!important}html[data-hub-design="lite"] body::before,html[data-hub-design="lite"] body::after,html[data-hub-design="lite"] .seasonalFx{display:none!important}html[data-hub-design="lite"] :is(.panel,.metric,.code,.notice,.wanPicker,.globalLogsText,.seasonCard){background:var(--panel)!important;border-color:var(--line)!important}html[data-hub-design="lite"] :is(.btn,.seasonBtn,.hubDesignChoice){background:rgba(255,255,255,.07)!important;color:var(--text)!important;border-color:var(--line)!important}
 @media(max-width:820px){.routerEffectsDock{grid-column:1/-1;width:100%;min-width:0}.routerEffectsToggle{width:100%;min-width:0}.seasonPanel{position:static;width:100%;max-width:320px;margin:8px auto 0}.seasonCard{width:100%;min-height:0;padding:10px 11px;border-radius:16px}.seasonCard .seasonSwitch{grid-template-columns:repeat(3,minmax(0,1fr))}.seasonCard .hubDesignChoice{min-height:54px}.seasonCard .hubDesignChoice strong{font-size:12px}.seasonCard .hubDesignChoice small{font-size:10px}}
+
+/* Router workspace uses the same shell and palette as the VPS dashboard. */
+:root{--bg:#0b0b0c;--panel:#111113;--panel2:#19191d;--text:#f5f5f7;--muted:#9999a6;--line:#2b2b32;--blue:#165895;--cyan:#5eaeff;--green:#45c294;--red:#ed8796;--amber:#e4ba62;--grid:#2b2b32}
+:root[data-hub-design="winter"]{--bg:#061426;--panel:#0c2238;--panel2:#16324b;--text:#ecf9ff;--muted:#a9c9dd;--line:#31516a;--blue:#036b99;--cyan:#7dd3fc}
+:root[data-hub-design="lite"]{--bg:#0f172a;--panel:#182235;--panel2:#253247;--text:#f1f5f9;--muted:#bac7d8;--line:#42516a;--blue:#315b9b;--cyan:#93c5fd}
+body.routerShell{background:var(--bg);background-image:none;animation:none;overflow-y:scroll;font:550 12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:0}
+.routerShell :is(h1,h2,h3,h4,p,span,small,strong,label,input,select,button,a,summary,b){font-family:inherit;font-size:12px;font-weight:550;letter-spacing:0}
+.routerShell :is(pre,code,.code,.scriptBox,.notice,.globalLogsText,.globalLogLine){font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+.routerShell .wrap{width:auto;max-width:none;margin:0 0 0 224px;padding:16px 24px 24px 16px;min-width:0}
+.routerShell .panel{background:var(--panel);border:1px solid var(--line);border-radius:11px;box-shadow:none;backdrop-filter:none;padding:16px}
+.routerShell .grid{margin:0;gap:14px;display:block}
+.routerShell .panel h2{margin:0 0 12px;color:var(--text)}
+.routerShell .panelHead h2{margin:0}
+.routerShell .metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.routerShell .metric{min-width:0;min-height:74px;background:var(--panel2);border-color:var(--line);padding:10px;border-radius:8px}
+.routerShell .metric strong{font-size:12px}.routerShell .metricLine{gap:10px}
+.routerShell .linkMetric{grid-column:1/-1}
+.routerShell :is(.btn,.miniGo){width:auto;min-width:0;min-height:32px;padding:7px 10px;border:1px solid var(--line);border-radius:7px;line-height:1.4;color:var(--text);background:var(--panel2);box-shadow:none;text-shadow:none;white-space:normal;text-align:center}
+.routerShell .btn.primary{background:var(--blue);border-color:var(--cyan);color:#fff}
+.routerShell .btn.good{background:color-mix(in srgb,var(--green) 12%,var(--panel));color:var(--green);border-color:color-mix(in srgb,var(--green) 35%,var(--line))}
+.routerShell .btn.bad,.routerShell .clearBtn{background:color-mix(in srgb,var(--red) 10%,var(--panel));color:var(--red);border-color:color-mix(in srgb,var(--red) 35%,var(--line))}
+.routerShell :is(button,a,summary,input,textarea,select):focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+.routerShell .formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.routerShell .field :is(input,select),.routerShell .scriptBox{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:7px;box-shadow:none}
+.routerShell .field span{margin-bottom:6px;color:var(--text)}
+.routerShell .field span::after{background:var(--panel2);border-color:var(--line);color:var(--muted);font-size:10px;width:16px;height:16px}
+.routerShell .field small{background:var(--panel2);color:var(--text);border-color:var(--line);box-shadow:0 12px 28px #0005;line-height:1.5}
+.routerShell .field select option{background:var(--panel2);color:var(--text)}
+.routerShell :is(.hint,.helperText,.globalLogsStatus){color:var(--muted)}
+.routerShell :is(.wanPicker,.code,.globalLogsText,.xrayApply,.notice){background:var(--panel2);border-color:var(--line);box-shadow:none;color:var(--text)}
+.routerShell .wanPicker summary{color:var(--text)}.routerShell .wanPicked{color:var(--muted)}
+.routerShell .wanPicker .wanChoice{background:var(--panel);border-color:var(--line);color:var(--text)}
+.routerShell .globalLogsNote{background:color-mix(in srgb,var(--amber) 8%,var(--panel));border-color:color-mix(in srgb,var(--amber) 35%,var(--line));color:var(--amber)}
+.routerShell .notice.ok{border-color:var(--green)}.routerShell .notice.bad{border-color:var(--red)}.routerShell .notice.warn{border-color:var(--amber)}
+.routerShell .xrayApply h3{color:var(--text)}
+.routerShell .actions{gap:8px;margin-top:14px}.routerShell .check{gap:9px;align-items:center}
+.routerShell :is(#routerStatus,#routerSettings,#globalLogsPanel){scroll-margin-top:16px}
+.routerShell #routerSidebar{position:fixed;inset:16px auto auto 16px;width:208px;max-height:calc(100dvh - 32px);z-index:65;display:flex;flex-direction:column;min-height:0;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden}
+.routerBrand{display:flex;align-items:center;gap:10px;flex-shrink:0;padding:4px 6px 10px;border-bottom:1px solid var(--line);color:var(--text);text-decoration:none}
+.routerBrand b,.routerMobileBrand b{color:var(--cyan)}.routerBrandMark{display:grid;place-items:center;width:32px;height:36px;flex:none;border:1px solid color-mix(in srgb,var(--cyan) 30%,var(--line));border-radius:9px;background:color-mix(in srgb,var(--cyan) 10%,transparent);color:var(--cyan)}
+.routerIcon{display:block;width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.routerBrandMark .routerIcon{width:23px;height:23px}
+.routerSidebarNav{overflow:auto;min-height:0;padding:2px 0 8px;scrollbar-width:thin;overscroll-behavior:contain}
+.routerNavSection{margin-top:7px}.routerNavSection>summary{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:34px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;list-style:none;cursor:pointer;background:var(--panel);color:var(--text)}
+.routerNavSection>summary::-webkit-details-marker{display:none}.routerNavSection>summary::after{content:"";width:6px;height:6px;border-top:1px solid var(--muted);border-right:1px solid var(--muted);transform:rotate(45deg);margin-right:3px;transition:transform .18s ease}
+.routerNavSection[open]>summary{background:var(--panel2)}.routerNavSection[open]>summary::after{transform:rotate(135deg)}
+.routerNavSection>div{margin:4px 0 0 8px;padding:0 0 3px 5px;border-left:1px solid var(--line)}
+.routerShell .routerNavItem{display:flex;align-items:center;justify-content:flex-start;gap:8px;width:100%;min-width:0;min-height:34px;padding:6px 9px;margin:2px 0;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--muted);text-decoration:none;box-shadow:none;text-align:left;white-space:normal;cursor:pointer}
+.routerNavItem>span:last-child{min-width:0;overflow-wrap:anywhere}.routerNavIcon{width:16px;display:grid;place-items:center;flex:none}
+.routerShell .routerNavItem:hover,.routerShell .routerNavItem.is-active{background:var(--panel2);color:var(--text);border-color:var(--line)}
+.routerShell .routerDonate{color:var(--amber)}.routerNavCaption{color:var(--muted);margin:14px 9px 8px;text-transform:uppercase}
+.routerSidebarFooter{flex-shrink:0;border-top:1px solid var(--line);padding:9px 8px 0;color:var(--muted)}.routerSidebarFooter>strong,.routerSidebarFooter>small{display:block;overflow-wrap:anywhere;margin-top:6px}.routerSidebarFooter>small{margin-top:2px}
+.routerAgentState{display:flex;align-items:center;gap:6px;color:var(--text)}.routerAgentState .dot{width:6px;height:6px;flex:none}
+.routerTopbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;min-height:60px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.routerBreadcrumb{min-width:0;color:var(--muted)}.routerBreadcrumb>strong{color:var(--text)}.routerDesktopPath{margin-right:5px}.routerTopActions{display:flex;gap:7px}.routerTopActions .btn{min-height:38px;min-width:110px}
+.routerPageHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 14px;color:var(--muted)}.routerPageHead h1{margin:0;color:var(--text);overflow-wrap:anywhere}.routerPageHead>span{white-space:nowrap}
+.routerShell #routerSidebarBackdrop{display:none}.routerSidebarClose,.routerSidebarMenu,.routerMobileBrand{display:none}
+.routerShell #routerEffectsDock{display:contents}
+.routerShell .seasonPanel{position:fixed;z-index:120;top:84px;left:240px;right:auto;width:min(310px,calc(100vw - 32px));margin:0;max-width:none;max-height:calc(100dvh - 105px);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.routerShell .seasonCard{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 16px 40px #0006;backdrop-filter:none}
+.routerShell .seasonLabel{color:var(--muted);margin:0 0 8px;line-height:1.5;text-align:center}.routerShell .hubDesignSection{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.routerShell :is(.seasonBtn,.hubDesignChoice){background:var(--panel2);border-color:var(--line);color:var(--text)}
+.routerShell :is(.seasonBtn[data-active="true"],.hubDesignChoice[aria-pressed="true"]){border-color:var(--cyan);background:color-mix(in srgb,var(--cyan) 10%,var(--panel));color:var(--text)}
+.routerShell .hubDesignHint{color:var(--muted)}.routerShell .hubDesignSwatch.default{background:linear-gradient(135deg,#165895,#19191d)}
+.routerShell #routerEffectsPanel .seasonSwitch{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.routerShell .seasonCard .hubDesignChoices{display:grid;grid-template-columns:1fr;gap:7px}
+.routerShell .hubDesignChoice{display:flex;align-items:center;gap:9px;padding:8px;min-height:48px}.routerShell .hubDesignSwatch{flex:none}.routerShell .hubDesignChoice>span:last-child{flex:1;min-width:0}.routerShell .hubDesignChoice small{color:var(--muted);line-height:1.4}
+.routerEffectsHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.routerEffectsHead .seasonLabel{margin:0}.routerShell .routerSmallClose{min-height:28px;height:28px;padding:4px 9px;border-radius:999px;white-space:nowrap}
+@media(min-width:681px) and (max-width:1180px){.routerShell .wrap{margin-left:206px;padding-right:16px}.routerShell #routerSidebar{width:190px}.routerDesktopPath{display:none}.routerShell .seasonPanel{left:222px}}
+@media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){
+ .routerShell .wrap{width:100%;max-width:none;margin:0;padding:10px 12px 22px}
+ .routerShell #routerSidebar{inset:12px auto auto 12px;width:min(264px,calc(100vw - 32px));max-height:calc(100dvh - 24px);z-index:110;visibility:hidden;transform:translateX(calc(-100% - 16px));transition:transform .2s ease,visibility .2s}
+ .routerShell #routerSidebar.is-open{visibility:visible;transform:none}
+ .routerShell #routerSidebarBackdrop:not([hidden]){display:block;position:fixed;inset:0;z-index:100;width:100%;height:100%;padding:0;border:0;border-radius:0;background:#0009}
+ .routerShell.routerSidebarOpen{overflow:hidden}.routerSidebarClose{display:grid;place-items:center;position:absolute;top:14px;right:10px;width:28px;height:28px;min-height:0;padding:0;border:0;background:transparent;color:var(--muted)}
+ .routerBrand{padding-right:30px}.routerSidebarMenu{display:grid;place-items:center;width:32px;min-height:32px;padding:7px;border:1px solid var(--line);border-radius:7px;background:var(--panel2);color:var(--text)}
+ .routerTopbar{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px;padding:8px 9px;min-height:55px}.routerTopActions{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:7px}.routerTopActions .btn{min-width:0;width:100%;min-height:34px}
+ .routerDesktopPath,.routerBreadcrumb>strong{display:none}.routerMobileBrand{display:block;color:var(--text)}
+ .routerPageHead{margin:16px 0 12px;flex-wrap:wrap;gap:4px 12px}
+ .routerShell .formgrid{grid-template-columns:1fr}.routerShell .metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.routerShell .linkMetric{grid-column:1/-1}
+ .routerShell .panel{padding:12px}.routerShell .panelHead{align-items:center;flex-wrap:wrap;gap:8px}.routerShell .panelHead .btn{width:auto}
+ .routerShell .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.routerShell .actions .btn{width:100%;min-width:0}.routerShell .saveActions{grid-template-columns:1fr}
+ .routerShell .field :is(input,select),.routerShell .scriptBox{font-size:16px}.routerShell .field small{max-width:100%;font-size:12px}.routerShell .globalLogsText{height:42vh;min-height:180px}
+ .routerShell .seasonPanel{top:72px;left:12px;right:12px;width:auto;max-height:calc(100dvh - 90px)}
+}
+@media(prefers-reduced-motion:reduce){.routerNavSection>summary::after,.routerShell #routerSidebar{transition:none}}
+
 </style>
 </head>
-<body>
+<body class="routerShell">
 <canvas class="seasonalFx" id="seasonalFx" aria-hidden="true" hidden></canvas>
-<main class="wrap">
-  <section class="hero">
-    <div class="brand">
-      <div class="brandPanel">
-        <div class="titleRow">
-          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v122</span></span></h1>
-        </div>
-        <div class="links">
-          <a class="uiPill" href="https://t.me/kzolotarev95" target="_blank" rel="noopener noreferrer">Telegram</a>
-          <a class="uiPill" href="https://github.com/kzolotarev95" target="_blank" rel="noopener noreferrer">GitHub</a>
-        </div>
-      </div>
-    </div>
-    <div class="topActions">
-      <div class="vpnCard">
-          <a class="uiPill nethaven" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">
-            <span class="nethavenDot"></span>
-            <span>NetHaven VPN</span>
-          </a>
-      </div>
-      <div class="routerEffectsDock" id="routerEffectsDock">
-        <button class="uiPill routerEffectsToggle" id="routerEffectsToggle" type="button" aria-expanded="false" aria-controls="routerEffectsPanel" data-open="false">Эффекты</button>
+<button class="routerSidebarBackdrop" id="routerSidebarBackdrop" type="button" aria-label="Закрыть меню" hidden></button>
+<aside class="routerSidebar" id="routerSidebar" aria-label="Главное меню роутера" tabindex="-1">
+  <a class="routerBrand" href="?key=$(h "$key")"><span class="routerBrandMark" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="m13 3-5 10h4l-1 8 6-11h-5z"/></svg></span><strong>OWRT Hub <b>v123</b></strong></a>
+  <button class="routerSidebarClose" id="routerSidebarClose" type="button" aria-label="Закрыть меню"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
+  <nav class="routerSidebarNav" aria-label="Разделы панели">
+    <details class="routerNavSection"><summary>Рабочее пространство</summary><div>
+      <a class="routerNavItem is-active" href="#routerStatus" data-router-section="routerStatus"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span><span>Состояние</span></a>
+      <a class="routerNavItem" href="#routerSettings" data-router-section="routerSettings"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3h6l1 4 4 1v8l-4 1-1 4H9l-1-4-4-1V8l4-1z"/><circle cx="12" cy="12" r="3"/></svg></span><span>Настройки роутера</span></a>
+      <button class="routerNavItem" id="globalLogsToggle" type="button" aria-expanded="false" aria-controls="globalLogsPanel"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1"/></svg></span><span>Глобальные логи</span></button>
+    </div></details>
+    <details class="routerNavSection"><summary>Управление</summary><div>
+      <form method="post" id="routerControlForm">
+        <input type="hidden" name="key" value="$(h "$key")">
+        <button class="routerNavItem" name="action" value="start"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m8 4 12 8-12 8z"/></svg></span><span>Запустить Remote</span></button>
+        <button class="routerNavItem" name="action" value="restart"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 4v6h-6M20 10a8 8 0 1 0 0 5"/></svg></span><span>Перезапустить Remote</span></button>
+        <button class="routerNavItem" name="action" value="stop"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="5" width="14" height="14" rx="2"/></svg></span><span>Остановить Remote</span></button>
+        <button class="routerNavItem" name="action" value="heartbeat"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M2 12h5l3-8 4 16 3-8h5"/></svg></span><span>Отправить Heartbeat</span></button>
+        <button class="routerNavItem" name="action" value="doctor"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m5 12 4 4L20 5"/></svg></span><span>Проверка</span></button>
+        <button class="routerNavItem" name="action" value="install_xray_tmp"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg></span><span>Установить Xray</span></button>
+        <a class="routerNavItem" href="?key=$(h "$key")&amp;action=download_config"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></svg></span><span>Скачать Xray config</span></a>
+        <button class="routerNavItem" name="action" value="show_xray_settings"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 3 7v6c0 5 9 8 9 8s9-3 9-8V7z"/><path d="m9 12 2 2 4-4"/></svg></span><span>Xray настройки</span></button>
+      </form>
+    </div></details>
+    <details class="routerNavSection"><summary>Настройки</summary><div>
+      <a class="routerNavItem" href="#routerSettings" data-router-section="routerSettings"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3h6l1 4 4 1v8l-4 1-1 4H9l-1-4-4-1V8l4-1z"/><circle cx="12" cy="12" r="3"/></svg></span><span>Конфигурация</span></a>
+      <button class="routerNavItem routerEffectsToggle" id="routerEffectsToggle" type="button" aria-expanded="false" aria-controls="routerEffectsPanel" data-open="false"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3a9 9 0 1 0 0 18h2a2 2 0 0 0 0-4h-1a2 2 0 0 1 0-4h3a5 5 0 0 0 0-10z"/><path d="M6 10h.01M9 6h.01M14 6h.01"/></svg></span><span>Дизайн и эффекты</span></button>
+      <a class="routerNavItem" href="/cgi-bin/luci/admin/services"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 3h7v7m0-7L10 14M10 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6"/></svg></span><span>Службы OpenWrt</span></a>
+    </div></details>
+    <div class="routerNavCaption">Сообщество</div>
+    <a class="routerNavItem" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 11a8 8 0 0 1-8 8H7l-5 3V10a8 8 0 0 1 8-8h3a8 8 0 0 1 8 9z"/></svg></span><span>NetHaven VPN · чат</span></a>
+    <a class="routerNavItem routerDonate" href="?key=$(h "$key")&amp;action=donate" target="_blank" rel="noopener noreferrer"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg></span><span>Поддержать разработку</span></a>
+  </nav>
+  <div class="routerSidebarFooter"><span class="routerAgentState"><i class="dot $service_tone"></i>$(h "$status_text")</span><strong>$(h "$router_name")</strong><small>Router ID: $(h "$router_id")</small></div>
+</aside>
+<div class="routerEffectsDock" id="routerEffectsDock">
         <section class="seasonPanel" id="routerEffectsPanel" aria-label="Эффекты Hub" hidden>
           <div class="seasonCard">
-            <div class="seasonLabel">Эффекты Hub</div>
+            <div class="routerEffectsHead"><div class="seasonLabel">Эффекты Hub</div><button class="btn routerSmallClose" id="routerEffectsClose" type="button">Закрыть</button></div>
             <div class="seasonSwitch" role="group" aria-label="Выбор эффектов">
               <button class="seasonBtn" type="button" data-season-mode="off" data-active="true" aria-pressed="true">Выкл</button>
               <button class="seasonBtn" type="button" data-season-mode="snow" data-active="false" aria-pressed="false">Снег</button>
@@ -600,22 +777,23 @@ html[data-hub-shared-effects="1"] body::before,html[data-hub-shared-effects="1"]
               <div class="hubDesignChoices" role="group" aria-label="Дизайн панели">
                 <button type="button" class="hubDesignChoice" data-hub-design="default" aria-pressed="true"><span class="hubDesignSwatch default" aria-hidden="true"></span><span><strong>Обычный</strong><small>Привычный вид Hub</small></span></button>
                 <button type="button" class="hubDesignChoice" data-hub-design="winter" aria-pressed="false"><span class="hubDesignSwatch winter" aria-hidden="true">❄</span><span><strong>Зимний</strong><small>Ледяные оттенки и снежные детали</small></span></button>
-                <button type="button" class="hubDesignChoice" data-hub-design="lite" aria-pressed="false"><span class="hubDesignSwatch lite" aria-hidden="true">☰</span><span><strong>Для слабых устройств</strong><small>Без анимации, размытия и свечения</small></span></button>
+                <button type="button" class="hubDesignChoice" data-hub-design="lite" aria-pressed="false"><span class="hubDesignSwatch lite" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span><span><strong>Для слабых устройств</strong><small>Без анимации, размытия и свечения</small></span></button>
               </div>
               <p class="hubDesignHint" data-hub-design-hint role="status">Выбор сохраняется в этом браузере.</p>
             </div>
           </div>
         </section>
-      </div>
-      <button class="uiPill globalLogsToggle" id="globalLogsToggle" type="button" aria-expanded="false" aria-controls="globalLogsPanel">Глобал логи</button>
-      <div class="returnCard">
-        <a class="uiPill backBtn" href="/cgi-bin/luci/">Вернуться в службы OpenWrt</a>
-      </div>
-    </div>
-  </section>
+</div>
+<main class="wrap" id="routerWorkspace">
+  <header class="routerTopbar">
+    <button class="routerSidebarMenu" id="routerSidebarMenu" type="button" aria-label="Открыть меню" aria-controls="routerSidebar" aria-expanded="false"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <div class="routerBreadcrumb"><span class="routerDesktopPath">Рабочее пространство / </span><strong>Роутер</strong><span class="routerMobileBrand">OWRT Hub <b>v123</b></span></div>
+    <div class="routerTopActions"><a class="btn" href="?key=$(h "$key")">Обновить</a><a class="btn" href="/cgi-bin/luci/">Открыть LuCI</a></div>
+  </header>
+  <div class="routerPageHead"><h1>$(h "$router_name")</h1><span>Router ID: $(h "$router_id")</span></div>
 
   <section class="panel globalLogsPanel" id="globalLogsPanel" hidden>
-    <div class="panelHead"><h2>Глобал логи</h2><button class="btn" id="globalLogsClose" type="button">Закрыть</button></div>
+    <div class="panelHead"><h2>Глобал логи</h2><button class="btn routerSmallClose" id="globalLogsClose" type="button">Закрыть</button></div>
     <blockquote class="globalLogsNote">Действия панели, Heartbeat, WAN и ошибки Xray. Журнал сохраняется на проверенном Flash-хранилище: до 2 МиБ, до 256 фрагментов; доставленные записи хранятся до 24 часов. Запись пакетами раз в минуту; последние 16 КиБ буфера могут потеряться при внезапном отключении питания. При недоступной Flash — ограниченный журнал в ОЗУ с предупреждением. Переполнение не удаляет неподтверждённые записи: новые события сверх лимита пропускаются. Ключи и пароли скрываются.</blockquote>
     <div class="globalLogsLegend" aria-label="Цвета журнала"><span class="globalLogOk">● Успешно</span><span class="globalLogWarn">● Предупреждение</span><span class="globalLogError">● Ошибка</span></div>
     <div class="actions">
@@ -627,7 +805,7 @@ html[data-hub-shared-effects="1"] body::before,html[data-hub-shared-effects="1"]
     <pre class="globalLogsText" id="globalLogsText" tabindex="0">Загрузка записей журнала…</pre>
   </section>
 
-  <section class="grid">
+  <section class="grid" id="routerStatus">
     <div class="panel">
       <h2>Состояние</h2>
       <div class="metrics">
@@ -641,24 +819,19 @@ EOF
 	fi
 	cat <<EOF
       </div>
-      <form method="post" class="actions">
-        <input type="hidden" name="key" value="$(h "$key")">
-        <button class="btn" name="action" value="start">Запустить</button>
-        <button class="btn" name="action" value="restart">Перезапустить</button>
-        <button class="btn" name="action" value="stop">Остановить</button>
-        <button class="btn" name="action" value="heartbeat">Heartbeat</button>
-        <button class="btn" name="action" value="doctor">Проверка</button>
-        <button class="btn" name="action" value="install_xray_tmp">Поставить Xray в /tmp</button>
-        <a class="btn" href="?key=$(h "$key")&action=download_config">Скачать Xray config</a>
-        <button class="btn" name="action" value="show_xray_settings">Xray настройки</button>
-      </form>
+      <div class="actions routerQuickActions">
+        <button class="btn good" type="submit" form="routerControlForm" name="action" value="start">Запустить</button>
+        <button class="btn" type="submit" form="routerControlForm" name="action" value="restart">Перезапустить</button>
+        <button class="btn bad" type="submit" form="routerControlForm" name="action" value="stop">Остановить</button>
+        <button class="btn" type="submit" form="routerControlForm" name="action" value="show_xray_settings">Xray настройки</button>
+      </div>
 EOF
 	if [ -n "$RESULT_TITLE" ]; then
 		printf '<div class="notice %s"><strong>%s</strong>\n%s</div>' "$(h "$RESULT_KIND")" "$(h "$RESULT_TITLE")" "$(h "$RESULT_BODY")"
 	fi
 	if [ "$SHOW_XRAY_SETTINGS" = "1" ]; then
 		cat <<EOF
-      <div class="xrayApply">
+      <div class="xrayApply" id="routerXraySettings">
         <h3>Xray настройки</h3>
         <p class="helperText">Вставь сюда блок команд из OpenWrt config на VPS. Роутер сам применит UCI, пересоберет Xray config, включит сервис и отправит heartbeat.</p>
         <form method="post">
@@ -680,7 +853,7 @@ EOF
     </div>
   </section>
 
-  <section class="panel" style="margin-top:16px">
+  <section class="panel" id="routerSettings" style="margin-top:16px">
     <div class="panelHead">
       <h2>Настройки роутера</h2>
       <form method="post" class="headActionForm">
@@ -731,7 +904,7 @@ EOF
     </form>
   </section>
 </main>
-<script src="/luci-static/resources/owrt_remote_effects.js"></script>
+<script src="/luci-static/resources/owrt_remote_effects.js?v=$OWRT_REMOTE_UI_VERSION"></script>
 <script>
 (function() {
   var effectsPanel = document.getElementById('routerEffectsPanel');
@@ -756,6 +929,7 @@ EOF
     event.stopPropagation();
     setEffectsOpen(!!effectsPanel && effectsPanel.hidden);
   });
+  document.getElementById('routerEffectsClose').addEventListener('click', function() { setEffectsOpen(false); (document.getElementById('routerSidebar').inert ? document.getElementById('routerSidebarMenu') : effectsToggle).focus(); });
   if (effectsPanel) effectsPanel.addEventListener('click', function(event) { event.stopPropagation(); });
   document.addEventListener('click', function(event) {
     if (effectsPanel && effectsToggle && !effectsPanel.hidden && !effectsPanel.contains(event.target) && !effectsToggle.contains(event.target)) setEffectsOpen(false);
@@ -763,7 +937,7 @@ EOF
   document.addEventListener('keydown', function(event) {
     if (event.key === 'Escape' && effectsPanel && !effectsPanel.hidden) {
       setEffectsOpen(false);
-      effectsToggle.focus();
+      (window.matchMedia('(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse)').matches ? document.getElementById('routerSidebarMenu') : effectsToggle).focus();
     }
   });
   function lineTone(line) {
@@ -891,6 +1065,59 @@ EOF
   });
   window.addEventListener('pagehide', stop);
 })();
+(function initRouterSidebar() {
+  var sidebar = document.getElementById('routerSidebar');
+  var menu = document.getElementById('routerSidebarMenu');
+  var backdrop = document.getElementById('routerSidebarBackdrop');
+  var workspace = document.getElementById('routerWorkspace');
+  var mq = window.matchMedia('(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse)');
+  function setOpen(open, restore) {
+    var active = Boolean(open && mq.matches);
+    sidebar.classList.toggle('is-open', active);
+    sidebar.inert = mq.matches && !active;
+    workspace.inert = active;
+    backdrop.hidden = !active;
+    menu.setAttribute('aria-expanded', String(active));
+    document.body.classList.toggle('routerSidebarOpen', active);
+    if (active) document.getElementById('routerSidebarClose').focus({preventScroll:true});
+    else if (restore && mq.matches) menu.focus({preventScroll:true});
+  }
+  menu.addEventListener('click', function() { setOpen(!sidebar.classList.contains('is-open')); });
+  document.getElementById('routerSidebarClose').addEventListener('click', function() { setOpen(false,true); });
+  backdrop.addEventListener('click', function() { setOpen(false,true); });
+  sidebar.querySelectorAll('[data-router-section]').forEach(function(link) {
+    link.addEventListener('click', function(event) {
+      var target = document.getElementById(link.dataset.routerSection);
+      if (!target) return;
+      event.preventDefault();
+      sidebar.querySelectorAll('[data-router-section]').forEach(function(item) { item.classList.toggle('is-active',item.dataset.routerSection===link.dataset.routerSection); });
+      setOpen(false);
+      target.scrollIntoView({block:'start',behavior:document.documentElement.dataset.hubDesign==='lite' || window.matchMedia('(prefers-reduced-motion:reduce)').matches ? 'auto' : 'smooth'});
+      var heading=target.querySelector('h2');
+      if (heading) { heading.tabIndex=-1; heading.focus({preventScroll:true}); }
+    });
+  });
+  document.getElementById('globalLogsToggle').addEventListener('click', function() {
+    setOpen(false);
+    var panel=document.getElementById('globalLogsPanel');
+    if (!panel.hidden) { panel.scrollIntoView({block:'start'}); var heading=panel.querySelector('h2'); heading.tabIndex=-1; heading.focus({preventScroll:true}); }
+  });
+  document.getElementById('routerEffectsToggle').addEventListener('click', function() {
+    setOpen(false);
+    if (!document.getElementById('routerEffectsPanel').hidden) document.getElementById('routerEffectsClose').focus({preventScroll:true});
+  });
+  document.addEventListener('keydown', function(event) {
+    if (event.key==='Escape' && sidebar.classList.contains('is-open')) { event.preventDefault(); setOpen(false,true); }
+    if (event.key!=='Tab' || !sidebar.classList.contains('is-open')) return;
+    var focusable=Array.from(sidebar.querySelectorAll('button,a,summary')).filter(function(el) {return !el.disabled && el.getClientRects().length;});
+    var first=focusable[0],last=focusable[focusable.length-1];
+    if (event.shiftKey && document.activeElement===first) { event.preventDefault();last.focus(); }
+    else if (!event.shiftKey && document.activeElement===last) { event.preventDefault();first.focus(); }
+  });
+  function onResize() { var restore=sidebar.contains(document.activeElement);setOpen(false,restore); }
+  if (mq.addEventListener) mq.addEventListener('change',onResize); else mq.addListener(onResize);
+  setOpen(false);
+})();
 document.querySelectorAll('[data-wan-picker]').forEach(function(picker) {
   var field = picker.closest('.wanField');
   var inputs = Array.from(picker.querySelectorAll('input[name="wan_interface"]'));
@@ -918,6 +1145,7 @@ fi
 action="$(param action)"
 
 case "$action" in
+	donate) render_donate_page; exit 0 ;;
 	logs_download) logs_response download; exit 0 ;;
 	logs_live) logs_response live; exit 0 ;;
 	logs_clear) logs_response clear; exit 0 ;;

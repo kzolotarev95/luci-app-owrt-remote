@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://capsule-render.vercel.app/api?type=waving&color=0:00A3E0,45:7C3AED,100:F97316&height=210&section=header&text=OpenWrt%20Remote%20Hub&fontSize=42&fontColor=ffffff&animation=fadeIn&fontAlignY=36&desc=Remote%20LuCI%20%2B%20SSH%20access%20through%20your%20own%20VPS&descAlignY=58&descSize=16" alt="OpenWrt Remote Hub" width="100%" />
+<img src="https://capsule-render.vercel.app/api?type=waving&color=0:00A3E0,45:7C3AED,100:F97316&height=210&section=header&text=OWRT%20Hub&fontSize=42&fontColor=ffffff&animation=fadeIn&fontAlignY=36&desc=Remote%20LuCI%20%2B%20SSH%20access%20through%20your%20own%20VPS&descAlignY=58&descSize=16" alt="OWRT Hub" width="100%" />
 
 <p>
   <a href="#-быстрый-старт"><img alt="Quick start" src="https://img.shields.io/badge/QUICK%20START-ONE%20COMMAND-22C55E?style=for-the-badge&labelColor=111827"></a>
@@ -34,8 +34,26 @@
 <h2> Что это такое</h2>
 
 <p>
-<b>OpenWrt Remote Hub</b> — это связка из VPS-панели и OpenWrt-агента, которая даёт удобный удалённый доступ к роутерам без проброса LuCI и SSH наружу.<br>
+<b>OWRT Hub</b> — это связка из VPS-панели и OpenWrt-агента, которая даёт удобный удалённый доступ к роутерам без проброса LuCI и SSH наружу.<br>
 Роутер сам подключается к VPS изнутри сети, а ты заходишь в Hub-панель и открываешь нужный роутер, LuCI или SSH Web Terminal.
+</p>
+
+<p>
+<b>Оформление Hub:</b> графитовая палитра, боковое меню на ПК и выдвижное меню
+на телефоне. Обзор сети показывает реальные счётчики, ресурсы VPS и историю
+онлайн/офлайн за 24 часа. Минутные замеры сохраняются на VPS и при закрытой панели;
+пропуски данных остаются пустыми. <a href="docs/HUB_SIDEBAR_UI.md">Локальная установка и откат</a>.
+</p>
+
+<p>
+<b>Панель роутера:</b> такое же оформление OWRT Hub v123, боковое меню,
+мобильная навигация, общие цвета и шрифты. Настройки Remote и действия агента
+сохранены. <a href="docs/ROUTER_SIDEBAR_UI.md">Локальная установка и откат на роутере</a>.
+</p>
+
+<p>
+<b>Название интерфейсов:</b> OWRT Hub v123, включая пункт «OWRT Hub» в «Службах» LuCI.
+<a href="docs/HUB_BRANDING.md">Обновление названия на VPS и роутере</a>.
 </p>
 
 
@@ -108,7 +126,7 @@ web terminal
 
 Есть вопросы, идеи или нужна помощь с настройкой?
 
-Присоединяйтесь к чату пользователей **OpenWrt Remote Hub**, где можно:
+Присоединяйтесь к чату пользователей **OWRT Hub**, где можно:
 
  задать вопрос по установке  
  обсудить настройку VPS и OpenWrt  
@@ -184,7 +202,8 @@ owrt-remote status
 IPK для OpenWrt 23.05/24.10 и APK для 25.12. Пакеты
 архитектурно независимые (`all`/`noarch`): содержат тот же агент и LuCI-файлы,
 что и `install.sh`, сохраняют `/etc/config/owrtremote` и существующий Xray.
-Версия интерфейса — v122, исправленная пакетная ревизия — 122-r2.
+Версия интерфейсов — v123, версия пакета — 123-r1.
+Готовые IPK/APK публикуются в <a href="https://github.com/kzolotarev95/luci-app-owrt-remote/releases/tag/v123">Releases → v123</a> после успешных проверок сборки.
 GitHub Actions проверяет SDK разных архитектур, установку/обновление/удаление
 в OpenWrt VM и при выпуске тега `v*` прикладывает пакеты к GitHub Release.
 Для APK в штатной LuCI нужен доверенный ключ подписи; неподписанный локальный
@@ -202,7 +221,7 @@ APK ставится через SSH. Инструкция, подпись и л�
 </div>
 
 <p align="center">
-  <img src="assets/screenshots/scheme.svg" alt="Схема работы OpenWrt Remote Hub" width="900">
+  <img src="assets/screenshots/scheme.svg" alt="Схема работы OWRT Hub" width="900">
 </p>
 
 <div align="center">
@@ -219,7 +238,7 @@ APK ставится через SSH. Инструкция, подпись и л�
 <tr>
 <td align="center">
 
-<img src="assets/screenshots/hub-router-dashboard.jpg" alt="OpenWrt Remote Hub dashboard" width="100%" />
+<img src="assets/screenshots/hub-router-dashboard.jpg" alt="OWRT Hub dashboard" width="100%" />
 
 <br>
 <b>Hub-панель</b>
@@ -338,7 +357,7 @@ APK ставится через SSH. Инструкция, подпись и л�
 
 <a href="https://www.youtube.com/watch?v=B8pPh8JvDOY" target="_blank">
   <img src="https://img.youtube.com/vi/B8pPh8JvDOY/maxresdefault.jpg"
-       alt="OpenWrt Remote Hub Demo"
+       alt="OWRT Hub Demo"
        width="720">
 </a>
 
@@ -361,7 +380,7 @@ APK ставится через SSH. Инструкция, подпись и л�
 
 <a href="https://www.youtube.com/watch?v=QLBEj4KeOkM" target="_blank">
   <img src="https://img.youtube.com/vi/QLBEj4KeOkM/maxresdefault.jpg"
-       alt="OpenWrt Remote Hub — Интро"
+       alt="OWRT Hub — Интро"
        width="720">
 </a>
 
@@ -877,7 +896,7 @@ wget -O - "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/m
 
 <br>
 
-<b>OpenWrt Remote Hub</b> — свой VPS, свой доступ, свои роутеры под контролем.
+<b>OWRT Hub</b> — свой VPS, свой доступ, свои роутеры под контролем.
 
 <br><br>
 

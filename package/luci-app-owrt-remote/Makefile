@@ -1,8 +1,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-owrt-remote
-PKG_VERSION:=122
-PKG_RELEASE:=2
+PKG_VERSION:=123
+PKG_RELEASE:=1
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=kzolotarev95
 PKGARCH:=all
@@ -14,13 +14,13 @@ define Package/luci-app-owrt-remote
   SECTION:=luci
   CATEGORY:=LuCI
   SUBMENU:=3. Applications
-  TITLE:=OpenWrt Remote Hub router agent
+  TITLE:=OWRT Hub router agent
   URL:=https://github.com/kzolotarev95/luci-app-owrt-remote
   DEPENDS:=+luci-base +rpcd-mod-file +uhttpd +jsonfilter +curl +ca-bundle +etherwake
 endef
 
 define Package/luci-app-owrt-remote/description
-  Router agent and LuCI panel for OpenWrt Remote Hub. Includes Heartbeat,
+  Router agent and LuCI panel for OWRT Hub. Includes Heartbeat,
   independent remote Xray control, WAN direct and bounded persistent logs.
   Xray is selected and verified for the router by the existing agent when
   applying the Hub configuration; it is not bundled into this noarch package.

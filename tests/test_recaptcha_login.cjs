@@ -41,6 +41,7 @@ function fixture(kind = 'v3') {
   const context = {
     window, passwordLoginForm: form, passwordLoginSubmitBtn: button,
     loginSubmitInFlight: false, loginAuthMeta: {}, hubOtp: null,
+    updateLoginOtp() {}, loginRequiresTotp() { return false; },
     setLoginRuntimeStatus(text) { status.push(text); },
     FormData: class { constructor() { this.token = tokenField.value; } },
     AbortController: class { constructor() { this.signal = {}; } abort() {} },

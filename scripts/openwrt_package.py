@@ -286,7 +286,7 @@ def pack_ipk(output, revision=None):
                f"Depends: {', '.join(dependencies())}\nSection: luci\nLicense: MIT\n"
                "Maintainer: kzolotarev95\nURL: https://github.com/kzolotarev95/luci-app-owrt-remote\n"
                f"Installed-Size: {sum(len(data) for data, _ in files.values())}\n"
-               "Description: OpenWrt Remote Hub router agent and LuCI panel\n")
+               "Description: OWRT Hub router agent and LuCI panel\n")
     metadata = {"control": (control.encode(), 0o644), "conffiles": (b"/etc/config/owrtremote\n", 0o644)}
     metadata.update({name: (script.encode(), 0o755) for name, script in native_wrappers().items()})
     output = Path(output)
@@ -316,7 +316,7 @@ def prepare_apk(folder, revision=None):
                "post-deinstall": package_hook("postrm")}
     args = ["mkpkg", "--info", "name:" + PACKAGE,
             "--info", f"version:{version}-r{revision or release}", "--info", "arch:noarch",
-            "--info", "description:OpenWrt Remote Hub router agent and LuCI panel",
+            "--info", "description:OWRT Hub router agent and LuCI panel",
             "--info", "license:MIT", "--info", "depends:" + " ".join(dependencies()),
             "--info", "url:https://github.com/kzolotarev95/luci-app-owrt-remote",
             "--files", "package/root", "--output", PACKAGE + ".apk"]

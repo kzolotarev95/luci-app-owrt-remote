@@ -1,7 +1,7 @@
 #!/bin/sh
 set -u
 
-APP_NAME="OpenWrt Remote Hub"
+APP_NAME="OWRT Hub"
 STATE_DIR="${OWRT_REMOTE_STATE_DIR:-/var/lib/owrt-remote}"
 PURGE="${PURGE:-1}"
 REMOVE_XRAY="${REMOVE_XRAY:-0}"

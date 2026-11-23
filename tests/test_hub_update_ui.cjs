@@ -10,7 +10,7 @@ execFileSync(process.env.TEST_PYTHON || 'python', ['tests/test_vps_resources.py'
 const pageHtml = fs.readFileSync(path.join(output, 'dashboard.html'), 'utf8');
 function state() {
   return {ok:true,checked:true,checking:false,error:'',source:'https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main',
-    current_revision:'a'.repeat(64),current_version:'v122',remote_revision:'b'.repeat(64),remote_version:'v122',source_older:false,available:true,job:{},csrf:'test-csrf'};
+    current_revision:'a'.repeat(64),current_version:'v123',remote_revision:'b'.repeat(64),remote_version:'v123',source_older:false,available:true,job:{},csrf:'test-csrf'};
 }
 async function createFixture(browser,width,height,mobile) {
   const page = await browser.newPage({viewport:{width,height},isMobile:mobile,hasTouch:mobile});
@@ -31,12 +31,14 @@ async function createFixture(browser,width,height,mobile) {
     }
     if(url.pathname==='/api/vps/resources')return route.fulfill({json:{ok:true,cpu:{percent:10},memory:{percent:40},disk:{percent:60}}});
     if(url.pathname==='/api/routers')return route.fulfill({json:{routers:[]}});
+    if(url.pathname==='/api/auth/meta')return route.fulfill({json:{ok:true,auth:{username:'owner',is_owner:true,can_add_router:true}}});
+    if(url.pathname==='/api/notifications/wait')return route.fulfill({status:429,headers:{'Retry-After':'5'},json:{busy:true}});
     if(url.pathname.startsWith('/api/'))return route.fulfill({json:{}});
     if(url.origin==='http://127.0.0.1:9999'&&url.pathname==='/') {fixture.views++;return route.fulfill({contentType:'text/html',body:pageHtml});}
     return route.abort();
   });
   await page.goto('http://127.0.0.1:9999/',{waitUntil:'domcontentloaded'});
-  const button=page.locator(mobile?'#mobileHubUpdateDock [data-hub-update]':'.desktopHeader [data-hub-update]');
+  const button=page.locator('#hubShellUpdateHost [data-hub-update]');
   await button.waitFor({state:'visible'});
   await page.waitForFunction(()=>document.querySelector('[data-hub-update]').textContent==='Доступно обновление');
   return {...fixture, fixture,page,button};
@@ -51,9 +53,9 @@ async function createFixture(browser,width,height,mobile) {
       if(!mobile) {
         assert(Math.abs(a.y-b.y)<=1,'desktop search/update stay on the same row');
         assert(Math.abs(a.height-b.height)<=1,'matching desktop button heights: '+JSON.stringify({width,a,b}));
-        assert(a.x>=b.x+b.width,'desktop update sits before search');
+        assert(b.x>=a.x+a.width,'desktop update follows search');
       }
-      assert.equal(await button.evaluate(el=>getComputedStyle(el).color),'rgb(253, 230, 138)','available update is yellow');
+      assert.equal(await button.evaluate(el=>getComputedStyle(el).color),'rgb(228, 185, 104)','available update uses the shared amber color');
       assert(await button.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'button text fits');
       const notice=page.locator('#hubUpdateNotice');
       assert(await notice.evaluate(el=>el===el.parentElement.firstElementChild),'update notice is the first panel block');
@@ -61,18 +63,21 @@ async function createFixture(browser,width,height,mobile) {
       assert.equal(await notice.evaluate(el=>getComputedStyle(el).backgroundColor),'rgba(0, 0, 0, 0)','status background is transparent on every screen');
       const noticeBounds=await notice.boundingBox();
       assert(noticeBounds.width<=680,'status is narrower than the desktop panel');
-      assert(Math.abs(noticeBounds.x+noticeBounds.width/2-width/2)<=1,'status is horizontally centered');
-      if(!mobile) assert(noticeBounds.y>=34,'desktop status is slightly lower');
+      const contentCenter=await notice.evaluate(el=>{
+        const parent=el.parentElement,bounds=parent.getBoundingClientRect(),style=getComputedStyle(parent);
+        const left=parseFloat(style.paddingLeft),right=parseFloat(style.paddingRight);
+        return bounds.left+left+(bounds.width-left-right)/2;
+      });
+      assert(Math.abs(noticeBounds.x+noticeBounds.width/2-contentCenter)<=1,'status is centered in the workspace next to the sidebar');
+      if(!mobile) assert(noticeBounds.y>=16,'desktop notice has top spacing');
       if(mobile) {
-        const effects=await page.locator('#mobileSeasonToggle').boundingBox();
-        const dock=await page.locator('#mobileRouterSearchDock').boundingBox();
-        const resources=await page.locator('.vpsResources-mobile').boundingBox();
-        assert(resources.y+resources.height<=b.y,'mobile resources are before panel update');
-        assert(b.y+b.height<=effects.y,'mobile panel update is before effects');
-        assert(effects.y+effects.height<=a.y,'mobile effects are before router search');
-        assert(Math.abs(effects.width-dock.width)<=1&&Math.abs(a.width-b.width)<=1,'mobile controls have matching full widths');
-        assert(a.height>=44&&b.height>=44,'mobile controls have room for touch');
-        for(const selector of ['#mobileSeasonToggle','#hubMenuToggle','[data-hub-update]']) {
+        const resources=await page.locator('.hubResourcesPanel').boundingBox();
+        assert(Math.abs(a.y-b.y)<=1,'search and update share the mobile tools row');
+        assert(b.x>=a.x+a.width,'mobile tools follow search / update order');
+        assert(resources.y>=Math.max(a.y+a.height,b.y+b.height),'resource panel follows compact header tools');
+        assert(Math.abs(a.width-b.width)<=1,'mobile controls have equal column widths');
+        assert(a.height>=32&&b.height>=32,'compact mobile controls retain usable targets');
+        for(const selector of ['#mobileRouterSearchToggle','#hubSidebarMenuButton','[data-hub-update]']) {
           assert(await page.locator(selector).evaluateAll(elements=>elements.every(el=>!el.getClientRects().length||el.scrollHeight<=el.clientHeight+1)),'control text is not vertically clipped: '+selector);
         }
       }
@@ -82,7 +87,7 @@ async function createFixture(browser,width,height,mobile) {
       fixture.data.remote_revision=fixture.data.current_revision;
       await page.evaluate(()=>window.dispatchEvent(new Event('pageshow')));
       await page.waitForFunction(()=>document.querySelector('[data-hub-update]').dataset.updateState==='current');
-      assert.equal(await button.evaluate(el=>getComputedStyle(el).color),'rgb(187, 247, 208)','current build is green');
+      assert.equal(await button.evaluate(el=>getComputedStyle(el).color),'rgb(70, 197, 139)','current build uses the shared green color');
       assert.equal(await button.textContent(),'Обновление не требуется');
       assert(await notice.isHidden(),'current build has no separate notice on desktop or mobile');
       assert.equal(await notice.textContent(),'','previous update notice is cleared');
@@ -115,7 +120,7 @@ async function createFixture(browser,width,height,mobile) {
         return {below:next.getBoundingClientRect().top-bounds.bottom,top:bounds.top,left:bounds.left,right:bounds.right,
           align:getComputedStyle(el).textAlign,wrapped:el.scrollWidth<=el.clientWidth+1,clipped:el.scrollHeight>el.clientHeight+1};
       });
-      assert(gap.below>=12,'notice has space before the header: '+JSON.stringify(gap));
+      assert(gap.below>=(mobile?10:12),'notice has space before the header: '+JSON.stringify(gap));
       assert(gap.top>=0&&gap.left>=0&&gap.right<=width,'top notice stays inside the screen');
       assert.equal(gap.align,'center');assert(gap.wrapped&&!gap.clipped,'long error wraps without clipping');
       await page.screenshot({path:path.join(output,'notice-'+width+'.png'),fullPage:false});

@@ -13,7 +13,7 @@
   </style>
 </defs>
 <rect width="1200" height="470" rx="28" fill="url(#bg)"/>
-<text x="600" y="48" class="label" font-size="28">OpenWrt Remote Hub — схема работы</text>
+<text x="600" y="48" class="label" font-size="28">OWRT Hub — схема работы</text>
 <text x="600" y="78" class="small">Без прямого открытия LuCI и SSH роутера в интернет</text>
 <g filter="url(#shadow)">
   <rect x="45" y="155" width="205" height="95" rx="18" fill="url(#blue)"/>
@@ -30,7 +30,7 @@
 <path class="line" d="M1040 250 V315"/>
 <text x="147" y="193" class="label" font-size="21">Браузер</text><text x="147" y="221" class="small">HTTPS :443</text>
 <text x="412" y="193" class="label" font-size="21">nginx на VPS</text><text x="412" y="221" class="small">TLS / reverse proxy</text>
-<text x="677" y="193" class="label" font-size="21">Hub-панель</text><text x="677" y="221" class="small">OpenWrt Remote Hub</text>
+<text x="677" y="193" class="label" font-size="21">Hub-панель</text><text x="677" y="221" class="small">OWRT Hub</text>
 <text x="942" y="193" class="label" font-size="21">OpenWrt роутер</text><text x="942" y="221" class="small">Xray Reverse-туннель</text>
 <text x="1035" y="358" class="label" font-size="20">LuCI</text><text x="1035" y="383" class="small">веб-интерфейс</text>
 <text x="755" y="358" class="label" font-size="20">SSH / Dropbear</text><text x="755" y="383" class="small">терминал в браузере</text>

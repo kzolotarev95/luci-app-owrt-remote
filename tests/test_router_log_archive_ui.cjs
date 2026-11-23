@@ -44,6 +44,8 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ok:true, pending_clear:true, message:'Архив VPS очищен. Очистка роутера ожидает связи.'}));
   }
   if (url.pathname === '/api/routers') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({routers}));}
+  if (url.pathname === '/api/auth/meta') {res.setHeader('Content-Type','application/json'); return res.end(JSON.stringify({ok:true,auth:{username:'owner',is_owner:true,can_add_router:true}}));}
+  if (url.pathname === '/api/notifications/wait') {res.writeHead(429,{'Content-Type':'application/json','Retry-After':'5'}); return res.end(JSON.stringify({busy:true}));}
   if (url.pathname.startsWith('/api/')) {res.setHeader('Content-Type','application/json'); return res.end('{}');}
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   const file = url.pathname === '/router/main/logs' ? 'vps-logs.html' : url.pathname === '/vps-terminal/' ? 'vps-terminal.html' : 'vps-dashboard.html';
@@ -68,14 +70,17 @@ const server = http.createServer((req, res) => {
       const link=page.locator('[data-global-logs-link]');
       await link.waitFor({state:'attached'});
       assert.equal(await page.locator('#routerStats').isVisible(),true,'statistics are expanded at entry');
-      assert.equal(await page.locator('#routerStats .statCard').count(),3);
+      assert.equal(await page.locator('#routerStats .statCard').count(),4);
       if(mobile){
-        const toggle=page.locator('#routerStatsToggle');
+        const toggle=page.locator('[data-hub-action="stats"]');
+        await page.locator('#hubSidebarMenuButton').click();
+        await page.locator('#hubSettingsSection>summary').click();
         assert.equal(await toggle.textContent(),'Скрыть статистику');
         assert.equal(await toggle.getAttribute('aria-expanded'),'true');
         await toggle.click();
         await page.evaluate(()=>loadRouters());
         assert.equal(await page.locator('#routerStats').isVisible(),false,'refresh preserves manual collapse');
+        await page.locator('#hubSidebarMenuButton').click();
         await toggle.click();
         assert.equal(await page.locator('#routerStats').isVisible(),true);
       }

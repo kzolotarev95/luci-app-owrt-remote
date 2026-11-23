@@ -28,16 +28,22 @@ const html = template.replace('window.ROUTERS = [];', 'window.ROUTERS = '+JSON.s
         if (url.pathname === '/api/router-groups') return route.fulfill({json:{groups:[]}});
         if (url.pathname === '/api/notifications/wait') return route.fulfill({status:429,json:{busy:true},headers:{'Retry-After':'5'}});
         if (url.pathname === '/api/vps/resources') return route.fulfill({json:{ok:true,cpu:{percent:15},memory:{percent:35},disk:{percent:40}}});
-        if (url.pathname === '/api/hub-update') return route.fulfill({json:{ok:true,checked:true,available:false,current_version:'v122'}});
+        if (url.pathname === '/api/hub-update') return route.fulfill({json:{ok:true,checked:true,available:false,current_version:'v123'}});
         if (url.pathname.startsWith('/api/')) return route.fulfill({json:{ok:true,auth:{username:'root',is_owner:true,can_add_router:true}}});
         return route.abort();
       });
       await page.goto('http://127.0.0.1:9999/');
       await page.waitForFunction(() => typeof setHubDesign === 'function' && document.querySelectorAll('.card').length === 18);
       const mobileLayout = width<=680 || mobile;
-      const toggle = page.locator(mobileLayout?'#mobileSeasonToggle':'#seasonToggle');
+      const toggle = page.locator('#hubSidebar [data-hub-action="design"]');
       const panel = page.locator(mobileLayout?'#mobileSeasonPanel':'#seasonPanel');
-      await toggle.click();
+      const openDesign = async () => {
+        if (mobileLayout) await page.locator('#hubSidebarMenuButton').click();
+        const section=page.locator('#hubSettingsSection');
+        if(!await section.evaluate(el=>el.open))await section.locator('summary').click();
+        await toggle.click();
+      };
+      await openDesign();
       await panel.locator('[data-hub-design="winter"]').click();
       assert.equal(await page.evaluate(() => document.documentElement.dataset.hubDesign), 'winter');
       assert.equal(await page.locator('body').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(6, 20, 38)');
@@ -65,7 +71,7 @@ const html = template.replace('window.ROUTERS = [];', 'window.ROUTERS = '+JSON.s
       await page.reload();
       await page.waitForFunction(() => hubDesignMode==='lite');
       assert.deepEqual(await page.evaluate(() => [seasonalFxFrame,seasonalFxParticles.length,seasonalFxCanvas.width]), [0,0,1]);
-      await toggle.click();
+      await openDesign();
       assert.equal(await panel.locator('[data-hub-design="lite"]').getAttribute('aria-pressed'),'true');
       await panel.locator('[data-hub-design="default"]').click();
       await page.waitForFunction(() => seasonalFxFrame>0);

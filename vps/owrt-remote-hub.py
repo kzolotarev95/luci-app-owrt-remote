@@ -5,7 +5,7 @@ import base64
 import datetime as dt
 import dataclasses
 from contextlib import contextmanager
-from collections import deque
+from collections import deque, OrderedDict
 import enum
 from email.parser import BytesParser
 from email.policy import default as email_policy_default
@@ -72,7 +72,7 @@ except Exception:
     UserVerificationRequirement = None
 
 
-APP_NAME = "OpenWrt Remote Hub"
+APP_NAME = "OWRT Hub"
 RAW_REPO_BASE = os.environ.get("RAW_REPO_BASE", "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main").rstrip("/")
 APP_DIR = Path(__file__).resolve().parent
 
@@ -89,7 +89,7 @@ def _hub_source_identity():
 
 HUB_LOADED_REVISION, HUB_LOADED_VERSION = _hub_source_identity()
 STATIC_DIR = APP_DIR / "static"
-BRAND_THEME_COLOR = "#24192f"
+BRAND_THEME_COLOR = "#0b0b0c"
 FAVICON_ICO_FILE = STATIC_DIR / "favicon.ico"
 FAVICON_PNG_32_FILE = STATIC_DIR / "favicon-32.png"
 FAVICON_PNG_192_FILE = STATIC_DIR / "favicon-192.png"
@@ -1530,7 +1530,7 @@ def ssh_auth_principal(username=""):
 
 def build_ssh_auth_message(ticket, username="", host="", issued_at=0):
     lines = [
-        "OpenWrt Remote Hub ED25519 login",
+        "OWRT Hub ED25519 login",
         f"ticket={ticket}",
         f"user={clean_username(username or current_username())}",
         f"host={host or '-'}",
@@ -2730,11 +2730,11 @@ self.addEventListener('push', event => {
   try {
     data = event.data ? event.data.json() : {};
   } catch (e) {
-    data = {title: 'OpenWrt Remote Hub', body: event.data ? event.data.text() : ''};
+    data = {title: 'OWRT Hub', body: event.data ? event.data.text() : ''};
   }
   const notificationData = data && typeof data.notification === 'object' ? data.notification : null;
   const payload = notificationData ? {
-    title: notificationData.title || data.title || 'OpenWrt Remote Hub',
+    title: notificationData.title || data.title || 'OWRT Hub',
     body: notificationData.body || data.body || '',
     tag: notificationData.tag || data.tag || 'owrt-remote-hub',
     url: notificationData.navigate || data.url || '/',
@@ -2742,7 +2742,7 @@ self.addEventListener('push', event => {
     icon: notificationData.icon || data.icon || undefined,
     kind: data.kind || 'info'
   } : data;
-  const title = payload.title || 'OpenWrt Remote Hub';
+  const title = payload.title || 'OWRT Hub';
   const options = {
     body: payload.body || '',
     tag: payload.tag || 'owrt-remote-hub',
@@ -2783,8 +2783,8 @@ def web_manifest_json():
     return json.dumps(
         {
             "id": "/",
-            "name": "OpenWrt Remote Hub",
-            "short_name": "Wrt Hub",
+            "name": "OWRT Hub",
+            "short_name": "OWRT Hub",
             "start_url": "/",
             "scope": "/",
             "display": "standalone",
@@ -2830,7 +2830,7 @@ def branding_head_tags(include_manifest=True):
             f'<meta name="theme-color" content="{BRAND_THEME_COLOR}">',
             '<meta name="mobile-web-app-capable" content="yes">',
             '<meta name="apple-mobile-web-app-capable" content="yes">',
-            '<meta name="apple-mobile-web-app-title" content="Wrt Hub">',
+            '<meta name="apple-mobile-web-app-title" content="OWRT Hub">',
         ]
     )
     return "\n".join(parts)
@@ -2956,7 +2956,7 @@ def record_hub_start_event():
         add_notification(
             "hub_restart",
             "Hub перезапущен",
-            "Служба OpenWrt Remote Hub снова запущена.",
+            "Служба OWRT Hub снова запущена.",
             "info",
             [],
             {"boot_id": boot_id},
@@ -2966,7 +2966,7 @@ def record_hub_start_event():
         add_notification(
             "hub_start",
             "Hub запущен",
-            "OpenWrt Remote Hub стартовал первый раз на этом VPS.",
+            "OWRT Hub стартовал первый раз на этом VPS.",
             "info",
             [],
             {"boot_id": boot_id},
@@ -3637,6 +3637,11 @@ def init_db(conn):
         delivered_at integer not null default 0
     )''')
     conn.execute('create index if not exists router_xray_commands_router_idx on router_xray_commands(router_id, created_at)')
+    conn.execute('''create table if not exists router_availability (
+        bucket integer not null, router_id text not null,
+        observed_at integer not null, online integer not null,
+        primary key (bucket, router_id)
+    ) without rowid''')
     ensure_column(conn, 'router_xray_commands', 'hidden', 'integer not null default 0')
     ensure_column(conn, 'router_logs', 'state_json', "text not null default '{}'")
     ensure_column(conn, 'router_logs', 'state_at', 'integer not null default 0')
@@ -4737,7 +4742,7 @@ def make_server_xray_config(rows, listen_host="0.0.0.0", listen_port=DEFAULT_VLE
         "inbounds": inbounds,
         "outbounds": [{"tag": "direct", "protocol": "freedom"}],
         "routing": {"rules": rules},
-        "remarks": "OpenWrt Remote Hub server config",
+        "remarks": "OWRT Hub server config",
     }
 
 
@@ -5264,8 +5269,9 @@ def vps_resource_widgets_html(mobile=False, resources=None):
         valid = isinstance(percent, (int, float)) and not isinstance(percent, bool) and math.isfinite(percent)
         value = (f"{percent:.1f}".rstrip("0").rstrip(".").replace(".", ",") + "%") if valid else "—"
         title = html.escape(label + ": " + (value if valid else "данные пока недоступны"), quote=True)
+        usage = max(0, min(100, percent)) if valid else 0
         widgets.append(
-            f'<div class="vpsResource badge" data-vps-resource="{key}" title="{title}" aria-label="{title}">'
+            f'<div class="vpsResource badge" data-vps-resource="{key}" style="--hub-usage:{usage:.1f}%" title="{title}" aria-label="{title}">'
             f'<span>{label}</span><strong data-vps-resource-value>{value}</strong></div>'
         )
     return f'<div class="vpsResources vpsResources-{kind}" role="group" aria-label="Ресурсы VPS">{"".join(widgets)}</div>'
@@ -5282,6 +5288,78 @@ def hub_design_controls_html():
       </div>
       <p class="hubDesignHint" data-hub-design-hint role="status">Выбор сохраняется в этом браузере.</p>
     </div>'''
+
+
+def hub_design_surfaces_css():
+    """Palette for Hub-owned controls, including surfaces with legacy CSS.
+
+    Keep semantic success/warning/error colours separate from neutral surfaces.
+    The terminal renderer reads these same tokens instead of carrying a second
+    hard-coded palette in JavaScript.
+    """
+    return r'''
+:root[data-hub-design]{--panel-2:var(--panel2);--panel-soft:var(--panel2);--line-strong:var(--cyan);--focus-ring:color-mix(in srgb,var(--cyan) 20%,transparent);--accent-soft:color-mix(in srgb,var(--cyan) 12%,var(--panel));--shadow:0 18px 48px #0004;--green:#46c58b;--red:#ee8792;--amber:#e4b968}
+:root[data-hub-design="default"]{--code:#0b0b0c;--term-selection:#24415d;--scroll-thumb:#484852;--grid:transparent}
+:root[data-hub-design="winter"]{--code:#071827;--term-selection:#24445b;--scroll-thumb:#47728d}
+:root[data-hub-design="lite"]{--code:#101827;--term-selection:#334155;--scroll-thumb:#52637d}
+html[data-hub-design] :is(.inputShell,.authTabs,.methodDetails,.reserveNote,.altAuthSummary,.socialMethodEmpty,.notesLayout,.noteShot,.authGroup,.diagnosticPanel,.wolPanel,.trafficPanel,.notesPreview,.offlinePopover,.routerGroupPickerOptions){background:var(--panel2);border-color:var(--line);box-shadow:none;color:var(--text)}
+html[data-hub-design] :is(.queue-dashboard .metric,.outcome-router,.authRow,.sessionRow,.notifyRow:not(.warn):not(.bad),.entry,.info){background:var(--panel2);border-color:var(--line)}
+html[data-hub-design] :is(.authSecretValue,.authRowKey,.notifyDetails,.diagCommand,.cmd,.cmdBody,.codeBlock,.router pre,.noteShot img){background:var(--code);border-color:var(--line);color:var(--text)}
+html[data-hub-design] :is(.btn,.toolBtn,.cmdBtn,.topBtn,.copyBtn,.primaryBtn,.methodBtn,.manualGuideLink,.submitBtn,.linkBtn,.head-actions button,.actions button){background:var(--panel2);border-color:var(--line);color:var(--text);box-shadow:none}
+html[data-hub-design] :is(input,textarea,select,select option){background:var(--panel2);border-color:var(--line);color:var(--text);accent-color:var(--cyan)}
+html[data-hub-design] :is(#routerForm select option,#routerGroupFilter option){background:var(--panel2);color:var(--text)}
+html[data-hub-design] :is(#routerForm select option:checked,#routerGroupFilter option:checked){background:var(--blue);color:#fff}
+html[data-hub-design] :is(input,textarea)::placeholder{color:var(--muted);opacity:1}
+html[data-hub-design] :is(input,textarea,select):focus-visible{outline:2px solid var(--cyan);outline-offset:2px;box-shadow:none}
+html[data-hub-design] .inputShell:focus-within{border-color:var(--cyan);box-shadow:0 0 0 3px var(--focus-ring)}
+html[data-hub-design] .inputShell :is(input,.inputAction){background:transparent!important;box-shadow:none;color:var(--text)}
+html[data-hub-design] .inputShell input:focus-visible{outline:none}
+html[data-hub-design] input:-webkit-autofill{-webkit-text-fill-color:var(--text);box-shadow:0 0 0 1000px var(--panel2) inset!important;caret-color:var(--text)}
+html[data-hub-design] :is(.authTabBtn,.fieldIcon,.inputAction,.captchaRefresh,.captchaInputMark,.captchaHeading,.methodDetails summary,.methodDetails summary::after,.altAuthSummary,.authGroupTitle strong,.authSocialName,.notesPreview strong,.noteBody,.cmdLabel,.cmd pre,.notifyBody,.diagCommand code){color:var(--text)}
+html[data-hub-design] :is(.securityNote,.divider,.statCard em,#logsStatus){color:var(--muted)}
+html[data-hub-design] .hint:not(.warn){color:var(--muted)}
+html[data-hub-design] :is(.authTabBtn[aria-selected="true"],.routerGroupChoice.active){background:var(--accent-soft);border-color:var(--cyan);color:var(--text);box-shadow:none}
+html[data-hub-design] :is(.authTabs,.authTabBtn,.methodMark,.methodMeta,.authMark,.brandSeal::before,.noteEmpty,.noteShot){border-color:var(--line)}
+html[data-hub-design] :is(.methodMark,.methodMeta,.authMark){background:var(--accent-soft);color:var(--cyan);box-shadow:none}
+html[data-hub-design] .divider::before,html[data-hub-design] .divider::after,html[data-hub-design] .brandPanel::after{background:var(--line)}
+html[data-hub-design="default"] .brandPanel::before{background:radial-gradient(circle at 50% 16%,#5eaeff0d,transparent 35%)}
+html[data-hub-design="default"] .brandSeal{background:var(--panel2);border-color:var(--line);box-shadow:none}
+html[data-hub-design="default"] .brandSeal svg{filter:none}
+html[data-hub-design] :is(.primaryBtn,.submitBtn,.cmdBtn.run,.mobileInput button){background:var(--blue);border-color:color-mix(in srgb,var(--cyan) 45%,var(--line));color:#fff;box-shadow:none}
+html[data-hub-design] :is(#start,.btn.start,.btn.good){background:color-mix(in srgb,var(--green) 16%,var(--panel));border-color:color-mix(in srgb,var(--green) 40%,var(--line));color:var(--green)}
+html[data-hub-design] :is(#rebootAll,.btn.stop,.btn.bad,.dangerBtn){background:color-mix(in srgb,var(--red) 14%,var(--panel));border-color:color-mix(in srgb,var(--red) 40%,var(--line));color:var(--red)}
+html[data-hub-design] .btn.restart{background:color-mix(in srgb,var(--amber) 14%,var(--panel));border-color:color-mix(in srgb,var(--amber) 40%,var(--line));color:var(--amber)}
+html[data-hub-design] .queue-badge{background:var(--accent-soft);border-color:color-mix(in srgb,var(--cyan) 30%,var(--line));color:var(--cyan)}
+html[data-hub-design] .progress-fill{background:var(--cyan)}
+html[data-hub-design] .queue-dashboard .metric{--accent:var(--cyan);border-top-color:var(--accent)}
+html[data-hub-design] .queue-dashboard .metric[data-state=success]{--accent:var(--green)}
+html[data-hub-design] .queue-dashboard .metric[data-state=error]{--accent:var(--red)}
+html[data-hub-design] .queue-dashboard .metric[data-state=unknown]{--accent:var(--amber)}
+html[data-hub-design] .queue-dashboard .metric[data-state=cancelled]{--accent:#dfab7d}
+html[data-hub-design] .queue-dashboard .metric[data-state=skipped]{--accent:var(--muted)}
+html[data-hub-design] .queue-dashboard .outcome-toggle:hover,html[data-hub-design] .queue-dashboard .outcome-toggle[aria-pressed=true]{background:var(--accent-soft);border-color:var(--accent)}
+html[data-hub-design] :is(#terminal,#term,#logsText){background:var(--code);border-color:var(--line);color:var(--text);scrollbar-color:var(--scroll-thumb) var(--code)}
+html[data-hub-design] :is(#term,.xterm .xterm-viewport)::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border-color:var(--code)}
+html[data-hub-design] :is(#term,.xterm .xterm-viewport)::-webkit-scrollbar-track{background:var(--code)}
+html[data-hub-design] #terminal .xterm-viewport{scrollbar-color:var(--scroll-thumb) var(--code)}
+html[data-hub-design] #term::selection,html[data-hub-design] #term *::selection{background:var(--term-selection);color:var(--text)}
+html[data-hub-design] .term-muted{color:var(--muted)}
+html[data-hub-design] .term-inverse{background:var(--text);color:var(--code)}
+'''
+
+
+def hub_design_typography_css():
+    """One UI type scale, matching the sidebar's router-group navigation.
+
+    Terminal cells use their renderer's measurements; code and log output keep
+    a fixed-width face so commands, tables and selection remain aligned.
+    """
+    return r'''
+:root{--hub-font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--hub-font-size:12px;--hub-font-weight:550;--hub-code-font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+html[data-hub-design] body,html[data-hub-design] body :not(:where(svg,svg *,canvas,#terminal,#terminal *,.hubDesignSwatch)),html[data-hub-design] body :not(:where(svg,svg *,canvas,#terminal,#terminal *,.hubDesignSwatch))::before,html[data-hub-design] body :not(:where(svg,svg *,canvas,#terminal,#terminal *,.hubDesignSwatch))::after,html[data-hub-design] svg text{font-family:var(--hub-font-family)!important;font-size:var(--hub-font-size)!important;font-weight:var(--hub-font-weight)!important;letter-spacing:normal!important}
+html[data-hub-design] :is(pre,code,kbd,samp),html[data-hub-design] :is(pre,code,kbd,samp) *{font-family:var(--hub-code-font-family)!important}
+html[data-hub-design] input::file-selector-button{font-family:var(--hub-font-family)!important;font-size:var(--hub-font-size)!important;font-weight:var(--hub-font-weight)!important}
+'''
 
 
 def hub_design_head():
@@ -5305,6 +5383,12 @@ try { const design = localStorage.getItem('owrtRemote:hubDesign');
 .hubDesignSwatch.default{background:linear-gradient(135deg,#4c1d95,#1e1b4b)}.hubDesignSwatch.winter{color:#e0faff;background:linear-gradient(135deg,#0e7490,#172554)}.hubDesignSwatch.lite{font-size:18px;color:#cbd5e1;background:#1e293b}
 .hubDesignHint{margin:10px 0 0;color:var(--muted);font-size:10px;line-height:1.6;overflow-wrap:anywhere}
 .seasonBtn:disabled{opacity:.4;cursor:default}
+:root[data-hub-design="default"]{--bg:#0b0b0c;--panel:#111113;--panel2:#19191d;--text:#f5f5f7;--muted:#9999a6;--line:#2b2b32;--blue:#165895;--cyan:#5eaeff;--green:#46c58b;--red:#ee8792;--amber:#e4b968}
+html[data-hub-design="default"] body{background:var(--bg);color:var(--text);animation:none}
+html[data-hub-design="default"] body::before,html[data-hub-design="default"] body::after{animation:none;filter:none;opacity:.25}
+html[data-hub-design="default"] :is(.termBox,.quickPanel,.cmdCard,.bar,.mobileInput,.steps,.step,.shell,.hero,.authPanel,.loginFrame,.brandPanel,.methodCard,.captchaSection,.loginStatus,.authTabPanel,.queue-dashboard,.panel,.noteCard,.history,.editor,.viewOnlyBox){background:var(--panel);border-color:var(--line);box-shadow:none}
+html[data-hub-design="default"] :is(.btn,.toolBtn,.cmdBtn,.topBtn,.copyBtn,.primaryBtn,.methodBtn,.manualGuideLink,.submitBtn,.linkBtn,.head-actions button,.actions button,input,textarea,select){background:var(--panel2);border-color:var(--line);color:var(--text);box-shadow:none}
+html[data-hub-design="default"] .hubDesignSwatch.default{background:linear-gradient(135deg,#1d466a,#111113)}
 :root[data-hub-design="winter"]{--bg:#061426;--panel:#0c2238;--panel2:#16324b;--text:#ecf9ff;--muted:#a9c9dd;--line:rgba(139,211,236,.3);--blue:#036b99;--cyan:#7dd3fc;--teal:#38bdf8;--grid:rgba(125,211,252,.07)}
 html[data-hub-design="winter"] body{background-color:var(--bg);background-image:radial-gradient(ellipse at 10% 0%,#164d6e 0,transparent 45%),radial-gradient(ellipse at 100% 100%,#123c54 0,transparent 50%),linear-gradient(160deg,#061426,#0b2238 60%,#071524);background-size:100% 100%;animation:none}
 html[data-hub-design="winter"] body::before{inset:0;opacity:.55;filter:none;animation:none;background-image:radial-gradient(circle at 16px 22px,#c9f3ff 1px,transparent 2px),radial-gradient(circle at 80px 100px,#b2e7f7 1px,transparent 2px);background-size:180px 180px,260px 260px}
@@ -5355,7 +5439,7 @@ html[data-hub-shared-effects="1"] body::before,html[data-hub-shared-effects="1"]
 html[data-hub-shared-effects="1"] .seasonalFx{z-index:1!important;opacity:.9}
 html[data-hub-shared-effects="1"] body>*:not(.seasonalFx){position:relative;z-index:2}
 @media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){.seasonPanel{max-height:none;overflow:visible}.hubDesignChoice{min-height:54px}.hubDesignChoice strong{font-size:13px}.hubDesignChoice small,.hubDesignHint{font-size:11px}}
-</style>''' + hub_design_runtime_script()
+''' + hub_design_surfaces_css() + hub_design_typography_css() + '</style>' + hub_design_runtime_script()
 
 
 def hub_design_runtime_script():
@@ -6391,17 +6475,13 @@ def donate_html():
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Сказать спасибо — OpenWrt Remote Hub</title>
+<title>Поддержать разработку — Hub</title>
 {branding_head_tags()}
 <style>
 :root{{--bg:#140d21;--panel:#21192e;--panel2:#30243e;--text:#f7f2ff;--muted:#c4b5d5;--line:rgba(180,150,220,.25);--cyan:#67e8f9;--blue:#7c3aed}}
 *{{box-sizing:border-box}}
 body{{margin:0;min-height:100vh;min-height:100svh;display:grid;place-items:center;padding:24px;color:var(--text);background:radial-gradient(ellipse at 0 0,#4b2766,transparent 65%),radial-gradient(ellipse at 100% 100%,#222451,transparent 60%),var(--bg);font:14px/1.65 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}
 .donateCard{{position:relative;z-index:1;width:min(100%,560px);padding:30px;border:1px solid var(--line);border-radius:22px;background:var(--panel);box-shadow:0 20px 60px #0004;text-align:center}}
-.donateHeading{{margin-bottom:22px;text-align:center}}
-.donateEyebrow{{color:var(--muted);font-size:12px;font-weight:700;letter-spacing:.04em}}
-h1{{margin:6px 0 0;font-size:26px;line-height:1.3}}
-.donateTitleTail{{display:inline-block;white-space:nowrap}}
 .donateLinks{{display:grid;gap:10px;margin-bottom:22px}}
 .donateLinkCard{{display:grid;justify-items:center;gap:3px;padding:13px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);color:var(--text);text-decoration:none;overflow-wrap:anywhere;text-align:center;transition:border-color .15s ease,background .15s ease}}
 .donateLinkCard:hover{{border-color:var(--cyan)}}
@@ -6419,13 +6499,12 @@ h1{{margin:6px 0 0;font-size:26px;line-height:1.3}}
 @media(max-width:400px){{.donatePaymentBrands{{gap:9px}}.donatePaymentBrand{{gap:4px;font-size:10px}}.paymentAlfa{{font-size:9px}}}}
 .donateFooter{{margin-top:24px;padding-top:16px;border-top:1px solid var(--line);text-align:center}}
 .donateBack{{color:var(--muted);font-size:13px;text-underline-offset:4px}}
-@media(max-width:600px){{body{{padding:12px}}.donateCard{{padding:22px 18px;border-radius:18px}}h1{{font-size:23px}}}}
+@media(max-width:600px){{body{{padding:12px}}.donateCard{{padding:22px 18px;border-radius:18px}}}}
 </style>
 {hub_design_head()}
 </head>
 <body>
-<main class="panel donateCard" aria-labelledby="donateTitle">
-  <header class="donateHeading"><div class="donateEyebrow">OpenWrt Remote Hub</div><h1 id="donateTitle">Сказать спасибо ❤️ <span class="donateTitleTail">Donate 💲</span></h1></header>
+<main class="panel donateCard" aria-label="Поддержать разработку">
   <div class="donateLinks">
     <a class="donateLinkCard" href="https://donate.zks95.ugnss.ru" target="_blank" rel="noopener noreferrer"><strong>Основная ссылка:</strong><span>https://donate.zks95.ugnss.ru</span></a>
     <a class="donateLinkCard" href="https://donate.zks95.ugnss.ru:8443" target="_blank" rel="noopener noreferrer"><strong>Резервная ссылка:</strong><span>https://donate.zks95.ugnss.ru:8443</span></a>
@@ -6442,7 +6521,566 @@ h1{{margin:6px 0 0;font-size:26px;line-height:1.3}}
 </html>"""
 
 
-def dashboard_html(routers, username, sessions=None, notifications=None, auth_bootstrap=None, vps_resources=None):
+def hub_sidebar_icon(name):
+    paths = {
+        'hub': '<circle cx="12" cy="12" r="9"/><path d="M8 14l4-9v6h4l-4 8v-5z"/>',
+        'dashboard': '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+        'router': '<rect x="3" y="11" width="18" height="9" rx="2"/><path d="M7 11V5m10 6V5M7 16h.01M11 16h.01M15 16h2"/>',
+        'folder': '<path d="M3 6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+        'terminal': '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3m6 0h4"/>',
+        'refresh': '<path d="M21 7v5h-5M3 17v-5h5"/><path d="M5 7a8 8 0 0 1 14-2l2 4M3 15l2 4a8 8 0 0 0 14-2"/>',
+        'logs': '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+        'shield': '<path d="M12 3l8 3v6c0 5-8 9-8 9s-8-4-8-9V6z"/><path d="M8 12l3 3 5-6"/>',
+        'design': '<circle cx="12" cy="12" r="9"/><path d="M16 19v-4h5M7 10h.01M10 6h.01M16 8h.01"/>',
+        'download': '<path d="M12 3v12m-5-5l5 5 5-5M4 16v4h16v-4"/>',
+        'menu': '<path d="M4 6h16M4 12h16M4 18h16"/>',
+        'plus': '<path d="M12 5v14M5 12h14"/>',
+        'close': '<path d="M6 6l12 12M18 6L6 18"/>',
+        'chevron': '<path d="M9 5l7 7-7 7"/>',
+        'heart': '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>',
+        'chat': '<path d="M21 11a8 8 0 0 1-8 8H7l-5 3V10a8 8 0 0 1 8-8h3a8 8 0 0 1 8 9z"/>',
+    }
+    return '<svg class="hubIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' + paths[name] + '</svg>'
+
+
+def hub_sidebar_html(username, is_owner):
+    safe_username = html.escape(username, quote=True)
+    owner_hidden = '' if is_owner else ' hidden'
+    icon = hub_sidebar_icon
+    return f'''<button class="hubSidebarBackdrop" id="hubSidebarBackdrop" aria-label="Закрыть меню Hub" hidden></button>
+<aside class="hubSidebar" id="hubSidebar" aria-label="Главное меню Hub" tabindex="-1">
+  <a class="hubSidebarBrand" href="/" aria-label="OWRT Hub v123"><span class="hubBrandMark">{icon('hub')}</span><strong>OWRT Hub <b>v123</b></strong></a>
+  <button class="hubSidebarClose" id="hubSidebarClose" type="button" aria-label="Закрыть меню Hub">{icon('close')}</button>
+  <nav class="hubSidebarNav" aria-label="Разделы панели">
+    <details class="hubNavSection" id="hubWorkspaceSection">
+      <summary class="hubNavSectionToggle"><span>Рабочее пространство</span>{icon('chevron')}</summary>
+      <div class="hubNavSectionItems">
+        <button class="hubNavItem is-active" data-hub-action="dashboard" type="button">{icon('dashboard')}<span>Дашборд</span><em id="hubNavCount">0</em></button>
+        <button class="hubNavItem" data-hub-action="routers" type="button">{icon('router')}<span>Роутеры</span></button>
+        <button class="hubNavItem" data-hub-action="groups" data-hub-owner type="button"{owner_hidden}>{icon('folder')}<span>Группы роутеров</span></button>
+      </div>
+    </details>
+    <details class="hubNavSection" id="hubManagementSection">
+      <summary class="hubNavSectionToggle"><span>Управление</span>{icon('chevron')}</summary>
+      <div class="hubNavSectionItems">
+        <button class="hubNavItem" id="hubRefreshRouters" data-hub-action="refresh" type="button">{icon('refresh')}<span>Обновить</span></button>
+        <button class="hubNavItem" id="hubAddRouter" data-hub-action="add" type="button" data-hub-add hidden>{icon('plus')}<span>Добавить роутер</span></button>
+        <a class="hubNavItem" href="/vps-terminal/" target="_blank" rel="noopener noreferrer" data-hub-owner{owner_hidden}>{icon('terminal')}<span>Терминал VPS</span></a>
+        <a class="hubNavItem" href="/router-updates/" target="_blank" rel="noopener noreferrer" data-hub-owner{owner_hidden}>{icon('refresh')}<span>Обновить роутеры</span></a>
+        <button class="hubNavItem" data-hub-action="logs" type="button">{icon('logs')}<span>Глобальные логи</span></button>
+        <button class="hubNavItem" data-hub-action="vps-xray" data-hub-owner type="button"{owner_hidden}>{icon('shield')}<span>Xray на VPS</span></button>
+      </div>
+    </details>
+    <details class="hubNavSection" id="hubSettingsSection">
+      <summary class="hubNavSectionToggle"><span>Настройки</span>{icon('chevron')}</summary>
+      <div class="hubNavSectionItems">
+        <button class="hubNavItem" data-hub-action="access" type="button">{icon('shield')}<span>Доступ к Hub</span></button>
+        <button class="hubNavItem" data-hub-action="design" type="button">{icon('design')}<span>Дизайн и эффекты</span></button>
+        <button class="hubNavItem" data-hub-action="stats" type="button" aria-expanded="true">{icon('dashboard')}<span>Скрыть статистику</span></button>
+        <button class="hubNavItem" data-hub-action="update" data-hub-owner type="button"{owner_hidden}>{icon('download')}<span>Обновление панели</span></button>
+      </div>
+    </details>
+    <div class="hubNavCaption">Сообщество</div>
+    <a class="hubNavItem" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">{icon('chat')}<span>NetHaven VPN · чат</span></a>
+    <a class="hubNavItem hubNavDonate" href="/donate/" target="_blank" rel="noopener noreferrer">{icon('heart')}<span>Поддержать разработку</span></a>
+  </nav>
+  <div class="hubSidebarFooter"><div id="hubSidebarConnection" role="status"><i class="hubStateDot"></i>Подключение к Hub</div><button class="hubSidebarAccount" type="button" data-hub-action="access"><span class="hubAvatar">{html.escape((username or 'U')[:2].upper())}</span><span data-hub-username>{safe_username}</span></button><a class="hubSidebarAccount" href="/logout">Выйти из Hub</a></div>
+</aside>'''
+
+
+def hub_sidebar_top_html():
+    icon = hub_sidebar_icon
+    return f'''<header class="hubShellTopbar" id="hubShellTopbar">
+  <button class="hubSidebarMenuButton" id="hubSidebarMenuButton" type="button" aria-controls="hubSidebar" aria-expanded="false" aria-label="Открыть меню Hub">{icon('menu')}</button>
+  <div class="hubShellBreadcrumb">{icon('hub')}<span>Рабочее пространство <b>/</b> <strong>Дашборд</strong></span></div>
+  <div class="hubPhoneBrand"><strong>OWRT Hub <b>v123</b></strong></div>
+  <div class="hubShellTools"><div class="hubShellControlsRow"><div id="hubShellSearchHost"></div><div id="hubShellUpdateHost"></div></div></div>
+</header>
+<div class="hubSidebarPanels"><div id="hubShellDesignHost"></div><div id="hubShellAccountHost"><div class="hubAccessBackdrop" id="hubAccessBackdrop" aria-hidden="true" hidden></div></div></div>
+'''
+
+
+def hub_sidebar_overview_html(resources=None):
+    return f'''<section class="hubOverview" aria-label="Обзор состояния сети">
+  <article class="hubOverviewPanel hubAvailabilityPanel">
+    <div class="hubOverviewHead"><h2>Доступность роутеров</h2><span class="hubChartPeriod">24 ч</span></div>
+    <div class="hubChartLegend"><span class="hubChartOnline">Онлайн <b id="hubAvailabilityOnline">—</b></span><span class="hubChartOffline">Офлайн <b id="hubAvailabilityOffline">—</b></span><span id="hubAvailabilityLabel">По Heartbeat</span></div>
+    <div class="hubAvailabilityChart" id="hubAvailabilityChart">
+      <div class="hubChartScale" aria-hidden="true"><span id="hubAvailabilityMax">1</span><span id="hubAvailabilityMid"></span><span>0</span></div>
+      <svg id="hubAvailabilityPlot" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" tabindex="0" aria-label="Число онлайн и офлайн роутеров за последние 24 часа. Стрелки влево и вправо — просмотр замеров.">
+        <path d="M0 8H600M0 50H600M0 92H600" class="hubChartGrid"/>
+        <path id="hubAvailabilityArea" class="hubChartArea"/>
+        <path id="hubAvailabilityLine" class="hubChartOnlineLine"/>
+        <path id="hubAvailabilityOfflineLine" class="hubChartOfflineLine"/>
+        <circle id="hubAvailabilityOnlineDot" r="2.5" class="hubChartOnlineDot"/>
+        <circle id="hubAvailabilityOfflineDot" r="2.5" class="hubChartOfflineDot"/>
+      </svg>
+      <div class="hubChartTooltip" id="hubAvailabilityTooltip" role="status" hidden></div>
+      <div class="hubChartLabels"><span id="hubAvailabilityStart">24 ч назад</span><span>12 ч назад</span><span>Сейчас</span></div>
+    </div>
+    <p class="hubChartHint" id="hubAvailabilityHint">История накапливается на VPS, даже когда панель закрыта.</p>
+  </article>
+  <article class="hubOverviewPanel hubResourcesPanel" id="hubResourcesPanel"><div class="hubOverviewHead"><h2>Ресурсы VPS</h2><span>Текущее состояние</span></div>{vps_resource_widgets_html(resources=resources)}<div class="hubOverviewFoot"><span><i class="hubStateDot"></i>Обновление без перезагрузки</span><span id="hubDataFreshness">Загрузка данных</span></div></article>
+</section>
+<section class="hubServiceStrip"><span>Состояние сети</span><span id="hubHeartbeatSummary">Ожидаем Heartbeat</span><span>Журналы доступны в карточках</span></section>
+<section class="hubRoutersHeading" id="hubRoutersHeading"><h2>Роутеры <span id="hubVisibleCount"></span></h2><div id="hubGroupFilterHost" data-hub-owner></div></section>
+<div class="hubShellDialog" id="hubShellDialog" hidden><section class="hubShellDialogCard" role="dialog" aria-modal="true" aria-labelledby="hubShellDialogTitle"><div class="hubShellDialogHead"><h2 id="hubShellDialogTitle"></h2><button class="btn hubShellDialogClose" id="hubShellDialogClose" type="button">Закрыть</button></div><div id="hubShellDialogContent"></div></section></div>'''
+
+
+def hub_sidebar_css():
+    return r'''<style id="hub-sidebar-style">
+:root[data-hub-design="default"]{--bg:#0b0b0c;--panel:#111113;--panel2:#19191d;--text:#f5f5f7;--muted:#9999a6;--line:#2b2b32;--blue:#165895;--cyan:#5eaeff;--green:#46c58b;--red:#ee8792;--amber:#e4b968}
+.hubDashboard{font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:0;color:var(--text)}
+html[data-hub-design="default"] .hubDashboard{background:var(--bg);animation:none}
+html[data-hub-design="default"] .hubDashboard::before{inset:0;background:linear-gradient(149deg,transparent 40%,#6595c707 40.1%,transparent 40.2%),linear-gradient(25deg,transparent 61%,#6595c708 61.1%,transparent 61.2%);filter:none;opacity:1;animation:none}
+.hubDashboard .wrap{width:auto;max-width:none;min-width:0;margin:0 0 0 224px;padding:16px 24px 24px 16px;display:block}
+.hubDashboard .top,.hubDashboard #routerFormToggle,.hubDashboard #routerStatsToggle{display:none!important}
+.hubIcon{display:block;width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.hubSidebar{position:fixed;inset:16px auto auto 16px;width:208px;max-height:calc(100dvh - 32px);z-index:65;display:flex;flex-direction:column;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel);min-height:0;overflow:hidden}
+.hubSidebarBrand{display:flex;align-items:center;gap:10px;flex-shrink:0;padding:4px 6px 10px;border-bottom:1px solid var(--line);color:var(--text);text-decoration:none}
+.hubBrandMark{display:grid;place-items:center;width:32px;height:36px;flex:none;color:var(--cyan);background:color-mix(in srgb,var(--cyan) 10%,transparent);border:1px solid color-mix(in srgb,var(--cyan) 30%,transparent);border-radius:9px}
+.hubBrandMark .hubIcon{width:23px;height:23px}.hubSidebarBrand strong{display:block;font-size:14px;letter-spacing:-.3px}.hubSidebarBrand small{display:block;margin-top:1px;color:var(--muted);font-size:11px}.hubSidebarBrand b{color:var(--cyan);font-weight:550}
+.hubSidebarNav{overflow:auto;min-height:0;flex:0 1 auto;padding:2px 0 8px;scrollbar-width:thin;overscroll-behavior:contain}
+.hubNavCaption{padding:12px 10px 5px;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);opacity:.7}
+.hubDashboard .hubNavItem{display:flex;align-items:center;justify-content:flex-start;gap:8px;min-height:34px;width:100%;margin:2px 0;padding:6px 9px;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--muted);font-size:12px;font-weight:550;line-height:1.35;text-align:left;text-decoration:none;box-shadow:none;white-space:normal}
+.hubNavItem>span{min-width:0}.hubNavItem .hubIcon{width:16px;height:16px}.hubDashboard .hubNavItem:hover,.hubDashboard .hubNavItem:focus-visible{color:var(--text);background:var(--panel2)}.hubDashboard .hubNavItem.is-active{color:var(--text);background:var(--panel2);border-color:var(--line)}.hubNavItem.is-active .hubIcon{color:var(--cyan)}
+.hubNavItem em{margin-left:auto;font-style:normal;font-size:10px;border-radius:4px;background:color-mix(in srgb,var(--cyan) 10%,transparent);color:var(--cyan);padding:0 5px}.hubDashboard .hubNavDonate{color:var(--amber);font-size:11px}
+.hubSidebarFooter{flex-shrink:0;border-top:1px solid var(--line);padding:9px 8px 0;font-size:10px;color:var(--text)}.hubSidebarFooter small{display:block;color:var(--muted);font-size:9px;margin-top:4px}.hubStateDot{display:inline-block;width:6px;height:6px;flex:none;margin-right:5px;border-radius:50%;background:var(--green)}
+.hubSidebarAccount{display:flex;gap:8px;align-items:center;justify-content:flex-start;width:100%;min-width:0;margin-top:6px;padding:3px 0;border:0;background:none;color:var(--muted);box-shadow:none;text-align:left;font-size:10px}.hubSidebarAccount>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.hubAvatar{display:grid;place-items:center;width:25px;height:25px;flex:none;border:1px solid var(--line);border-radius:7px;background:var(--panel2);color:var(--cyan);font-size:10px;font-weight:600}
+.hubShellTopbar{position:relative;z-index:60;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:60px;padding:10px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}.hubShellBreadcrumb{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--muted);white-space:nowrap}.hubShellBreadcrumb b{font-weight:400;margin:0 8px;opacity:.45}.hubShellBreadcrumb strong{font-weight:550;color:var(--text)}.hubShellBreadcrumb .hubIcon{width:14px;height:14px}
+.hubShellTools{display:flex;align-items:center;gap:7px;min-width:0}.hubShellTools>div{min-width:0}.hubDashboard .headerActions{position:static;display:flex;align-items:center;gap:6px;width:auto;max-width:none;min-width:0;padding:0;grid-template-columns:none}.hubDashboard .headerActions>[id="vpsTerminalLink"],.hubDashboard .headerActions>[id="xrayReload"],.hubDashboard .headerActions>[id="xrayRestart"],.hubDashboard .headerActions>.donateLinkMobile{display:none!important}
+.hubDashboard :is(button,.btn,.badge){box-shadow:none;text-shadow:none}.hubDashboard :is(.btn,.badge,button.primary){background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--text);font-size:11px;font-weight:600;line-height:1.3;min-height:32px;padding:7px 11px}.hubDashboard .btn.disabled{color:var(--muted);opacity:.45}.hubDashboard button.primary,.hubDashboard .btn.primary{color:var(--text);background:color-mix(in srgb,var(--blue) 55%,var(--panel));border-color:color-mix(in srgb,var(--cyan) 35%,var(--line))}
+.hubDashboard .headerActions :is(.badge,.btn){width:auto;min-width:0;min-height:30px;padding:6px 9px;font-size:11px}.hubDashboard #authToggle{max-width:110px;overflow:hidden;text-overflow:ellipsis}.hubDashboard .authMenu{position:fixed;z-index:95;top:84px;right:24px;left:auto;width:min(640px,calc(100vw - 272px));max-height:calc(100dvh - 105px);padding:17px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 24px 64px #0006;backdrop-filter:none}.hubDashboard .authMenuClose{display:flex;top:0;right:0;min-height:30px;padding:5px 10px}.hubDashboard .authMenuHead{padding-right:90px;min-height:34px}.hubDashboard .authMenuHead h2{font-size:17px;margin:0}.hubDashboard .authMenu :is(.authGroup,.authRow,.sessionRow,.notifyRow,.authSecretValue,.authPill){background:var(--panel2);border-color:var(--line);color:var(--text)}.hubDashboard .authGroupSummary{padding:11px}.hubDashboard .authGroupTitle strong{font-size:13px;color:var(--text)}.hubDashboard :is(.authFlagPill,.sessionCurrent,.authSectionState){font-size:10px;min-height:25px}.hubDashboard .authGroupTitle span{font-size:11px}
+.hubDashboard #routerSearchDock,.hubDashboard #mobileRouterSearchDock{width:156px;min-width:0}.hubDashboard #seasonDock,.hubDashboard #mobileSeasonDock{width:86px;max-width:none;min-width:0}.hubDashboard :is(#routerSearchToggle,#mobileRouterSearchToggle,#seasonToggle,#mobileSeasonToggle,.hubUpdateButton){min-height:32px;width:100%;margin:0;padding:7px 9px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;font-size:11px;font-weight:550;line-height:1.3;box-shadow:none}.hubDashboard #hubShellUpdateHost{width:166px}.hubDashboard .hubUpdateButton[data-update-state="current"]{background:color-mix(in srgb,var(--green) 9%,var(--panel));border-color:color-mix(in srgb,var(--green) 35%,var(--line));color:var(--green)}.hubDashboard .hubUpdateButton[data-update-state="available"]{background:color-mix(in srgb,var(--amber) 10%,var(--panel));border-color:color-mix(in srgb,var(--amber) 40%,var(--line));color:var(--amber)}
+.hubDashboard :is(.seasonPanel,.routerSearchPanel){position:absolute;top:calc(100% + 10px);right:0;left:auto;z-index:90;width:310px;margin:0;max-height:calc(100dvh - 105px);overflow:auto;overscroll-behavior:contain}.hubDashboard :is(.seasonCard,.routerSearchCard){padding:13px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 60px #0005;backdrop-filter:none}.hubDashboard :is(.seasonLabel,.routerSearchTitle){color:var(--text);font-size:11px}.hubDashboard :is(.seasonBtn,.routerSearchField,.routerSearchClear){border-color:var(--line);border-radius:7px;background:var(--panel2);color:var(--text)}.hubDashboard .seasonBtn[data-active="true"]{background:color-mix(in srgb,var(--cyan) 12%,var(--panel));border-color:var(--cyan);box-shadow:none}
+.hubPageHeading{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin:23px 0 17px}.hubEyebrow{display:block;color:var(--muted);opacity:.65;font-size:9px;letter-spacing:1px}.hubPageHeading h1{font-size:17px;font-weight:600;letter-spacing:-.3px;line-height:1.25;margin:4px 0 0}.hubPageHeading h1>span{color:var(--muted)}.hubPageHeading p{font-size:12px;color:var(--muted);margin:5px 0 0}.hubPageActions{display:flex;gap:7px}.hubPageActions .btn{display:flex;gap:6px;align-items:center}.hubPageActions .hubIcon{width:14px;height:14px}
+.hubDashboard .routerStats{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 12px}.hubDashboard .statCard{min-height:80px;padding:10px 12px;border-radius:11px;background:var(--panel);border:1px solid var(--line);box-shadow:none;text-align:left;overflow:visible}.hubDashboard .statCard::before,.hubDashboard .statCard::after{display:none}.hubDashboard .statCardHead{min-height:13px;justify-content:flex-start}.hubDashboard .statCardHead span{font-size:10px;font-weight:550;color:var(--muted);letter-spacing:0;text-transform:none}.hubDashboard :is(.statValueRow,.offlineStatRow){justify-content:flex-start;min-height:25px;margin-top:3px}.hubDashboard .statCard strong{font-size:22px;line-height:1.15;font-weight:650;letter-spacing:-.8px;color:var(--text)}.hubDashboard .statCard em{display:block;font-size:9px;color:var(--muted);font-style:normal;margin-top:3px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hubDashboard .statCard.online em{color:var(--green)}.hubDashboard .statCard.offline em{color:var(--red)}.hubDashboard .offlineMoreBtn{position:static;margin-left:auto;padding:3px 7px;font-size:9px;min-height:23px;background:var(--panel2);color:var(--muted)}.hubDashboard .offlinePopover{z-index:55;top:calc(100% + 7px);background:var(--panel);border-color:var(--line);box-shadow:0 18px 45px #0005}
+.hubOverview{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:11px;margin-top:10px}.hubOverviewPanel{min-width:0;padding:14px 16px 11px;background:var(--panel);border:1px solid var(--line);border-radius:11px}.hubOverviewHead{display:flex;align-items:center;justify-content:space-between;gap:10px}.hubOverviewHead h2{font-size:12px;font-weight:600;margin:0}.hubOverviewHead>span{font-size:9px;color:var(--muted)}.hubAvailabilityChart{height:115px;padding-top:17px}.hubAvailabilityChart svg{display:block;width:100%;height:87px;overflow:visible}.hubChartGrid{stroke:var(--line);stroke-dasharray:2 4;fill:none}.hubChartLabels{display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:6px}.hubChartHint{font-size:9px;color:var(--muted);margin:19px 0 0}.hubDashboard .hubResourcesPanel .vpsResources{display:grid!important;grid-template-columns:1fr;gap:10px;margin:14px 0 0;padding:0}.hubDashboard .hubResourcesPanel .vpsResource{position:relative;display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:0;min-height:0;padding:0 0 10px;border:0;border-radius:0;background:none;color:var(--muted);font-size:10px;font-weight:400}.hubResourcesPanel .vpsResource strong{font-size:11px;color:var(--text)!important;font-weight:600}.hubResourcesPanel .vpsResource::after{content:"";position:absolute;left:0;right:0;bottom:0;height:4px;border-radius:4px;background:linear-gradient(to right,var(--cyan) var(--hub-usage,0%),var(--line) var(--hub-usage,0%))}.hubResourcesPanel .vpsResource[data-vps-resource="memory"]::after{background:linear-gradient(to right,var(--green) var(--hub-usage,0%),var(--line) var(--hub-usage,0%))}.hubResourcesPanel .vpsResource[data-vps-resource="disk"]::after{background:linear-gradient(to right,var(--amber) var(--hub-usage,0%),var(--line) var(--hub-usage,0%))}.hubOverviewFoot{display:flex;justify-content:space-between;gap:8px;font-size:9px;color:var(--muted);border-top:1px solid var(--line);margin-top:11px;padding-top:9px}.hubOverviewFoot .hubStateDot{width:5px;height:5px}.hubServiceStrip{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--line);border-radius:7px;background:var(--panel);margin:10px 0 0;font-size:10px;color:var(--muted)}
+.hubRoutersHeading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:22px 0 12px}.hubRoutersHeading h2{font-size:17px;font-weight:600;letter-spacing:-.3px;margin:0}.hubRoutersHeading h2 span{color:var(--muted);font-size:11px;font-weight:400;margin-left:5px}.hubDashboard #hubGroupFilterHost label{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--muted)}.hubDashboard #hubGroupFilterHost select{padding:6px 9px;min-height:30px;background:var(--panel);font-size:11px;border-color:var(--line);color:var(--text)}.hubDashboard>#routerGroupsToggle{display:none}.hubDashboard #routerGroupsToggle{display:none!important}.hubDashboard .toolbar{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px;box-shadow:none;backdrop-filter:none}.hubDashboard #routerFormWrap{margin:0 0 16px}.hubDashboard input,.hubDashboard select,.hubDashboard textarea{background:var(--panel2);color:var(--text);border-color:var(--line);border-radius:7px}.hubDashboard .routerGroupsPanel{background:var(--panel);border-color:var(--line);margin:0 0 14px;border-radius:11px}.hubDashboard .formMsg{background:var(--panel2);border-color:var(--line);color:var(--text);margin:10px 0 0;padding:9px 12px}
+.hubDashboard .cards,.hubDashboard .routerGroupCards{gap:11px}.hubDashboard .routerGroupHeading{min-height:38px;margin:0 0 1px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);font-size:12px}.hubDashboard .routerGroupHeading em{font-size:10px;color:var(--muted);font-weight:400}.hubDashboard .routerGroupToggle{min-height:25px;padding:4px 9px;font-size:10px}.hubDashboard .routerGroupSection{gap:9px}.hubDashboard .card{padding:13px;border:1px solid var(--line);border-radius:11px;background:var(--panel);box-shadow:none;backdrop-filter:none;text-align:center}.hubDashboard .card::before{height:2px;background:var(--green);opacity:.55}.hubDashboard .card.off::before{background:var(--red)}.hubDashboard .card.off{border-color:color-mix(in srgb,var(--red) 25%,var(--line))}.hubDashboard .card.online{border-color:var(--line)}.hubDashboard .nameRow{margin-top:10px;gap:5px}.hubDashboard .name{font-size:13px;max-width:100%;min-height:30px;line-height:1.3;padding:4px 8px;background:transparent;color:var(--text);border:1px solid transparent;border-radius:5px;box-shadow:none;text-shadow:none;font-weight:650}.hubDashboard .nameEditBtn{background:none;color:var(--muted);border-color:transparent;border-radius:5px;width:24px;height:24px;flex-basis:24px}.hubDashboard .nameRow::before{width:24px;height:24px;flex-basis:24px}.hubDashboard .status{padding:4px 7px;border-radius:5px;font-size:10px;font-weight:550;line-height:1.3;color:var(--green);background:color-mix(in srgb,var(--green) 7%,var(--panel));border-color:color-mix(in srgb,var(--green) 30%,var(--line));box-shadow:none}.hubDashboard .status.off{color:var(--red);background:color-mix(in srgb,var(--red) 7%,var(--panel));border-color:color-mix(in srgb,var(--red) 30%,var(--line))}.hubDashboard .status i{width:5px;height:5px;box-shadow:none;animation:none}.hubDashboard .routerCardGroup{margin-top:7px;padding:0;gap:6px}.hubDashboard .routerGroupPickerToggle{min-height:25px;padding:5px 9px;font-size:10px;color:var(--muted);border-color:var(--line);background:var(--panel2)}
+.hubDashboard .cardDetailsToggle{min-height:32px;margin-top:10px;padding:7px 10px;border-color:var(--line);background:var(--panel2);color:var(--muted);font-size:11px;font-weight:550}.hubDashboard .metrics{gap:7px;margin-top:11px}.hubDashboard .metric{padding:9px 7px;border-color:var(--line);background:var(--panel2);border-radius:7px;box-shadow:none}.hubDashboard .metric>span{color:var(--muted);font-size:10px;font-weight:400;letter-spacing:0}.hubDashboard .metric-compact .metric-line{font:inherit;color:var(--text)}.hubDashboard .metric b{font-size:12px;font-weight:550;color:var(--text)}.hubDashboard .modelMetricValue{font-size:12px!important}.hubDashboard .modelLegendBadge{box-shadow:none;animation:none;background:color-mix(in srgb,var(--cyan) 10%,var(--panel));border-color:color-mix(in srgb,var(--cyan) 35%,var(--line));color:var(--cyan)}.hubDashboard .modelLegendBadge::before{display:none}.hubDashboard .actions{gap:6px}.hubDashboard .actions .btn{min-height:30px;padding:6px 8px;font-size:10px}.hubDashboard .actions .btn[data-admin-link]{color:var(--cyan);border-color:color-mix(in srgb,var(--cyan) 30%,var(--line));background:color-mix(in srgb,var(--blue) 25%,var(--panel))}.hubDashboard .tachyonIntegration{border-color:var(--line);background:var(--panel2);border-radius:8px!important;padding:9px!important}.hubDashboard .tachyonMeta{font-size:11px;min-height:25px!important;gap:7px!important}.hubDashboard .tachyonMeta .status{font-size:9px}.hubDashboard .tachyonAction .btn{min-height:28px;font-size:10px}.hubDashboard .actionToggle{background:var(--panel2);border-color:var(--line);color:var(--text)}.hubDashboard .routerCardSlot.isFloating>.card{background:var(--panel);box-shadow:0 24px 64px #0007}.hubDashboard .notesPreview,.hubDashboard .wolPanel,.hubDashboard .trafficPanel{background:var(--panel2);border-color:var(--line);color:var(--text);box-shadow:none}
+.hubSidebarClose,.hubSidebarMenuButton,.hubPhoneBrand,.hubSidebarBackdrop{display:none}.hubDashboard .hubUpdateNotice{margin:0 auto 12px;border-color:var(--line);font-size:11px}.hubDashboard .hubUpdateConfirmCard{background:var(--panel);border-color:var(--line);border-radius:13px}.hubDashboard .hubUpdateConfirmTitle{color:var(--text)}.hubDashboard .hubUpdateConfirmMeta{background:var(--panel2);border-color:var(--line)}
+.hubShellDialog{position:fixed;inset:0;z-index:105;display:grid;place-items:center;padding:20px;background:#0009}.hubShellDialogCard{width:min(100%,520px);max-height:calc(100dvh - 40px);overflow:auto;padding:18px;border:1px solid var(--line);border-radius:13px;background:var(--panel);box-shadow:0 24px 70px #0006}.hubShellDialogHead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}.hubShellDialogHead h2{font-size:17px;margin:0}.hubShellDialogCard p{font-size:12px;color:var(--muted)}.hubLogLink{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 11px;margin:7px 0;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:7px;text-decoration:none;font-size:12px}.hubLogLink small{color:var(--muted);font-size:10px}.hubXrayActions{display:flex;flex-wrap:wrap;gap:8px}.hubDashboard .hubSidebar [hidden],.hubDashboard .hubShellDialog[hidden]{display:none!important}
+@media(min-width:681px) and (max-width:1180px){.hubShellBreadcrumb>span{display:none}.hubShellTools{width:100%;justify-content:flex-end}.hubDashboard #hubShellSearchHost{margin-right:auto}.hubDashboard .toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}.hubDashboard .routerGroupCards{grid-template-columns:repeat(2,minmax(0,1fr))}.hubOverview{grid-template-columns:1fr 1fr}.hubDashboard #routerSearchDock{width:130px}.hubDashboard #hubShellUpdateHost{width:145px}.hubDashboard #seasonDock{width:73px}.hubSidebar{width:190px}.hubDashboard .wrap{margin-left:206px;padding-right:16px}.hubDashboard .authMenu{width:min(600px,calc(100vw - 240px))}}
+@media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){
+ .hubDashboard .wrap{margin:0;padding:10px 12px 22px;display:block;width:100%;max-width:none}.hubSidebar{inset:12px auto auto 12px;width:min(264px,calc(100vw - 32px));max-height:calc(100dvh - 24px);border-radius:12px;z-index:110;padding:10px;visibility:hidden;transform:translateX(calc(-100% - 16px));transition:transform .2s ease,visibility .2s}.hubSidebar.is-open{visibility:visible;transform:none}.hubSidebarBackdrop:not([hidden]){display:block;position:fixed;inset:0;z-index:100;border:0;border-radius:0;background:#0009;width:100%;height:100%;padding:0}.hubSidebarClose{display:grid;place-items:center;position:absolute;top:15px;right:10px;padding:3px;min-height:27px;width:27px;border:0;background:transparent;color:var(--muted)}.hubSidebarClose .hubIcon{width:15px;height:15px}.hubSidebarBrand{padding-right:30px}.hubSidebarNav{padding-bottom:8px}.hubNavCaption{padding-top:12px}.hubDashboard .hubNavItem{min-height:34px;font-size:12px}.hubDashboard.hubSidebarOpen{overflow:hidden}.hubShellTopbar{gap:8px;min-height:55px;padding:8px 9px;border-radius:10px;flex-wrap:wrap}.hubSidebarMenuButton{display:grid;place-items:center;width:32px;min-height:32px;padding:7px;border:1px solid var(--line);background:var(--panel2);border-radius:7px;color:var(--text)}.hubPhoneBrand{display:block;flex:1;min-width:0}.hubPhoneBrand strong{display:block;font-size:12px;font-weight:600;line-height:1.25}.hubPhoneBrand small{font-size:9px;color:var(--muted)}.hubShellBreadcrumb{display:none}.hubShellTools{display:contents}.hubDashboard #hubShellAccountHost{margin-left:auto}.hubDashboard .headerActions{gap:4px;width:auto!important;display:flex!important}.hubDashboard .headerActions>.btn[href="/logout"]{display:none}.hubDashboard #authToggle{font-size:10px;padding:5px 7px;min-height:28px;max-width:80px}.hubDashboard #hubShellSearchHost,.hubDashboard #hubShellUpdateHost,.hubDashboard #hubShellDesignHost{flex:1 1 28%;min-width:0;display:block}.hubDashboard #hubShellSearchHost{order:10}.hubDashboard #hubShellUpdateHost{order:11;width:auto}.hubDashboard #hubShellDesignHost{order:12}.hubDashboard #routerSearchDock,.hubDashboard #seasonDock{display:none}.hubDashboard #mobileRouterSearchDock,.hubDashboard #mobileSeasonDock{display:block;width:100%;margin:0}.hubDashboard #mobileHubUpdateDock{display:none}.hubDashboard :is(#mobileRouterSearchToggle,#mobileSeasonToggle,.hubUpdateButton){min-height:32px;font-size:10px;padding:7px 6px;width:100%;margin:0}.hubDashboard :is(.seasonPanel,.routerSearchPanel){position:fixed;top:116px;right:12px;left:12px;width:auto;max-height:calc(100dvh - 130px);margin:0;overflow:auto}.hubDashboard :is(.seasonCard,.routerSearchCard){width:100%;padding:13px}.hubDashboard .authMenu{top:72px;right:12px;left:12px;width:auto;max-height:calc(100dvh - 90px);padding:13px}.hubDashboard .authMenuHead{min-height:34px;padding-right:80px}.hubDashboard .authMenuHead h2{font-size:16px;margin:0}.hubDashboard .authMenuClose{min-height:28px;font-size:11px}.hubPageHeading{margin:18px 0 13px;gap:8px;align-items:center}.hubEyebrow{display:none}.hubPageHeading h1{font-size:16px;margin:0}.hubPageHeading p{font-size:10px;max-width:215px;margin-top:4px}.hubPageActions{gap:5px}.hubDashboard #hubRefreshRouters{padding:6px;min-height:30px}.hubDashboard #hubRefreshRouters>span{display:none}.hubDashboard #hubAddRouter{padding:7px 8px;font-size:10px;min-height:30px;max-width:134px}.hubDashboard #hubAddRouter .hubIcon{width:12px;height:12px}.hubDashboard .routerStats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 14px}.hubDashboard .statCard{min-height:72px;padding:8px 10px}.hubDashboard .statCardHead span{font-size:10px}.hubDashboard .statCard strong{font-size:20px}.hubDashboard .statCard em{font-size:9px}.hubDashboard .offlineMoreBtn{padding:3px 6px;font-size:8px}.hubOverview{grid-template-columns:1fr;gap:14px;margin:0}.hubAvailabilityPanel{display:block}.hubAvailabilityPanel .hubOverviewHead{flex-direction:column;align-items:flex-start;gap:4px}.hubAvailabilityChart{height:auto;padding-top:10px}.hubAvailabilityChart svg{height:72px}.hubChartHint{margin-top:12px}.hubOverviewPanel{padding:12px}.hubOverviewHead h2{font-size:11px}.hubDashboard .hubResourcesPanel .vpsResources{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:8px}.hubDashboard .hubResourcesPanel .vpsResource{height:auto;align-items:flex-start;justify-content:flex-start;flex-direction:column;gap:0;line-height:1.2;font-size:9px}.hubDashboard .hubResourcesPanel .vpsResource :is(span,strong){line-height:1.2}.hubResourcesPanel .vpsResource strong{font-size:13px}.hubOverviewFoot{font-size:8px}.hubServiceStrip{padding:8px 9px;font-size:9px;gap:7px}.hubServiceStrip>span:first-child{display:none}.hubRoutersHeading{margin:20px 0 11px;gap:8px}.hubRoutersHeading h2{font-size:16px;white-space:nowrap}.hubRoutersHeading h2 span{font-size:10px;margin-left:3px}.hubDashboard #hubGroupFilterHost .routerGroupFilterCaption{display:none}.hubDashboard #hubGroupFilterHost select{max-width:155px;font-size:10px;padding:5px 7px;min-height:28px}.hubDashboard .cards,.hubDashboard .routerGroupCards{grid-template-columns:1fr;gap:9px}.hubDashboard .card{padding:12px}.hubDashboard .routerGroupHeading{font-size:11px}.hubDashboard .routerGroupHeading em{font-size:9px}.hubDashboard .status{font-size:10px}.hubDashboard .name{font-size:13px}.hubDashboard .toolbar{grid-template-columns:1fr;padding:12px}.hubDashboard .hubShellDialog{padding:12px}.hubShellDialogCard{padding:15px}.hubShellDialogHead h2{font-size:16px}.hubDashboard .hubShellDialogClose{font-size:11px}.hubDashboard .actions{grid-template-columns:repeat(2,minmax(0,1fr))}.hubDashboard .cardDetailsToggle{min-height:32px;font-size:10px}.hubDashboard .hubUpdateNotice{margin-bottom:10px}.hubDashboard .hubUpdateConfirm{z-index:130}
+}
+@media(prefers-reduced-motion:reduce){.hubSidebar{transition:none}}
+.hubShellControlsRow{display:contents}
+.hubDashboard{overflow-y:scroll}
+.hubDashboard .cards{overflow-anchor:none}
+.hubDashboard .offlineMoreBtn{transform:none}
+.hubDashboard .offlinePopover{left:0;right:auto;width:100%;max-width:calc(100vw - 24px)}
+.hubDashboard .offlineName{overflow-wrap:anywhere}
+.hubDashboard .model-metric strong,.hubDashboard .modelMetricName{width:100%;max-width:100%;text-align:center}
+.hubShellTopbar{margin-bottom:14px}
+.hubNavSection{margin-top:7px}
+.hubNavSectionToggle{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:34px;padding:7px 9px;border:1px solid var(--line);border-radius:7px;list-style:none;cursor:pointer;color:var(--text);background:var(--panel);text-transform:none}
+.hubNavSectionToggle::-webkit-details-marker{display:none}
+.hubNavSectionToggle .hubIcon{width:14px;height:14px;transition:transform .18s ease;flex:none;color:var(--muted)}
+.hubNavSection[open]>.hubNavSectionToggle{background:var(--panel2)}
+.hubNavSection[open]>.hubNavSectionToggle .hubIcon{transform:rotate(90deg);color:var(--cyan)}
+.hubNavSectionToggle:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.hubNavSectionItems{margin:4px 0 0 8px;padding:0 0 3px 5px;border-left:1px solid var(--line)}
+.hubDashboard #hubSidebar :is(#hubRefreshRouters,#hubAddRouter){width:100%;max-width:none;min-height:34px;padding:6px 9px}
+.hubDashboard #hubSidebar #hubRefreshRouters>span{display:block}
+.hubDashboard #hubSidebar :is(#hubRefreshRouters,#hubAddRouter) .hubIcon{width:16px;height:16px}
+.hubDashboard #hubShellSearchHost :is(#routerSearchToggle,#mobileRouterSearchToggle),.hubDashboard #hubShellUpdateHost [data-hub-update]{height:48px;min-height:48px}
+.hubDashboard.hubAccessOpen{overflow:hidden}
+.hubDashboard .hubAccessBackdrop{position:fixed;inset:0;z-index:139;background:#0009}
+.hubDashboard .hubAccessBackdrop[hidden]{display:none}
+.hubDashboard #authMenu{inset:50% auto auto 50%;z-index:140;transform:translate(-50%,-50%);width:min(760px,calc(100vw - 32px));max-height:min(860px,calc(100dvh - 32px));margin:0;padding:20px;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-color:var(--scroll-thumb) var(--panel);border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--text);font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-shadow:0 24px 70px #0006;backdrop-filter:none}
+.hubDashboard #authMenu .authMenuHead{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:32px;padding:0 0 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+.hubDashboard #authMenu .authMenuHead h2{margin:0;font-size:18px;font-weight:650;line-height:1.4;color:var(--text)}
+.hubDashboard #authMenu .authMenuHead .authMenuClose{position:static;flex:none;min-height:28px;padding:4px 9px;align-self:center}
+.hubDashboard #authMenu .authMenuHead::before{content:"";position:absolute;top:-20px;left:0;right:0;height:20px;background:var(--panel);pointer-events:none}
+.hubDashboard #authMenu :is(.authGroup,.authRow,.sessionRow,.notifyRow:not(.warn):not(.bad)){background:var(--panel2);border-color:var(--line);color:var(--text);box-shadow:none}
+.hubDashboard #authMenu .authGroup{margin-top:12px;border-radius:10px;scroll-margin-top:56px}
+.hubDashboard #authMenu .authGroupSummary{padding:12px;gap:12px}
+.hubDashboard #authMenu :is(.authGroupTitle strong,.authSectionHead h3,.sessionHead h3){font-size:13px;font-weight:600;line-height:1.4;color:var(--text)}
+.hubDashboard #authMenu :is(.authGroupTitle span,.authHint,.authRowMeta,.sessionMeta,.notifyHint,.notifyTime,.backupHint){font-size:12px;font-weight:400;line-height:1.5;color:var(--muted)}
+.hubDashboard #authMenu :is(.authGroupBody,.authSection,.authOverview,.sessionBox,.notifyBox,.backupBox){border-color:var(--line)}
+.hubDashboard #authMenu :is(input,textarea,select){min-width:0;max-width:100%;border-color:var(--line);border-radius:7px;background:var(--panel);color:var(--text);font-size:13px;font-family:inherit;box-shadow:none}
+.hubDashboard #authMenu :is(input,textarea)::placeholder{color:var(--muted);opacity:1}
+.hubDashboard #authMenu :is(input,textarea,select,button,summary,a):focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.hubDashboard #authMenu input::file-selector-button{margin-right:10px;padding:6px 9px;border:1px solid var(--line);border-radius:5px;background:var(--panel2);color:var(--text);font:inherit}
+.hubDashboard #authMenu :is(button,.btn,.sessionBtn,.authRememberToggle){border-color:var(--line);border-radius:7px;background:var(--panel);color:var(--text);font-size:12px;font-family:inherit;font-weight:550;line-height:1.4;box-shadow:none;text-shadow:none}
+.hubDashboard #authMenu :is(button,.btn):hover:not(:disabled){border-color:var(--cyan)}
+.hubDashboard #authMenu :is(button.primary,.btn.primary){background:var(--blue);border-color:var(--cyan);color:#fff}
+.hubDashboard #authMenu :is(.authGroupChevron,.authPill){background:var(--accent-soft);border-color:color-mix(in srgb,var(--cyan) 25%,var(--line));color:var(--cyan);box-shadow:none}
+.hubDashboard #authMenu :is(.authPill.off,.authSectionState.off){background:var(--panel);border-color:var(--line);color:var(--muted)}
+.hubDashboard #authMenu :is(.authSectionState:not(.off):not(.warn),.sessionCurrent,.notifyBtn.on){background:color-mix(in srgb,var(--green) 12%,var(--panel));border-color:color-mix(in srgb,var(--green) 35%,var(--line));color:var(--green)}
+.hubDashboard #authMenu :is(.authSectionState.warn,#backupRewrite){background:color-mix(in srgb,var(--amber) 12%,var(--panel));border-color:color-mix(in srgb,var(--amber) 35%,var(--line));color:var(--amber);box-shadow:none}
+.hubDashboard #authMenu :is(button.bad,.authDanger){background:color-mix(in srgb,var(--red) 12%,var(--panel));border-color:color-mix(in srgb,var(--red) 35%,var(--line));color:var(--red)}
+.hubDashboard #authMenu .authSecretBox{background:var(--accent-soft);border-color:var(--line)}
+.hubDashboard #authMenu :is(.authSecretValue,.authRowKey,.notifyDetails,code){background:var(--code);border-color:var(--line);color:var(--text);font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+.hubDashboard #authMenu :is(.authSecretBox strong,.authRowTitle,.sessionTitle,.notifyTitle,.authSocialName){color:var(--text);font-weight:600}
+.hubDashboard #authMenu :is(.authRowTitle,.sessionTitle,.notifyTitle,.authSocialName){font-size:13px}
+.hubDashboard #authMenu .authFlagPill span{font-size:11px;font-weight:600}
+.hubDashboard #authMenu .authSocialAvatar{background:var(--panel);border-color:var(--line);color:var(--cyan)}
+.hubDashboard #authMenu .notifyRow.warn{border-color:color-mix(in srgb,var(--amber) 35%,var(--line));background:color-mix(in srgb,var(--amber) 8%,var(--panel))}
+.hubDashboard #authMenu .notifyRow.bad{border-color:color-mix(in srgb,var(--red) 35%,var(--line));background:color-mix(in srgb,var(--red) 8%,var(--panel))}
+.hubDashboard #authMenu .notifyBody{color:var(--text)}
+.hubDashboard .hubPhoneBrand b{color:var(--cyan);font-weight:600}
+.hubDashboard .routerSearchField{background:var(--panel2);border-color:var(--line);box-shadow:none;color:var(--muted)}
+.hubDashboard .routerSearchField:focus-within{border-color:var(--cyan);box-shadow:0 0 0 2px var(--focus-ring)}
+.hubDashboard .routerSearchField input,.hubDashboard .routerSearchField input:focus-visible{background:transparent!important;color:var(--text);outline:none;box-shadow:none;border:0}
+.hubDashboard .routerSearchField input::placeholder,.hubDashboard .routerSearchField>span,.hubDashboard .routerSearchMeta{color:var(--muted)}
+.hubDashboard .hubShellDialog{z-index:135}
+.hubDashboard :is(#authMenuClose,#hubShellDialogClose){display:inline-flex;align-items:center;justify-content:center;flex:none;width:max-content;min-width:0;max-width:none;height:28px;min-height:28px;padding:4px 9px;line-height:normal;white-space:nowrap;align-self:center;border:1px solid var(--line);border-radius:999px;background:var(--panel2);color:var(--text);box-shadow:none}
+.hubChartPeriod{padding:3px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);white-space:nowrap}
+.hubChartLegend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px;color:var(--muted)}
+.hubChartLegend>span{display:inline-flex;align-items:center;gap:5px}
+.hubChartLegend>span::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.hubChartLegend .hubChartOnline{color:var(--green)}.hubChartLegend .hubChartOffline{color:var(--red)}
+.hubChartLegend #hubAvailabilityLabel{margin-left:auto}.hubChartLegend #hubAvailabilityLabel::before{display:none}
+.hubDashboard .hubAvailabilityChart{position:relative;height:auto;padding:12px 0 0 24px}
+.hubDashboard .hubAvailabilityChart svg{height:100px;overflow:hidden;cursor:crosshair;outline-offset:3px}
+.hubChartScale{position:absolute;top:19px;bottom:28px;left:0;display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;min-width:16px;color:var(--muted)}
+.hubChartOnlineLine,.hubChartOfflineLine{fill:none;stroke-width:2;vector-effect:non-scaling-stroke}
+.hubChartOnlineLine{stroke:var(--green)}.hubChartOfflineLine{stroke:var(--red)}
+.hubChartOnlineDot{fill:var(--green)}.hubChartOfflineDot{fill:var(--red)}
+.hubChartArea{fill:var(--green);opacity:.07}
+.hubDashboard .hubChartHint{margin:12px 0 0;line-height:1.5}
+.hubChartTooltip{position:absolute;top:8px;z-index:2;width:max-content;max-width:calc(100% - 12px);padding:7px 9px;white-space:pre-line;pointer-events:none;background:var(--panel2);border:1px solid var(--line);border-radius:7px;color:var(--text);box-shadow:0 4px 14px #0004}
+.hubChartTooltip[hidden]{display:none}
+@media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){
+ .hubDashboard .hubAvailabilityPanel .hubOverviewHead{flex-direction:row;align-items:center}
+ .hubChartLegend{gap:10px;margin-top:10px}.hubChartLegend #hubAvailabilityLabel{margin-left:auto}
+ .hubDashboard .hubAvailabilityChart svg{height:92px}
+}
+.hubDashboard.hubShellDialogOpen{overflow:hidden}
+.hubDashboard #hubShellDialog[data-view="vps-xray"] .hubShellDialogCard{text-align:center;overscroll-behavior:contain}
+.hubDashboard #hubShellDialog[data-view="vps-xray"] .hubShellDialogHead{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:8px}
+.hubDashboard #hubShellDialog[data-view="vps-xray"] .hubShellDialogHead h2{grid-column:2;text-align:center}
+.hubDashboard #hubShellDialog[data-view="vps-xray"] .hubShellDialogClose{grid-column:3;justify-self:end}
+.hubDashboard #hubShellDialog[data-view="vps-xray"] p{max-width:46ch;margin:0 auto 14px;line-height:1.6;text-align:center}
+.hubDashboard #hubShellDialog[data-view="vps-xray"] .hubXrayActions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));justify-content:center;gap:8px;margin:14px 0}
+.hubDashboard #hubShellDialog[data-view="vps-xray"] .hubXrayActions .btn{width:100%;min-height:40px;white-space:normal;text-align:center}
+.hubDashboard #hubShellDialog[data-view="vps-xray"] #hubXrayResult{margin-bottom:0}
+/* Sidebar actions own these panels; their old header triggers stay out of the
+   visual layout while the existing forms and handlers remain available. */
+.hubDashboard .hubSidebarPanels,.hubDashboard #hubShellDesignHost,.hubDashboard #hubShellAccountHost,.hubDashboard #hubShellAccountHost .headerActions{display:contents!important}
+.hubDashboard #hubShellDesignHost :is(#seasonToggle,#mobileSeasonToggle),.hubDashboard #hubShellAccountHost .headerActions>:is(#authToggle,a[href="/logout"]){display:none!important}
+.hubDashboard #hubShellDesignHost :is(#seasonDock,#mobileSeasonDock){position:absolute;top:0;left:0;width:0;max-width:0;height:0;margin:0}
+.hubDashboard #hubShellDesignHost .seasonPanel{position:fixed;top:84px;left:240px;right:auto;width:310px;margin:0;max-height:calc(100dvh - 105px)}
+@media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){
+ .hubShellTopbar{display:grid;grid-template-columns:32px minmax(0,1fr);gap:8px}
+ .hubSidebarMenuButton{grid-column:1;grid-row:1}.hubPhoneBrand{grid-column:2;grid-row:1}
+ .hubShellControlsRow{display:grid;grid-column:1/-1;grid-row:2;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;min-width:0}
+ .hubDashboard :is(#hubShellSearchHost,#hubShellUpdateHost,#hubShellDesignHost){width:auto;order:initial;min-width:0;margin:0}
+ .hubDashboard #hubShellDesignHost .seasonPanel{top:72px;left:12px;right:12px;width:auto;max-height:calc(100dvh - 90px)}
+ .hubDashboard #authMenu{width:calc(100vw - 24px);max-height:calc(100dvh - 24px);padding:14px;border-radius:12px}
+ .hubDashboard #authMenu :is(input,textarea,select){font-size:16px}
+ .hubPhoneBrand strong{font-size:12px;line-height:1.3}.hubPhoneBrand small{font-size:8px}
+}
+/* Card controls share the same readable type as metric values, on every screen. */
+.hubDashboard .card :is(.status,.name,.routerGroupPickerToggle,.cardDetailsToggle,.actionToggle,.tachyonMeta,.tachyonName,.tachyonAction .btn,.actions .btn){font-family:inherit;font-size:14px;font-weight:700;line-height:1.4}
+.hubDashboard .card :is(.routerGroupPickerToggle,.cardDetailsToggle){color:var(--text)}
+.hubDashboard .card :is(.actions .btn,.tachyonAction .btn){min-height:36px;white-space:normal;overflow-wrap:anywhere;text-align:center}
+.hubDashboard .card .tachyonMeta{flex-wrap:wrap}
+@media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){
+ .hubDashboard .card .actions :is(.routerLogsAction,a[href$="/xray-control"]){grid-column:1/-1}
+ .hubDashboard #hubSidebar :is(#hubRefreshRouters,#hubAddRouter){min-height:34px}
+}
+</style>'''
+
+
+def hub_sidebar_runtime_script():
+    return r'''
+function updateHubSidebarSummary(list) {
+  if (!document.getElementById('hubSidebar')) return;
+  const routers = Array.isArray(list) ? list : [];
+  const online = routers.filter(router => Boolean(router.online)).length;
+  document.getElementById('hubNavCount').textContent = String(routers.length);
+  document.getElementById('hubVisibleCount').textContent = `${filteredRouters(routers).length} из ${routers.length}`;
+  document.getElementById('hubHeartbeatSummary').textContent = `Heartbeat: ${online} из ${routers.length} в сети`;
+  renderHubAvailability(routers);
+}
+
+function renderHubAvailability(list) {
+  const routers = Array.isArray(list) ? list : [];
+  const online = routers.filter(router => Boolean(router.online)).length;
+  const history = window.HUB_AVAILABILITY;
+  const now = history && Number.isFinite(history.to)
+    ? history.to + Math.max(0, Date.now() - (window.HUB_AVAILABILITY_RECEIVED_AT || Date.now())) / 1000 : Date.now() / 1000;
+  const start = now - 86400;
+  const gap = Number(history?.gap_after) || 90;
+  const points = (Array.isArray(history?.points) ? history.points : []).filter(point =>
+    Array.isArray(point) && point.length === 3 && point.every(Number.isFinite)
+    && point[0] >= start && point[0] <= now && point[1] >= 0 && point[2] >= point[1]
+  ).slice(-1441).map(point => point.slice());
+  // This final point is a live observation, not a backfilled 24-hour line.
+  points.push([now, online, routers.length]);
+  const maximum = Math.max(1, routers.length, ...points.map(point => point[2]));
+  const x = at => 3 + Math.max(0, Math.min(1, (at - start) / 86400)) * 594;
+  const y = value => 92 - value * 84 / maximum;
+  const line = column => {
+    let path = '';
+    points.forEach((point, index) => {
+      const value = column === 1 ? point[1] : point[2] - point[1];
+      const previous = points[index - 1];
+      const px = x(point[0]).toFixed(2), py = y(value).toFixed(2);
+      if (!previous || point[0] - previous[0] > gap) path += ` M${px} ${py}`;
+      else path += ` H${px} V${py}`;
+    });
+    return path.trim();
+  };
+  document.getElementById('hubAvailabilityLine').setAttribute('d', line(1));
+  document.getElementById('hubAvailabilityOfflineLine').setAttribute('d', line(2));
+  // Each observed segment gets its own area; missing time stays empty.
+  let area = '', segment = [];
+  const finish = () => {
+    if (segment.length > 1) {
+      area += ` M${x(segment[0][0]).toFixed(2)} 100`;
+      segment.forEach((point, index) => {
+        const px = x(point[0]).toFixed(2), py = y(point[1]).toFixed(2);
+        area += index ? ` H${px} V${py}` : ` L${px} ${py}`;
+      });
+      area += ` L${x(segment[segment.length - 1][0]).toFixed(2)} 100 Z`;
+    }
+    segment = [];
+  };
+  points.forEach((point, index) => {
+    if (index && point[0] - points[index - 1][0] > gap) finish();
+    segment.push(point);
+  });
+  finish();
+  document.getElementById('hubAvailabilityArea').setAttribute('d', area.trim());
+  for (const [id, value] of [['Online', online], ['Offline', routers.length - online]]) {
+    document.getElementById('hubAvailability' + id).textContent = String(value);
+    const dot = document.getElementById('hubAvailability' + id + 'Dot');
+    dot.setAttribute('cx', '597'); dot.setAttribute('cy', y(value).toFixed(2));
+  }
+  document.getElementById('hubAvailabilityMax').textContent = String(maximum);
+  document.getElementById('hubAvailabilityMid').textContent = maximum > 1 ? String(Math.round(maximum / 2)) : '';
+  const observed = points.reduce((sum, point, index) => {
+    const delta = index ? point[0] - points[index - 1][0] : 0;
+    return sum + (delta <= gap ? delta : 0);
+  }, 0);
+  const minutes = Math.floor(observed / 60);
+  const duration = minutes >= 60 ? `${Math.floor(minutes / 60)} ч ${minutes % 60} мин` : `${minutes} мин`;
+  document.getElementById('hubAvailabilityHint').textContent = !routers.length
+    ? 'Нет роутеров. История появится после их добавления.'
+    : minutes ? `Есть замеры за ${duration} из 24 ч. Нет линии — нет замеров Hub.`
+      : 'История накапливается: первый замер есть, следующий — в течение минуты. Пустая область — ещё нет данных.';
+  document.getElementById('hubAvailabilityLabel').textContent = 'По Heartbeat';
+  document.getElementById('hubAvailabilityStart').textContent = '24 ч назад';
+  document.getElementById('hubAvailabilityStart').title = new Date(start * 1000).toLocaleString('ru-RU');
+  renderHubAvailability.points = points;
+  renderHubAvailability.start = start;
+  document.getElementById('hubAvailabilityPlot').setAttribute('aria-label',
+    `Последние 24 часа. Сейчас онлайн ${online}, офлайн ${routers.length - online}. Доступность по Heartbeat; исправность туннеля не проверяется. Стрелки влево и вправо — просмотр замеров.`);
+}
+
+function initHubAvailabilityChart() {
+  const plot = document.getElementById('hubAvailabilityPlot');
+  const tooltip = document.getElementById('hubAvailabilityTooltip');
+  let selected = -1;
+  const show = (at, px) => {
+    const points = renderHubAvailability.points || [];
+    if (!points.length) return;
+    selected = points.reduce((nearest, point, index) =>
+      Math.abs(point[0] - at) < Math.abs(points[nearest][0] - at) ? index : nearest, 0);
+    const point = points[selected];
+    const recorded = Math.abs(point[0] - at) <= 90;
+    const stamp = new Date((recorded ? point[0] : at) * 1000).toLocaleString('ru-RU', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    tooltip.textContent = stamp + '\n' + (recorded ? `Онлайн: ${point[1]} · Офлайн: ${point[2] - point[1]} · Всего: ${point[2]}` : 'Нет замеров за это время');
+    tooltip.hidden = false;
+    const chart = document.getElementById('hubAvailabilityChart');
+    tooltip.style.left = Math.max(6, Math.min(px, chart.clientWidth - tooltip.offsetWidth - 6)) + 'px';
+  };
+  const inspect = event => {
+    const rect = plot.getBoundingClientRect();
+    const fraction = Math.max(0, Math.min(1, ((event.clientX - rect.left) / rect.width * 600 - 3) / 594));
+    show(renderHubAvailability.start + fraction * 86400, event.clientX - rect.left + 24);
+  };
+  plot.addEventListener('pointermove', inspect);
+  plot.addEventListener('pointerdown', inspect);
+  plot.addEventListener('pointerleave', event => { if (event.pointerType === 'mouse') tooltip.hidden = true; });
+  plot.addEventListener('blur', () => tooltip.hidden = true);
+  plot.addEventListener('keydown', event => {
+    const points = renderHubAvailability.points || [];
+    if (!points.length || !['ArrowLeft','ArrowRight','Home','End','Escape'].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === 'Escape') { tooltip.hidden = true; return; }
+    if (selected < 0) selected = points.length - 1;
+    selected = event.key === 'Home' ? 0 : event.key === 'End' ? points.length - 1
+      : Math.max(0, Math.min(points.length - 1, selected + (event.key === 'ArrowLeft' ? -1 : 1)));
+    const point = points[selected];
+    show(point[0], 24 + (point[0] - renderHubAvailability.start) / 86400 * plot.clientWidth);
+  });
+}
+
+function syncHubSidebarPermissions() {
+  if (!document.getElementById('hubSidebar')) return;
+  document.querySelectorAll('[data-hub-owner]').forEach(node => node.hidden = !authIsOwner());
+  document.querySelectorAll('[data-hub-add]').forEach(node => node.hidden = !authCanAddRouter());
+  document.querySelectorAll('[data-hub-username]').forEach(node => node.textContent = String(authMeta.username || 'Пользователь'));
+}
+
+function initHubSidebar() {
+  initHubAvailabilityChart();
+  const sidebar = document.getElementById('hubSidebar');
+  if (!sidebar || sidebar.dataset.initialized) return;
+  sidebar.dataset.initialized = 'true';
+  const backdrop = document.getElementById('hubSidebarBackdrop');
+  const menu = document.getElementById('hubSidebarMenuButton');
+  const dialog = document.getElementById('hubShellDialog');
+  const closeDialog = document.getElementById('hubShellDialogClose');
+  let dialogTrigger = null;
+  document.body.append(dialog);
+  // Fixed panels live outside the workspace so it can be inert while the
+  // access dialog is open, without disabling the dialog's own form fields.
+  const panels = document.querySelector('.hubSidebarPanels');
+  if (panels) document.body.append(panels);
+  document.getElementById('hubAccessBackdrop')?.addEventListener('click', event => {
+    event.stopPropagation();
+    closeAuthMenu(true);
+  });
+  const place = (hostId, node) => { if (node) document.getElementById(hostId).append(node); };
+  place('hubShellSearchHost', routerSearchDock);
+  place('hubShellSearchHost', mobileRouterSearchDock);
+  place('hubShellDesignHost', seasonDock);
+  place('hubShellDesignHost', mobileSeasonDock);
+  place('hubShellAccountHost', headerActions);
+  const update = document.querySelector('.desktopHeader [data-hub-update]');
+  place('hubShellUpdateHost', update);
+  const filterLabel = routerGroupFilter && routerGroupFilter.closest('label');
+  place('hubGroupFilterHost', filterLabel);
+  headerActions.hidden = false;
+  const setOpen = (open, restoreFocus = false) => {
+    const isOpen = Boolean(open && mobileLayoutMq.matches);
+    sidebar.classList.toggle('is-open', isOpen);
+    sidebar.inert = !authMenu.hidden || (mobileLayoutMq.matches && !isOpen);
+    backdrop.hidden = !isOpen;
+    menu.setAttribute('aria-expanded', String(isOpen));
+    document.body.classList.toggle('hubSidebarOpen', isOpen);
+    const workspace = document.querySelector('.hubDashboard>.wrap');
+    if (workspace) workspace.inert = isOpen || !authMenu.hidden;
+    if (isOpen) document.getElementById('hubSidebarClose').focus({preventScroll:true});
+    else if (restoreFocus && mobileLayoutMq.matches) menu.focus({preventScroll:true});
+  };
+  const close = () => setOpen(false);
+  const scrollTo = node => node?.scrollIntoView({block:'start',behavior:document.documentElement.dataset.hubDesign === 'lite' || matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+  menu.addEventListener('click', () => setOpen(!sidebar.classList.contains('is-open')));
+  document.getElementById('hubSidebarClose').addEventListener('click', () => setOpen(false, true));
+  backdrop.addEventListener('click', () => setOpen(false, true));
+  const closeModal = (restore = true) => {
+    dialog.hidden = true;
+    document.body.classList.remove('hubShellDialogOpen');
+    if (restore && dialogTrigger?.isConnected) dialogTrigger.focus({preventScroll:true});
+  };
+  closeDialog.addEventListener('click', () => closeModal());
+  dialog.addEventListener('click', event => { if (event.target === dialog) closeModal(); });
+  const openModal = (title, content, trigger, view = '') => {
+    dialogTrigger = mobileLayoutMq.matches ? menu : trigger;
+    dialog.dataset.view = view;
+    document.getElementById('hubShellDialogTitle').textContent = title;
+    document.getElementById('hubShellDialogContent').innerHTML = content;
+    dialog.hidden = false;
+    document.body.classList.add('hubShellDialogOpen');
+    closeDialog.focus({preventScroll:true});
+  };
+  const trapFocus = (event, root) => {
+    const closedGroups = Array.from(root.querySelectorAll('details:not([open])'));
+    const controls = Array.from(root.querySelectorAll('summary,a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]')).filter(node => !node.closest('[hidden]') && node.getClientRects().length && !closedGroups.some(group => group.contains(node) && !group.querySelector(':scope > summary')?.contains(node)));
+    if (!controls.length) return;
+    const first = controls[0], last = controls[controls.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  };
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      if (!dialog.hidden) { event.preventDefault(); closeModal(); }
+      if (sidebar.classList.contains('is-open')) { event.preventDefault(); setOpen(false,true); }
+    } else if (event.key === 'Tab') {
+      if (!dialog.hidden) trapFocus(event, dialog);
+      else if (mobileLayoutMq.matches && sidebar.classList.contains('is-open')) trapFocus(event, sidebar);
+    }
+  });
+  const showAdd = () => {
+    if (!authCanAddRouter()) return;
+    routerFormWrap.hidden = !routerFormWrap.hidden;
+    document.getElementById('hubAddRouter').setAttribute('aria-expanded', String(!routerFormWrap.hidden));
+    updateRouterFormToggle();
+    if (!routerFormWrap.hidden) { scrollTo(routerFormWrap); routerNameInput?.focus({preventScroll:true}); }
+  };
+  const refreshRouters = async button => {
+    if (button.disabled) return;
+    button.disabled = true;
+    try { await loadRouters(); }
+    catch (error) { showRouterMsg('Не удалось обновить список роутеров. Проверь соединение с Hub.',true); }
+    finally { button.disabled = false; }
+  };
+  sidebar.addEventListener('click', event => {
+    const button = event.target.closest('[data-hub-action]');
+    if (!button) { if (event.target.closest('a')) close(); return; }
+    event.stopPropagation();
+    const action = button.dataset.hubAction;
+    if (button.hasAttribute('data-hub-owner') && !authIsOwner()) return;
+    setOpen(false, true);
+    if (action !== 'refresh' && action !== 'add') sidebar.querySelectorAll('.hubNavItem').forEach(node => node.classList.toggle('is-active',node === button));
+    if (action === 'dashboard') { scrollTo(document.getElementById('hubShellTopbar')); }
+    else if (action === 'routers') { scrollTo(document.getElementById('hubRoutersHeading')); }
+    else if (action === 'add') { showAdd(); }
+    else if (action === 'refresh') { refreshRouters(button); }
+    else if (action === 'groups') {
+      routerGroupsPanelOpen = !routerGroupsPanelOpen;
+      renderRouterGroups();
+      button.setAttribute('aria-expanded',String(routerGroupsPanelOpen));
+      if (routerGroupsPanelOpen) scrollTo(routerGroupsPanel);
+    } else if (action === 'access') {
+      authMenu.hubReturnFocus = mobileLayoutMq.matches ? menu : button;
+      if (authMenu.hidden) showAuthMenu();
+    }
+    else if (action === 'design') {
+      if (!seasonPanelOpen) setSeasonPanelOpen(true);
+      (mobileLayoutMq.matches ? mobileSeasonPanel : seasonPanel)?.querySelector('button')?.focus({preventScroll:true});
+    }
+    else if (action === 'update') { if (update && !update.hidden) update.click(); }
+    else if (action === 'stats') {
+      routerStats.hidden = !routerStats.hidden;
+      button.setAttribute('aria-expanded', String(!routerStats.hidden));
+      button.querySelector('span').textContent = routerStats.hidden ? 'Открыть статистику' : 'Скрыть статистику';
+    }
+    else if (action === 'logs') {
+      const links = (window.ROUTERS || []).filter(router => (router.permissions || {}).logs).map(router => `<a class="hubLogLink" href="${escapeAttr(router.logs_url || ('/router/' + encodeURIComponent(router.id) + '/logs'))}" target="_blank" rel="noopener noreferrer"><span>${escapeHtml(router.name || router.id)}</span><small>${escapeHtml(router.id)}</small></a>`).join('');
+      openModal('Глобальные логи', '<p>Выбери роутер, чтобы открыть его журнал на VPS.</p>' + (links || '<p>Нет роутеров с доступным журналом.</p>'), button);
+    } else if (action === 'vps-xray') {
+      openModal('Xray на VPS', '<p>Эти действия управляют Xray на сервере Hub. Управление Xray роутера находится в его карточке.</p><div class="hubXrayActions"><button class="btn" data-hub-xray="reload" type="button">Обновить Xray CFG</button><button class="btn" data-hub-xray="restart" type="button">Рестарт Xray VPS</button></div><p id="hubXrayResult" role="status"></p>', button, 'vps-xray');
+    }
+  });
+  dialog.addEventListener('click', async event => {
+    const button = event.target.closest('[data-hub-xray]');
+    if (!button || button.disabled || !authIsOwner()) return;
+    const buttons = dialog.querySelectorAll('[data-hub-xray]');
+    buttons.forEach(item => item.disabled = true);
+    const result = document.getElementById('hubXrayResult');
+    result.textContent = 'Выполняется на VPS…';
+    try { await (button.dataset.hubXray === 'reload' ? handleXrayReload() : handleXrayRestart()); result.textContent = routerMsg.textContent; }
+    catch (error) { result.textContent = 'Нет ответа от VPS. Проверь соединение и журнал Hub.'; }
+    finally { buttons.forEach(item => item.disabled = false); }
+  });
+  const onResize = () => {
+    const focusedInside = sidebar.contains(document.activeElement);
+    setOpen(false,focusedInside);
+    headerActions.hidden = false;
+    syncHubSidebarPermissions();
+  };
+  if (mobileLayoutMq.addEventListener) mobileLayoutMq.addEventListener('change',onResize);
+  else mobileLayoutMq.addListener(onResize);
+  setOpen(false);
+  routerFormWrap.hidden = true;
+  document.getElementById('hubAddRouter').setAttribute('aria-controls','routerFormWrap');
+  document.getElementById('hubAddRouter').setAttribute('aria-expanded','false');
+  syncHubSidebarPermissions();
+  updateHubSidebarSummary(window.ROUTERS || []);
+}
+'''
+
+
+def dashboard_html(routers, username, sessions=None, notifications=None, auth_bootstrap=None, vps_resources=None, availability=None):
     routers_json = json.dumps(routers, ensure_ascii=False)
     sessions_json = json.dumps(sessions or [], ensure_ascii=False)
     notifications_json = json.dumps(notifications or [], ensure_ascii=False)
@@ -6573,7 +7211,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
   #mobileRouterSearchPanel,#mobileSeasonPanel{{margin:0}}
   #hubMenuPanelHost{{display:contents}}
   #hubMenuPanelHost>.headerActions,#mobileOwnerTools{{grid-column:1/-1;margin:0}}
-  #routerFormToggle,#routerGroupsToggle,#routerStatsToggle,#routerFormWrap,#routerGroupsPanel,#routerStats,#routerForm{{margin:0}}
+  #routerFormToggle,#routerGroupsToggle,#routerStatsToggle,#routerFormWrap,#routerGroupsPanel,#routerForm{{margin:0}}
   #routerFormWrap>.formMsg,#routerGroupsPanel>.formMsg{{margin:var(--mobile-control-gap) 0 0}}
   .hubUpdateNotice{{margin:0 auto 4px}}
   .hubUpdateConfirm{{padding:12px;place-items:center}}
@@ -6591,9 +7229,11 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 @media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){{.headerActions .donateLinkMobile{{display:flex;grid-column:1/-1;min-height:36px;padding:8px 12px;font-size:13px;font-weight:800;line-height:1}}}}
 </style>
 {hub_design_head()}
+{hub_sidebar_css()}
 </head>
-<body class="preload-mobile-panels">
+<body class="preload-mobile-panels hubDashboard">
 <canvas class="seasonalFx" id="seasonalFx" aria-hidden="true" hidden></canvas>
+{hub_sidebar_html(username, is_owner)}
 <main class="wrap">
   <div class="hubUpdateNotice" id="hubUpdateNotice" role="status" aria-live="polite" hidden></div>
   <div class="hubUpdateConfirm" id="hubUpdateConfirm" hidden>
@@ -6611,11 +7251,12 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
       </div>
     </section>
   </div>
+  {hub_sidebar_top_html()}
   <section class="top">
     <div class="brand">
       <div class="desktopHeader">
         <div class="desktopHeaderTop">
-          <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v122</span></span></h1>
+          <h1 class="appBanner"><span>OWRT Hub <span class="appBannerVersion">v123</span></span></h1>
           <button class="badge hubUpdateButton" data-hub-update type="button" {'hidden' if not is_owner else ''}>Проверить обновление панели</button>
           <div class="routerSearchDock" id="routerSearchDock">
             <button class="routerSearchToggle" id="routerSearchToggle" type="button" aria-expanded="false" aria-controls="routerSearchPanel" data-active="false">
@@ -6657,21 +7298,20 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
               </div>
             </section>
           </div>
-          {vps_resource_widgets_html(resources=vps_resources)}
         </div>
         <div class="desktopHeaderBottom">
           <div class="links">
-            <a class="appBanner donateLink" href="/donate/" target="_blank" rel="noopener noreferrer"><span>Сказать спасибо ❤️ Donate 💲</span></a>
+            <a class="appBanner donateLink" href="/donate/" target="_blank" rel="noopener noreferrer"><span>Поддержать разработку</span></a>
             <a class="nethavenTop" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">NetHaven VPN</a>
           </div>
           <div class="headerActions">
             <a class="badge" id="vpsTerminalLink" href="/vps-terminal/" target="_blank" rel="noopener noreferrer" {'hidden' if not is_owner else ''}>Терминал VPS</a>
             <button class="badge" id="xrayReload" type="button" {'hidden' if not is_owner else ''}>Обновить Xray CFG</button>
             <button class="badge" id="xrayRestart" type="button" {'hidden' if not is_owner else ''}>Рестарт Xray VPS</button>
-            <a class="badge donateLinkMobile" href="/donate/" target="_blank" rel="noopener noreferrer">Сказать спасибо ❤️ Donate 💲</a>
+            <a class="badge donateLinkMobile" href="/donate/" target="_blank" rel="noopener noreferrer">Поддержать разработку</a>
             <button class="badge authToggle" id="authToggle" type="button">{safe_username}</button>
             <a class="btn" href="/logout">Выйти</a>
-            <div class="authMenu" id="authMenu" hidden>
+            <div class="authMenu" id="authMenu" role="dialog" aria-modal="true" aria-labelledby="authMenuTitle" hidden>
               <h2>Доступ к Hub</h2>
               <p>Смена логина и пароля входа.</p>
               <div class="authMenuHead">
@@ -6952,11 +7592,6 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
         </div>
       </div>
     </div>
-    {vps_resource_widgets_html(mobile=True, resources=vps_resources)}
-    <div class="mobileSearchDock" id="mobileHubUpdateDock">
-      <span class="mobileSearchVersion">v122</span>
-      <button class="badge hubUpdateButton" data-hub-update type="button" {'hidden' if not is_owner else ''}>Проверить обновление панели</button>
-    </div>
     <div class="mobileSearchDock" id="mobileSeasonDock" aria-label="Зимние эффекты">
       <button class="routerSearchToggle seasonToggle mobilePanelToggle primary" id="mobileSeasonToggle" type="button" aria-expanded="false" aria-controls="mobileSeasonPanel" data-open="false">
         <span class="seasonToggleText">Эффекты</span>
@@ -7027,7 +7662,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
         <input id="routerGroupNameInput" name="name" placeholder="Например: Дом" autocomplete="off" required>
         <button class="primary" type="submit">Создать группу</button>
       </form>
-      <label class="routerGroupFilterLabel">Показать<select id="routerGroupFilter"><option value="">Все группы</option></select></label>
+      <label class="routerGroupFilterLabel"><span class="routerGroupFilterCaption">Показать</span><select id="routerGroupFilter" aria-label="Группа роутеров"><option value="">Все группы</option></select></label>
     </div>
     <div class="routerGroupList" id="routerGroupList"></div>
     <div class="formMsg" id="routerGroupMsg" hidden></div>
@@ -7035,6 +7670,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 
   <button class="mobilePanelToggle primary" id="routerStatsToggle" type="button" aria-expanded="true" aria-controls="routerStats" hidden>Скрыть статистику</button>
   <section id="routerStats" class="routerStats" aria-label="Статистика роутеров"></section>
+  {hub_sidebar_overview_html(vps_resources)}
   <section id="cards" class="cards"></section>
   <section id="diagnosticPanel" class="diagnosticPanel" hidden>
     <div class="diagnosticTop">
@@ -7058,6 +7694,8 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 </main>
 <script>
 window.ROUTERS = {routers_json};
+window.HUB_AVAILABILITY = {json.dumps(availability)};
+window.HUB_AVAILABILITY_RECEIVED_AT = Date.now();
 window.HUB_SESSIONS = {sessions_json};
 window.HUB_NOTIFICATIONS = {notifications_json};
 window.HUB_PUSH_BOOTSTRAP = {push_bootstrap_json};
@@ -7299,12 +7937,16 @@ function positionCardDetails(card) {{
   if (!slot.classList.contains('isFloating')) return;
   const rect = slot.getBoundingClientRect();
   const gap = 12;
-  card.style.width = Math.min(rect.width, window.innerWidth - gap * 2) + 'px';
-  card.style.left = Math.max(gap, Math.min(rect.left, window.innerWidth - card.offsetWidth - gap)) + 'px';
-  const roomBelow = window.innerHeight - gap - Math.max(gap, rect.top);
-  const minimum = Math.min(400, window.innerHeight - gap * 2);
+  const viewportWidth = document.documentElement.clientWidth;
+  const width = Math.min(rect.width, viewportWidth - gap * 2);
+  const left = Math.max(gap, Math.min(rect.left, viewportWidth - width - gap));
+  card.style.width = width + 'px';
+  card.style.left = left + 'px';
   const maximum = Math.min(720, window.innerHeight - gap * 2);
-  // Grow down from the card when there is room; lift it only at the viewport edge.
+  const roomBelow = window.innerHeight - gap - Math.max(gap, rect.top);
+  const minimum = Math.min(400, maximum);
+  // The expanded card is an overlay with a usable details area. At the screen
+  // edge, fit it into the viewport without changing the grid or page height.
   card.style.maxHeight = (roomBelow >= minimum ? Math.min(maximum, roomBelow) : maximum) + 'px';
   const height = card.getBoundingClientRect().height;
   card.style.top = Math.max(gap, Math.min(rect.top, window.innerHeight - height - gap)) + 'px';
@@ -7402,19 +8044,15 @@ document.addEventListener('keydown', ev => {{
   if (ev.key === 'Escape' && !ev.defaultPrevented) closeDesktopCardDetails(true);
 }});
 function scheduleCardDetailsPosition() {{
-  if (cardDetailsPositionFrame || mobileCardsMq.matches) return;
+  if (cardDetailsPositionFrame) return;
   cardDetailsPositionFrame = window.requestAnimationFrame(() => {{
     cardDetailsPositionFrame = 0;
-    cards.querySelectorAll('.routerCardSlot.isFloating>.card').forEach(card => {{
-      const rect = card.parentElement.getBoundingClientRect();
-      if (rect.bottom < 0 || rect.top > window.innerHeight) {{
-        setCardDetailsExpanded(card.querySelector('.cardBody'), false, false);
-      }} else positionCardDetails(card);
-    }});
+    cards.querySelectorAll('.routerCardSlot.isFloating>.card').forEach(positionCardDetails);
+    positionOfflinePopover();
   }});
 }}
-window.addEventListener('scroll', scheduleCardDetailsPosition, {{passive: true}});
 window.addEventListener('resize', scheduleCardDetailsPosition, {{passive: true}});
+window.addEventListener('scroll', scheduleCardDetailsPosition, {{passive: true}});
 
 function getDiagnosticDraft(routerId) {{
   const key = String(routerId || '');
@@ -8492,20 +9130,14 @@ function metricHtml(label, valueHtml, cls = '') {{
   return `<div class="metric ${{cls}}"><span>${{escapeHtml(label)}}</span><strong>${{valueHtml || escapeHtml('Неизвестно')}}</strong></div>`;
 }}
 
-function renderModelMetric(modelValue, showLegend = false) {{
+function renderModelMetric(modelValue) {{
   const model = metricPlaceholder(modelValue);
   const safeModel = escapeHtml(model);
-  if (!showLegend) return metricHtml('Модель', safeModel, 'span2 model-metric');
   return metricHtml(
     'Модель',
-    `<span class="modelMetricValue"><span class="modelLegendSpacer" aria-hidden="true"></span><span class="modelMetricName">${{safeModel}}</span><span class="modelLegendBadge"><span>Legend</span></span></span>`,
+    `<span class="modelMetricName">${{safeModel}}</span>`,
     'span2 model-metric'
   );
-}}
-
-function modelGetsLegendBadge(modelValue) {{
-  const model = String(modelValue || '').trim();
-  return /xiaomi\\s+mi\\s+router\\s+ax3000t/i.test(model);
 }}
 
 function formatTemperatureHtml(value) {{
@@ -8720,8 +9352,8 @@ function render(list) {{
       ? `<a class="btn" href="${{escapeAttr(r.notes_url || ('/router/' + encodeURIComponent(r.id) + '/notes'))}}" target="_blank" rel="noopener noreferrer">Заметки</a>`
       : `<span class="btn disabled">Заметки</span>`;
     const logsButton = !!permissions.logs
-      ? `<a class="btn" data-global-logs-link="true" href="${{escapeAttr(r.logs_url || ('/router/' + encodeURIComponent(r.id) + '/logs'))}}" target="_blank" rel="noopener noreferrer">Глобал логи</a>`
-      : `<span class="btn disabled">Глобал логи</span>`;
+      ? `<a class="btn routerLogsAction" data-global-logs-link="true" href="${{escapeAttr(r.logs_url || ('/router/' + encodeURIComponent(r.id) + '/logs'))}}" target="_blank" rel="noopener noreferrer">Глобал логи</a>`
+      : `<span class="btn disabled routerLogsAction">Глобал логи</span>`;
     const renameLabel = 'Переименовать ' + (r.name || r.id || 'роутер');
     const renameButton = !!permissions.manage
       ? `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`
@@ -8734,7 +9366,7 @@ function render(list) {{
       ? `<div class="routerGroupHeading"><span>${{escapeHtml(groupName(r.group_id))}}</span><em>${{groupedList.filter((item) => groupName(item.group_id) === groupName(r.group_id)).length}} роутера</em></div>`
       : '';
     const metricsHtml = [
-      renderModelMetric(model, modelGetsLegendBadge(model)),
+      renderModelMetric(model),
       metric('Система', release),
       metric('Xray', statusRu(xray)),
       metric('SSH', statusRu(ssh)),
@@ -8851,6 +9483,18 @@ function renderRouterNotesPanel(router) {{
   </div>`;
 }}
 
+function positionOfflinePopover() {{
+  const popover = routerStats.querySelector('[data-offline-popover]');
+  if (!popover || popover.hidden) return;
+  const card = popover.closest('[data-offline-card]');
+  const rect = card.getBoundingClientRect();
+  const viewportWidth = document.documentElement.clientWidth;
+  const width = Math.min(rect.width, viewportWidth - 24);
+  const left = Math.max(12, Math.min(rect.left + (rect.width - width) / 2, viewportWidth - width - 12));
+  popover.style.width = width + 'px';
+  popover.style.left = (left - rect.left - card.clientLeft) + 'px';
+}}
+
 function renderRouterStats(list) {{
   const total = list.length;
   const online = list.filter(r => Boolean(r.online)).length;
@@ -8881,8 +9525,11 @@ function renderRouterStats(list) {{
   routerStats.innerHTML = [
     `<article class="statCard total"><div class="statCardHead"><span>Всего роутеров</span></div><div class="statValueRow"><strong>${{total}}</strong></div><em>в хабе</em></article>`,
     `<article class="statCard online"><div class="statCardHead"><span>В сети</span></div><div class="statValueRow"><strong>${{online}}</strong></div><em>heartbeat активен</em></article>`,
-    offlineCard
+    offlineCard,
+    `<article class="statCard xray"><div class="statCardHead"><span>Xray запущен</span></div><div class="statValueRow"><strong>${{list.filter(r => r.online && (r.status || {{}}).xray === 'running').length}}</strong></div><em>по данным роутеров в сети</em></article>`
   ].join('');
+  updateHubSidebarSummary(list);
+  positionOfflinePopover();
 }}
 
 render = function(list) {{
@@ -8929,8 +9576,8 @@ render = function(list) {{
       ? `<a class="btn" href="${{escapeAttr(r.notes_url || ('/router/' + encodeURIComponent(r.id) + '/notes'))}}" target="_blank" rel="noopener noreferrer">Заметки</a>`
       : `<span class="btn disabled">Заметки</span>`;
     const logsButton = !!permissions.logs
-      ? `<a class="btn" data-global-logs-link="true" href="${{escapeAttr(r.logs_url || ('/router/' + encodeURIComponent(r.id) + '/logs'))}}" target="_blank" rel="noopener noreferrer">Глобал логи</a>`
-      : `<span class="btn disabled">Глобал логи</span>`;
+      ? `<a class="btn routerLogsAction" data-global-logs-link="true" href="${{escapeAttr(r.logs_url || ('/router/' + encodeURIComponent(r.id) + '/logs'))}}" target="_blank" rel="noopener noreferrer">Глобал логи</a>`
+      : `<span class="btn disabled routerLogsAction">Глобал логи</span>`;
     const renameLabel = 'Переименовать ' + (r.name || r.id || 'роутер');
     const renameButton = !!permissions.manage
       ? `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`
@@ -8958,7 +9605,7 @@ render = function(list) {{
       ? '</div></section>'
       : '';
     const metricsHtml = [
-      renderModelMetric(model, modelGetsLegendBadge(model)),
+      renderModelMetric(model),
       metric('Система', release),
       metric('Xray', statusRu(xray)),
       metric('SSH', statusRu(ssh)),
@@ -9300,6 +9947,12 @@ function defaultVpsHost(list) {{
 
 function updateMobilePanelToggle(toggle, panel, openText, closeText) {{
   if (!toggle || !panel) return;
+  if (panel === headerActions && document.getElementById('hubShellAccountHost')) {{
+    toggle.hidden = true;
+    panel.hidden = false;
+    if (mobileOwnerTools) mobileOwnerTools.hidden = true;
+    return;
+  }}
   const mobile = mobileLayoutMq.matches;
   const controlsHubMenu = panel === headerActions;
   if (!mobile) {{
@@ -9334,6 +9987,12 @@ if (headerActionsAnchor && headerActions.parentNode) {{
 }}
 
 function syncHubMenuPlacement() {{
+  const shellHost = document.getElementById('hubShellAccountHost');
+  if (shellHost && headerActions) {{
+    if (headerActions.parentNode !== shellHost) shellHost.appendChild(headerActions);
+    headerActions.hidden = false;
+    return;
+  }}
   if (!headerActions || !hubMenuPanelHost || !headerActionsAnchor) return;
   if (mobileLayoutMq.matches) {{
     if (mobileOwnerTools && mobileOwnerTools.parentNode !== hubMenuPanelHost) {{
@@ -9352,6 +10011,11 @@ function syncHubMenuPlacement() {{
 
 function updateRouterFormToggle() {{
   if (!routerFormToggle || !routerFormWrap) return;
+  if (document.getElementById('hubAddRouter')) {{
+    routerFormToggle.hidden = true;
+    document.getElementById('hubAddRouter').setAttribute('aria-expanded',String(!routerFormWrap.hidden));
+    return;
+  }}
   const mobile = mobileLayoutMq.matches;
   if (!mobile) {{
     routerFormToggle.hidden = true;
@@ -9557,10 +10221,16 @@ async function loadRouters(options = {{}}) {{
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {{
-    const res = await fetch('/api/routers', {{cache: 'no-store', signal: controller.signal}});
+    const historyDue = !window.HUB_AVAILABILITY || Date.now() - window.HUB_AVAILABILITY_RECEIVED_AT >= 60000;
+    const res = await fetch('/api/routers' + (historyDue ? '?availability=1' : ''), {{cache: 'no-store', signal: controller.signal}});
     if (res.ok) {{
       const data = await res.json();
       if (automatic && (document.hidden || hasOpenWolPanel())) return;
+      if (data.availability) {{
+        window.HUB_AVAILABILITY = data.availability;
+        window.HUB_AVAILABILITY_RECEIVED_AT = Date.now();
+        renderHubAvailability(data.routers);
+      }}
       if (automatic && hubDesignMode === 'lite' && JSON.stringify(data.routers) === JSON.stringify(window.ROUTERS)) return;
       window.ROUTERS = data.routers;
       renderRouterGroups();
@@ -10126,12 +10796,26 @@ function hideOfflineStats() {{
   offlineStatsExpanded = false;
   renderRouterStats(window.ROUTERS || []);
 }}
+function syncHubAccessDialog(open) {{
+  const backdrop = document.getElementById('hubAccessBackdrop');
+  if (!backdrop) return;
+  backdrop.hidden = !open;
+  document.body.classList.toggle('hubAccessOpen', open);
+  const sidebar = document.getElementById('hubSidebar');
+  const workspace = document.querySelector('.hubDashboard>.wrap');
+  const menuOpen = Boolean(sidebar && sidebar.classList.contains('is-open'));
+  if (sidebar) sidebar.inert = open || (mobileLayoutMq.matches && !menuOpen);
+  if (workspace) workspace.inert = open || menuOpen;
+}}
 function closeAuthMenu(returnFocus = false) {{
   clearTimeout(authHideTimer);
+  const wasOpen = !authMenu.hidden;
   authMenu.hidden = true;
+  if (wasOpen) syncHubAccessDialog(false);
   if (authToggle) authToggle.setAttribute('aria-expanded', 'false');
-  if (returnFocus && authToggle) authToggle.focus();
+  if (returnFocus) (authMenu.hubReturnFocus || authToggle)?.focus();
 }}
+if (authMenuHeadTitle) authMenuHeadTitle.id = 'authMenuTitle';
 if (authMenuHeadTitle) authMenuHeadTitle.textContent = '\u0414\u043e\u0441\u0442\u0443\u043f \u043a Hub';
 if (authMenuHeadLead) authMenuHeadLead.hidden = true;
 if (authMenuClose) authMenuClose.textContent = '\u0417\u0430\u043a\u0440\u044b\u0442\u044c';
@@ -10609,13 +11293,21 @@ function syncOwnerChrome() {{
   if (mobileXrayRestart) mobileXrayRestart.hidden = !owner;
   if (routerFormToggle) routerFormToggle.hidden = !canAddRouter;
   if (!canAddRouter && routerFormWrap) routerFormWrap.hidden = true;
+  syncHubSidebarPermissions();
 }}
 function showAuthMenu() {{
   clearTimeout(authHideTimer);
   hideOfflineStats();
+  setSeasonPanelOpen(false);
+  setRouterSearchOpen(false, {{focusInput: false}});
   const wasHidden = authMenu.hidden;
   authMenu.hidden = false;
+  syncHubAccessDialog(true);
   if (authToggle) authToggle.setAttribute('aria-expanded', 'true');
+  if (wasHidden) {{
+    authMenuClose?.focus({{preventScroll: true}});
+    authMenu.scrollTop = 0;
+  }}
   if (wasHidden) loadAuthMeta({{silent: true}}).catch(() => {{}});
 }}
 authToggle.addEventListener('click', (ev) => {{
@@ -10640,6 +11332,12 @@ document.addEventListener('keydown', (ev) => {{
   if (ev.key === 'Escape' && authMenu && !authMenu.hidden) {{
     ev.stopPropagation();
     closeAuthMenu(true);
+  }} else if (ev.key === 'Tab' && authMenu && !authMenu.hidden) {{
+    const closedGroups = Array.from(authMenu.querySelectorAll('details:not([open])'));
+    const controls = Array.from(authMenu.querySelectorAll('summary,a[href],button:not([disabled]),input:not([type="hidden"]):not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]')).filter(node => node.getClientRects().length && !closedGroups.some(group => group.contains(node) && !group.querySelector(':scope > summary')?.contains(node)));
+    const first = controls[0], last = controls[controls.length - 1];
+    if (first && ev.shiftKey && document.activeElement === first) {{ ev.preventDefault(); last.focus(); }}
+    else if (last && !ev.shiftKey && document.activeElement === last) {{ ev.preventDefault(); first.focus(); }}
   }}
 }});
 document.addEventListener('visibilitychange', () => {{
@@ -11814,7 +12512,7 @@ function showBrowserNotification(item) {{
   if (localStorage.getItem('owrtNotifyEnabled') !== '1') return;
   if (localStorage.getItem('owrtPushEnabled') === '1' && document.visibilityState !== 'visible') return;
   try {{
-    new Notification(item.title || 'OpenWrt Remote Hub', {{
+    new Notification(item.title || 'OWRT Hub', {{
       body: item.body || '',
       tag: 'owrt-' + (item.id || item.kind || item.ts || Date.now()),
       renotify: false
@@ -12705,6 +13403,7 @@ function initHubUpdate() {{
   window.addEventListener('pageshow', load);
   load();
 }}
+{hub_sidebar_runtime_script()}
 function initVpsResourceWidgets() {{
   const widgets = Array.from(document.querySelectorAll('[data-vps-resource]'));
   if (!widgets.length) return;
@@ -12720,7 +13419,8 @@ function initVpsResourceWidgets() {{
     while (value >= 1024 && unit < units.length - 1) {{ value /= 1024; unit++; }}
     return new Intl.NumberFormat('ru-RU', {{maximumFractionDigits: 1}}).format(value) + ' ' + units[unit];
   }};
-  const show = (data, failed = false) => widgets.forEach((widget) => {{
+  const show = (data, failed = false) => {{
+    widgets.forEach((widget) => {{
     const key = widget.dataset.vpsResource;
     const metric = data && data[key];
     const label = widget.querySelector('span').textContent;
@@ -12734,7 +13434,20 @@ function initVpsResourceWidgets() {{
     }}
     widget.title = label + ': ' + detail;
     widget.setAttribute('aria-label', widget.title);
+    const usage = metric && typeof metric.percent === 'number' && Number.isFinite(metric.percent) ? Math.max(0,Math.min(100,metric.percent)) : 0;
+    widget.style?.setProperty('--hub-usage', usage + '%');
   }});
+    const freshness = document.getElementById?.('hubDataFreshness');
+    const connection = document.getElementById?.('hubSidebarConnection');
+    if (freshness) freshness.textContent = failed ? 'Нет ответа от VPS' : 'Обновлено только что';
+    if (connection) {{
+      connection.replaceChildren();
+      const dot = document.createElement('i');
+      dot.className = 'hubStateDot';
+      if (failed) dot.style.background = 'var(--amber)';
+      connection.append(dot, failed ? 'Связь с Hub прервана' : 'Система работает');
+    }}
+  }};
   const load = async () => {{
     if (stopped || document.hidden || request) return;
     const controller = new AbortController();
@@ -12772,6 +13485,7 @@ function initVpsResourceWidgets() {{
   resume();
 }}
 initVpsResourceWidgets();
+initHubSidebar();
 initHubUpdate();
 setInterval(() => {{
   loadRouters({{automatic: true}}).catch(() => {{}});
@@ -13263,7 +13977,7 @@ def router_updates_html(csrf):
     default_command = 'wget -O - "' + RAW_REPO_BASE + '/install.sh?v=$(date +%s)" | sh'
     return r'''<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Обновить все роутеры — OpenWrt Remote Hub</title><style>
+<title>Обновить все роутеры — OWRT Hub</title><style>
 :root{color-scheme:dark;--line:rgba(169,126,255,.3);--muted:#b9adc9}
 *{box-sizing:border-box}body{min-height:100vh;margin:0;background:#07040f;background-image:radial-gradient(circle at 16% 10%,#a855f740,transparent 35%),linear-gradient(145deg,#07040f,#120a24 54%,#05030a);background-attachment:fixed;color:#f7f2ff;font:14px/1.5 system-ui,sans-serif}
 .wrap{max-width:1100px;margin:auto;padding:20px}.panel{margin-bottom:14px;padding:18px;border:1px solid var(--line);border-radius:12px;background:#191226e8}.head,.actions{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}h1{font-size:22px;margin:0}h2{font-size:16px;margin:0 0 10px}.hint{color:var(--muted);font-size:13px}.form-hint{margin:10px 0 20px;line-height:1.65}.action-hint{margin-top:12px}.note{margin:14px 0;padding:10px 12px;border:1px solid #f59e0b70;border-left:3px solid #f59e0b;border-radius:8px;background:#f59e0b12;color:#fde68a}
@@ -13972,8 +14686,8 @@ async function pollHttpTerminal(){if(!httpSid||httpPollInFlight||httpRecovering)
 async function startHttpTerminal(reason){if(httpSid||httpPollInFlight)return;terminalMode='http';httpRecovering=reason==='reconnect'||reason==='read-failed'||reason==='read-error';clearHttpTimers();try{if(ws&&(ws.readyState===WebSocket.OPEN||ws.readyState===WebSocket.CONNECTING))ws.close();}catch(e){}if(reason==='direct')notice('Подключаю HTTP-terminal...','36');else if(reason==='mobile')notice('HTTP-terminal подключается...','36');else if(httpRecovering)notice(IS_VPS_TERMINAL?'Пробую поднять новую VPS terminal сессию...':'Пробую поднять новую SSH-сессию...','36');else notice(reason+'. Включаю запасной HTTP-terminal...','36');try{const res=await fetch(appendQuery(SESSION_PATH,{cols:term.cols||80,rows:term.rows||24}),{cache:'no-store'});let data={};try{data=await res.json();}catch(e){}if(!res.ok||!data.ok){httpPollFailures=Math.max(1,httpPollFailures+1);const delay=Math.min(8000,Math.max(1200,900*httpPollFailures));notice('HTTP-terminal пока не стартовал: '+(data.error||res.status||'hub недоступен')+'. Повторю автоматически...','33');httpReconnectTimer=setTimeout(()=>{httpReconnectTimer=0;startHttpTerminal('reconnect');},delay);return;}httpSid=data.sid;const wasRecovering=httpRecovering;httpRecovering=false;httpPollFailures=0;if(wasRecovering&&httpRecoveryNoticeShown)notice(httpRecoveredMessage(),'32');else notice(READY_LABEL || (isMobileTerminal?'HTTP-terminal подключен. Вводи через поле снизу или клавиатуру.':'HTTP-terminal подключен. Кликни в терминал, Ctrl+V вставляет.'),'32');httpRecoveryNoticeShown=false;if(pendingHubRestartActive())pendingHubRestartAt=0;sendResize();scheduleHttpPoll(80);}catch(e){httpPollFailures=Math.max(1,httpPollFailures+1);const delay=Math.min(8000,Math.max(1200,900*httpPollFailures));notice('HTTP-terminal не стартовал: '+e+'. Повторю автоматически...','31');httpReconnectTimer=setTimeout(()=>{httpReconnectTimer=0;startHttpTerminal('reconnect');},delay);}}
 async function explainTerminalError(source){if(diagnosticStarted)return;diagnosticStarted=true;try{const res=await fetch(CHECK_PATH,{cache:'no-store'});const data=await res.json();if(data.tcp_ok)await startHttpTerminal(source);else{notice('SSH-туннель на VPS не отвечает: '+(data.error||'порт закрыт'),'31');notice('В Hub нажми: Обновить Xray CFG, потом Рестарт Xray VPS, и проверь heartbeat роутера.','33');}}catch(e){notice('Не смог проверить SSH-туннель. Проверь firewall VPS и доступ к Hub.','31');}}
 function connect(){wsOpened=false;receivedTerminalData=false;diagnosticStarted=false;httpPollFailures=0;httpPollInFlight=false;httpRecovering=false;httpRecoveryNoticeShown=false;terminalMode='ws';httpSid='';clearHttpTimers();inputQueue='';passwordPromptActive=false;passwordBuffer='';autoPasswordUsed=false;if(inputFlushTimer){clearTimeout(inputFlushTimer);inputFlushTimer=0;}if(term){term.reset();notice('Подключение к '+CONNECT_LABEL+'...','36');}if(FORCE_HTTP_ONLY||isMobileTerminal){startHttpTerminal(FORCE_HTTP_ONLY?'direct':'mobile');return;}const proto=location.protocol==='https:'?'wss://':'ws://';ws=new WebSocket(proto+location.host+WS_PATH);ws.binaryType='arraybuffer';ws.onopen=()=>{wsOpened=true;sendResize();};ws.onmessage=async(ev)=>{if(terminalMode==='http')return;let text='';if(typeof ev.data==='string')text=ev.data;else if(ev.data instanceof Blob)text=await ev.data.text();else text=decoder.decode(ev.data);if(!receivedTerminalData)term.clear();receivedTerminalData=true;term.write(text);maybeAutoSendPassword(text);};ws.onerror=()=>explainTerminalError('ошибка web-terminal');ws.onclose=()=>{if(terminalMode==='http')return;if(wsOpened)notice(CLOSED_LABEL,'33');else explainTerminalError(CLOSED_LABEL);};setTimeout(()=>{if(!receivedTerminalData&&!httpSid)startHttpTerminal(SILENT_LABEL);},3000);}
-function terminalTheme(){const winter=document.documentElement.dataset.hubDesign==='winter';const lite=document.documentElement.dataset.hubDesign==='lite';return winter?{background:'#071827',foreground:'#ecf9ff',cursor:'#7dd3fc',selectionBackground:'#24445b',black:'#071827',red:'#fb7185',green:'#86efac',yellow:'#fde68a',blue:'#93c5fd',magenta:'#c084fc',cyan:'#67e8f9',white:'#ecf9ff'}:lite?{background:'#101827',foreground:'#f1f5f9',cursor:'#93c5fd',selectionBackground:'#334155',black:'#101827',red:'#fb7185',green:'#86efac',yellow:'#fde68a',blue:'#93c5fd',magenta:'#c4b5fd',cyan:'#7dd3fc',white:'#f1f5f9'}:{background:'#0b0714',foreground:'#f7f2ff',cursor:'#fbbf24',selectionBackground:'#334155',black:'#0b0714',red:'#fb7185',green:'#86efac',yellow:'#fde68a',blue:'#93c5fd',magenta:'#c084fc',cyan:'#67e8f9',white:'#f7f2ff'};}
-function initTerminal(){if(!window.Terminal){terminalEl.classList.remove('loading');terminalEl.textContent='xterm.js не загрузился. Проверь доступ браузера к cdn.jsdelivr.net.';return;}terminalEl.classList.remove('loading');terminalEl.textContent='';term=new Terminal({cursorBlink:!isMobileTerminal,convertEol:false,scrollback:isMobileTerminal?200:5000,scrollSensitivity:isMobileTerminal?8:1,fastScrollSensitivity:isMobileTerminal?14:5,smoothScrollDuration:0,fontFamily:'"Cascadia Mono","Consolas","Liberation Mono",monospace',fontSize:isMobileTerminal?12:14,lineHeight:1.14,theme:terminalTheme()});if(window.FitAddon&&FitAddon.FitAddon){fitAddon=new FitAddon.FitAddon();term.loadAddon(fitAddon);}term.open(terminalEl);window.addEventListener('hubdesignchange',()=>{if(term)term.options.theme=terminalTheme();});term.onData(sendData);term.onResize(sendResize);term.attachCustomKeyEventHandler((ev)=>{const key=String(ev.key||'').toLowerCase();if((ev.ctrlKey||ev.metaKey)&&key==='c'&&term.hasSelection&&term.hasSelection()){copySelection();return false;}return true;});terminalEl.addEventListener('click',()=>term.focus());fitTerminal(true);connect();setTimeout(()=>{fitTerminal(true);term.focus();},120);}
+function terminalTheme(){const style=getComputedStyle(document.documentElement);const color=name=>style.getPropertyValue(name).trim();return {background:color('--code'),foreground:color('--text'),cursor:color('--cyan'),selectionBackground:color('--term-selection'),black:color('--code'),red:color('--red'),green:color('--green'),yellow:color('--amber'),blue:'#93c5fd',magenta:'#c084fc',cyan:color('--cyan'),white:color('--text')};}
+function initTerminal(){if(!window.Terminal){terminalEl.classList.remove('loading');terminalEl.textContent='xterm.js не загрузился. Проверь доступ браузера к cdn.jsdelivr.net.';return;}terminalEl.classList.remove('loading');terminalEl.textContent='';term=new Terminal({cursorBlink:!isMobileTerminal,convertEol:false,scrollback:isMobileTerminal?200:5000,scrollSensitivity:isMobileTerminal?8:1,fastScrollSensitivity:isMobileTerminal?14:5,smoothScrollDuration:0,fontFamily:'"Cascadia Mono","Consolas","Liberation Mono",monospace',fontSize:12,lineHeight:1.14,theme:terminalTheme()});if(window.FitAddon&&FitAddon.FitAddon){fitAddon=new FitAddon.FitAddon();term.loadAddon(fitAddon);}term.open(terminalEl);window.addEventListener('hubdesignchange',()=>{if(term)term.options.theme=terminalTheme();});term.onData(sendData);term.onResize(sendResize);term.attachCustomKeyEventHandler((ev)=>{const key=String(ev.key||'').toLowerCase();if((ev.ctrlKey||ev.metaKey)&&key==='c'&&term.hasSelection&&term.hasSelection()){copySelection();return false;}return true;});terminalEl.addEventListener('click',()=>term.focus());fitTerminal(true);connect();setTimeout(()=>{fitTerminal(true);term.focus();},120);}
 document.addEventListener('paste',(ev)=>{if(isEditableTarget(ev.target))return;if(!terminalFocused())return;handlePaste(ev);});
 window.addEventListener('beforeunload',()=>{clearHttpTimers();if(httpSid)navigator.sendBeacon('/api/ssh-session/'+encodeURIComponent(httpSid)+'/close');});
 let resizeTimer=0;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>fitTerminal(false),160);});
@@ -14018,7 +14732,7 @@ def _legacy_login_html(error=""):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 {branding_head_tags()}
-<title>OpenWrt Remote Hub</title>
+<title>OWRT Hub</title>
 <style>
 :root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.9);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.28);--blue:#7c3aed;--cyan:#22d3ee;--red:#fb7185;--green:#22c55e;--grid:rgba(168,85,247,.13)}}
 *{{box-sizing:border-box}}
@@ -14088,7 +14802,7 @@ button:hover{{filter:brightness(1.06)}}
       <form class="login" method="post" action="/login">
     {error_html}
     <span class="brand">
-      <h1 class="appBanner"><span>OpenWrt Remote Hub <span class="appBannerVersion">v122</span></span></h1>
+      <h1 class="appBanner"><span>OWRT Hub <span class="appBannerVersion">v123</span></span></h1>
     </span>
     <label for="hubUsername">Логин</label>
     <input id="hubUsername" name="username" autocomplete="off" autofocus required>
@@ -14399,7 +15113,7 @@ def login_html(error=""):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 {branding_head_tags()}
-<title>OpenWrt Remote Hub</title>
+<title>OWRT Hub</title>
 <style>
 :root{{color-scheme:dark;--bg:#07040f;--panel:rgba(19,14,32,.92);--panel-soft:rgba(255,255,255,.06);--text:#f7f2ff;--muted:#b9adc9;--line:rgba(169,126,255,.25);--line-strong:rgba(34,211,238,.56);--blue:#7c3aed;--cyan:#22d3ee;--teal:#a855f7;--red:#fb7185;--amber:#f59e0b;--shadow:0 34px 84px rgba(0,0,0,.5);--grid:rgba(168,85,247,.14);--login-copy-size:14px}}
 *{{box-sizing:border-box}}
@@ -14465,6 +15179,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .inputAction{{display:grid;place-items:center;width:46px;height:100%;border:0;background:transparent;color:#c4b5fd;cursor:pointer}}
 .inputActionSpacer{{visibility:hidden;pointer-events:none}}
 .inputAction svg{{width:18px;height:18px;stroke:currentColor}}
+.otpCard[hidden]{{display:none!important}}
 .otpCard{{display:grid;gap:4px;width:min(100%,430px);justify-self:center;padding:0;border:0;border-radius:0;background:none}}
 .hint{{width:min(100%,430px);justify-self:center;margin:0;color:#b9adc9;font-size:var(--login-copy-size);line-height:1.35}}
 .hint.warn{{padding:10px 12px;border:1px solid rgba(245,158,11,.30);border-radius:14px;background:rgba(120,53,15,.18);color:#fde68a;font-weight:700}}
@@ -14535,8 +15250,6 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .altAuthSummary{{padding:8px 9px;border:1px solid rgba(169,126,255,.14);border-radius:10px;background:rgba(17,15,30,.58);color:#c4b5fd;font-size:var(--login-copy-size);line-height:1.35}}
 .securityNote{{display:flex;align-items:center;justify-content:center;gap:8px;color:#b9adc9;font-size:var(--login-copy-size)}}
 .securityNote svg{{width:14px;height:14px;stroke:#b9adc9;flex:0 0 auto}}
-.securityNote span{{font-size:0}}
-.securityNote span::before{{content:"Безопасное соединение";font-size:var(--login-copy-size)}}
 @media(max-width:760px){{body{{padding:10px;background-attachment:scroll;background-size:auto,auto,auto,100% 100%,31px 31px,31px 31px}}.loginShell{{width:min(100%,calc(100vw - 20px))}}.loginFrame{{border-radius:20px}}.brandPanel{{padding:20px 14px 12px}}.brandPanel::after{{left:14px;right:14px}}.brandSeal{{width:64px;height:64px}}.brandSeal::before{{inset:10px}}.brandSeal svg{{width:30px;height:30px}}.brandTitle{{font-size:clamp(18px,6vw,22px);gap:8px;line-height:1.08;flex-wrap:nowrap}}.brandVersion{{font-size:12px}}.authPanel{{padding:0 14px 14px}}.authTabs{{grid-template-columns:1fr;width:100%}}.authTabBtn{{min-height:44px;font-size:12px;justify-content:center;text-align:center;flex-direction:column;gap:5px;padding:8px 12px}}.authTabBtn svg{{width:16px;height:16px}}.fieldGroup{{justify-items:stretch}}.compactField,.otpCard,.hint,.captchaSection,.primaryBtn,.err{{width:100%;justify-self:stretch}}.inputShell{{grid-template-columns:40px minmax(0,1fr) 40px;min-height:44px}}.fieldIcon svg{{width:16px;height:16px}}.inputShell input{{font-size:13px}}.inputAction{{width:40px}}.captchaSection{{width:min(100%,236px);justify-self:center;padding:8px 7px 7px;gap:6px}}.captchaSectionRecaptcha{{width:min(100%,336px);padding:10px 8px 8px}}.captchaTopRow{{min-height:36px}}.captchaRefresh{{width:26px;height:26px}}.captchaRefresh svg{{width:18px;height:18px}}.captcha{{min-height:36px}}.captcha b{{min-height:36px;font-size:21px}}.captchaAnswerShell{{grid-template-columns:36px minmax(0,1fr) 36px;min-height:36px}}.primaryBtn{{min-height:46px;font-size:13px}}.methodGrid,.socialMethodGrid{{grid-template-columns:1fr}}.methodBtnRow{{grid-template-columns:1fr}}.sshMethodCard{{display:none!important}}.authFooter{{display:none}}}}
 </style>
 </head>
@@ -14560,7 +15273,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                 <circle cx="65" cy="59" r="3" fill="#E5F2FF"/>
               </svg>
             </div>
-            <h2 class="brandTitle">OpenWrt Remote Hub <span class="brandVersion">v122</span></h2>
+            <h2 class="brandTitle">OWRT Hub <span class="brandVersion">v123</span></h2>
           </div>
         </div>
         <div class="brandBottom">
@@ -14640,7 +15353,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                       </button>
                     </div>
                   </div>
-                  <div class="otpCard compactField">
+                  <div class="otpCard compactField" id="loginOtpCard"{'' if auth.get("totp", {}).get("enabled") else ' hidden'}>
                     <div>
                       <label class="fieldLabel" for="hubOtp">Код 2FA</label>
                       <div class="inputShell">
@@ -14650,7 +15363,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                             <path d="M9.5 11.5l1.6 1.6l3.4-3.6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
                           </svg>
                         </span>
-                        <input id="hubOtp" name="otp" inputmode="numeric" pattern="[0-9]{{{TOTP_DIGITS}}}" maxlength="{TOTP_DIGITS}" autocomplete="one-time-code" placeholder="Введите 6-значный код 2FA" aria-describedby="passwordModeHint">
+                        <input id="hubOtp" name="otp" inputmode="numeric" pattern="[0-9]{{{TOTP_DIGITS}}}" maxlength="{TOTP_DIGITS}" autocomplete="one-time-code" placeholder="Введите 6-значный код 2FA" aria-describedby="passwordModeHint"{' required' if auth.get("totp", {}).get("enabled") else ' disabled'}>
                         <span class="inputAction inputActionSpacer" aria-hidden="true"></span>
                       </div>
                     </div>
@@ -14801,7 +15514,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
               <path d="M12 3l7 3v5c0 4.4-2.8 8.4-7 9.8C7.8 19.4 5 15.4 5 11V6l7-3Z" stroke-width="1.7" stroke-linejoin="round"/>
               <path d="M9.5 11.5l1.6 1.6l3.4-3.6" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            <span>Безопасное соединение. Данные и альтернативные методы авторизации защищены.</span>
+            <span>Безопасное соединение</span>
           </div>
         </div>
       </section>
@@ -14991,23 +15704,30 @@ function updateSshHintText(sshCount) {{
     : 'Нажми Получить challenge, затем вставь подпись и нажми Проверить подпись.';
 }}
 
-function updateLoginMeta() {{
+function loginRequiresTotp() {{
+  const username = String(hubUsername?.value || '').trim();
+  return Boolean(loginAuthMeta.totp_enabled) && (!username || username === loginAuthMeta.username);
+}}
+
+function updateLoginOtp() {{
+  const totpEnabled = loginRequiresTotp();
+  const card = document.getElementById('loginOtpCard');
+  if (card) card.hidden = !totpEnabled;
   if (hubOtp) {{
-    const totpEnabled = !!loginAuthMeta.totp_enabled;
+    hubOtp.disabled = !totpEnabled;
     hubOtp.required = totpEnabled;
-    hubOtp.placeholder = totpEnabled ? 'Введите 6-значный код 2FA' : 'Введите код из приложения 2FA';
-    hubOtp.setAttribute('aria-required', totpEnabled ? 'true' : 'false');
-    if (!totpEnabled) hubOtp.setCustomValidity('');
+    hubOtp.setAttribute('aria-required', String(totpEnabled));
+    if (!totpEnabled) {{ hubOtp.value = ''; hubOtp.setCustomValidity(''); }}
   }}
   if (passwordModeHint) {{
-    passwordModeHint.hidden = !loginAuthMeta.totp_enabled;
-    passwordModeHint.classList.toggle('warn', !!loginAuthMeta.totp_enabled);
-    if (loginAuthMeta.totp_enabled) {{
-      passwordModeHint.textContent = '2FA включена: для входа по паролю обязателен 6-значный TOTP-код из приложения.';
-    }} else {{
-      passwordModeHint.textContent = 'Резервный вход через пароль. Когда 2FA включена, сюда нужен 6-значный TOTP-код.';
-    }}
+    passwordModeHint.hidden = !totpEnabled;
+    passwordModeHint.classList.toggle('warn', totpEnabled);
+    passwordModeHint.textContent = '2FA включена: для входа по паролю обязателен 6-значный TOTP-код из приложения.';
   }}
+}}
+
+function updateLoginMeta() {{
+  updateLoginOtp();
   const invalidPasskeyCount = Number(loginAuthMeta.passkey_invalid_count || 0);
   if (!passkeyLoginBtn || !passkeyHint) return;
   if (!window.PublicKeyCredential || !window.isSecureContext) {{
@@ -15055,7 +15775,7 @@ function refreshLoginFlowMeta() {{
   const invalidPasskeyCount = Number(loginAuthMeta.passkey_invalid_count || 0);
   const sshCount = Number(loginAuthMeta.ssh_key_count || 0);
   const socialVisibleCount = refreshSocialLoginMethods();
-  const passwordState = loginAuthMeta.totp_enabled ? 'Пароль + 2FA активен.' : 'Пароль доступен как резерв.';
+  const passwordState = loginRequiresTotp() ? 'Пароль + 2FA активен.' : 'Пароль доступен как резерв.';
   const passkeyState = !window.PublicKeyCredential || !window.isSecureContext
     ? 'Passkey ждёт HTTPS/localhost.'
     : !loginAuthMeta.passkeys_supported
@@ -15086,6 +15806,14 @@ function refreshLoginFlowMeta() {{
   }}
 }}
 
+if (hubUsername) {{
+  ['input', 'change'].forEach(event => hubUsername.addEventListener(event, () => {{
+    updateLoginOtp();
+    refreshLoginFlowMeta();
+  }}));
+}}
+window.addEventListener('pageshow', updateLoginOtp);
+
 if (hubOtp) {{
   hubOtp.addEventListener('input', () => {{
     hubOtp.setCustomValidity('');
@@ -15098,7 +15826,8 @@ if (passwordLoginForm) {{
     ev.preventDefault();
     if (loginSubmitInFlight) return;
     setLoginRuntimeStatus('');
-    if (loginAuthMeta.totp_enabled && hubOtp) {{
+    updateLoginOtp();
+    if (loginRequiresTotp() && hubOtp) {{
       const otpValue = String(hubOtp.value || '').trim();
       if (!/^[0-9]{{{TOTP_DIGITS}}}$/.test(otpValue)) {{
         hubOtp.setCustomValidity('Введи 6-значный код 2FA из приложения.');
@@ -15179,7 +15908,8 @@ async function loadLoginMeta() {{
   try {{
     const res = await fetch('/api/auth/meta', {{cache: 'no-store'}});
     const data = await res.json();
-    loginAuthMeta = data.auth || {{}};
+    if (!res.ok || !data.auth || typeof data.auth !== 'object') throw new Error('Нет статуса входа');
+    loginAuthMeta = data.auth;
     updateLoginMeta();
     refreshLoginFlowMeta();
   }} catch (err) {{
@@ -16873,6 +17603,71 @@ class HubUpdateManager:
         return job
 
 
+class RouterAvailabilityHistory:
+    """Minute observations shared by all viewers; gaps are never backfilled."""
+    interval = 60
+    window = 24 * 3600
+
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.last_bucket = None
+        self.pruned_hour = None
+        self.cache = OrderedDict()
+
+    def record(self, conn, routers, at=None):
+        at = now_ts() if at is None else int(at)
+        bucket = at // self.interval * self.interval
+        with self.lock:
+            if bucket == self.last_bucket:
+                return
+            # Replace an incomplete minute after a Hub restart, rather than
+            # counting two observations or retaining routers removed that minute.
+            conn.execute('delete from router_availability where bucket=?', (bucket,))
+            conn.executemany('insert into router_availability values (?, ?, ?, ?)', [
+                (bucket, str(router['id']), at, int(bool(router.get('online'))))
+                for router in routers
+            ])
+            hour = at // 3600
+            if hour != self.pruned_hour:
+                conn.execute('delete from router_availability where bucket<? or bucket>?',
+                             (bucket - self.window - 3600, bucket))
+            # Commit before publishing the cache generation or successful tick.
+            conn.commit()
+            self.pruned_hour = hour
+            self.last_bucket = bucket
+            self.cache.clear()
+
+    def snapshot(self, conn, routers, at=None):
+        at = now_ts() if at is None else int(at)
+        ids = tuple(sorted(str(router['id']) for router in routers))
+        key = (at // self.interval, ids)
+        with self.lock:
+            points = self.cache.get(key)
+            if points is None:
+                merged = {}
+                # Stay below SQLite's variable limit on older distributions.
+                for offset in range(0, len(ids), 400):
+                    chunk = ids[offset:offset + 400]
+                    query = '''select bucket, max(observed_at) as at,
+                                      sum(online) as online, count(*) as total
+                               from router_availability
+                               where bucket>=? and bucket<=? and router_id in (%s)
+                               group by bucket''' % ','.join('?' for _ in chunk)
+                    for row in conn.execute(query, (at - self.window - self.interval, at, *chunk)):
+                        point = merged.setdefault(row['bucket'], [0, 0, 0])
+                        point[0] = max(point[0], row['at'])
+                        point[1] += row['online']
+                        point[2] += row['total']
+                points = [merged[bucket] for bucket in sorted(merged)]
+                self.cache[key] = points
+                while len(self.cache) > 16:
+                    self.cache.popitem(last=False)
+            else:
+                self.cache.move_to_end(key)
+        return {'from': at - self.window, 'to': at, 'interval': self.interval,
+                'gap_after': 90, 'points': points}
+
+
 class App:
     def __init__(self, db_path, session, agent, public_url):
         self.db_path = Path(db_path)
@@ -16884,6 +17679,7 @@ class App:
         self.router_state_snapshot = {}
         self.router_monitor_stop = threading.Event()
         self.router_monitor_thread = None
+        self.router_availability = RouterAvailabilityHistory()
         self.vps_resources = VpsResourceMonitor()
         self.router_updates = RouterUpdateManager(self)
         self.hub_update = HubUpdateManager()
@@ -16897,6 +17693,7 @@ class App:
     def snapshot_router_states(self):
         with self.conn() as conn:
             routers = [row_to_router(row) for row in list_router_rows(conn)]
+            self.router_availability.record(conn, routers)
         return {
             str(router.get("id") or ""): {
                 "online": bool(router.get("online")),
@@ -20194,6 +20991,7 @@ exit 127
                 extra_headers.append(("Set-Cookie", self.session_cookie(session_token_value)))
             with self.app.conn() as conn:
                 routers = self.visible_routers(conn, profile)
+                availability = self.app.router_availability.snapshot(conn, routers)
             self.send_bytes(
                 200,
                 dashboard_html(
@@ -20207,6 +21005,7 @@ exit 127
                         "can_add_router": bool(profile and account_can_add_router(profile)),
                     },
                     vps_resources=self.app.vps_resources.snapshot(),
+                    availability=availability,
                 ).encode("utf-8"),
                 "text/html; charset=utf-8",
                 extra_headers,
@@ -20215,7 +21014,10 @@ exit 127
         if path == "/api/routers":
             with self.app.conn() as conn:
                 routers = self.visible_routers(conn)
-            self.send_json(200, {"routers": routers})
+                data = {"routers": routers}
+                if self.query().get('availability') == ['1']:
+                    data['availability'] = self.app.router_availability.snapshot(conn, routers)
+            self.send_json(200, data)
             return
         if path == "/api/router-groups":
             with self.app.conn() as conn:

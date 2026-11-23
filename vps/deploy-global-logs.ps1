@@ -104,7 +104,7 @@ if [ '__ACTION__' = Install ]; then
     command -v base64 >/dev/null
     command -v jsonfilter >/dev/null
     grep -F -q 'globalLogsToggle' "$stage/cgi"
-    for item in cgi luci; do grep -F -q 'v122' "$stage/$item"; done
+    for item in cgi luci; do grep -F -q 'v123' "$stage/$item"; done
     grep -F -q 'LOG_KEEP_SECONDS=86400' "$stage/logs.sh"
     grep -F -q 'log_sync_loop' "$stage/logs.sh"
     grep -F -q 'sync_global_logs' "$stage/agent"

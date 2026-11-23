@@ -1,7 +1,7 @@
 #!/bin/sh
 set -u
 
-APP_NAME="OpenWrt Remote Hub"
+APP_NAME="OWRT Hub"
 RAW_BASE="${RAW_URL:-https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main}"
 STATE_DIR="${OWRT_REMOTE_STATE_DIR:-/var/lib/owrt-remote}"
 ACME_WEBROOT="$STATE_DIR/acme-webroot"

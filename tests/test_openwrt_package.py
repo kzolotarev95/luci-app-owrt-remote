@@ -1,5 +1,6 @@
 """Native package contents, release discovery, and safe target setup."""
 import importlib.util
+import json
 import gzip
 import http.server
 import io
@@ -82,7 +83,9 @@ class PackageTests(unittest.TestCase):
         version, _ = p.versions()
         for name in ("www/cgi-bin/owrt-remote", "www/luci-static/resources/view/owrt_remote.js"):
             text = (ROOT / "files" / name).read_text(encoding="utf-8")
-            self.assertIn("OpenWrt Remote Hub v" + version, text)
+            self.assertIn("OWRT Hub v" + version, text)
+        menu = json.loads((ROOT / 'files/usr/share/luci/menu.d/luci-app-owrt-remote.json').read_text(encoding='utf-8'))
+        self.assertEqual(menu['admin/services/owrt-remote']['title'], 'OWRT Hub')
 
     def test_package_revision_has_its_own_tag_without_renaming_the_panel(self):
         for values, expected in [(('122','1'),'v122'), (('122','2'),'v122-r2'), (('123','1'),'v123')]:

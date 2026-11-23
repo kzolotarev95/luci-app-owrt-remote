@@ -81,7 +81,7 @@ test -s "$config"
 if [ '__ACTION__' = Install ]; then
     for item in agent wan.sh cgi hotplug; do test -s "$stage/$item"; sh -n "$stage/$item"; done
     test -s "$stage/luci"
-    for item in cgi luci; do grep -F -q 'v122' "$stage/$item"; done
+    for item in cgi luci; do grep -F -q 'v123' "$stage/$item"; done
     grep -F -q 'wan_interface_picker' "$stage/cgi"
     grep -F -q 'wan_select_interface()' "$stage/wan.sh"
     grep -F -q 'wan_reconcile_xray()' "$stage/agent"

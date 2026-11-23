@@ -104,7 +104,7 @@ logger() { printf '%s\\n' "$3" | sh "$TEST_LOG_HELPER" append; }
             self.assertIn('GLOBAL_LOGS_ROUTER_Install_OK', result.stdout)
             for item in ('cgi', 'luci'):
                 installed = self.root / self.targets[item].lstrip('/')
-                self.assertIn('v122', installed.read_text(encoding='utf-8'))
+                self.assertIn('v123', installed.read_text(encoding='utf-8'))
             for item, data in self.initial.items():
                 self.assertEqual(self.backup.joinpath(item).read_bytes(), data)
         result = self.deploy('Rollback')

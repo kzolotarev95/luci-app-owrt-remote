@@ -1,5 +1,5 @@
 [Unit]
-Description=OpenWrt Remote Hub
+Description=OWRT Hub
 After=network-online.target
 Wants=network-online.target
 

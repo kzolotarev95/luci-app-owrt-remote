@@ -130,9 +130,9 @@ sleep() { return 0; }
 
 
 class VersionDeployTests(UpdateStatusDeployTests):
-    deploy_file = 'deploy-version-v122.ps1'
-    backup_name = 'hub.py.bak-before-v122'
-    success_marker = 'HUB_V122_Install_OK'
+    deploy_file = 'deploy-version-v123.ps1'
+    backup_name = 'hub.py.bak-before-v123'
+    success_marker = 'HUB_V123_Install_OK'
 
 
 if __name__ == '__main__':

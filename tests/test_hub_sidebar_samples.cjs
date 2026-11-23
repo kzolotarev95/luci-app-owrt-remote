@@ -1,0 +1,45 @@
+// Real 24-hour history must keep gaps, counts and timestamps instead of stretching a short session.
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const vm = require('node:vm');
+const source = fs.readFileSync('vps/owrt-remote-hub.py', 'utf8');
+const start = source.indexOf('function updateHubSidebarSummary(list) {');
+const end = source.indexOf('\nfunction syncHubSidebarPermissions()', start);
+const nodes = new Map();
+const node = id => {
+  if (!nodes.has(id)) nodes.set(id, {textContent:'', attributes:{}, setAttribute(name,value) { this.attributes[name]=value; }});
+  return nodes.get(id);
+};
+let now = 1795300020000;
+class Clock extends Date { static now() { return now; } }
+const context = {Date:Clock, document:{getElementById:node}, filteredRouters:list=>list, window:{HUB_AVAILABILITY:null}};
+vm.createContext(context);
+vm.runInContext(source.slice(start, end), context);
+const routers = [{id:'a',online:true},{id:'b',online:false}];
+context.updateHubSidebarSummary(routers);
+assert.equal(node('hubNavCount').textContent, '2');
+assert(node('hubHeartbeatSummary').textContent.includes('1 из 2'));
+assert.equal(context.renderHubAvailability.points.length,1,'first live observation is a dot, not a fabricated day');
+assert(!node('hubAvailabilityLine').attributes.d.includes('H'),'a point does not become a full-width line');
+const to=now/1000;
+context.window.HUB_AVAILABILITY={to,gap_after:90,points:[[to-3600,2,2],[to-3540,1,2],[to-1800,0,2],[to-1740,2,2],[to-60,1,2]]};
+context.updateHubSidebarSummary(routers);
+const path = node('hubAvailabilityLine').attributes.d;
+assert.equal((path.match(/M/g)||[]).length,3,'Hub downtime produces visible gaps');
+assert(path.includes('H'),'consecutive minute samples are connected');
+assert(!/NaN|Infinity/.test(path));
+assert.equal(node('hubAvailabilityOnline').textContent,'1');
+assert.equal(node('hubAvailabilityOffline').textContent,'1');
+assert(node('hubAvailabilityHint').textContent.includes('3 мин'),'coverage excludes downtime');
+assert(Number(path.match(/^M([\d.]+)/)[1])>500,'one hour of history occupies only the last hour of a 24-hour axis');
+const many=[];
+for(let i=0;i<3000;i++)many.push([to-3000+i,1,2]);
+context.window.HUB_AVAILABILITY.points=many;
+context.updateHubSidebarSummary(routers);
+assert(context.renderHubAvailability.points.length<=1442,'browser memory is bounded');
+context.window.HUB_AVAILABILITY.points=[[NaN,1,2],[to,-1,2],[to,3,2]];
+context.updateHubSidebarSummary([]);
+assert.equal(node('hubAvailabilityOnline').textContent,'0');
+assert.equal(node('hubAvailabilityOffline').textContent,'0');
+assert(!/NaN|Infinity/.test(node('hubAvailabilityLine').attributes.d),'invalid history and empty fleets remain safe');
+console.log('SIDEBAR_HISTORY_OK: real counts, fixed 24h axis, gaps, coverage, bounded memory and empty fleets');
