@@ -6,15 +6,17 @@ Heartbeat, управление Xray, WAN direct и журнал. Файлы б�
 из `files/`, которую использует `install.sh`; отдельная копия агента не ведётся.
 
 Это пакеты проекта для OpenWrt, а не включение проекта в официальный feed OpenWrt.
-Публикация в Releases произойдёт только после отправки workflow и выпуска тега.
+Выпуск v123 запускается тегом `v123`. Пакеты появляются в
+[GitHub Releases → v123](https://github.com/kzolotarev95/luci-app-owrt-remote/releases/tag/v123)
+после успешной сборки и проверки установки, обновления и удаления.
 
 ## Какой файл выбрать
 
 | OpenWrt | Файл | Архитектура пакета |
 | --- | --- | --- |
-| 23.05.x | `luci-app-owrt-remote_121-r1_openwrt-23.05_all.ipk` | `all` |
-| 24.10.x | `luci-app-owrt-remote_121-r1_openwrt-24.10_all.ipk` | `all` |
-| 25.12.x | `luci-app-owrt-remote_121-r1_openwrt-25.12_noarch.apk` | `noarch` |
+| 23.05.x | `luci-app-owrt-remote_123-r1_openwrt-23.05_all.ipk` | `all` |
+| 24.10.x | `luci-app-owrt-remote_123-r1_openwrt-24.10_all.ipk` | `all` |
+| 25.12.x | `luci-app-owrt-remote_123-r1_openwrt-25.12_noarch.apk` | `noarch` |
 
 В пакете нет ELF-бинарников. Один файл своей ветки подходит `aarch64_cortex-a53`,
 `aarch64_cortex-a72`, `aarch64_generic`, ARM, MIPS, MIPSEL, MIPS64, x86, x86_64
@@ -31,7 +33,7 @@ Xray загружается отдельно существующим агент
 1. Скачай пакет своей ветки из [GitHub Releases](https://github.com/kzolotarev95/luci-app-owrt-remote/releases).
 2. Открой **Система → Программное обеспечение**, обнови списки пакетов.
 3. Нажми **Загрузить пакет**, выбери файл и подтверди установку.
-4. Открой **Службы → OpenWrt Remote** и примени OpenWrt config из своей VPS-панели.
+4. Открой **Службы → OWRT Hub** и примени OpenWrt config из своей VPS-панели.
 
 Обновление выполняется загрузкой пакета новой версии тем же способом.
 Перезагрузка роутера не требуется. Зависимости устанавливает менеджер пакетов:
@@ -51,7 +53,7 @@ Xray загружается отдельно существующим агент
 
 ```powershell
 $Repo = "C:\Users\k.zolotarev95\Documents\openwrt overlay"
-$Package = Join-Path $Repo "artifacts\openwrt-packages\24.10\luci-app-owrt-remote_121-r1_openwrt-24.10_all.ipk"
+$Package = Join-Path $Repo "artifacts\openwrt-packages\24.10\luci-app-owrt-remote_123-r1_openwrt-24.10_all.ipk"
 ssh root@192.168.2.1 'sysupgrade -b /root/owrt-before-package.tar.gz'
 if ($LASTEXITCODE -ne 0) { throw 'Резервная копия не создана' }
 scp -O -- "$Package" 'root@192.168.2.1:/tmp/owrt-remote.ipk'
