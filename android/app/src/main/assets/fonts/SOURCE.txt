@@ -1,0 +1,11 @@
+Inter variable font, upright; includes Cyrillic glyphs.
+Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)
+License: SIL Open Font License 1.1; see OFL-Inter.txt.
+
+Bundled from the official Google Fonts repository on 2026-11-24:
+https://github.com/google/fonts/tree/main/ofl/inter
+https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf
+
+Original filename: Inter[opsz,wght].ttf
+Asset filename: Inter.ttf (unmodified font contents)
+SHA-256: 29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031

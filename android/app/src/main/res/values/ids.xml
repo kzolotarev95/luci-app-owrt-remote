@@ -1,0 +1,13 @@
+<resources>
+    <item name="hub_host" type="id" />
+    <item name="hub_port" type="id" />
+    <item name="hub_user" type="id" />
+    <item name="hub_password" type="id" />
+    <item name="hub_connect" type="id" />
+    <item name="hub_menu" type="id" />
+    <item name="hub_web" type="id" />
+    <item name="hub_login" type="id" />
+    <item name="hub_captcha" type="id" />
+    <item name="hub_otp" type="id" />
+    <item name="native_search" type="id" />
+</resources>

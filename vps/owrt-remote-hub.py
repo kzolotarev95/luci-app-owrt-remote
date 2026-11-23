@@ -43,6 +43,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 try:
+    import mobile_api
+except ModuleNotFoundError as exc:
+    if exc.name != "mobile_api":
+        raise
+    mobile_api = None
+
+try:
     from pywebpush import WebPushException, webpush
 except Exception:
     WebPushException = None
@@ -13338,9 +13345,9 @@ function initHubUpdate() {{
     buttons.forEach(button => {{
       button.disabled = busy || state.checking;
       button.dataset.available = state.available ? 'true' : 'false';
-      button.dataset.updateState = busy ? 'busy' : state.checking ? 'checking' : state.error ? 'error' : state.available ? 'available' : state.checked ? 'current' : 'checking';
-      button.textContent = busy ? 'Обновляется…' : state.checking ? 'Проверка…' : state.available ? 'Доступно обновление' : state.checked && !state.error ? 'Обновление не требуется' : 'Проверить обновление панели';
-      button.title = state.available ? 'Доступна сборка ' + state.remote_version + ' · ' + state.remote_revision.slice(0, 8) : state.error || (state.source_older ? 'Установлена ' + state.current_version + '; в источнике ' + state.remote_version + '. Более старая версия не устанавливается.' : 'Проверить обновление панели');
+      button.dataset.updateState = busy ? 'busy' : state.checking ? 'checking' : state.error ? 'error' : state.source_incompatible ? 'unavailable' : state.available ? 'available' : state.checked ? 'current' : 'checking';
+      button.textContent = busy ? 'Обновляется…' : state.checking ? 'Проверка…' : state.source_incompatible ? 'Проверить обновление' : state.available ? 'Доступно обновление' : state.checked && !state.error ? 'Обновление не требуется' : 'Проверить обновление панели';
+      button.title = state.available ? 'Доступна сборка ' + state.remote_version + ' · ' + state.remote_revision.slice(0, 8) : state.error || state.notice || (state.source_older ? 'Установлена ' + state.current_version + '; в источнике ' + state.remote_version + '. Более старая версия не устанавливается.' : 'Проверить обновление панели');
     }});
     if (busy) {{
       if (!pending) {{ remember(job.id); deadline = Date.now() + 300000; }}
@@ -13351,6 +13358,7 @@ function initHubUpdate() {{
       if (job.status === 'succeeded') {{ stopped = true; setTimeout(() => window.location.reload(), 1500); }}
     }} else if (state.error) message(state.error, 'failed');
     else if (job.status === 'failed') message(job.message, 'failed');
+    else if (state.source_incompatible) message(state.notice);
     else if (state.available) message('Доступно обновление панели: ' + state.remote_version + ' · сборка ' + state.remote_revision.slice(0, 8) + '.');
     else if (state.checked && !state.checking) message('');
     else if (state.checking) message('Проверяется наличие обновлений панели…');
@@ -17155,6 +17163,67 @@ HUB_LOG_MAINTENANCE_BUNDLE = (
 )
 # END EMBEDDED LOG MAINTENANCE
 
+# BEGIN EMBEDDED MOBILE API
+HUB_MOBILE_API_SHA256 = 'b4c4c338a6698d6d1c7ab78d20a5f64651c67e07c98d99d2fdb2f15474c9e253'
+HUB_MOBILE_API_BUNDLE = (
+    'eNrtG2tP3Ejy+/yKXt9J59k1A+SlhF1OIsAGTglEMFnlhDjLM+6Z8eKxZ902hIv471eP7nb7AUN2k3tIhyIFV3dXV9e7qhvP806i'
+    'MrmWYpomMitFVJUL+D+ZAjTPRH4tCwEQcVRN/qKE/JSoMsnmYprnV4kUSioF09RoMBjzJDGN0lSJOFGrqJwuwrksN+3HKlelmMhZ'
+    'XkiRlEocjd+9be84r6IiHgG6RIllHlepFHEulcjyUsyLCEmcTmFbUeYiym5rkoq8KoHYHP7dZLLYyLP0Vuy9Px4NPM8bDJLlKi9K'
+    'sYjUIk0m9nMZTc3vv6o8M78X0vym5LSQpbKft/bXqkgB02gVFUoOBoPXe+eHYld4m9Eq2VzmkySVm9fb3mD//Ozn8Ohw7+DwDIc/'
+    'bryjsQ2Ee4N3ex/Dt6dvjk/C16cHf4cJL7dfPRkcnhy8Pz0+GZ8D4PNAwI83XQBjZTaX3o6grX6ArdJ8nmSb9VDAcwncmWdGtdDc'
+    'cQOq1wMzWwgQEgzuBm8Ox+H7vfER0WYnTKNVBMdKykQqLxD2ABcO4ZcNuNnz8m7w/vTcwenMYbqb6zQpsOzkdHxIy2BVIUfTfLkC'
+    'xvrwq1RAj/SRuiGQV3ibrB2b/sU/Ni9/GG6CNkn1Z2842D89+fn4ze/EMs2zWTJHNINBLGciXFQTfxFlcSqL4Q7x8k8CDaOQUSqO'
+    'eAAMIM2zOSkwWlZRZRnqLxoPK/yPQlWTaRopYJFIMjCT8XuNbJZ8KqsCwKDmaQ62BvpfyoyMEEwv08jZOHJAX2icI0IAlgeGTkjL'
+    'WziaoXUUhssiD0OmGX+06e2iwo/4Q43AmH1YjrMJEoZDuyCZmTUJG+tJnkkgIkaTi8qy8Hk4EB74lGR2G67ggDd5EYcs5WG9Of6A'
+    '0VVFpnHSSBElSoqzCnzFUh4WRV74HtsZmjks+K1KkDXaXRFAKjR5OmQtJUlrNTgQqozKSgXg02KgbglqGc3hl++/B9YWkSZLzx4p'
+    'mcUhegrfLPvs5VdgKj9HqcLDIRb4ZGQebQWfbax3lhgVLWWYFwmwoKM62jXrgyggAr6yXEyK/EaBaE9p2UjsWciyggNXwKYS/Sc5'
+    'bY2Lt/gRl++fnp0DUrUCpZFiIaNYFkpE6JSzsgCGT2UsJreMw1UfxgFKYbih15JieEyNxyoB6qBnowroX7+rV+ozmZM7wm+L59nW'
+    'U2AkzwtBgSdJHEtwVcI70wLW2LXegbfJb2Ts1aqpVYkkNHAA46KSRgxg6RChIh8sWNOCcQmPWk1GWV4sozT5pwwRGKLkJc4cpXkU'
+    'E8wfDl3MCApoqZzN5BSlaHbQq3GG1YGpKmaOPrJjtFpwkC8jOJ6SEGk4Rl5JuVIsnusorSSGW4iB01LMinxJBtCMqhoTR+0RuSQd'
+    'wSEMy3QWUDhWJQRmstcFSU0lc/JMV/IWB6NbsSqSa6CetQG8XwnKDDzyvfymKDfYGDeut3fYR+944DUVWL4+EatJAqJB9+V5w+FI'
+    'ZmgovleVs42XXoOHGJpHmbwxjBlNq6KAI4UaW1jmVxI0p40jMIQFJtiP1CJ68vzFENT1U5zMQWX8mvWMtGN6Z+xNRATkXIOjnaTs'
+    'VPTmAXgj8q4lLKSMZEVJCLI+lfNoeivmaT6J0gbn8djk8jlVAYeQlZBVvZZgezCC5xERWKLI2PCj1So1eRE5SWa8psGxQ8Ma0DjD'
+    'Hp+ZuSryWUKOvD0XiM7Bl4Z6hl/m1XSxS0YyRPM1u0gAkDM3do1GZgbhQPhpdoHPhqzBExUZODiQONi+ntUeesj0t8HMYYPQUWcw'
+    'bQCeg25SGMtRLF1jR4KDmmwNtdLTpBgtILNeypLsP9Dmq+do+lbVBGShHQJ/OMvYnMkq2MxhIk/i02ooa/7nO02TqtLSZniUeVmu'
+    '7NzDrQDtJqgXlHm5CmWG+hnDokmep767cWN8SIJtIE5USOkyUEaC5jBW4zeE70CcW+rQxiBeTzAgCuwKXIg3vOO1d0ZZ7tmsljmm'
+    'JLNEpjFK0/cwKUB/E6pqhVk2S1tDQ9JYF5Bk4ACTuB5QahE2Zsr4yfPn269qHrTTDBTCBVFw2RQawQLmCB6FvsHbxOomAY/vew0S'
+    'HR4TI7cazoy3sTFfe7BVdIsRpFZ40r62kmqKiXNAIYu4n61GBbMwimMzFxXWGLseCtkDGTR6XZpkV6qpjzF40EkOFRnI3dv0HMVg'
+    'DIrgWPGY786UcA7/r9oTNzTUmW6KSTvTApxJ1ysVAjPzqoAi0M4E6GYNbamgPnMtdzrnhSEPhrxLW7gx0LM5DPK1tXJUrWIM4Z8b'
+    'ioRuKplpb11T1oQGzSXorhmZnQ+gDQ1qTdbk8mCHnQbcWoTsguFlkkUpLQHAhgG48rzTqgOZCGrAnf0KTX5ooYYt6MqgAve9Nx7a'
+    '7iyNoKghc6bf0JwbaqoPQKPGEQ5HlMAoyJ9qLuO2F96nIkIzxow0JQGZAAZRceQOUvrUWGxo7kEC9fdHgG3sM0xX4f3SRlRW2E1h'
+    'ubTUAyNcEfSIyp3eHKQld8Ne8u/ZG44AIW/jA33zAfr2hGlnrBvuzLuGW3IsnYoYzIgdYwP9CqFY092CbXeE/QmGhabCfWkAo0XW'
+    'ge2wCFrDTadFEYgA/QaSxHj6FDLiXvXDYVK+i8thPwJW0B1IqqflIzTYsSGXQZAQAI52ZvHoaqL2/l0PiVynYLTTyLYINGwH1ISj'
+    '06cV1sZhRDHRELXIYxuxmdOofZSHIu39ZUl7OisrzHcaXa05KDK0jN6VSo+aT2cWuVsSJvxvvLqOoQXM5s5BK3en7B9CHTY4sH9R'
+    '2oSyWa7u87yNMcyzFclIQcYNgz8Cm7aHF1uXI1ifrKDKwKKy0Ek1trOoOFyL/C3NtOiNo+lfNC6iTM3AYA+xooFygtdhgs07jhIV'
+    'qWmS+F045V8MB5jP8KH4q3je0HG9bEv8hLW+nfbTrmg1IrFR5DIS0nfPKUc2sQXycOq+BYpm0jNd7aPuHX5aQUEMZWYkFJhBKv52'
+    'fnpiWhz9eTzByuK23k0nTiABpIMMR/l1awE0Y5LHtyC1WDZqw0a7ChmRqCQDA8ym0tc4A7L7dpZIradfMFTpxpNzDDpAPvkVvh36'
+    '02SJNTVETdcnvnimk1dsfMH3s61XL7C7Ua7g4+mTwCbc1gqfbD176YBBQ27I2p4+uevm0AFvi5bP+4+SUi6V3zoONw12DRvdbNdz'
+    'jtDPJ1qMXbPCahuBUNlo0+Ze/ew7ZsXgqpZp78pek0dg+QlLbOF/yBKU6AHJlZAFDuLfo5CGFBIj0/OwNmoH1PA95Nn17pplD3T2'
+    'aoyDpjb3eTVbSelZiSIyejFx4VqXoI22Vp0PO/Vb3Z+iSo7qdIxF+3vvx/tHe+G704PD8OD4zfH4/CHevgJG6h4kkx/qdixFn/18'
+    'uUpl6XYlLZFYwy+kaWC28lf46ce6S5lKa7Aq0l1z1zHsY48xovzKMomP4mSXujnNGA37rG+o63wt5RrlujaGmTmLkpTY0qQAA4RR'
+    'Rdst6DsEEi9Z8XWKgE1rjOW6OdHbXvfbvrM3LWsOWj/VN4gui+ANdqxnAzPWMqF7+AfkZ6jFlqPTcsIyon2aB07JqMm/BiJ0O2Ng'
+    'faXUojdtNLPWMHl4z3XAE/Qvvfl0Iymu0TWysB2NPbBJHmozgPsuzHQmFAi6SjB50+6F753LEiobbDV6gUMjI+QepE8HHw4vbQuU'
+    '7sJaPQjuqZqUG5LmQNwUEEt0f5CF7Hne3molsb+f4b0EGHilTBcUvR91lKM5XwOtsOrkgh6bnOaWhnYHcc3lCO9pnf5m4DQvO33a'
+    'nmZkr0e0BwAk7oXtqMp+q2Brv3PSYTfdgH3QsKaphMLDTvTrJeg17de61MEouu4CJyby6RBXT310MOO6yIllbdQtpmi+uXcx4FTN'
+    'yfh+3XdETxX+jDWAu1veHmyHek9hg7xxf2zTNwRu/5jQ7LQzsTXhsoWW1KTCfFTG99xHueUIpfZ9dw0NLaKLfroAjoAb+qbA7BLc'
+    'Vw9ZvJSae8MW0f3XWVTwWCfonckZVGcLaxSmvY52A0QVt62srMWJf0PJ88fLnm9d+nSyzm4p9ED5s/3i6ctnX1z1fIXKh9xmN+Hs'
+    'kXLDJX2dKujLK6F11VDWrYQcN9CIyghbW23wRZ4pNnAQIUZFjYwRhhJGL312+mF8eBbS45Dx4cdxiJUtpLJn519SmJBYWhR+cQ2y'
+    'Xj1wG9SNE7MdpvcmySXzpxt9VEq8A45KscQ3VJBsbAnIEItoSk33e/WmoTN4bdFoRQLaDJgI0Rh/aznb/EbnkyAsiAlUI+hrA5wd'
+    'iFbEbMkQ1nf53WXGs7p1ifd8s7zK2CNyBENMDOvad8s8+qNL9zgRpSxhvalsnycgSbR4yvQwCj0T+WmiJYNvoGw3TIIvp4tnka3N'
+    'HDvZo6ULQDWNncsHqULwW0VCzV+ex3bWHAt6Gp/UTyW2mCtE30XgZG51395FHSdgJsPOZcLvTmiMVeznVRrzow7OM6l+pNH6Ap/e'
+    'YK1LX7VR2swy/H9O+Z/PKR+XQT7aa32xx+rzVF/FQ7klK929kFpiRRcIvJFboA9vuBL3Acekwr1991xBgwH69QGhu+89VdD/Ruso'
+    '51zEXhWT9WhaltEVZOBgaDdFaeyKN28TH+K74CIBuRlIp2/T/1OTXqPQd2fsauy4S+V9PvMRbhIf5OFB6Eke/mJf3rlPlGt5A2hR'
+    'l7dn9UMxEc1Q3PxsLk7MG0uwMNA04bxDRAy2lKW+Hegv2DI9lcWITg9mcBKkOEXJjwnsO1qvYwTOuzU+QbhEskFmztvV0axKU4L7'
+    'dALb63NWOEredpqNh6tBY9XF9mWnDUoP5/AbXbElxz7HvY+YerZDSqv70KKkXvIgHYbNlDxmwj5Rrvfh15pA5bOt53Y6THWeHlNh'
+    'C/Z+ry8wLz497tWQOzCvDenFlN6DN+E6ueEyPmRXWX6Tidar1d5Wsz0bMASDlcuXxpl3d0X/K2yHyQ/3hEmS/OJsd013ePfe7vAf'
+    'SHDa18z8MKKG4I5HH16Hb0+hmD8Ifzk8Oz8+PWlnQHSA9qPiHX2wTnuau2v2ZTy+34lXORSF9ubXdt56EpvUYX7/U/cvYj4ydw3r'
+    'g/v47jwdMLvTpZN+rIX/1RdF5pnwLm/53Xpp6hipFzbTEH7jzM8WGZNpaVtSWmW5hddPG5rvpc2tl+7OemWZhgrqrIwu9V1ix+O3'
+    '4fkhuMCD87s/kl3XD9wscfffZewYRqzTp67GKKcoeXSDU0ugk4w+cNQvfVw2vOdFdOOPdh4fH2kiRsfIeDm+UoOqARtyG7Btya0C'
+    'fiP8jSIlYHsgOj6U7j3v9+91wsfBsdJPsalcj2L6ayPvvyVQmmY9JdWPDZp1JFwfNeu/AfrfDZrdPzNymN1zuVt7/jWt6kcUmQ/Z'
+    '9ddqa3/71vY3a283vaV1eFguyWuIDI137hQqdtf8kUC3e7S+pnj0BRvW8EXYumajG7a2av4Lg+PrSQ=='
+)
+# END EMBEDDED MOBILE API
+
 
 def hub_update_write(path, data, mode=0o600):
     """One durable atomic replacement; never truncate a running Hub or its state."""
@@ -17170,6 +17239,61 @@ def hub_update_write(path, data, mode=0o600):
         os.replace(name, path)
     finally:
         Path(name).unlink(missing_ok=True)
+
+
+class HubUpdateSourceUnsupported(ValueError):
+    """A valid older source cannot preserve capabilities of the installed Hub."""
+
+
+def hub_mobile_api_payload(source=None):
+    """Use the exact helper shipped in the confirmed Hub, without another URL."""
+    digest, bundle = HUB_MOBILE_API_SHA256, HUB_MOBILE_API_BUNDLE
+    if source is not None:
+        values = {}
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', SyntaxWarning)
+            tree = ast.parse(source)
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                name = node.targets[0].id
+                if name in {'HUB_MOBILE_API_SHA256', 'HUB_MOBILE_API_BUNDLE'}:
+                    values[name] = ast.literal_eval(node.value)
+        if not values:
+            raise HubUpdateSourceUnsupported(
+                'Сборка в источнике обновлений пока не поддерживает приложение Android. '
+                'Установленная панель и приложение продолжают работать; эта сборка пропущена.')
+        digest, bundle = values.get('HUB_MOBILE_API_SHA256'), values.get('HUB_MOBILE_API_BUNDLE')
+    if (not isinstance(digest, str) or not re.fullmatch('[a-f0-9]{64}', digest)
+            or not isinstance(bundle, str) or len(bundle) > 262144):
+        raise ValueError('В обновлении нет проверяемого модуля мобильного API.')
+    unpack = zlib.decompressobj()
+    data = unpack.decompress(base64.b64decode(bundle, validate=True), 131073)
+    if not unpack.eof or unpack.unused_data or not 1000 <= len(data) <= 131072:
+        raise ValueError('Некорректный размер модуля мобильного API.')
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise ValueError('Контрольная сумма модуля мобильного API не совпала.')
+    compile(data, 'mobile_api.py', 'exec', dont_inherit=True)
+    return data, digest
+
+
+def hub_prepare_mobile_api(target=None):
+    """Bridge updates from older workers that only replace the main Hub file."""
+    global mobile_api
+    data, digest = hub_mobile_api_payload()
+    path = Path(target or APP_DIR / 'mobile_api.py')
+    try:
+        if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            hub_update_write(path, data, 0o644)
+    except OSError as exc:
+        # The embedded, validated module can serve requests even on a read-only
+        # installation. Desktop startup must not depend on writing a helper.
+        print('Не удалось сохранить mobile_api.py; используется встроенный модуль: ' + str(exc), file=sys.stderr)
+    module = type(sys)('mobile_api')
+    module.__file__ = str(path)
+    exec(compile(data, str(path), 'exec', dont_inherit=True), module.__dict__)
+    sys.modules['mobile_api'] = module
+    mobile_api = module
+    return digest
 
 
 def hub_log_maintenance_payload(source=None):
@@ -17394,6 +17518,9 @@ def run_hub_update_worker(job_id, directory=None, target=None):
         changed = False
         maintenance_installed = False
         previous = None
+        previous_mobile = None
+        mobile_changed = False
+        mobile_target = target.with_name('mobile_api.py')
         candidate = directory / 'candidate.py'
         def report(status, message):
             job.update(status=status, message=message, updated_at=time.time())
@@ -17407,11 +17534,21 @@ def run_hub_update_worker(job_id, directory=None, target=None):
             if hashlib.sha256(previous).hexdigest() != job.get('previous_revision'):
                 raise RuntimeError('Файл Hub изменился после подтверждения; обнови страницу.')
             hub_update_require_version(data, hub_update_version(previous))
+            mobile_data, _ = hub_mobile_api_payload(data)
+            previous_mobile = mobile_target.read_bytes() if mobile_target.exists() else None
             hub_update_write(directory / 'previous.py', previous, 0o700)
+            if previous_mobile is not None:
+                hub_update_write(directory / 'previous-mobile-api.py', previous_mobile, 0o600)
+                (directory / 'previous-mobile-api.absent').unlink(missing_ok=True)
+            else:
+                hub_update_write(directory / 'previous-mobile-api.absent', b'', 0o600)
+                (directory / 'previous-mobile-api.py').unlink(missing_ok=True)
             report('installing', 'Устанавливается обслуживание журналов; проверяется очистка и таймер…')
             hub_install_log_maintenance(directory, job_id, source=data)
             maintenance_installed = True
             report('installing', 'Устанавливается новая сборка панели…')
+            hub_update_write(mobile_target, mobile_data, 0o644)
+            mobile_changed = True
             hub_update_write(target, data, 0o755)
             changed = True
             report('restarting', 'Панель перезапускается; ожидается проверка новой сборки…')
@@ -17431,13 +17568,18 @@ def run_hub_update_worker(job_id, directory=None, target=None):
                     hub_rollback_log_maintenance(directory, job_id)
                 except Exception as rollback_exc:
                     reason += ' Ошибка отката настроек журналов: ' + str(rollback_exc)[:300]
-            if changed and previous is not None:
+            if (changed or mobile_changed) and previous is not None:
                 try:
                     report('rollback', 'Ошибка обновления; восстанавливается предыдущая сборка…')
                 except OSError:
                     pass  # A full state disk must not prevent recovery of the Hub file.
                 try:
                     hub_update_write(target, previous, 0o755)
+                    if mobile_changed:
+                        if previous_mobile is None:
+                            mobile_target.unlink(missing_ok=True)
+                        else:
+                            hub_update_write(mobile_target, previous_mobile, 0o644)
                     subprocess.run(['systemctl', 'restart', 'owrt-remote'], check=True, capture_output=True, timeout=35)
                     restored = hub_update_health(job['health_url'], job['previous_revision'], attempts=15)
                     reason += ' Предыдущий файл восстановлен.' + ('' if restored else ' Работоспособность сервиса не подтверждена; проверь журнал owrt-remote на VPS.')
@@ -17461,6 +17603,7 @@ class HubUpdateManager:
         self.checked_at = 0
         self.checking = False
         self.error = ''
+        self.source_incompatible = ''
         self.candidate = None
         self.remote_revision = ''
         self.remote_version = ''
@@ -17531,17 +17674,21 @@ class HubUpdateManager:
             return response.read(HUB_UPDATE_LIMIT + 1)
 
     def _check(self):
-        data, error = None, ''
+        data, error, incompatibility = None, '', ''
         try:
             data = self.fetch_candidate()
             hub_update_validate(data)
             hub_log_maintenance_payload(data)
+            hub_mobile_api_payload(data)
+        except HubUpdateSourceUnsupported as exc:
+            incompatibility = str(exc)
         except Exception as exc:
             error = 'Не удалось проверить обновление: ' + str(exc)[:300]
         with self.lock:
             self.checked_at = time.monotonic()
             self.error = error
-            self.candidate = data if not error else None
+            self.source_incompatible = incompatibility
+            self.candidate = data if not error and not incompatibility else None
             self.remote_revision = hashlib.sha256(data).hexdigest() if not error else ''
             self.remote_version = hub_update_version(data) if not error else ''
             self.checking = False
@@ -17562,8 +17709,10 @@ class HubUpdateManager:
             return {'checking': self.checking, 'error': self.error, 'source': self.source,
                     'current_revision': revision, 'current_version': HUB_LOADED_VERSION,
                     'remote_revision': self.remote_revision, 'source_older': source_older,
+                    'source_incompatible': bool(self.source_incompatible), 'notice': self.source_incompatible,
                     'remote_version': self.remote_version, 'checked': bool(self.checked_at),
-                    'available': bool(self.remote_revision and self.remote_revision != revision and not source_older),
+                    'available': bool(self.remote_revision and self.remote_revision != revision
+                                      and not source_older and not self.source_incompatible),
                     'job': job, 'csrf': self.csrf}
 
     def start(self, revision):
@@ -17574,12 +17723,15 @@ class HubUpdateManager:
                     raise RuntimeError('Обновление панели уже выполняется.')
                 if self.log_maintenance_status == 'installing':
                     raise RuntimeError('Ещё устанавливается обслуживание журналов.')
+                if self.source_incompatible:
+                    raise ValueError(self.source_incompatible)
                 if not revision or revision != self.remote_revision or not self.candidate or self.error or self.checking:
                     raise ValueError('Результат проверки устарел. Проверь обновление ещё раз.')
                 if revision == HUB_LOADED_REVISION:
                     raise ValueError('Эта сборка панели уже установлена.')
                 hub_update_validate(self.candidate)
                 hub_update_require_version(self.candidate, HUB_LOADED_VERSION)
+                hub_mobile_api_payload(self.candidate)
                 if shutil.disk_usage(self.target.parent).free < HUB_UPDATE_LIMIT * 3:
                     raise RuntimeError('Недостаточно свободного места для обновления и резервной копии.')
                 if shutil.disk_usage(self.directory).free < HUB_UPDATE_LIMIT * 3:
@@ -18520,11 +18672,21 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
                 token = secrets.token_urlsafe(32)
                 atomic_write_text(SESSION_TOKEN_FILE, token + "\n", mode=0o600)
                 self.app.session_token = token
+            if "application/json" in self.headers.get("Accept", ""):
+                self.send_json(
+                    200,
+                    {"ok": True, "reauth_required": True, "message": "Доступ к Hub обновлен"},
+                    extra_headers=[("Set-Cookie", self.clear_session_cookie()), ("X-Hub-Reauth", "1")],
+                )
+                return
             self.send_bytes(
                 200,
                 "Доступ к Hub обновлен".encode("utf-8"),
                 extra_headers=[("Set-Cookie", self.clear_session_cookie()), ("X-Hub-Reauth", "1")],
             )
+            return
+        if "application/json" in self.headers.get("Accept", ""):
+            self.send_json(200, {"ok": True, "reauth_required": False, "message": "Доступ к Hub обновлен"})
             return
         self.send_text(200, "Доступ к Hub обновлен")
 
@@ -20852,6 +21014,8 @@ exit 127
 
     def do_GET(self):
         path = self.parsed().path
+        if mobile_api is not None and mobile_api.dispatch_get(self, path):
+            return
         if path == "/health":
             result = {"ok": True}
             if self.query().get('panel-update') == ['1']:
@@ -21157,6 +21321,8 @@ exit 127
 
     def do_POST(self):
         path = self.parsed().path
+        if mobile_api is not None and mobile_api.dispatch_post(self, path):
+            return
         control_match = re.fullmatch(r'/api/router/([^/]+)/xray-control', path)
         if control_match:
             self.router_xray_control_api(urllib.parse.unquote(control_match[1]))
@@ -22543,6 +22709,7 @@ def make_http_server(app, host, port, tls_cert="", tls_key=""):
 
 
 def cmd_serve(args):
+    hub_prepare_mobile_api()
     app = App(args.db, session_token(), agent_token(), args.public_url)
     health_host = args.host if args.host not in {'', '0.0.0.0', '::'} else ('::1' if args.host == '::' else '127.0.0.1')
     app.hub_update.health_url = 'http://' + ('[' + health_host + ']' if ':' in health_host else health_host) + ':' + str(args.port) + '/health'

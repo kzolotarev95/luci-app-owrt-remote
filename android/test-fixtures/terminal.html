@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fixture terminal</title><style>body{font:16px system-ui;padding:16px}pre{background:#111;color:#9e9;padding:12px;min-height:120px;white-space:pre-wrap}input,button{font:inherit;padding:12px;max-width:100%;box-sizing:border-box}</style></head><body><h1>Fixture terminal</h1><p id="mode"></p><pre id="terminalOutput"></pre><label>Echo input <input id="terminalInput" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label><button id="terminalSend">Send</button><button id="forceWs">Connect WebSocket</button><button id="forceHttp">Connect HTTP</button><a href="/">Dashboard</a>
+<script>
+const csrf='@@CSRF@@';let sid='',ws=null,timer=0;const output=document.querySelector('#terminalOutput');
+const post=(path,data)=>fetch(path,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({csrf,...data})});
+async function poll(){if(!sid)return;try{const r=await fetch('/api/ssh/read?sid='+encodeURIComponent(sid),{cache:'no-store'});const d=await r.json();if(d.data)output.textContent+=d.data;if(!d.ok)throw Error(d.error);if(d.alive)timer=setTimeout(poll,300)}catch(e){output.textContent+='\nHTTP read failed: '+e}}
+async function http(){clearTimeout(timer);if(ws){ws.close();ws=null}const r=await fetch('/api/ssh/session');const d=await r.json();sid=d.sid||'';document.querySelector('#mode').textContent='HTTP terminal';poll()}
+function socket(){clearTimeout(timer);if(sid)post('/api/ssh/close',{sid});sid='';ws=new WebSocket((location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws/echo');document.querySelector('#mode').textContent='WebSocket connecting';ws.onopen=()=>document.querySelector('#mode').textContent='WebSocket terminal';ws.onmessage=e=>output.textContent+=e.data+'\n';ws.onerror=()=>output.textContent+='\nWebSocket error';}
+document.querySelector('#terminalSend').onclick=()=>{const data=document.querySelector('#terminalInput').value;if(ws&&ws.readyState===WebSocket.OPEN)ws.send(data);else if(sid)post('/api/ssh/write',{sid,data});document.querySelector('#terminalInput').value=''};
+document.querySelector('#forceHttp').onclick=http;document.querySelector('#forceWs').onclick=socket;
+addEventListener('beforeunload',()=>{clearTimeout(timer);if(sid)navigator.sendBeacon('/api/ssh/close',new URLSearchParams({csrf,sid}))});
+(/Android|Mobile/i.test(navigator.userAgent)?http:socket)();
+</script></body></html>

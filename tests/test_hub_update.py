@@ -1,5 +1,6 @@
 """Panel self-update: source isolation, validation, restart recovery and owner-only API."""
 from contextlib import nullcontext
+import ast
 import hashlib
 import importlib.util
 import io
@@ -32,6 +33,16 @@ def versioned_source(version):
     return re.sub(rb'(appBannerVersion[^>]*>)v[0-9]+',
                   lambda match: match[1] + ('v' + str(version)).encode('ascii'),
                   SOURCE, count=1)
+
+
+def without_mobile_payload(source=SOURCE, names=None):
+    names = names or {'HUB_MOBILE_API_SHA256', 'HUB_MOBILE_API_BUNDLE'}
+    lines = source.splitlines(keepends=True)
+    for node in reversed(ast.parse(source).body):
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name) and node.targets[0].id in names):
+            del lines[node.lineno - 1:node.end_lineno]
+    return b''.join(lines)
 
 
 class UpdateTests(unittest.TestCase):
@@ -105,6 +116,74 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(self.target.read_bytes(), SOURCE)
         self.assertFalse((self.directory / 'candidate.py').exists())
         self.assertFalse((self.directory / 'job.json').exists())
+
+    def test_source_without_mobile_api_is_unsupported_not_a_check_failure(self):
+        for source in (without_mobile_payload(), without_mobile_payload(versioned_source(CURRENT_VERSION + 1))):
+            with self.subTest(version=hub.hub_update_version(source)), \
+                    mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response(source)):
+                self.manager._check()
+            state = self.manager.snapshot()
+            self.assertTrue(state['checked'])
+            self.assertEqual(state['error'], '')
+            self.assertTrue(state['source_incompatible'])
+            self.assertIn('приложение Android', state['notice'])
+            self.assertIn('продолжают работать', state['notice'])
+            self.assertFalse(state['available'])
+            self.assertIsNone(self.manager.candidate)
+            self.assertEqual(state['remote_revision'], hashlib.sha256(source).hexdigest())
+            self.assertEqual(state['remote_version'], hub.hub_update_version(source))
+            with mock.patch.object(hub.subprocess, 'run') as run:
+                with self.assertRaisesRegex(ValueError, 'сборка пропущена'):
+                    self.manager.start(state['remote_revision'])
+                run.assert_not_called()
+        self.assertEqual(self.target.read_bytes(), SOURCE)
+        self.assertFalse((self.directory / 'candidate.py').exists())
+        self.assertFalse((self.directory / 'job.json').exists())
+
+    def test_check_recovers_when_compatible_build_is_published(self):
+        with mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response(without_mobile_payload())):
+            self.manager._check()
+        self.assertTrue(self.manager.snapshot()['source_incompatible'])
+        with mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response()):
+            self.manager._check()
+        state = self.manager.snapshot()
+        self.assertFalse(state['source_incompatible'])
+        self.assertEqual(state['notice'], '')
+        self.assertEqual(state['error'], '')
+        self.assertTrue(state['available'])
+        with mock.patch.object(hub.subprocess, 'run') as run:
+            self.manager.start(state['remote_revision'])
+            self.assertTrue(run.called)
+
+    def test_incomplete_or_corrupt_mobile_payload_remains_a_real_error(self):
+        sources = [without_mobile_payload(names={'HUB_MOBILE_API_BUNDLE'}),
+                   SOURCE.replace(hub.HUB_MOBILE_API_SHA256.encode(), b'0' * 64, 1)]
+        for source in sources:
+            with self.subTest(source_size=len(source)), \
+                    mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response(source)):
+                self.manager._check()
+            state = self.manager.snapshot()
+            self.assertTrue(state['error'])
+            self.assertFalse(state['source_incompatible'])
+            self.assertEqual(state['notice'], '')
+            self.assertFalse(state['available'])
+            self.assertIsNone(self.manager.candidate)
+
+    def test_worker_rejects_source_without_mobile_api_before_any_changes(self):
+        job = self.prepare()
+        legacy = without_mobile_payload()
+        api = self.target.with_name('mobile_api.py')
+        api.write_bytes(b'WORKING_API = True\n')
+        (self.directory / 'candidate.py').write_bytes(legacy)
+        job.update(revision=hashlib.sha256(legacy).hexdigest())
+        hub.hub_update_state(self.directory, job)
+        with mock.patch.object(hub.time, 'sleep'), mock.patch.object(hub.subprocess, 'run') as run:
+            self.assertEqual(hub.run_hub_update_worker(job['id'], self.directory, self.target), 1)
+            run.assert_not_called()
+        self.install_logs.assert_not_called()
+        self.assertEqual(self.target.read_bytes(), SOURCE)
+        self.assertEqual(api.read_bytes(), b'WORKING_API = True\n')
+        self.assertEqual(hub.hub_update_state(self.directory)['status'], 'failed')
 
     def test_newer_version_is_offered_and_installed(self):
         newer = versioned_source(CURRENT_VERSION + 1)

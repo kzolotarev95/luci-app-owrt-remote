@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="manifest" href="/manifest.webmanifest"><title>Fixture dashboard</title>
+<style>body{font:16px system-ui;margin:16px auto;padding:12px;max-width:650px}section{border:1px solid #aaa;padding:12px;margin:12px 0}a,button{display:inline-block;padding:12px;margin:3px;font:inherit}label,input{display:block;margin:12px 0}pre{white-space:pre-wrap}</style></head>
+<body><h1 id="dashboardTitle">Fixture dashboard</h1><p id="authenticatedUser">Signed in: @@USERNAME@@</p><p id="sessionStatus">Checking session…</p>
+<section><h2>New windows</h2>
+<a id="anchorBlank" href="/child?case=anchor" target="_blank" rel="noopener noreferrer">Anchor blank / SSH</a>
+<a id="adminBlank" href="/child?case=admin" target="_blank" rel="noopener noreferrer" onclick="window.open(this.href,'_blank','noopener,noreferrer');return false;">Admin JavaScript blank</a>
+<button id="scriptBlank" onclick="window.open('/child?case=script','_blank','noopener,noreferrer')">Script blank</button>
+<button id="emptyBlank" onclick="const w=window.open('about:blank','_blank');if(w)w.location='/child?case=about-blank';">Blank then navigation</button>
+<button id="oauthPopup" onclick="window.open('/oauth/popup','fixture-oauth','popup=yes,width=460,height=560')">OAuth popup (keeps opener)</button><button id="asyncOauthPopup" onclick="fetch('/api/session').then(()=>new Promise(resolve=>setTimeout(resolve,800))).then(()=>window.open('/oauth/popup','fixture-async-oauth','popup=yes,width=460,height=560'))">Async OAuth popup</button><p id="oauthResult">No OAuth callback yet</p>
+</section>
+<section><h2>Cookie / CSRF / history</h2><button id="csrfCheck">POST CSRF</button><p id="csrfResult"></p><a id="historyStart" href="/history/1">History 1</a><a id="terminalLink" href="/terminal" target="_blank" rel="noopener noreferrer">Terminal</a><button id="serviceWorker">Register service worker</button><p id="swResult"></p></section>
+<section><h2>Downloads / uploads</h2><a id="downloadBackup" href="/download">Download fixture archive</a><a id="downloadRedirect" href="/download/redirect">Redirect download</a>
+<form id="uploadForm" method="post" action="/upload" enctype="multipart/form-data"><input type="hidden" name="csrf" value="@@CSRF@@"><label>Note images, multiple<input id="noteImages" name="images" type="file" accept="image/*" multiple></label><label>Backup archive<input id="backupFile" name="archive" type="file" accept=".tar.gz,.tgz,application/gzip,application/x-gzip"></label><button id="uploadSubmit">Upload fixture files</button></form></section>
+<section><h2>Error / logout</h2><a id="httpError" href="/error">HTTP 503</a><a id="timeout" href="/timeout?seconds=45">45-second timeout</a><a id="disconnect" href="/disconnect">Connection failure</a><a id="expireSession" href="/expire">Expire session</a><a id="logout" href="/logout">Logout</a><p>Broken subresource below must not replace this page with a native error screen.</p><img src="/missing-image.png" alt="Intentionally missing image"></section>
+<script>
+const fixtureCsrf='@@CSRF@@';
+fetch('/api/session',{cache:'no-store',credentials:'same-origin'}).then(r=>r.json()).then(s=>{document.querySelector('#sessionStatus').textContent=s.ok?'Cookie session OK':'Session failed'});
+document.querySelector('#csrfCheck').onclick=()=>fetch('/api/check-csrf',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':fixtureCsrf},body:'{}'}).then(r=>r.json()).then(s=>{document.querySelector('#csrfResult').textContent=s.ok?'CSRF OK':s.error});
+addEventListener('message',e=>{if(e.origin===location.origin&&e.data.type==='owrt-social-linked')document.querySelector('#oauthResult').textContent=e.data.ok?'OAuth callback OK':'OAuth callback failed'});
+document.querySelector('#serviceWorker').onclick=async()=>{try{if(!('serviceWorker'in navigator))throw Error('Service worker unavailable');await navigator.serviceWorker.register('/sw.js',{scope:'/'});document.querySelector('#swResult').textContent='Service worker OK'}catch(e){document.querySelector('#swResult').textContent=String(e)}};
+</script></body></html>

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Fixture login</title>
+<style>body{font:16px system-ui;margin:24px auto;padding:12px;max-width:480px}label{display:block;margin:12px 0}input{box-sizing:border-box;width:100%;font:inherit;padding:10px}button{padding:12px;font:inherit}#error{color:#a21}small{display:block}</style></head>
+<body><h1>Fixture login</h1><p>Disposable local data only. CAPTCHA <b>2468</b>; 2FA <b>123456</b>.</p><p id="error" role="alert">@@ERROR@@</p>
+<form id="passwordLoginForm" method="post" action="/login">
+<input type="hidden" name="csrf" value="@@CSRF@@">
+<label for="hubUsername">Hub username<input id="hubUsername" name="username" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" required></label>
+<label for="hubPassword">Hub password<input id="hubPassword" name="password" type="password" autocomplete="current-password" required></label>
+<label for="hubCaptcha">CAPTCHA: 2468<input id="hubCaptcha" name="captcha_answer" inputmode="numeric" autocomplete="off" required></label>
+<label for="hubOtp">2FA<input id="hubOtp" name="otp" inputmode="numeric" autocomplete="one-time-code" required></label>
+<button id="loginSubmit" type="submit">Sign in</button></form>
+<small>Fake username: fixture-user<br>Fake password: fixture-only-password</small>
+<script>
+const form=document.querySelector('#passwordLoginForm');
+form.addEventListener('submit',async event=>{event.preventDefault();const button=document.querySelector('#loginSubmit');button.disabled=true;try{const r=await fetch('/login',{method:'POST',body:new FormData(form),credentials:'same-origin',redirect:'follow',cache:'no-store'});const body=await r.text();if(!r.ok){document.querySelector('#error').textContent=new DOMParser().parseFromString(body,'text/html').querySelector('#error')?.textContent||'Fixture login failed';return}const probe=await fetch('/api/sessions',{credentials:'same-origin',cache:'no-store'});if(probe.ok)location.assign('/');else document.querySelector('#error').textContent='Fixture cookie probe failed'}catch(error){document.querySelector('#error').textContent=String(error)}finally{button.disabled=false}});
+</script>
+</body></html>

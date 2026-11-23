@@ -99,10 +99,61 @@ install_xray_binary() {
 	fi
 }
 
+install_mobile_api() {
+	# Extract the exact helper from the downloaded Hub rather than downloading
+	# a second moving branch snapshot. Validate before an atomic replacement.
+	if ! $SUDO python3 - /opt/owrt-remote/owrt-remote-hub.py /opt/owrt-remote/mobile_api.py <<'PY'
+import ast
+import base64
+import hashlib
+import os
+from pathlib import Path
+import re
+import sys
+import tempfile
+import zlib
+
+values = {}
+for node in ast.parse(Path(sys.argv[1]).read_bytes()).body:
+    if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+        name = node.targets[0].id
+        if name in {'HUB_MOBILE_API_SHA256', 'HUB_MOBILE_API_BUNDLE'}:
+            values[name] = ast.literal_eval(node.value)
+digest = values.get('HUB_MOBILE_API_SHA256')
+bundle = values.get('HUB_MOBILE_API_BUNDLE')
+if (not isinstance(digest, str) or not re.fullmatch('[a-f0-9]{64}', digest)
+        or not isinstance(bundle, str) or len(bundle) > 262144):
+    raise SystemExit('Hub has no validated native mobile API payload')
+unpack = zlib.decompressobj()
+data = unpack.decompress(base64.b64decode(bundle, validate=True), 131073)
+if not unpack.eof or unpack.unused_data or not 1000 <= len(data) <= 131072:
+    raise SystemExit('Invalid native mobile API payload size')
+if hashlib.sha256(data).hexdigest() != digest:
+    raise SystemExit('Native mobile API checksum mismatch')
+compile(data, 'mobile_api.py', 'exec', dont_inherit=True)
+target = Path(sys.argv[2])
+fd, temporary = tempfile.mkstemp(prefix='.mobile-api-', dir=target.parent)
+try:
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(data)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, target)
+finally:
+    Path(temporary).unlink(missing_ok=True)
+print('Native mobile API installed: ' + digest)
+PY
+	then
+		die "не удалось проверить и установить мобильный API Hub"
+	fi
+}
+
 install_files() {
 	cache_bust="$(date +%s)"
 	$SUDO mkdir -p /opt/owrt-remote/static "$STATE_DIR" /etc/xray
-	$SUDO wget -O /opt/owrt-remote/owrt-remote-hub.py "$RAW_BASE/vps/owrt-remote-hub.py?v=$cache_bust"
+	$SUDO wget -O /opt/owrt-remote/owrt-remote-hub.py "$RAW_BASE/vps/owrt-remote-hub.py?v=$cache_bust" || die "не удалось загрузить Hub"
+	install_mobile_api
 	$SUDO wget -O /opt/owrt-remote/owrt-remote-run.sh "$RAW_BASE/vps/owrt-remote-run.sh?v=$cache_bust"
 	$SUDO wget -O /etc/systemd/system/owrt-remote.service "$RAW_BASE/vps/owrt-remote.service?v=$cache_bust"
 	$SUDO wget -O /opt/owrt-remote/enable-https.sh "$RAW_BASE/vps/enable-https.sh?v=$cache_bust"
