@@ -21,13 +21,6 @@
 
 <h3>Удалённый доступ к OpenWrt через свой VPS</h3> Сказать спасибо ❤️ : https://donate.zks95.ugnss.ru
 
-<p>
-  Карточки роутеров · Online/Offline · LuCI · SSH Web Terminal · Xray Reverse · HTTPS через nginx
-</p>
-
-</div>
-
----
 
 <div align="center">
 
@@ -171,21 +164,8 @@ owrt-remote status
 
 ### Android-приложение OWRT Hub
 
-[Скачать Android APK 0.2.4-v123](https://github.com/kzolotarev95/luci-app-owrt-remote/raw/refs/heads/main/android/apk/OWRT-Hub-Android-0.2.4-v123.apk) · [SHA256](android/apk/SHA256SUMS)
+[Скачать Android APK 0.2.4-v123](https://github.com/kzolotarev95/luci-app-owrt-remote/raw/refs/heads/main/android/apk/OWRT-Hub-Android-0.2.4-v123.apk) 
 
-В `main` добавлен нативный Android-клиент **0.2.4-v123** для Android 8.0+:
-вход с капчей и 2FA, роутеры, управление Xray через Heartbeat, журналы,
-консоли, настройки и резервные копии. LuCI и Tachyon открываются во встроенном
-браузере инструментов.
-
-Мобильный API включён в установщик VPS и обновление через кнопку панели.
-Для ранее установленной v123 сначала обновите Hub. Повторная установка агента
-на роутерах для подключения приложения не требуется.
-
-[Исходники, сборка и установка Android](android/README.md) ·
-[Исправления и результаты локального аудита](android/AUDIT-0.2.1.md).
-APK для Android и APK-пакеты OpenWrt — разные форматы и устанавливаются
-на соответствующие устройства.
 
 <div align="center">
 
