@@ -11,3 +11,6 @@ staging_dir/
 tmp/
 __pycache__/
 *.pyc
+
+# Published Android application (router/build APKs remain ignored).
+!android/apk/OWRT-Hub-Android-0.2.4-v123.apk

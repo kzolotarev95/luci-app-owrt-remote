@@ -3515,32 +3515,32 @@ def parse_router_notes_entries(raw_value, fallback_ts=0):
     if isinstance(payload, dict):
         payload_entries = payload.get("entries")
         if isinstance(payload_entries, list):
-            for item in payload_entries:
+            for index, item in enumerate(payload_entries):
                 if not isinstance(item, dict):
                     continue
                 entry = build_router_note_entry(
                     item.get("text", ""),
                     created_at=item.get("created_at") or fallback_ts or now_ts(),
-                    note_id=item.get("id", ""),
+                    note_id=item.get("id") or "legacy-" + hashlib.sha256((str(index) + json.dumps(item, sort_keys=True, ensure_ascii=False)).encode("utf-8")).hexdigest()[:16],
                     images=item.get("images") or [],
                 )
                 if entry:
                     entries.append(entry)
             return entries[:ROUTER_NOTES_MAX_ENTRIES]
     elif isinstance(payload, list):
-        for item in payload:
+        for index, item in enumerate(payload):
             if not isinstance(item, dict):
                 continue
             entry = build_router_note_entry(
                 item.get("text", ""),
                 created_at=item.get("created_at") or fallback_ts or now_ts(),
-                note_id=item.get("id", ""),
+                note_id=item.get("id") or "legacy-" + hashlib.sha256((str(index) + json.dumps(item, sort_keys=True, ensure_ascii=False)).encode("utf-8")).hexdigest()[:16],
                 images=item.get("images") or [],
             )
             if entry:
                 entries.append(entry)
         return entries[:ROUTER_NOTES_MAX_ENTRIES]
-    legacy_entry = build_router_note_entry(raw_text, created_at=fallback_ts or now_ts())
+    legacy_entry = build_router_note_entry(raw_text, created_at=fallback_ts or now_ts(), note_id="legacy-" + hashlib.sha256(raw_text.encode("utf-8")).hexdigest()[:16])
     return [legacy_entry] if legacy_entry else []
 
 
@@ -17164,63 +17164,75 @@ HUB_LOG_MAINTENANCE_BUNDLE = (
 # END EMBEDDED LOG MAINTENANCE
 
 # BEGIN EMBEDDED MOBILE API
-HUB_MOBILE_API_SHA256 = 'b4c4c338a6698d6d1c7ab78d20a5f64651c67e07c98d99d2fdb2f15474c9e253'
+HUB_MOBILE_API_SHA256 = 'dcc10722bbd17d36b882114f233272fac021fbf1f3f3f568c22c40652e2af012'
 HUB_MOBILE_API_BUNDLE = (
-    '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'
+    'eNrtPNtuHEd27/yKdidAz1jN4UWUVhp7DFASJTGQSIGkHG8optEzU8Nps6d7ti+8rEBg1wbyskZe8pCnXID8gNeIEK836/zC8I9yLlXV1T09F1ryJgEiGOb0'
+    'qapTp06de3W1bdt7fhacC6sXBiLKLD/PhvA36AE0jqz4XCQWQKzneddJLXEZpFkQnVq9OD4LhJWKNIVuaWtl5Yg7WT0/DFOrH6RjP+sNvVORremHcZxmVlcM'
+    '4kRYQZZaz49evqjOeJr7Sb8F6ILUGsX9PBRWPxapFcWZdZr4SGKvB9NaWWz50VVBUhLnGRAbw38XkUhW4yi8srZf7bZWbNteWQlG4ziB2f1U3N9ST0M/HYZB'
+    'Vz+O/J76/WUaR+p3ItSvVPQSkaX68Ur/zJMQMLXGfpKKlZWVl/uPdl/seDC/d7Dz+e7h7v6e1bG2Vh5tH+7AD3vNHwdro7gbhGLtfMNeeXx48NR7vrP9ZOcA'
+    'm79YfUltqwi3V15uf+G92H+2u+c92n/yS+jwYOPh5srO3pNX+7t7R4cAeLtiwT+7NwT2i+hU2G2LproDU4XxaRCtFU0u9yXwVD/VKrfWbFegYjywvIIAIe7K'
+    '9cqznSPv1fbRc6JNd+j5Yx+WFWSBSG3X0gs4Ngg/KcHVnCfXK6/2Dw2cRh+muzxOkgLD9vaPdmgYjEpEqxePxsDYBvwUKdAjGkhdE8hL7DWWobXG8d+undxp'
+    'roHMifQv7ebK4/29p7vPfiKWXhwNglNEs7LSFwPLG+bdxtCP+qFImm3i5V9YqD6J8EPrOTeAmoRxdEpijvqX5FGEUo4qxmrxiZXm3V7op8AiK4hAmY5eSWSD'
+    '4DLLEwCDMoQxaCRoSSYiUlVQ0EgiZxWKAX0icbYIAegnmANCml3B0hStLc8bJbHnMc34TypoBxWhxQ9pC1S+AcOxN0E8r6kHBAM1JmCV3osjAUT0URX9LEsa'
+    '3OxaNlieYHDljWGBF3HS93iXm8Xk+A+UMU8iiZNaEj9IhXWQg0UZiZ0kiZOGzXqGxgAG/CoPkDXSqBFApGgKaJHFLgkaK8GulWZ+lqcuWL4+UDcCsfRP4cfH'
+    'HwNrE1+SJXu3UhH1PbQgDTXsrR2fgao89cMUF4dY4JGR2TQVPFaxXmtiUn8kvDgJgAVToiMNuFxICkTAUxRb3SS+SGFr92lYy9rWkFEOC86BTRlaWTLtEhdP'
+    '8QkOf7x/cAhI0zEIjbCGwu+LJLV8NN1RlgDDe6Jvda8Yhyk+jAOEQnFDjiXBsJkam0UCxEH2RhGQPz8qRso1qZUbm1/dnq31u8BI7ueBAHeDfl+AqbLsA7nB'
+    'EruUO7A28YXo24VoSlGiHVoxAEdJLtQ2gKaDH/MboMGSFvReuNS824riZOSHwa+Fh0APd15gz1YY+32CNZpNEzOCXBoqBgPRw11UM8jR2EPLQC9NBoY8smHU'
+    'UvAkHvmwvFSAB2JPeibEOOXtOffDXKBTBk/Zy6xBEo9IAcq+V2Ji394ikyT9PDhrEQ5cctppBu6b9HVIu5YGp2SZzsQVNvpX1jgJzoF6lgawfhkIM/CoYccX'
+    'SbbKyrh6vtFmG922wWqmoPlyRSwmAWwNmi/bbjZbIkJFadh5Nlh9YJd4iC67FYkLxZhWL08SWJInsXlZfCZAcqo4XEWYq4KAVjr0N+/db4K4XvaDUxCZRsF6'
+    'RjqlegdsTSwfyDkHQ9sN2ajIyV2wRmRdMxhIccuYQhVkfShO/d6VdRrGXT8scR6XTSafAxowCFEGsdcjAboHLbgeywdNtCJWfH88DlX0REaSGS9pMPRQsQYk'
+    'TrGnwcwcJ/EgIENe7QtEx2BLPdmjkcV5b9ghJWmi+qpZBADImCu9RiVTjbAgfFSzwGNpr8ESJREYONhx0H3Zq9o0T/U3QM1hAs8QZ1BtAB6CbJIbi3FbppUd'
+    'CXYLsiVU754kRUkBqfVIZKT/rlRf2UfSN867sBfSIPCDMYzVmbSC1Rw6ciderYSy5L+9ljSleZjpCI8iL82V9gxuuag3bjEgi7OxJyKUzz4M6sZx2DAnLrU3'
+    'aWNLiIPUo6AaKKONZjdW4FeEt8HPjaRrYxCPJxgQBXoFJsRuXvPYayUsMyYr9hxDkkEgwj7uZsPGoADtjZfmY4y+ebcl1COJNQFBBAYw6BcNaTr0Sj1Ff/Pe'
+    'vY2HBQ+qYQZuwjFRcFLeNIK5zBFcCj2DtemnFwFY/IZdItHgMTFyvWTMeBrt86UFG/tX6EEKgSfpqwqppJg4BxTyFtezVYlg5Pn9vuqLAquUXTZ5bIEUGjku'
+    'DKKztCyPfbCg3RjyNth3e802BIMxpATHjEc9T3XxTuHvuNpxVUKN7irl1D01wOh0Pk49YGacJ5Aq6p4AXSugFRGUay72ndZ5rMiDJvtEJ24MtHUMg3ytjGzl'
+    '4z668LclQUIzFQyktS4oK0Pd8hA014xM9wfQqgRVOktyuXGKnQpcGYTsguZREPkhDQHAqgKY+3ktRQciEZSAa/3kqfhQQxVb0JRBnt6wn9mou4PQh6SG1Jl+'
+    'oTqXxFQugFqVIWy2KIBJIX4quIzTHtuXiY9qjBFpSBukHBh4xZbZSOFTabCiuQYJ5N9fAGz1McNkFl6/24hKb3Z5s0xaioYWjnBrtsrsXm6kIdfNWvJnzA1L'
+    'AJe3+pqeeQF1c0K3A5YNs+d1ySwZmk5JDEbEhrKBfHmQrMlqwYbZwvYE3UJZ4G7rwGiQNmBt3oJKc9lokQciQL2CBH1cfQgRca34YTMJ3/FJsx4BC2gbgupe'
+    'toQEGzpkMggCAsBRjSyWziYK6z9tIZHr5IzapWiLQM2qQw3YO12OMTf2fPKJiqhh3NcemzmN0kdxKNJen5ZUu7OwQn+j0FXpg1uGmlE7MpWt6tHoReaWNhP+'
+    'KqsufWgCvblyUIndKfoHV4cFDqxfZDqgLKerj7nf6hH00xlJK4WIGxo/ATZtNI/XT1owPhhDloFJZSKDaixnUXK4EPkL6qnRK0NTP+go8aN0AAq7gxkNpBM8'
+    'DgNsnrEVpH7aC4LGNJziL4YDrMHwpvWZda8k43LYuvUp5vq626cdq1KIxEKRyUgI320jHVnDEsj80H0dBE2FZzLbR9nbuRxDQgxppm+loAah9VeH+3uqxFEf'
+    'xxMsS66K2WTgBDuAdJDipI2itACS0Y37V7BrfVHKDUvlKmREkAYRKGDUEw2J0yW9r0aJVHr6HF2VLDwZy6AFxN0v4dmgPwxGmFOD1zRt4v0tGbxi4Quet9Yf'
+    '3sfqRjaGh7ubrg64tRZurm89MMAgIRekbXc3r6djaJenRc3n+VtBJkZpo7IcLhp0FBvNaNc2llDPJxqMVbNESxuBUNho0vJc9ezbZcHgrJZpn957SR6BxSWm'
+    '2FbjdRTgjj6hfSVkroH4pwikIoW2kemZL43SAJVsD1l2Obtk2ZzKXoFxpSzNdVZNZ1KyV5ASGbWYOHEtUtBSWauIh438rahPUSZHeTr6osfbr44eP9/2Xu4/'
+    '2fGe7D7bPTqcx9uHwEhZg2TyPVmOJe/zOB6NQ5GZVUlNJObwQ6EKmJX4Ff7VY+1QpFJpzJOwo846mnXsUUoUn2km8VKM6FIWpxmjYp+2DUWeL3e5QLmojKF6'
+    'DvwgJLaUKUAHoURRVwvqFoHECxZ8GSJg0Rp9uSxO1JbXG1XbWRuWlRu1naprRJNF8BI7FrOBGauZML34OfunqMWSo1FywjSiupo5q2TUZF9dyzMrY6B9mZBb'
+    'r8poaqxicnPGccAm2pfaeLoUFBfoSlFYW2J3dZCH0gzgugMzGQm5Fh0lqLipc9ywD0UGmQ2WGm3XoJERcg2yQQtvNk90CZTOwio1CK6pqpAbgmbXukjAl8j6'
+    'IG+ybdvb47HA+n6E5xKg4HmqqqBo/aii7J/yMdAYs05O6LHIqU5paHbYrlPRwtNco77pGsXLqTptTTGy1iLqBQAS8yC3lUe/ymHqxtRKm9PhBsyDitULBSQe'
+    'umOjGIJWUz8tCh2UoMsqcKA8n3RxRdelnRnnRYYvq6KuMEXyzTyLAaOqVsan8A1j6ynDH7AEcHXL3obpUO7JbZA1rvdt8oRAh3H5mII1AB2fKFoIb7sami3w'
+    'n5V5SG5yDFBFf8YBlZmfUKxfd/hQEit6I4BOhH1gjzw6ULO4sxIkjZdidbtZIbr+fIsyIG0V7QMxgHRtqLVE1dtRkYCo5KoSplU48WfIgd4/D/q5c6GpMHQq'
+    'N/rFnHzorvWxtbG+uaX+3DYh+gBJEVnU6Vi0Zr9L1urDJEi3T5IWJUrRdJJkWIiSw0bYwkSEz/jMPAQhuK9orA/2Xx/tHHj0jsjRzhdHHia4ENEeHN4mP6Et'
+    'qKNmBA4rrZDtMNRxsba0gHju6lKdStPPQFzB1hJEOq/HePw1iPNE0SPPvp0Kh+PMD4HW9RIUk0YahiE4j5+edAbhcv8thYKXb+qH0+SB0dRm7L7cfgZb8stX'
+    'OzU7Ub9QtRtMLqOfGiodOazTIKnvZz7sh1PTf3ppEkNZpiQQN2XzwTr++2lUEyXNml29wHMaenet1b2/JfVRk0IoICplFzs1nLf2TodIBVwzl4nz4Okz9Yel'
+    'lK3b0ktiMcNIBTi9ab0MHtWsiZcNMToLy3FZME6sTsdiVVn7cixOHXZq/gW4GT/J+HCt67y5HAzeXPYf4F+n2awlEBa0cIpxNHuGBw9f7T17k7yJ3lxu+G+i'
+    '95nmNBjUTgPzPNt9+uAXKIX88yGIwXtMdCG6Yz3TcXuL2rrOwe7TpwX4QXtjUzb89c6jV3ULk3JBe3Wr7afXQnx8C614fXOEL4HOUkwZ8uHhB+QKjbcOuh6n'
+    'jYSCZmKAjwkRADCKMHSXoKSHzngYZ7HTPG5v3F8/gUEl7rStWp5d15pgtOUqniF2IVBSuIzNPUJvBSQRReqdM9Pg3rpQtThQQCeEUcLrlH0R0IuGHzLOdas3'
+    '9BO/hyevSFVe9QguKynr/ewYohQ/oNyWTqyArxFyK8UIKKqE4PGFLDvAnkHqQKUkebqMvV2rklhV7VJ8Mc32aXZsFSdc+DoIrDDiOJkTHcTEsBoLWw6V6nOO'
+    '6eWwtHrFpKK6HtfiCIQ47UkZ6si/FVYzmYxZIkA2q1yLwRdeFivewZNxBqSRLaw7TNUeNLkAKkifOroWqQeqkwR0dMj9OBQrt7k1x2byNYjUY5ErpmbGjPxL'
+    'DxeBDVsaSgJJbd0rPq+suKS6M0DaEvWWS8Ok0iguFEfLJv39AEK4Zg3SvsDK5E9CKoeaaK/fM5VXqv44zkO2TbxorpxSq67b8PQsmguqN9LcfMjCiuxino86'
+    '6hzXWfQ6p0PddDUXI7TJv03+ffLt5I+Td5M/Tb6fvLMm/wGP/zl5d/PV5MfJDxa0/njz25uvbr6e/Bf0+NEi+B9vvpn8AA+T72Dkt9DnHYJu/u7mayozz6t+'
+    'LF+fv01dASJNlf87lFM5FY6+X03BoZzXaS5ksFFPQO4urCfUs0on+HXrdsrJvRFmz8rqnams3nm/rL6c0X+2pfP5T41s/tMOnrJVx81dEdZDHBf3kmshzieO'
+    'W1sK+ajjVIsAc4Qfdd2ppP8wzdwj0fqNKTlsread21Q4lypsftRZtqzplGuPBtkyRe4sV4lQWlOMRwOHiyul2hLo0BuNNQUKzk/L767WZ30Sk6uSPopKRGuQ'
+    'hyGFtY3EOd5e/Rt/9dfrqw+91ZO3G+79rWvHleOay/KFSgmBGSreNtDqzAmz3j/KwiDLqcZYIJ3VEMtZKsSSAQORTOJoRlI6nsAw55j2MoUkByN9sCIDUIGu'
+    '3zvzsrRD7fxOU9/zM+5EQD6sKYDrtQvH99NwrivpoID6TkfuHFVAqBHLFJKi5nJ8IhQmlyb/qL3VD5NvLfBQ7/B/307+QE4JfrWsyT9Pfo+uC5zV99DvnXXz'
+    'W/Bl38P/wcG1luOrEgPp/A2mEk+vKtKgpbQmHO3cLhhdMhZ968RnTpsiQEeT4bQLipySBKiWQquLJncq1pz+5xSBoZq1iOoUpBKhKjB34qCLiJQ/ykFcXSa3'
+    'zBsHJWOPmFFK/gl3/WsZ6WA8803xCDIBj0bY88PN1yA0/3LzGxKZdze/gcgGxWby3c3vJr8H8LcgTX+6+frm73kUydLNNyhJ6nYDXVC7bXTo/f+B2//8gdty'
+    'x2tLu5Bb5+l1nuOD5OXmeT4ZdhJLPO52LXxdeYhXiUuZsnm7pZvj3A1zXW6JAfJqBqGbddnMrb/A9jzm0xj9Hj1pj6Rl5J9BtgB25iLJlF7x5FXiPbxanQSw'
+    'bwqyyIipQEmTXqCQLxZzPqrbTSpnlQSWqALgbUVcCN1XxB/FtUTZCX77eZilde85/cRsUsVYVWUwriV8aMmn42Z6nRc9Gfl91Afw+ti1JS5FD+Zt2Ck4hF5m'
+    'fczX6OSNButiKBK8L+eHIoV4UXkNP3Mh6MBjFbvZGoiM7jk3mieFEaNj7rdY1aSIBTzMSWlypKx4iS9PKcN8i5kLtNCWn4mrJgc31XH0DM30kq9Drt9DH4dZ'
+    'GN6BKUMyvze8Ap4a0Ob1dP4A0zt419AxDXHRiudE1SpplI+6VNnaLIEvhigQ4M/7YtWRtwC5a7MWjYHqTsfaqIlWJHl1GItMA6/rw/AH6w+Ksy4mhZpgZuIy'
+    '1m/x+Y61gTVUCa6coFIHQLZuMsMc9pl1/969u/cWVXIfAv85+hCXQz9PM87I92KQMqHvAlIPyz+HjB3vETlzj3vPIX3pli71SYhUoFSa9OmQjW1rJC6zhhYy'
+    'R5kppyRlahISgamezfKhmjLaMV3H5dfQlDnEOn6j3kSbiXjVSBfI+aqQtMN4YOqVbhbRYqfe3lhYmDIY6ekZ3uqlEogzzGmmXJew6NHH9Iv68y8YIRuBKvrF'
+    'ZsBAJec+mWvLKaaWttxRNtkxL18g2pJpd+ShijP5ByqNfQeR4u8mf7AwmoSQ8SuMJ52yfneU+nPe7Ez+tehqoc7V1I8hxg9pGh44Fx/qLoq+YYXaJPgGuort'
+    'apsaB0O1ALZJ1gCi96mNyWOBqBAypz07EFBv0jEaZCn/0I7Q/NxJodUAGhYvwR0U18ktf4DazJfr+4H6EgOEmhByWcbXChCDfuGN3u4FdwZBLX1QQ51LUSfj'
+    'MFF/bcOe8onG7faR6Ac+f8zCKGIs+1GMVRquYfKvLdesyKVOBQ1LpA5yoFl4nB8O1yYPNO/xxgman21nToxsapOZJBMCD183bDhq/SjaCjH8dEqMKBo3ubEA'
+    '3D2ZekGcPilgbmmnU3xERV7VU/prG4H1zHCr9EmR2dNx+ObxOWzHMr5qYshAaQfNEQYh1YyxNL9bGoXbMJMgZrYkR3+oZRYxRW+DlMp7qRVKiiFz6VD7IF9G'
+    '0R+vMWSXvuOBn/BZv6e7Q1fjozRkviDZmZkIqW+B2PwWL+VC6jsUJPVyDp6E36As5Uuvo7MIPJRV+Z5J7SUEvTZgCKqbyZeZslf6Po/B5Pm3BWgn+VsEnQX3'
+    'Bjoz7w28x+Fl9QIiQxKBvpNANR9jcvlebTEMyXr++pH3Yn/7yc4T7/OdA+pWOQKlVVa/SdOWq5+63cAvZ+sPK+H17/44htBdXxzUL27XnA6Gxg7VfynpVjuE'
+    'O7Bgf9xZm2PcPFWz050ledcf/xTBjvrKTIen/GjxlstgTA4sm2f+RA5/9YIxqRsRmpTKcY+GFzdjy5/bUZem5Mv9dpaFXirAaNGdUJPYo6MX3uEO2Mknh9fv'
+    'c7xefB9BEzf7KkxbMWKRPE1LTCpqvO2ixLvsc+udY2Wpt/02QXPGB3VKX4ZbPnCijhg2+coU8o0siKjxmHUVps34rIw/MfMzhVCAbY4LnVcQu1fvBIqSGHvQ'
+    'XH7JJ0jx22B9+qTdHEsvq/1EQ2deXHdnRlS3Jt9VcEtu10RrLKruxYKy9zUH/i8KA9QllfK7kgtCgsLPL44Jim/f/d8NCaY/r2cwu+ZSY+GyFrwxceskoGyQ'
+    'PtTtjZ//BsfPdoujbOa1pcZKuDgHl1b6vhP5uM6Cj2NNnykuLhcvfbEMj2cSr3K9jG6WVUXzvwHHBpry'
 )
 # END EMBEDDED MOBILE API
 
@@ -17274,6 +17286,63 @@ def hub_mobile_api_payload(source=None):
         raise ValueError('Контрольная сумма модуля мобильного API не совпала.')
     compile(data, 'mobile_api.py', 'exec', dont_inherit=True)
     return data, digest
+
+
+def hub_preserve_mobile_api(source):
+    """Retain newer additive native endpoints when a valid Hub ships an older helper.
+
+    The effective candidate is revalidated and hashed after this bounded merge;
+    it is exactly the file the user confirms and the worker checks before writing.
+    """
+    remote, _ = hub_mobile_api_payload(source)
+    local, _ = hub_mobile_api_payload()
+    def revision(data):
+        for node in ast.parse(data).body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id == 'MOBILE_API_REVISION':
+                value = ast.literal_eval(node.value)
+                return value if isinstance(value, int) else 0
+        return 1
+    if revision(remote) >= revision(local):
+        return source
+    tree = ast.parse(source)
+    # Only Hub builds with the same native API dispatch and boot protocol qualify.
+    functions = {node.name: node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
+    if 'hub_prepare_mobile_api' not in functions or 'run_hub_update_worker' not in functions:
+        raise HubUpdateSourceUnsupported('Обновите Hub до сборки с поддержкой мобильного API.')
+    handler = functions.get('Handler')
+    dispatch = ast.get_source_segment(source.decode('utf-8'), handler) if handler else ''
+    if not dispatch or 'mobile_api.dispatch_get' not in dispatch or 'mobile_api.dispatch_post' not in dispatch:
+        raise HubUpdateSourceUnsupported('Сборка Hub не поддерживает мобильные маршруты.')
+    lines = source.decode('utf-8').splitlines(keepends=True)
+    replacements = {'HUB_MOBILE_API_SHA256': HUB_MOBILE_API_SHA256, 'HUB_MOBILE_API_BUNDLE': HUB_MOBILE_API_BUNDLE}
+    for node in reversed(tree.body):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id in replacements:
+            name = node.targets[0].id
+            lines[node.lineno-1:node.end_lineno] = [name + ' = ' + repr(replacements[name]) + '\n']
+    merged_text = ''.join(lines)
+    # Carry the preservation policy through the first update from an older
+    # published updater, so a second update cannot silently remove endpoints.
+    manager = functions.get('HubUpdateManager')
+    checker = next((node for node in manager.body if isinstance(node, ast.FunctionDef) and node.name == '_check'), None) if manager else None
+    checker_source = ast.get_source_segment(source.decode('utf-8'), checker) if checker else ''
+    if 'hub_preserve_mobile_api(data)' not in checker_source:
+        if 'hub_mobile_api_payload(data)' not in checker_source:
+            raise HubUpdateSourceUnsupported('Не удалось проверить протокол обновления мобильного API.')
+        current_text = Path(__file__).read_text(encoding='utf-8')
+        current_node = next(node for node in ast.parse(current_text).body if isinstance(node, ast.FunctionDef) and node.name == 'hub_preserve_mobile_api')
+        policy = ast.get_source_segment(current_text, current_node)
+        if 'hub_preserve_mobile_api' not in functions:
+            merged_text += '\n\n' + policy + '\n'
+            # The module's __main__ entry runs before appended definitions.
+            entry = re.search(r'(?m)^if __name__ == [\"\']__main__[\"\']:', merged_text)
+            if entry:
+                merged_text = merged_text[:entry.start()] + policy + '\n\n' + merged_text[entry.start():]
+                merged_text = merged_text.rsplit('\n\n' + policy + '\n', 1)[0]
+        merged_text = merged_text.replace(checker_source, checker_source.replace('hub_mobile_api_payload(data)', 'data = hub_preserve_mobile_api(data)'), 1)
+    merged = merged_text.encode('utf-8')
+    hub_update_validate(merged)
+    hub_mobile_api_payload(merged)
+    return merged
 
 
 def hub_prepare_mobile_api(target=None):
@@ -17679,7 +17748,7 @@ class HubUpdateManager:
             data = self.fetch_candidate()
             hub_update_validate(data)
             hub_log_maintenance_payload(data)
-            hub_mobile_api_payload(data)
+            data = hub_preserve_mobile_api(data)
         except HubUpdateSourceUnsupported as exc:
             incompatibility = str(exc)
         except Exception as exc:

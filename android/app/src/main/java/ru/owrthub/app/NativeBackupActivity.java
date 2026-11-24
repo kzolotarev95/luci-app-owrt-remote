@@ -338,9 +338,9 @@ public final class NativeBackupActivity extends Activity {
                         ? problem.getMessage()
                         : restore
                             ? "Результат восстановления не подтверждён. Проверьте состояние Hub"
-                                  + " перед повторной попыткой."
+                                + " перед повторной попыткой."
                             : "Не удалось выполнить операцию. Проверьте сеть, доступ к документу и"
-                                  + " сертификат Hub.";
+                                + " сертификат Hub.";
           }
           final String text = message;
           final boolean error = failed;
@@ -411,7 +411,10 @@ public final class NativeBackupActivity extends Activity {
     int status = conn.getResponseCode();
     if (status == 401) {
       // Revalidate through the shared client so a late export cannot erase a newer login.
-      try { api.session(); } catch (IOException unavailable) { }
+      try {
+        api.session();
+      } catch (IOException unavailable) {
+      }
       throw new TransferFailure("Сессия завершилась. Войдите в Hub заново.");
     }
     if (status == 403)
@@ -464,7 +467,7 @@ public final class NativeBackupActivity extends Activity {
       }
       requireGzip(temporary);
       api.synchronizeSession();
-      if(!api.getCookieHeader().equals(transferCookie))
+      if (!api.getCookieHeader().equals(transferCookie))
         throw new TransferFailure("Аккаунт изменился во время загрузки. Копия не сохранена.");
       try (InputStream input = new FileInputStream(temporary);
           OutputStream output = getContentResolver().openOutputStream(destination, "wt")) {
@@ -532,7 +535,7 @@ public final class NativeBackupActivity extends Activity {
         throw new TransferFailure("Hub не подтвердил восстановление архива.");
       api.clearSession();
       return "Hub подтвердил восстановление. Вернитесь на главный экран и войдите с учётными"
-                 + " данными из архива. Перезапустите сервис Hub на VPS для применения состояния.";
+          + " данными из архива. Перезапустите сервис Hub на VPS для применения состояния.";
     } finally {
       if (conn != null) conn.disconnect();
       temporary.delete();

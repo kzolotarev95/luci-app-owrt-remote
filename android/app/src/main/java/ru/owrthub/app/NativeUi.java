@@ -139,7 +139,8 @@ public final class NativeUi {
   public TextView text(String value, int sizeSp, boolean bold) {
     TextView view = new TextView(context);
     view.setText(value == null ? "" : value);
-    view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp);
+    view.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(11, sizeSp * .86f));
+    view.setGravity(Gravity.CENTER);
     view.setTextColor(TEXT);
     view.setTypeface(bold ? semibold : regular);
     view.setIncludeFontPadding(false);
@@ -240,7 +241,7 @@ public final class NativeUi {
     Button button = new Button(context);
     button.setText(title);
     button.setAllCaps(false);
-    button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+    button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
     button.setTypeface(semibold);
     button.setGravity(Gravity.CENTER);
     button.setIncludeFontPadding(false);
@@ -284,6 +285,7 @@ public final class NativeUi {
     field.setSingleLine(true);
     field.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
     field.setTextColor(TEXT);
+    field.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
     field.setHintTextColor(alpha(MUTED, 0.7f));
     field.setHint(hint);
     field.setInputType(
@@ -439,6 +441,14 @@ public final class NativeUi {
       setContentDescription(this.name);
       ink.setStrokeCap(Paint.Cap.ROUND);
       ink.setStrokeJoin(Paint.Join.ROUND);
+    }
+
+    void copyFrom(IconView other) {
+      if (color != other.color || !name.equals(other.name)) {
+        color = other.color;
+        name = other.name;
+        invalidate();
+      }
     }
 
     public void setColor(int color) {

@@ -32,6 +32,7 @@ public final class MainActivity extends Activity {
   private JSONObject session = new JSONObject(),
       availability = new JSONObject(),
       resources = new JSONObject(),
+      hubUpdateStatus = new JSONObject(),
       loginMeta = new JSONObject();
   private JSONArray routers = new JSONArray(), groups = new JSONArray();
   private String screen = "connect",
@@ -42,15 +43,18 @@ public final class MainActivity extends Activity {
       captchaToken = "";
   private int generation;
   private int restoreScrollY = -1;
-  private boolean resumed, requesting, browserLogin, returning, pendingRevalidation;
+  private Runnable pendingUiWork;
+  private boolean resumed,
+      requesting,
+      browserLogin,
+      returning,
+      pendingRevalidation,
+      quietRequest,
+      updatingViews,
+      addressVisible;
   private final Runnable refreshTick =
       () -> {
         if (resumed && api != null && api.hasSession() && isDataScreen()) {
-          View focus = getCurrentFocus();
-          if (focus instanceof EditText && keyboardOpen()) {
-            schedule();
-            return;
-          }
           refresh(false);
         }
       };
@@ -200,10 +204,15 @@ public final class MainActivity extends Activity {
   }
 
   private void frame(String name, String title, boolean bottom) {
+    if (updatingViews) {
+      content = ui.column();
+      return;
+    }
     screen = name;
     generation++;
     routerResults = null;
     main.removeCallbacks(refreshTick);
+    addressVisible = false;
     root = ui.column();
     root.setBackgroundColor(ui.BG);
     root.setOnApplyWindowInsetsListener(
@@ -228,14 +237,22 @@ public final class MainActivity extends Activity {
     heading.setSingleLine(true);
     heading.setEllipsize(TextUtils.TruncateAt.END);
     labels.addView(heading);
-    TextView sub =
-        ui.text(api == null ? "Ваша сеть всегда рядом" : api.getHub().getHost(), 12, false);
+    TextView sub = ui.text(api == null ? "Ваша сеть всегда рядом" : "Адрес скрыт", 12, false);
     sub.setTextColor(ui.MUTED);
     sub.setSingleLine(true);
     sub.setEllipsize(TextUtils.TruncateAt.END);
     labels.addView(ui.spacer(4));
     labels.addView(sub);
     header.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
+    if (api != null)
+      header.addView(
+          ui.iconButton(
+              "eye",
+              "Показать или скрыть адрес Hub",
+              () -> {
+                addressVisible = !addressVisible;
+                sub.setText(addressVisible ? api.getHub().getAuthority() : "Адрес скрыт");
+              }));
     if (api != null && api.hasSession() && owner())
       header.addView(ui.iconButton("bell", "Уведомления", () -> settingsTool("notifications")));
     root.addView(header);
@@ -280,7 +297,7 @@ public final class MainActivity extends Activity {
 
   private void add(View v) {
     content.addView(v);
-    if (requesting) setButtonsEnabled(v, false);
+    if (requesting && !quietRequest) setButtonsEnabled(v, false);
   }
 
   private void space(int h) {
@@ -301,12 +318,30 @@ public final class MainActivity extends Activity {
   }
 
   private void call(Work work, Done done) {
-    if (requesting || api == null || network.isShutdown()) return;
+    call(work, done, false);
+  }
+
+  private void call(Work work, Done done, boolean quiet) {
+    if (api == null || network.isShutdown()) return;
+    if (requesting) {
+      if (!quiet && quietRequest && pendingUiWork == null) {
+        int expectedGeneration = generation;
+        HubApiClient expectedClient = api;
+        pendingUiWork =
+            () -> {
+              if (expectedGeneration == generation && expectedClient == api) call(work, done);
+            };
+      }
+      return;
+    }
     int gen = generation;
     HubApiClient client = api;
     requesting = true;
-    progress.setVisibility(View.VISIBLE);
-    setButtonsEnabled(root, false);
+    quietRequest = quiet;
+    if (!quiet) {
+      progress.setVisibility(View.VISIBLE);
+      setButtonsEnabled(root, false);
+    }
     network.execute(
         () -> {
           JSONObject result = null;
@@ -322,8 +357,10 @@ public final class MainActivity extends Activity {
               () -> {
                 requesting = false;
                 if (isDestroyed()) return;
-                progress.setVisibility(View.GONE);
-                setButtonsEnabled(root, true);
+                if (!quiet) {
+                  progress.setVisibility(View.GONE);
+                  setButtonsEnabled(root, true);
+                }
                 if (pendingRevalidation) {
                   pendingRevalidation = false;
                   revalidateSession();
@@ -334,6 +371,7 @@ public final class MainActivity extends Activity {
                   return;
                 }
                 if (error != null) {
+                  pendingUiWork = null;
                   if (screen.equals("connect") && unsupportedApi(error))
                     notice(
                         "На этом Hub ещё нет нативного API. Обновите сервер Hub до сборки с"
@@ -367,12 +405,21 @@ public final class MainActivity extends Activity {
                 }
                 try {
                   done.accept(value);
+                  Runnable pending = pendingUiWork;
+                  pendingUiWork = null;
+                  if (pending != null) main.post(pending);
                 } catch (RuntimeException invalid) {
                   notice("Hub вернул неподдерживаемые данные. Повторите обновление.", true);
                   schedule();
                 }
               });
         });
+  }
+
+  @Override
+  public void onRequestPermissionsResult(int request, String[] permissions, int[] grants) {
+    super.onRequestPermissionsResult(request, permissions, grants);
+    HubNotifications.permissionResult(this, request, grants);
   }
 
   private boolean unsupportedApi(Exception error) {
@@ -402,7 +449,7 @@ public final class MainActivity extends Activity {
 
   private void schedule() {
     main.removeCallbacks(refreshTick);
-    if (resumed && isDataScreen()) main.postDelayed(refreshTick, 10000);
+    if (resumed && isDataScreen()) main.postDelayed(refreshTick, 5000);
   }
 
   private boolean keyboardOpen() {
@@ -433,20 +480,17 @@ public final class MainActivity extends Activity {
     title(
         "Ваша сеть.\nВсегда рядом.",
         "Подключите свой Hub для управления роутерами из одного приложения.");
-    String origin = "https://owrtzks95.duckdns.org";
-    try {
-      String s = store.getLastOrigin();
-      if (!s.isEmpty()) origin = s;
-    } catch (Exception ignored) {
-    }
+    String origin = "";
     EditText host = ui.field("https://hub.example.com", origin, false);
     host.setId(R.id.hub_host);
     host.setInputType(17);
+    host.setGravity(Gravity.CENTER);
     add(ui.labeledField("Адрес Hub", host));
     space(16);
     EditText port = ui.field("443 — по умолчанию", "", false);
     port.setId(R.id.hub_port);
     port.setInputType(2);
+    port.setGravity(Gravity.CENTER);
     add(ui.labeledField("Порт", port));
     space(24);
     Button b =
@@ -486,9 +530,6 @@ public final class MainActivity extends Activity {
     add(b);
     space(20);
     add(ui.body("Защищённое соединение HTTPS. Учётные данные вводятся на следующем шаге."));
-    space(26);
-    empty(
-        "Нативное приложение", "Обзор, роутеры и управление Xray работают напрямую через API Hub.");
   }
 
   private void clearAccountData() {
@@ -521,15 +562,18 @@ public final class MainActivity extends Activity {
     content = credentials;
     user = ui.field("Ваш логин", username, false);
     user.setId(R.id.hub_user);
+    user.setGravity(Gravity.CENTER);
     add(ui.labeledField("Логин", user));
     space(15);
     password = ui.field("Ваш пароль", "", true);
     password.setId(R.id.hub_password);
+    password.setGravity(Gravity.CENTER);
     add(ui.labeledField("Пароль", password));
     space(15);
     otpBox = ui.column();
     otp = ui.field("6 цифр из приложения", "", false);
     otp.setInputType(2);
+    otp.setGravity(Gravity.CENTER);
     otp.setSaveEnabled(false);
     otp.setId(R.id.hub_otp);
     otpBox.addView(ui.labeledField("Код 2FA", otp));
@@ -539,12 +583,15 @@ public final class MainActivity extends Activity {
     LinearLayout c = ui.card(), row = ui.row();
     captchaCode = ui.text("Загрузка капчи…", 22, true);
     captchaCode.setTextColor(ui.BLUE);
+    View captchaBalance = ui.spacer(1);
+    row.addView(captchaBalance, new LinearLayout.LayoutParams(ui.dp(48), ui.dp(48)));
     row.addView(captchaCode, new LinearLayout.LayoutParams(0, -2, 1));
     row.addView(ui.iconButton("refresh", "Новая капча", this::challenge));
     c.addView(row);
     c.addView(ui.spacer(8));
     captcha = ui.field("Введите цифры", "", false);
     captcha.setInputType(2);
+    captcha.setGravity(Gravity.CENTER);
     captcha.setId(R.id.hub_captcha);
     c.addView(captcha);
     add(c);
@@ -668,6 +715,13 @@ public final class MainActivity extends Activity {
               data.put("resources", resources);
               data.put("partial_warning", "Роутеры обновлены. Ресурсы VPS временно недоступны.");
             }
+          if (obj(currentSession, "account").optBoolean("is_owner"))
+            try {
+              data.put("hub_update", client.get("/api/hub-update"));
+            } catch (HubApiClient.AuthRequiredException expired) {
+              throw expired;
+            } catch (java.io.IOException ignored) {
+            }
           try {
             data.put("groups", client.get("/api/router-groups").optJSONArray("groups"));
           } catch (HubApiClient.AuthRequiredException expired) {
@@ -679,30 +733,57 @@ public final class MainActivity extends Activity {
           return data;
         },
         value -> {
+          boolean accountChanged =
+              !obj(session, "account")
+                  .toString()
+                  .equals(obj(obj(value, "session_meta"), "account").toString());
           session = obj(value, "session_meta");
+          if (accountChanged) {
+            if (destination.equals("overview")) {
+              overview();
+            } else if (destination.equals("router")) {
+              detail(selectedId);
+            } else if (destination.equals("routers")) {
+              routerList();
+            }
+          }
           routers = value.optJSONArray("routers");
           if (routers == null) routers = new JSONArray();
           groups = value.optJSONArray("groups");
           if (groups == null) groups = new JSONArray();
           availability = obj(value, "availability");
           resources = obj(value, "resources");
-          if (!navigate && destination.equals("routers") && routerResults != null) {
-            // Keep the actual search editor, its selection and keyboard alive.
-            ScrollView current = scrollView;
-            int y = current.getScrollY();
-            renderList(routerResults, search);
-            current.post(() -> current.scrollTo(0, y));
+          hubUpdateStatus = obj(value, "hub_update");
+          if (!navigate && (destination.equals("overview") || destination.equals("router"))) {
+            updateVisibleValues(destination);
+          } else if (!navigate && destination.equals("routers") && routerResults != null) {
+            LinearLayout replacement = ui.column();
+            renderList(replacement, search);
+            ViewUpdates.patchChildren(routerResults, replacement);
           } else {
-            // Read the position after the response, so a scroll during the request survives.
-            if (!navigate && scrollView != null) restoreScrollY = scrollView.getScrollY();
             if (navigate || destination.equals("overview")) overview();
             else if (destination.equals("router")) detail(selectedId);
             else if (destination.equals("settings")) settings();
           }
+          if (resumed) HubNotifications.offer(this, owner());
           if (!value.optString("partial_warning").isEmpty())
             notice(value.optString("partial_warning"), true);
           schedule();
-        });
+        },
+        !navigate);
+  }
+
+  private void updateVisibleValues(String destination) {
+    LinearLayout attached = content;
+    updatingViews = true;
+    try {
+      if (destination.equals("overview")) overview();
+      else detail(selectedId);
+      ViewUpdates.patchChildren(attached, content);
+    } finally {
+      content = attached;
+      updatingViews = false;
+    }
   }
 
   private int online() {
@@ -782,7 +863,8 @@ public final class MainActivity extends Activity {
 
   private void metric(LinearLayout row, String label, int value, int color) {
     LinearLayout c = ui.card();
-    c.setMinimumHeight(ui.dp(104));
+    c.setGravity(Gravity.CENTER);
+    c.setMinimumHeight(ui.dp(92));
     c.setPadding(ui.dp(15), ui.dp(16), ui.dp(15), ui.dp(16));
     TextView caption = ui.text(label, 14, false);
     caption.setTextColor(ui.MUTED);
@@ -922,6 +1004,7 @@ public final class MainActivity extends Activity {
   private void routerCard(JSONObject r) {
     space(10);
     LinearLayout card = ui.card(), row = ui.row();
+    card.setTag("router:" + r.optString("id"));
     row.addView(ui.iconBadge("router", r.optBoolean("online") ? ui.GREEN : ui.MUTED));
     LinearLayout n = ui.column();
     n.setPadding(ui.dp(12), 0, ui.dp(8), 0);
@@ -947,6 +1030,18 @@ public final class MainActivity extends Activity {
                     : x.equals("stopped") ? "Остановлен" : "Нет данных"),
             13,
             false));
+    String preview = str(r, "notes_preview", "");
+    if (preview.isEmpty()) preview = str(r, "notes", "");
+    int noteCount = r.optInt("notes_count", 0);
+    if (!preview.isEmpty() || noteCount > 0 || r.optBoolean("has_notes")) {
+      card.addView(ui.spacer(10));
+      TextView note =
+          ui.text("Заметки" + (noteCount > 0 ? " · " + noteCount : "") + "\n" + preview, 13, false);
+      note.setMaxLines(4);
+      note.setEllipsize(TextUtils.TruncateAt.END);
+      card.addView(note);
+      if (obj(r, "permissions").optBoolean("notes")) note.setOnClickListener(v -> tool("notes", r));
+    }
     card.setOnClickListener(v -> detail(r.optString("id")));
     card.setFocusable(true);
     card.setContentDescription("Открыть роутер " + r.optString("name"));
@@ -970,6 +1065,8 @@ public final class MainActivity extends Activity {
     }
     frame("router", str(r, "name", id), true);
     LinearLayout hero = ui.card();
+    hero.setGravity(Gravity.CENTER_HORIZONTAL);
+    hero.setTag("router-hero");
     hero.addView(ui.iconBadge("router", ui.BLUE));
     hero.addView(ui.spacer(14));
     hero.addView(ui.text(str(r, "name", id), 24, true));
@@ -984,6 +1081,8 @@ public final class MainActivity extends Activity {
     space(18);
     JSONObject s = obj(r, "status"), p = obj(r, "permissions");
     LinearLayout stats = ui.card();
+    stats.setGravity(Gravity.CENTER_HORIZONTAL);
+    stats.setTag("router-stats");
     stats.addView(ui.text("Состояние устройства", 16, true));
     kv(
         stats,
@@ -1004,7 +1103,7 @@ public final class MainActivity extends Activity {
           "play",
           "Remote управление Xray",
           "Запуск, остановка и журнал через Heartbeat",
-          () -> tool("xray", r));
+          () -> tool("xray", selected()));
     if (p.optBoolean("admin"))
       action(
           "router",
@@ -1019,22 +1118,30 @@ public final class MainActivity extends Activity {
           t.optBoolean("online") ? "Online" : "Offline",
           () -> openWeb(t.optString("url", "/tachyon/" + enc(id) + "/")));
     if (p.optBoolean("ssh"))
-      action("terminal", "SSH-терминал", "Консоль выбранного роутера", () -> tool("ssh", r));
+      action(
+          "terminal", "SSH-терминал", "Консоль выбранного роутера", () -> tool("ssh", selected()));
     if (p.optBoolean("logs"))
-      action("grid", "Глобальные логи", "Состояние агента и Xray", () -> tool("logs", r));
+      action("grid", "Глобальные логи", "Состояние агента и Xray", () -> tool("logs", selected()));
     if (p.optBoolean("notes"))
       action(
           "grid",
           "Заметки",
           str(r, "notes_preview", "Записи об устройстве"),
-          () -> tool("notes", r));
+          () -> tool("notes", selected()));
     if (p.optBoolean("wol"))
-      action("wifi", "Wake-on-LAN", "Включение устройства в локальной сети", () -> tool("wol", r));
+      action(
+          "wifi",
+          "Wake-on-LAN",
+          "Включение устройства в локальной сети",
+          () -> tool("wol", selected()));
     if (p.optBoolean("config"))
       action(
-          "key", "OpenWrt config", "Команды подключения и конфигурация", () -> tool("config", r));
+          "key",
+          "OpenWrt config",
+          "Команды подключения и конфигурация",
+          () -> tool("config", selected()));
     if (p.optBoolean("manage"))
-      action("settings", "Настройки роутера", "Изменить имя", () -> rename(r));
+      action("settings", "Настройки роутера", "Изменить имя", () -> rename(selected()));
     schedule();
   }
 
@@ -1058,15 +1165,17 @@ public final class MainActivity extends Activity {
     LinearLayout row = ui.row();
     TextView l = ui.text(k, 14, false);
     l.setTextColor(ui.MUTED);
+    l.setGravity(Gravity.CENTER);
     row.addView(l, new LinearLayout.LayoutParams(0, -2, 1));
     TextView value = ui.text(v, 14, true);
-    value.setGravity(Gravity.END);
+    value.setGravity(Gravity.CENTER);
     row.addView(value, new LinearLayout.LayoutParams(0, -2, 1));
     c.addView(row);
   }
 
   private void action(String icon, String title, String subtitle, Runnable run) {
     LinearLayout card = ui.card(), row = ui.row();
+    card.setTag("action:" + icon);
     card.setPadding(ui.dp(14), ui.dp(14), ui.dp(10), ui.dp(14));
     row.addView(ui.iconBadge(icon, ui.BLUE));
     LinearLayout labels = ui.column();
@@ -1155,17 +1264,31 @@ public final class MainActivity extends Activity {
 
   private void settings() {
     frame("settings", "Настройки", true);
-    title("Ваш Hub", "Подключение, безопасность и оформление");
+    TextView settingsTitle = ui.text("Ваш Hub", 16, true);
+    settingsTitle.setTag("settings-heading");
+    add(settingsTitle);
+    space(6);
+    add(ui.label("Подключение, безопасность и оформление"));
+    space(14);
     LinearLayout c = ui.card();
-    c.addView(ui.text(str(obj(session, "account"), "username", "Пользователь"), 22, true));
-    c.addView(ui.spacer(8));
-    c.addView(ui.body(owner() ? "Владелец Hub" : "Доступ по назначенным правам"));
+    c.setGravity(Gravity.CENTER_HORIZONTAL);
+    c.setTag("account-card");
+    c.setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12));
+    if (owner()) {
+      View crown = ui.iconBadge("crown", ui.AMBER, 32);
+      crown.setContentDescription("Владелец Hub · золотая корона");
+      c.addView(crown);
+      c.addView(ui.spacer(6));
+    }
+    c.addView(ui.text(str(obj(session, "account"), "username", "Пользователь"), 15, true));
+    c.addView(ui.spacer(5));
+    c.addView(ui.text(owner() ? "Владелец Hub" : "Доступ по назначенным правам", 13, false));
     add(c);
     space(18);
     action(
         "server",
         "Подключение",
-        api.getHub().getHost(),
+        "Адрес скрыт",
         () -> {
           frame("connectionInfo", "Подключение", false);
           title("Сервер Hub", api.getHub().toString());
@@ -1184,6 +1307,14 @@ public final class MainActivity extends Activity {
         "Оформление",
         prefs.getBoolean("winter", false) ? "Зимняя тема" : "Графитовая тема",
         this::design);
+    if (owner() || obj(session, "account").optBoolean("can_add_router"))
+      action(
+          "plus",
+          "Добавить роутер",
+          "Автоматические параметры и настройка OpenWrt",
+          () -> settingsTool("addRouter"));
+    if (owner())
+      action("bell", "Уведомления", "События Hub на телефоне", () -> settingsTool("notifications"));
     action("shield", "Активные сессии", "Контроль входов в Hub", () -> settingsTool("sessions"));
     if (owner()) {
       action(
@@ -1198,7 +1329,9 @@ public final class MainActivity extends Activity {
       action(
           "refresh",
           "Обновление Hub",
-          "Проверка и установка новой сборки",
+          hubUpdateStatus.optBoolean("available")
+              ? "Доступно обновление " + hubUpdateStatus.optString("remote_version")
+              : "Проверка и установка новой сборки",
           () -> settingsTool("hubUpdate"));
       action(
           "refresh",

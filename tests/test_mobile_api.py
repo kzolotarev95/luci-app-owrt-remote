@@ -3,6 +3,8 @@
 import http.client
 from contextlib import nullcontext
 import hashlib
+import base64
+import zlib
 import importlib.util
 import json
 import os
@@ -122,6 +124,51 @@ class MobileApiTests(unittest.TestCase):
             conn.commit()
         return original
 
+    def test_router_defaults_uses_all_ports_and_requires_add_permission(self):
+        self.notes_database()
+        with self.server.app.conn() as conn:
+            hub.upsert_router(conn, {'id': 'main', 'name': 'Main', 'entry_port':18080, 'ssh_entry_port':19080})
+            hub.upsert_router(conn, {'id': 'node-2', 'name': 'Private', 'entry_port':18090, 'ssh_entry_port':19090})
+            conn.execute("update routers set tachyon_entry_port=18100 where id='node-2'")
+            conn.commit()
+        endpoint = mobile_api.BASE + '/router-defaults'
+        self.assertEqual(self.request(endpoint)[0],401)
+        cookie=self.cookie()
+        status,data,_=self.request(endpoint,cookie=cookie)
+        self.assertEqual(status,200)
+        self.assertEqual(data['defaults']['id'],'node-3')
+        self.assertEqual(data['defaults']['entry_port'],18110)
+        self.assertEqual(data['defaults']['ssh_entry_port'],19110)
+        self.assertNotIn('vless_uuid',json.dumps(data))
+        viewer=self.cookie(username='fixture-viewer',password='fixture-viewer-password')
+        self.assertEqual(self.request(endpoint,cookie=viewer)[0],403)
+
+    def test_native_photo_note_upload_download_permissions_and_invalid_data(self):
+        self.notes_database()
+        import tempfile
+        with tempfile.TemporaryDirectory() as image_dir, mock.patch.object(hub, 'ROUTER_NOTES_MEDIA_DIR',Path(image_dir)):
+            cookie=self.cookie()
+            _,session,_=self.request(mobile_api.ENDPOINTS['session'],cookie=cookie)
+            endpoint=mobile_api.BASE+'/router/allowed-router/notes'
+            raw=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAO0lEQVR4nO3RQREAMAjEwKMKK7FykFUJ4cMvK+CYCXVfZ9NZXY8HBvwBMhEyETIRMhEyETIRMhEyUcgHZIIB+IPjugkAAAAASUVORK5CYII=')
+            image={'name':'photo.png','content_type':'image/png','data':base64.b64encode(raw).decode()}
+            status,result,_=self.request(endpoint,{'text':'','images':[image]},cookie=cookie,headers={'X-Mobile-CSRF':session['csrf_token']})
+            self.assertEqual(status,200,result)
+            entry=result['notes_entries'][-1]
+            self.assertEqual(len(entry['images']),1)
+            self.assertEqual(len(result['notes_entries']),2)
+            path=mobile_api.BASE+'/router/allowed-router/notes-media/'+entry['id']+'/'+entry['images'][0]['file_name']
+            conn=http.client.HTTPConnection('127.0.0.1',self.server.server_port,timeout=5)
+            conn.request('GET',path,headers={'Cookie':cookie});response=conn.getresponse()
+            self.assertEqual(response.status,200);self.assertEqual(response.read(),raw);conn.close()
+            self.assertEqual(self.request(path)[0],401)
+            viewer=self.cookie(username='fixture-viewer',password='fixture-viewer-password')
+            denied=path.replace('allowed-router','private-router')
+            self.assertIn(self.request(denied,cookie=viewer)[0],(403,404))
+            bad=dict(image,data=base64.b64encode(b'<script>bad</script>').decode())
+            self.assertEqual(self.request(endpoint,{'text':'','images':[bad]},cookie=cookie,headers={'X-Mobile-CSRF':session['csrf_token']})[0],400)
+            self.assertEqual(self.request(endpoint,{'text':'','images':[image]*5},cookie=cookie,headers={'X-Mobile-CSRF':session['csrf_token']})[0],400)
+
     def test_native_notes_append_preserves_previous_entries_images_and_router_scope(self):
         original = self.notes_database()
         cookie = self.cookie()
@@ -200,6 +247,73 @@ class MobileApiTests(unittest.TestCase):
         self.assertEqual(self.request(mobile_api.BASE + "/router/allowed-router%2Fprivate-router/notes", cookie=cookie)[0], 400)
         _, after, _ = self.request(endpoint, cookie=cookie)
         self.assertEqual(len(after["notes_entries"]), 1)
+
+    def test_note_delete_removes_selected_photo_only_and_is_not_replayed(self):
+        self.notes_database()
+        with tempfile.TemporaryDirectory() as media, mock.patch.object(hub, 'ROUTER_NOTES_MEDIA_DIR', Path(media)):
+            cookie = self.cookie()
+            _, session, _ = self.request(mobile_api.ENDPOINTS['session'], cookie=cookie)
+            headers = {'X-Mobile-CSRF': session['csrf_token']}
+            endpoint = mobile_api.BASE + '/router/allowed-router/notes'
+            image = {'name': 'photo.png', 'content_type': 'image/png',
+                     'data': base64.b64encode(b'\x89PNG\r\n\x1a\nfixture').decode()}
+            entries = []
+            for text in ('Delete this photo', 'Keep this photo'):
+                status, data, _ = self.request(endpoint, {'text': text, 'images': [image]}, cookie=cookie, headers=headers)
+                self.assertEqual(status, 200, data)
+                entries.append(data['notes_entries'][-1])
+            selected, retained = entries
+            selected_dir = hub.router_note_media_dir('allowed-router', selected['id'])
+            retained_dir = hub.router_note_media_dir('allowed-router', retained['id'])
+            self.assertTrue(selected_dir.exists() and retained_dir.exists())
+            status, data, _ = self.request(endpoint + '/delete', {'note_id': selected['id']}, cookie=cookie, headers=headers)
+            self.assertEqual(status, 200, data)
+            self.assertTrue(data['can_delete'])
+            self.assertEqual([entry['id'] for entry in data['notes_entries']], ['old-note', retained['id']])
+            self.assertFalse(selected_dir.exists())
+            self.assertTrue(retained_dir.exists())
+            self.assertEqual(self.request(endpoint + '/delete', {'note_id': selected['id']}, cookie=cookie, headers=headers)[0], 404)
+            self.assertEqual(self.request(endpoint + '/delete', cookie=cookie)[0], 404)
+            self.assertEqual(len(self.request(endpoint, cookie=cookie)[1]['notes_entries']), 2)
+            self.assertEqual(self.request(endpoint.replace('allowed-router', 'private-router'), cookie=cookie)[1]['notes_entries'], [])
+
+    def test_note_delete_requires_owner_session_csrf_and_valid_selected_entry(self):
+        self.notes_database()
+        endpoint = mobile_api.BASE + '/router/allowed-router/notes/delete'
+        self.assertEqual(self.request(endpoint, {'note_id': 'old-note'})[0], 401)
+        viewer = self.cookie(username='fixture-viewer', password='fixture-viewer-password')
+        _, viewer_session, _ = self.request(mobile_api.ENDPOINTS['session'], cookie=viewer)
+        self.assertFalse(self.request(endpoint[:-7], cookie=viewer)[1]['can_delete'])
+        for flags in (['A'], ['G']):
+            self.auth['delegated_users'][0]['router_flags'] = {'allowed-router': flags}
+            self.assertEqual(self.request(endpoint, {'note_id': 'old-note'}, cookie=viewer,
+                                         headers={'X-Mobile-CSRF': viewer_session['csrf_token']})[0], 403)
+        cookie = self.cookie()
+        _, session, _ = self.request(mobile_api.ENDPOINTS['session'], cookie=cookie)
+        headers = {'X-Mobile-CSRF': session['csrf_token']}
+        for denied in ({}, {'X-Mobile-CSRF': 'wrong'}, {**headers, 'Origin': 'https://other.invalid'}):
+            self.assertEqual(self.request(endpoint, {'note_id': 'old-note'}, cookie=cookie, headers=denied)[0], 403)
+        for payload in ({}, [], {'note_id': '../old-note'}, {'note_id': 1}, {'note_id': 'x' * 65}):
+            self.assertEqual(self.request(endpoint, payload, cookie=cookie, headers=headers)[0], 400)
+        self.assertEqual(self.request(endpoint, raw=b'not JSON', method='POST', cookie=cookie,
+                                     headers={**headers, 'Content-Type': 'text/plain'})[0], 400)
+        self.assertEqual(self.request(endpoint.replace('allowed-router', 'missing-router'), {'note_id': 'old-note'}, cookie=cookie, headers=headers)[0], 404)
+        self.assertEqual(len(self.request(endpoint[:-7], cookie=cookie)[1]['notes_entries']), 1)
+
+    def test_legacy_note_ids_are_stable_and_can_be_deleted(self):
+        self.notes_database()
+        endpoint = mobile_api.BASE + '/router/allowed-router/notes'
+        cookie = self.cookie()
+        _, session, _ = self.request(mobile_api.ENDPOINTS['session'], cookie=cookie)
+        for raw in ('Legacy plain text', '[{"text":"Legacy JSON without id"}]'):
+            with self.server.app.conn() as conn:
+                conn.execute("update routers set notes=? where id='allowed-router'", (raw,))
+                conn.commit()
+            note_id = self.request(endpoint, cookie=cookie)[1]['notes_entries'][0]['id']
+            self.assertEqual(note_id, self.request(endpoint, cookie=cookie)[1]['notes_entries'][0]['id'])
+            status, data, _ = self.request(endpoint + '/delete', {'note_id': note_id}, cookie=cookie,
+                                          headers={'X-Mobile-CSRF': session['csrf_token']})
+            self.assertEqual((status, data['notes_entries']), (200, []))
 
     def test_public_capabilities_and_challenge_do_not_expose_auth_secrets(self):
         status, data, headers = self.request(mobile_api.BASE + "/capabilities")
@@ -416,6 +530,25 @@ class MobileUpdateTests(unittest.TestCase):
                     "previous_revision": hashlib.sha256(self.source).hexdigest(), "health_url": "http://unused/health"}
         hub.hub_update_state(self.directory, self.job)
         self.directory.joinpath("candidate.py").write_bytes(self.new)
+
+    def test_update_preserves_newer_native_features_in_confirmed_candidate(self):
+        legacy = (ROOT / 'vps/mobile_api.py').read_bytes().replace(('MOBILE_API_REVISION = ' + str(mobile_api.MOBILE_API_REVISION)).encode(), b'MOBILE_API_REVISION = 1')
+        bundle = base64.b64encode(zlib.compress(legacy, 9)).decode()
+        source = (ROOT / 'vps/owrt-remote-hub.py').read_bytes()
+        lines=source.splitlines(keepends=True)
+        import ast
+        for node in reversed(ast.parse(source).body):
+            if isinstance(node,ast.Assign) and len(node.targets)==1 and isinstance(node.targets[0],ast.Name):
+                name=node.targets[0].id
+                if name in {'HUB_MOBILE_API_SHA256','HUB_MOBILE_API_BUNDLE'}:
+                    value=hashlib.sha256(legacy).hexdigest() if name.endswith('SHA256') else bundle
+                    lines[node.lineno-1:node.end_lineno]=[(name+' = '+repr(value)+'\n').encode()]
+        remote=b''.join(lines)
+        effective=hub.hub_preserve_mobile_api(remote)
+        self.assertNotEqual(remote,effective)
+        self.assertEqual(hub.hub_mobile_api_payload(effective)[0], (ROOT / 'vps/mobile_api.py').read_bytes())
+        self.assertEqual(hub.hub_preserve_mobile_api(effective),effective)
+        hub.hub_update_validate(effective)
 
     def test_embedded_module_matches_source_and_tampering_is_rejected(self):
         data, digest = hub.hub_mobile_api_payload(self.source)

@@ -48,9 +48,14 @@ public final class NativeRouterActivity extends Activity {
   public static final String EXTRA_ROUTER_JSON = "router_json",
       EXTRA_HUB_ORIGIN = "hub_origin",
       EXTRA_TOOL = "tool";
-  private static final int SAVE_CONFIG = 8101;
+  private static final int SAVE_CONFIG = 8101, PICK_NOTE_IMAGES = 8102;
   private final Handler handler = new Handler(Looper.getMainLooper());
   private final ExecutorService network = Executors.newSingleThreadExecutor();
+  private final ExecutorService media = Executors.newSingleThreadExecutor();
+  private final org.json.JSONArray pendingImages = new org.json.JSONArray();
+  private LinearLayout imageDrafts;
+  private int visibleNotes = 20;
+  private boolean photosSupported, preparingImages;
   private final List<Button> actions = new ArrayList<>();
   private NativeUi ui;
   private HubApiClient api;
@@ -62,7 +67,7 @@ public final class NativeRouterActivity extends Activity {
       lastHistory = "",
       configuration = "",
       pendingConfiguration = "";
-  private LinearLayout content, history;
+  private LinearLayout content, history, terminalPanel, terminalCredentials;
   private TextView error, status, detail, result, timer, output;
   private ProgressBar progress;
   private EditText notes, mac, iface, password, command;
@@ -71,6 +76,18 @@ public final class NativeRouterActivity extends Activity {
   private volatile int generation;
   private boolean busy, sessionReady, live = true, snapshotFresh, notesLoaded, vpsOwner;
   private Boolean notesCanAppend;
+  private boolean notesCanDelete;
+  private final List<Button> noteDeleteButtons = new ArrayList<>();
+  private boolean readPoll,
+      passwordSent,
+      terminalAuthenticated,
+      pendingCarriage,
+      loadingCredentials;
+  private final java.util.ArrayDeque<String> writes = new java.util.ArrayDeque<>();
+  private ScrollView terminalScroll;
+  private EditText sshPassword;
+  private Switch rememberSsh;
+  private String credentialUser = "";
   private long serverTime, monotonicBase;
   private final StringBuilder console = new StringBuilder();
   private final Runnable poll = this::refresh;
@@ -192,7 +209,19 @@ public final class NativeRouterActivity extends Activity {
     copy.setPadding(ui.dp(12), 0, 0, 0);
     copy.addView(ui.text(router.optString("name", routerId), 20, true));
     copy.addView(ui.spacer(5));
-    copy.addView(ui.label(tool.equals("vps") ? api.getHub().getHost() : routerId));
+    TextView privateAddress = ui.label(tool.equals("vps") ? "Адрес скрыт" : routerId);
+    copy.addView(privateAddress);
+    if (tool.equals("vps")) {
+      final boolean[] show = {false};
+      copy.addView(
+          ui.iconButton(
+              "eye",
+              "Показать или скрыть адрес Hub",
+              () -> {
+                show[0] = !show[0];
+                privateAddress.setText(show[0] ? api.getHub().getAuthority() : "Адрес скрыт");
+              }));
+    }
     hero.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
     content.addView(hero);
     content.addView(ui.spacer(20));
@@ -350,23 +379,50 @@ public final class NativeRouterActivity extends Activity {
             | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
     notes.setTypeface(ui.regular);
     notes.setGravity(Gravity.TOP);
-    notes.setMinLines(9);
+    notes.setMinLines(4);
     notes.setFilters(new InputFilter[] {new InputFilter.LengthFilter(2000)});
     add(notes);
+    imageDrafts = ui.column();
+    add(imageDrafts);
+    action(
+        "Прикрепить изображения",
+        NativeUi.Style.SECONDARY,
+        () -> {
+          if (!photosSupported) {
+            showError("Обновите API на VPS для прикрепления изображений из приложения.");
+            return;
+          }
+          Intent picker =
+              new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                  .addCategory(Intent.CATEGORY_OPENABLE)
+                  .setType("image/*")
+                  .putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+          startActivityForResult(picker, PICK_NOTE_IMAGES);
+        });
     action(
         "Добавить заметку",
         NativeUi.Style.PRIMARY,
         () -> {
           final String draft = notes.getText().toString().trim();
-          if (draft.isEmpty()) {
-            showError("Введите текст новой заметки.");
+          if (draft.isEmpty() && pendingImages.length() == 0) {
+            showError("Введите текст заметки или прикрепите изображение.");
             return;
           }
+          if (pendingImages.length() > 0 && !photosSupported) {
+            showError("Сервер ещё не поддерживает загрузку фото из приложения.");
+            return;
+          }
+          final JSONArray images = new JSONArray();
+          for (int n = 0; n < pendingImages.length(); n++)
+            images.put(pendingImages.optJSONObject(n));
           request(
-              () -> api.post(notesPath(), new JSONObject().put("text", draft)),
+              () ->
+                  api.post(notesPath(), new JSONObject().put("text", draft).put("images", images)),
               data -> {
                 renderNotes(data);
                 notes.setText("");
+                while (pendingImages.length() > 0) pendingImages.remove(0);
+                imageDrafts.removeAllViews();
                 status.setText("Новая запись добавлена в Hub");
                 status.setTextColor(ui.GREEN);
               },
@@ -445,9 +501,9 @@ public final class NativeRouterActivity extends Activity {
     intro(
         tool.equals("vps")
             ? "Root-консоль вашего VPS. Построчный ввод команд; для интерактивных редакторов нужен"
-                  + " полноценный терминал."
+                + " полноценный терминал."
             : "Построчная SSH-консоль выбранного роутера. Для интерактивных редакторов нужен"
-                  + " полноценный терминал.");
+                + " полноценный терминал.");
     status = ui.text("Соединение не открыто", 14, false);
     status.setTextColor(ui.MUTED);
     add(status);
@@ -455,18 +511,76 @@ public final class NativeRouterActivity extends Activity {
         ui.button(
             tool.equals("vps") ? "Открыть терминал VPS" : "Подключить SSH", true, this::openSsh);
     add(sshConnect);
+    LinearLayout outer = content;
+    terminalCredentials = ui.column();
+    terminalPanel = ui.column();
+    terminalPanel.setVisibility(View.GONE);
+    terminalCredentials.setVisibility(View.GONE);
+    content.addView(terminalCredentials);
+    content.addView(terminalPanel);
+    content = terminalCredentials;
+    if (tool.equals("ssh")) {
+      sshPassword = ui.field("Пароль root — отправится только на запрос SSH", "", true);
+      protectInput(sshPassword);
+      getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+      add(ui.labeledField("Пароль SSH этого роутера", sshPassword));
+      rememberSsh = new Switch(this);
+      rememberSsh.setText("Запомнить пароль на этом телефоне");
+      rememberSsh.setTextColor(ui.TEXT);
+      add(rememberSsh);
+      try {
+        HubSessionStore.SavedSession saved = new HubSessionStore(this).load();
+        credentialUser = saved == null ? "" : saved.username;
+        String secret =
+            new SshCredentialStore(this).load(api.getHub().toString(), credentialUser, routerId);
+        sshPassword.setText(secret);
+        rememberSsh.setChecked(!secret.isEmpty());
+      } catch (Exception ignored) {
+      }
+      rememberSsh.setOnCheckedChangeListener(
+          (button, checked) -> {
+            if (!checked && !loadingCredentials)
+              try {
+                new SshCredentialStore(this)
+                    .save(api.getHub().toString(), credentialUser, routerId, "");
+              } catch (Exception error) {
+                showError("Не удалось удалить сохранённый пароль");
+              }
+          });
+      add(
+          ui.button(
+              "Забыть пароль этого роутера",
+              NativeUi.Style.QUIET,
+              () -> {
+                try {
+                  new SshCredentialStore(this)
+                      .save(api.getHub().toString(), credentialUser, routerId, "");
+                  sshPassword.setText("");
+                  rememberSsh.setChecked(false);
+                } catch (Exception error) {
+                  showError("Не удалось удалить сохранённый пароль");
+                }
+              }));
+    }
+    terminalCredentials.addView(
+        ui.button("Отправить пароль SSH", NativeUi.Style.SECONDARY, () -> sendSavedSshPassword()));
+    content = terminalPanel;
     output = monospace("");
-    output.setMinHeight(ui.dp(280));
+    output.setMinHeight(ui.dp(260));
     output.setBackground(ui.shape(NativeUi.color("#090e13"), ui.LINE, 12));
     output.setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14));
-    add(output);
+    terminalScroll = new ScrollView(this);
+    terminalScroll.setFillViewport(true);
+    terminalScroll.addView(output);
+    terminalScroll.setLayoutParams(new LinearLayout.LayoutParams(-1, ui.dp(280)));
+    add(terminalScroll);
     command = ui.field("Команда или ответ на запрос SSH", "", false);
     protectInput(command);
     add(command);
     Switch hidden = new Switch(this);
     hidden.setText("Скрывать ввод пароля");
     hidden.setTextColor(ui.MUTED);
-    hidden.setTextSize(14);
+    hidden.setTextSize(12);
     hidden.setTypeface(ui.regular);
     hidden.setMinHeight(ui.dp(48));
     hidden.setThumbTintList(
@@ -492,8 +606,7 @@ public final class NativeRouterActivity extends Activity {
             true,
             () -> {
               String value = command.getText().toString() + "\r";
-              command.setText("");
-              writeSsh(value);
+              if (writeSsh(value)) command.setText("");
             });
     add(sshSend);
     sshInterrupt = ui.button("Прервать · Ctrl+C", false, () -> writeSsh("\u0003"));
@@ -506,6 +619,7 @@ public final class NativeRouterActivity extends Activity {
               closeSsh();
               updateControls();
             }));
+    content = outer;
   }
 
   private void buildConfig() {
@@ -569,6 +683,7 @@ public final class NativeRouterActivity extends Activity {
   private TextView monospace(String value) {
     TextView view = ui.text(value, 14, false);
     view.setTypeface(Typeface.MONOSPACE);
+    view.setGravity(Gravity.START | Gravity.TOP);
     view.setTextColor(ui.GREEN);
     view.setTextIsSelectable(true);
     view.setLineSpacing(ui.dp(4), 1);
@@ -605,6 +720,7 @@ public final class NativeRouterActivity extends Activity {
   protected void onDestroy() {
     handler.removeCallbacksAndMessages(null);
     network.shutdown();
+    media.shutdownNow();
     super.onDestroy();
   }
 
@@ -617,6 +733,24 @@ public final class NativeRouterActivity extends Activity {
         session -> {
           JSONObject account = session.optJSONObject("account");
           vpsOwner = account != null && account.optBoolean("is_owner");
+          String currentUser = account == null ? "" : account.optString("username");
+          if (sshPassword != null && !credentialUser.equals(currentUser)) {
+            loadingCredentials = true;
+            closeSsh();
+            credentialUser = currentUser;
+            sshPassword.setText("");
+            rememberSsh.setChecked(false);
+            try {
+              String saved =
+                  new SshCredentialStore(this)
+                      .load(api.getHub().toString(), credentialUser, routerId);
+              sshPassword.setText(saved);
+              rememberSsh.setChecked(!saved.isEmpty());
+            } catch (Exception ignored) {
+            } finally {
+              loadingCredentials = false;
+            }
+          }
           if (tool.equals("vps") && !vpsOwner) {
             deny("Терминал VPS доступен только владельцу Hub.");
             return;
@@ -651,8 +785,10 @@ public final class NativeRouterActivity extends Activity {
               deny("Доступ к этому роутеру больше не предоставлен.");
               return;
             }
-            if ((!tool.equals("notes") && !tool.equals("ssh") && !manage) || (tool.equals("ssh") && !ssh)) {
-              deny("У аккаунта больше нет доступа к этому инструменту.");return;
+            if ((!tool.equals("notes") && !tool.equals("ssh") && !manage)
+                || (tool.equals("ssh") && !ssh)) {
+              deny("У аккаунта больше нет доступа к этому инструменту.");
+              return;
             }
           }
           content.setVisibility(View.VISIBLE);
@@ -683,6 +819,7 @@ public final class NativeRouterActivity extends Activity {
           false);
     else if (isTerminal() && !sshSession.isEmpty()) {
       final String sid = sshSession;
+      readPoll = true;
       request(
           () -> api.get(sshPath(sid) + "/read"),
           data -> {
@@ -702,7 +839,9 @@ public final class NativeRouterActivity extends Activity {
     handler.removeCallbacks(poll);
     busy = true;
     final int requestGeneration = generation;
-    updateControls();
+    final boolean silentRead = readPoll;
+    readPoll = false;
+    if (!silentRead) updateControls();
     network.execute(
         () -> {
           JSONObject response = null;
@@ -744,18 +883,26 @@ public final class NativeRouterActivity extends Activity {
                   }
                 } else {
                   snapshotFresh = false;
-                if (problem instanceof HubApiClient.PermissionException || problem instanceof HubApiClient.AuthRequiredException) {
-                  sessionReady = false;content.setVisibility(View.GONE);
-                }
+                  if (problem instanceof HubApiClient.PermissionException
+                      || problem instanceof HubApiClient.AuthRequiredException) {
+                    sessionReady = false;
+                    content.setVisibility(View.GONE);
+                  }
                   showError(
                       problem instanceof HubApiClient.AuthRequiredException
                           ? "Сессия Hub завершилась. Вернитесь на главный экран и войдите снова."
                           : safeError(problem));
                 }
                 updateControls();
-              if (repeat && !busy && !(problem instanceof HubApiClient.AuthRequiredException)
-                  && !(problem instanceof HubApiClient.PermissionException))
-                  schedulePoll();
+                if (problem == null && !writes.isEmpty()) {
+                  flushWrites();
+                  return;
+                }
+                if (problem != null) writes.clear();
+                if (repeat
+                    && !busy
+                    && !(problem instanceof HubApiClient.AuthRequiredException)
+                    && !(problem instanceof HubApiClient.PermissionException)) schedulePoll();
               });
         });
   }
@@ -764,7 +911,7 @@ public final class NativeRouterActivity extends Activity {
     String message = exception.getMessage();
     return message == null || message.isEmpty()
         ? "Не удалось связаться с Hub. Обновите экран и проверьте результат перед повторной"
-              + " отправкой."
+            + " отправкой."
         : message.length() > 300 ? "Не удалось выполнить запрос к Hub." : message;
   }
 
@@ -914,8 +1061,13 @@ public final class NativeRouterActivity extends Activity {
 
   private void updateControls() {
     if (progress == null) return;
-    progress.setVisibility(busy ? View.VISIBLE : View.INVISIBLE);
-    boolean ready = sessionReady && !busy && permitted() && (!tool.equals("notes") || notesLoaded);
+    progress.setVisibility(busy && !isTerminal() ? View.VISIBLE : View.INVISIBLE);
+    boolean ready =
+        sessionReady
+            && !busy
+            && !preparingImages
+            && permitted()
+            && (!tool.equals("notes") || notesLoaded);
     for (Button action : actions)
       action.setEnabled(
           ready
@@ -930,9 +1082,14 @@ public final class NativeRouterActivity extends Activity {
           ready && snapshotFresh && (!tool.equals("xray") || hasCompletedCommand()));
     if (liveButton != null) liveButton.setEnabled(sessionReady);
     if (sshConnect != null) sshConnect.setEnabled(ready && sshSession.isEmpty());
-    if (sshSend != null) sshSend.setEnabled(ready && !sshSession.isEmpty());
-    if (sshInterrupt != null) sshInterrupt.setEnabled(ready && !sshSession.isEmpty());
+    if (sshSend != null)
+      sshSend.setEnabled(sessionReady && permitted() && !sshSession.isEmpty() && writes.size() < 8);
+    if (sshInterrupt != null)
+      sshInterrupt.setEnabled(
+          sessionReady && permitted() && !sshSession.isEmpty() && writes.size() < 8);
     if (notes != null) notes.setEnabled(ready);
+    for (Button delete : noteDeleteButtons)
+      delete.setEnabled(sessionReady && !busy && notesCanDelete && vpsOwner);
   }
 
   private boolean permitted() {
@@ -956,16 +1113,19 @@ public final class NativeRouterActivity extends Activity {
     JSONArray entries = data.optJSONArray("notes_entries");
     if (entries == null) throw new IllegalStateException("Invalid notes response");
     notesLoaded = true;
+    photosSupported = data.optBoolean("supports_images", false);
     notesCanAppend = data.optBoolean("can_append", permitted());
     status.setText(
         notesCanAppend ? "До 2000 символов в одной записи" : "Заметки доступны для просмотра");
     status.setTextColor(ui.MUTED);
+    notesCanDelete = data.optBoolean("can_delete", false);
+    noteDeleteButtons.clear();
     history.removeAllViews();
     if (entries.length() == 0) {
       history.addView(ui.body("Записей пока нет."));
       return;
     }
-    for (int i = entries.length() - 1; i >= 0; i--) {
+    for (int i = entries.length() - 1; i >= Math.max(0, entries.length() - visibleNotes); i--) {
       JSONObject entry = entries.optJSONObject(i);
       if (entry == null) continue;
       LinearLayout card = ui.card();
@@ -977,11 +1137,122 @@ public final class NativeRouterActivity extends Activity {
       JSONArray images = entry.optJSONArray("images");
       if (images != null && images.length() > 0) {
         card.addView(ui.spacer(12));
-        card.addView(ui.chip("Вложений в Hub: " + images.length(), ui.BLUE));
+        for (int imageIndex = 0; imageIndex < images.length(); imageIndex++) {
+          JSONObject image = images.optJSONObject(imageIndex);
+          if (image == null) continue;
+          android.widget.ImageView photo = new android.widget.ImageView(this);
+          photo.setAdjustViewBounds(true);
+          photo.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+          photo.setContentDescription("Изображение заметки: " + image.optString("name", "Фото"));
+          photo.setTag("note-image");
+          card.addView(photo, new LinearLayout.LayoutParams(-1, ui.dp(190)));
+          TextView imageState = ui.label("Загрузка фото…");
+          card.addView(imageState);
+          String path =
+              HubApiClient.MOBILE_BASE
+                  + "/router/"
+                  + Uri.encode(routerId)
+                  + "/notes-media/"
+                  + Uri.encode(entry.optString("id"))
+                  + "/"
+                  + Uri.encode(image.optString("file_name"));
+          final boolean[] loaded = {false};
+          Runnable load =
+              () -> {
+                if (loaded[0]
+                    || isDestroyed()
+                    || !photo.getGlobalVisibleRect(new android.graphics.Rect())) return;
+                loaded[0] = true;
+                media.execute(
+                    () -> {
+                      try {
+                        byte[] bytes = api.noteImage(path);
+                        android.graphics.Bitmap bitmap = decodePhoto(bytes, 640);
+                        handler.post(
+                            () -> {
+                              if (!isDestroyed() && photo.isAttachedToWindow()) {
+                                photo.setImageBitmap(bitmap);
+                                imageState.setVisibility(View.GONE);
+                                photo.setOnClickListener(
+                                    v -> {
+                                      android.widget.ImageView full =
+                                          new android.widget.ImageView(this);
+                                      full.setAdjustViewBounds(true);
+                                      full.setImageBitmap(bitmap);
+                                      new AlertDialog.Builder(this)
+                                          .setView(full)
+                                          .setPositiveButton("Закрыть", null)
+                                          .show();
+                                    });
+                              } else bitmap.recycle();
+                            });
+                      } catch (Exception failure) {
+                        handler.post(
+                            () -> {
+                              if (!isDestroyed() && imageState.isAttachedToWindow())
+                                imageState.setText(
+                                    "Фото не загружено. Обновите заметки для повтора.");
+                            });
+                      }
+                    });
+              };
+          android.view.ViewTreeObserver.OnScrollChangedListener observer = load::run;
+          photo.addOnAttachStateChangeListener(
+              new View.OnAttachStateChangeListener() {
+                public void onViewAttachedToWindow(View v) {
+                  photo.getViewTreeObserver().addOnScrollChangedListener(observer);
+                  photo.post(load);
+                }
+
+                public void onViewDetachedFromWindow(View v) {
+                  if (photo.getViewTreeObserver().isAlive())
+                    photo.getViewTreeObserver().removeOnScrollChangedListener(observer);
+                  photo.setImageDrawable(null);
+                  loaded[0] = false;
+                }
+              });
+        }
+      }
+      if (notesCanDelete && vpsOwner) {
+        String noteId = entry.optString("id");
+        Button delete =
+            ui.button(
+                "Удалить заметку",
+                NativeUi.Style.DANGER,
+                () -> {
+                  if (busy || !sessionReady || !notesCanDelete || !vpsOwner) return;
+                  confirm(
+                      "Удалить заметку?",
+                      "Эта запись и прикреплённые к ней изображения будут удалены. Остальные"
+                          + " заметки сохранятся.",
+                      () ->
+                          request(
+                              () ->
+                                  api.post(
+                                      notesPath() + "/delete",
+                                      new JSONObject().put("note_id", noteId)),
+                              result -> {
+                                renderNotes(result);
+                                status.setText("Заметка удалена");
+                              },
+                              false));
+                });
+        card.addView(ui.spacer(12));
+        card.addView(delete);
+        noteDeleteButtons.add(delete);
       }
       history.addView(card);
       history.addView(ui.spacer(10));
     }
+    if (entries.length() > visibleNotes)
+      history.addView(
+          ui.button(
+              "Показать ещё заметки",
+              NativeUi.Style.SECONDARY,
+              () -> {
+                visibleNotes += 20;
+                renderNotes(data);
+              }));
   }
 
   private boolean hasCompletedCommand() {
@@ -996,6 +1267,24 @@ public final class NativeRouterActivity extends Activity {
 
   private void openSsh() {
     if (!sshSession.isEmpty()) return;
+    terminalPanel.setVisibility(View.VISIBLE);
+    terminalCredentials.setVisibility(tool.equals("ssh") ? View.VISIBLE : View.GONE);
+    writes.clear();
+    passwordSent = false;
+    terminalAuthenticated = false;
+    pendingCarriage = false;
+    if (sshPassword != null)
+      try {
+        new SshCredentialStore(this)
+            .save(
+                api.getHub().toString(),
+                credentialUser,
+                routerId,
+                rememberSsh.isChecked() ? sshPassword.getText().toString() : "");
+      } catch (Exception error) {
+        showError("Не удалось сохранить пароль в защищённом хранилище.");
+        return;
+      }
     request(
         () -> api.get("/api/ssh/" + Uri.encode(routerId) + "/session?cols=80&rows=24"),
         data -> {
@@ -1004,6 +1293,7 @@ public final class NativeRouterActivity extends Activity {
           if (!sid.matches("[A-Za-z0-9_-]{16,128}"))
             throw new IllegalStateException("Invalid terminal session");
           sshSession = sid;
+          sshConnect.setVisibility(View.GONE);
           status.setText(
               tool.equals("vps") ? "Терминал VPS подключён" : "SSH подключён · " + routerId);
           status.setTextColor(ui.GREEN);
@@ -1017,9 +1307,20 @@ public final class NativeRouterActivity extends Activity {
     return "/api/ssh-session/" + Uri.encode(sid);
   }
 
-  private void writeSsh(String text) {
-    if (sshSession.isEmpty() || busy) return;
-    final String sid = sshSession;
+  private boolean writeSsh(String text) {
+    if (sshSession.isEmpty() || !sessionReady || !permitted() || writes.size() >= 8) return false;
+    if (text.length() > 16384) {
+      showError("Слишком длинная команда");
+      return false;
+    }
+    writes.addLast(text);
+    flushWrites();
+    return true;
+  }
+
+  private void flushWrites() {
+    if (busy || writes.isEmpty() || sshSession.isEmpty() || !visible) return;
+    final String sid = sshSession, text = writes.removeFirst();
     request(
         () -> {
           JSONObject payload = new JSONObject().put("data", text);
@@ -1034,6 +1335,7 @@ public final class NativeRouterActivity extends Activity {
   }
 
   private void appendConsole(String chunk) {
+    if (chunk.isEmpty()) return;
     // Keep a readable line console; do not claim to emulate cursor-addressed TUI programs.
     String plain =
         chunk
@@ -1042,23 +1344,64 @@ public final class NativeRouterActivity extends Activity {
             .replaceAll("\\x1B[@-_]", "");
     for (int i = 0; i < plain.length(); i++) {
       char character = plain.charAt(i);
-      if (character == '\b' || character == 127) {
-        if (console.length() > 0) console.setLength(console.length() - 1);
-      } else if (character == '\r') {
-        if (i + 1 >= plain.length() || plain.charAt(i + 1) != '\n') {
+      if (pendingCarriage) {
+        if (character != '\n') {
           int start = console.lastIndexOf("\n") + 1;
           console.setLength(start);
         }
+        pendingCarriage = false;
+      }
+      if (character == '\b' || character == 127) {
+        if (console.length() > 0) console.setLength(console.length() - 1);
+      } else if (character == '\r') {
+        pendingCarriage = true;
       } else if (character == '\n' || character == '\t' || character >= 32)
         console.append(character);
     }
     if (console.length() > 65536) console.delete(0, console.length() - 65536);
+    boolean pinned =
+        terminalScroll == null
+            || terminalScroll.getScrollY() + terminalScroll.getHeight()
+                >= output.getHeight() - ui.dp(24);
     output.setText(console);
+    if (pinned && terminalScroll != null)
+      terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
+    String tail = console.substring(Math.max(0, console.length() - 300));
+    if (tail.matches("(?s).*(?:\\$|#) ?$")) terminalAuthenticated = true;
+    sendSavedSshPassword();
+  }
+
+  private void sendSavedSshPassword() {
+    if (!tool.equals("ssh")
+        || terminalAuthenticated
+        || passwordSent
+        || sshPassword == null
+        || sshSession.isEmpty()) return;
+    String tail = console.substring(Math.max(0, console.length() - 300));
+    if (!tail.matches("(?is).*password(?: for [^\\r\\n]{0,100})?: ?$")) return;
+    String secret = sshPassword.getText().toString();
+    if (secret.isEmpty()) return;
+    try {
+      new SshCredentialStore(this)
+          .save(
+              api.getHub().toString(),
+              credentialUser,
+              routerId,
+              rememberSsh.isChecked() ? secret : "");
+    } catch (Exception error) {
+      showError("Пароль не сохранён. Проверьте хранилище Android.");
+      return;
+    }
+    passwordSent = writeSsh(secret + "\r");
   }
 
   private void closeSsh() {
     String sid = sshSession;
     sshSession = "";
+    if (terminalPanel != null) terminalPanel.setVisibility(View.GONE);
+    if (terminalCredentials != null) terminalCredentials.setVisibility(View.GONE);
+    if (sshConnect != null) sshConnect.setVisibility(View.VISIBLE);
+    writes.clear();
     if (status != null && isTerminal()) {
       status.setText(tool.equals("vps") ? "Терминал VPS закрыт" : "SSH-соединение закрыто");
       status.setTextColor(ui.MUTED);
@@ -1082,6 +1425,82 @@ public final class NativeRouterActivity extends Activity {
   @Override
   protected void onActivityResult(int requestCode, int resultCode, Intent resultIntent) {
     super.onActivityResult(requestCode, resultCode, resultIntent);
+    if (requestCode == PICK_NOTE_IMAGES) {
+      if (resultCode != RESULT_OK || resultIntent == null) return;
+      java.util.ArrayList<Uri> selected = new java.util.ArrayList<>();
+      if (resultIntent.getClipData() != null)
+        for (int n = 0; n < Math.min(4, resultIntent.getClipData().getItemCount()); n++)
+          selected.add(resultIntent.getClipData().getItemAt(n).getUri());
+      else if (resultIntent.getData() != null) selected.add(resultIntent.getData());
+      if (selected.size() + pendingImages.length() > 4) {
+        showError("Можно прикрепить до 4 изображений");
+        return;
+      }
+      preparingImages = true;
+      updateControls();
+      media.execute(
+          () -> {
+            try {
+              JSONArray additions = new JSONArray();
+              for (Uri uri : selected) {
+                if (!"content".equals(uri.getScheme())) throw new IOException();
+                java.io.ByteArrayOutputStream source = new java.io.ByteArrayOutputStream();
+                try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
+                  if (in == null) throw new IOException();
+                  byte[] buffer = new byte[8192];
+                  int n;
+                  while ((n = in.read(buffer)) != -1) {
+                    if (source.size() + n > 16 * 1024 * 1024)
+                      throw new IOException("Исходное изображение больше 16 МиБ");
+                    source.write(buffer, 0, n);
+                  }
+                }
+                android.graphics.Bitmap bitmap = decodePhoto(source.toByteArray(), 1600);
+                java.io.ByteArrayOutputStream jpeg = new java.io.ByteArrayOutputStream();
+                try {
+                  bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 82, jpeg);
+                } finally {
+                  bitmap.recycle();
+                }
+                if (jpeg.size() > 500 * 1024)
+                  throw new IOException(
+                      "Изображение слишком большое после сжатия. Выберите фото меньшего размера.");
+                additions.put(
+                    new JSONObject()
+                        .put(
+                            "name",
+                            "photo-" + (pendingImages.length() + additions.length() + 1) + ".jpg")
+                        .put("content_type", "image/jpeg")
+                        .put(
+                            "data",
+                            android.util.Base64.encodeToString(
+                                jpeg.toByteArray(), android.util.Base64.NO_WRAP)));
+              }
+              handler.post(
+                  () -> {
+                    if (isDestroyed()) return;
+                    preparingImages = false;
+                    updateControls();
+                    for (int n = 0; n < additions.length(); n++)
+                      pendingImages.put(additions.optJSONObject(n));
+                    renderImageDrafts();
+                  });
+            } catch (Exception failure) {
+              handler.post(
+                  () -> {
+                    if (!isDestroyed()) {
+                      preparingImages = false;
+                      updateControls();
+                      showError(
+                          failure.getMessage() == null
+                              ? "Не удалось прочитать изображение"
+                              : failure.getMessage());
+                    }
+                  });
+            }
+          });
+      return;
+    }
     if (requestCode != SAVE_CONFIG) return;
     String text = pendingConfiguration;
     pendingConfiguration = "";
@@ -1114,6 +1533,41 @@ public final class NativeRouterActivity extends Activity {
         });
   }
 
+  private static android.graphics.Bitmap decodePhoto(byte[] bytes, int maximum) throws IOException {
+    android.graphics.BitmapFactory.Options bounds = new android.graphics.BitmapFactory.Options();
+    bounds.inJustDecodeBounds = true;
+    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
+    if (bounds.outWidth < 1
+        || bounds.outHeight < 1
+        || bounds.outWidth > 30000
+        || bounds.outHeight > 30000) throw new IOException("Неподдерживаемое изображение");
+    android.graphics.BitmapFactory.Options options = new android.graphics.BitmapFactory.Options();
+    options.inSampleSize = 1;
+    while (bounds.outWidth / options.inSampleSize > maximum
+        || bounds.outHeight / options.inSampleSize > maximum) options.inSampleSize *= 2;
+    android.graphics.Bitmap result =
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+    if (result == null) throw new IOException("Не удалось открыть изображение");
+    return result;
+  }
+
+  private void renderImageDrafts() {
+    imageDrafts.removeAllViews();
+    for (int n = 0; n < pendingImages.length(); n++) {
+      final int index = n;
+      imageDrafts.addView(
+          ui.button(
+              "Фото " + (n + 1) + " · удалить",
+              NativeUi.Style.QUIET,
+              () -> {
+                if (busy || preparingImages) return;
+                pendingImages.remove(index);
+                renderImageDrafts();
+              }));
+    }
+    status.setText("Прикреплено фото: " + pendingImages.length());
+  }
+
   private void confirm(String title, String message, Runnable action) {
     new AlertDialog.Builder(this)
         .setTitle(title)
@@ -1128,7 +1582,11 @@ public final class NativeRouterActivity extends Activity {
     error.setVisibility(View.VISIBLE);
   }
 
-  private void deny(String message) { sessionReady=false;content.setVisibility(View.GONE);showError(message); }
+  private void deny(String message) {
+    sessionReady = false;
+    content.setVisibility(View.GONE);
+    showError(message);
+  }
 
   private static boolean isActive(String state) {
     return state.equals("queued") || state.equals("delivered") || state.equals("running");

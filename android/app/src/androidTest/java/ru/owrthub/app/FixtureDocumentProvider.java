@@ -15,13 +15,13 @@ public final class FixtureDocumentProvider extends ContentProvider {
     @Override public boolean onCreate(){return true;}
     private File file(Uri uri) throws FileNotFoundException {
         String name=uri.getLastPathSegment();
-        if(name==null||!name.matches("(backup\\.tar\\.gz|corrupt\\.tar\\.gz|config\\.sh|upload\\.txt|download\\.txt)"))throw new FileNotFoundException();
+        if(name==null||!name.matches("(backup\\.tar\\.gz|corrupt\\.tar\\.gz|config\\.sh|upload\\.txt|download\\.txt|photo\\.png)"))throw new FileNotFoundException();
         return new File(getContext().getCacheDir(),"audit-"+name);
     }
     @Override public ParcelFileDescriptor openFile(Uri uri,String mode)throws FileNotFoundException{
         return ParcelFileDescriptor.open(file(uri),ParcelFileDescriptor.parseMode(mode));
     }
-    @Override public String getType(Uri uri){return uri.toString().endsWith(".sh")?"text/plain":"application/gzip";}
+    @Override public String getType(Uri uri){return uri.toString().endsWith(".png")?"image/png":uri.toString().endsWith(".sh")?"text/plain":"application/gzip";}
     @Override public Cursor query(Uri uri,String[] projection,String selection,String[] args,String sort){
         try{
             File f=file(uri);String[] cols=projection==null?new String[]{OpenableColumns.DISPLAY_NAME,OpenableColumns.SIZE}:projection;

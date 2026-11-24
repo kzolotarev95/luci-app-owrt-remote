@@ -58,6 +58,10 @@ class FixtureState:
         self.users = []
         self.uploaded = b''
         self.router_update_job = None
+        self.password_next = False
+        self.hub_available=False
+        self.hub_update_starts=0
+        self.notification_serial = 100
         self.xray_csrf = XRAY_CSRF
 
     def router(self, router_id, viewer=False):
@@ -74,7 +78,7 @@ class FixtureState:
             "service_enabled": True, "version": "v123", "agent_version": "v123",
             "vps_host": "fixture.invalid", "public_ip": "198.51.100.10",
             "access_flags": ["A"] if viewer else ["A", "B", "G"], "permissions": permissions,
-            "notes": note, "notes_preview": note, "notes_count": len(self.note_entries[router_id]),
+            "notes": note, "notes_preview": (self.note_entries[router_id][-1].get("text") or "Фото") if self.note_entries[router_id] else "", "notes_count": len(self.note_entries[router_id]),
             "has_notes": bool(self.note_entries[router_id]), "notes_entries": self.note_entries[router_id],
             "access_url": f"/access/{router_id}/", "ssh_url": f"/ssh/{router_id}/",
             "config_url": f"/router/{router_id}/config", "notes_url": f"/router/{router_id}/notes",
@@ -264,8 +268,12 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.json_response(200, data)
             return
+        if re.fullmatch(r"/api/ssh-session/[^/]+/read", path): time.sleep(0.35)
         with self.server.state.lock:
-            if path == ENDPOINTS["session"]:
+            if path == "/api/fixture/password-next":
+                self.server.state.password_next=True
+                self.json_response(200,{"ok":True})
+            elif path == ENDPOINTS["session"]:
                 self.json_response(200, self.session_payload(state))
             elif re.fullmatch(BASE + r"/router/(main|offline)/notes", path):
                 router_id = path.split("/")[-2]
@@ -273,7 +281,22 @@ class Handler(BaseHTTPRequestHandler):
                     self.error(403, "forbidden", "Fixture router access required")
                 else:
                     self.json_response(200, {"ok": True, "router_id": router_id,
-                        "notes_entries": self.server.state.note_entries[router_id], "can_append": not viewer})
+                        "notes_entries": self.server.state.note_entries[router_id], "supports_images": True, "can_append": not viewer, "can_delete": not viewer})
+            elif re.fullmatch(BASE+r"/router/(main|offline)/notes-media/[^/]+/[^/]+",path):
+                self.respond(200,base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAO0lEQVR4nO3RQREAMAjEwKMKK7FykFUJ4cMvK+CYCXVfZ9NZXY8HBvwBMhEyETIRMhEyETIRMhEyUcgHZIIB+IPjugkAAAAASUVORK5CYII='),'image/png')
+            elif path == BASE + "/router-defaults":
+                if viewer: self.error(403,"forbidden","Owner required")
+                else: self.json_response(200,{"ok":True,"defaults":{"id":"node-2","name":"Роутер node-2","role":"node","vps_host":"fixture.invalid","entry_port":18090,"ssh_entry_port":19090},"groups":[{"id":"home","name":"Дом"}]})
+            elif path == "/api/fixture/update-available":
+                self.server.state.hub_available=True
+                self.json_response(200,{"ok":True})
+            elif path == "/api/fixture/new-alert":
+                self.server.state.notification_serial += 1
+                self.json_response(200,{"ok":True})
+            elif path == "/api/notifications/wait":
+                serial = self.server.state.notification_serial
+                items=[] if int(query.get('after_serial',['0'])[0]) >= serial else [{"serial":serial,"title":"Fixture background alert","body":"Native notification delivered"}]
+                self.json_response(200,{"serial":serial,"notifications":items})
             elif path == "/api/routers":
                 ids = ["main"] if viewer else ["main", "offline"]
                 result = {"routers": [self.server.state.router(item, viewer) for item in ids]}
@@ -335,7 +358,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.error(403, "forbidden", "Owner required")
                 else:
                     self.respond(200, self.server.state.backup, "application/gzip")
-            elif re.fullmatch(BASE + r"/router/(main|offline)/config", path):
+            elif re.fullmatch(BASE + r"/router/(main|offline|node-2)/config", path):
                 if viewer:
                     self.error(403, "forbidden", "Manage required")
                 else:
@@ -347,7 +370,8 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     router_id = path.split('/')[3]
                     sid = secrets.token_urlsafe(24)
-                    self.server.state.terminals[sid] = {"router_id": router_id, "buffer": "Fixture console ready\n", "username": state['username']}
+                    self.server.state.terminals[sid] = {"router_id": router_id, "buffer": "root@127.0.0.1 password: " if self.server.state.password_next else "Fixture console ready\n", "awaiting_password":self.server.state.password_next, "username": state['username']}
+                    self.server.state.password_next=False
                     self.json_response(200, {"ok": True, "sid": sid, "router_id": router_id})
             elif re.fullmatch(r"/api/ssh-session/[^/]+/read", path):
                 terminal = self.server.state.terminals.get(path.split('/')[3])
@@ -356,6 +380,8 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     data = terminal['buffer']; terminal['buffer'] = ''
                     self.json_response(200, {"ok": True, "data": data, "alive": True})
+            elif path == "/api/hub-update" and self.server.state.hub_available:
+                self.json_response(200,{"ok":True,"current_version":"v123","remote_version":"v124","checked":True,"available":True,"checking":False,"error":"","remote_revision":"a"*64,"job":{}})
             elif path == "/api/hub-update":
                 self.json_response(200, {"ok": True, "current_version": "v123", "remote_version": "v123", "checked": True,
                     "source_incompatible": True, "notice": "Опубликованная сборка пока не поддерживает приложение Android.",
@@ -364,7 +390,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.json_response(200, {"ok": True, "job": self.server.state.router_update_job,
                     "routers": [self.server.state.router('main')]})
             elif path == "/api/notifications":
-                self.json_response(200, {"notifications": [{"id": "fixture-event", "title": "Роутер на связи", "body": "Fixture notification body", "ts": int(time.time())}]})
+                self.json_response(200, {"serial": self.server.state.notification_serial, "notifications": [{"id": "fixture-event", "title": "Роутер на связи", "body": "Fixture notification body", "ts": int(time.time())}]})
             elif path == "/fixture/forbidden":
                 self.error(403, "forbidden", "Fixture permission failure")
             elif re.fullmatch(r"/api/router/(main|offline)/(xray-control|logs|notes|wol/devices)", path):
@@ -469,6 +495,17 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.state.totp_enabled = True
                     self.json_response(200, {'ok': True})
                 return
+            if path in ("/api/hub-update/check","/api/hub-update/start"):
+                if state['username'] == TEST_VIEWER or self.headers.get('X-Hub-Update-CSRF') != 'fixture-hub-update-csrf-token-v1':
+                    self.error(403,'forbidden','Owner CSRF required')
+                else:
+                    if path.endswith('/start'): self.server.state.hub_update_starts+=1
+                    self.json_response(200,{"ok":True,"current_version":"v123","remote_version":"v124","checked":True,"available":not path.endswith('/start'),"checking":False,"error":"","remote_revision":"a"*64,"job":{"status":"succeeded","message":"Fixture Hub updated; no services restarted"} if path.endswith('/start') else {}})
+                return
+            if path == "/api/router":
+                if state['username'] == TEST_VIEWER: self.error(403,"forbidden","Owner required")
+                else: self.json_response(200,{"ok":True,"router":dict(fields,permissions={"manage":True,"config":True})})
+                return
             if path == "/api/auth/users/save":
                 if state['username'] != TEST_USERNAME or fields.get('current_password') != TEST_PASSWORD:
                     self.error(403, "forbidden", "Неверный пароль владельца")
@@ -495,7 +532,12 @@ class Handler(BaseHTTPRequestHandler):
                     self.server.state.terminals.pop(sid)
                     self.json_response(200, {"ok": True})
                 else:
-                    terminal['buffer'] += "Fixture echo: " + fields.get('data', '').strip() + "\n"
+                    if terminal.get('awaiting_password'):
+                        if fields.get('data','').strip() == 'fixture-ssh-secret':
+                            terminal['buffer'] += "\nFixture authenticated SSH\nroot@fixture:~# "
+                            terminal['awaiting_password']=False
+                        else: terminal['buffer'] += "\nPermission denied\npassword: "
+                    else: terminal['buffer'] += "Fixture echo: " + fields.get('data', '').strip() + "\n"
                     self.json_response(200, {"ok": True})
                 return
             if path == ENDPOINTS["logout"]:
@@ -509,6 +551,23 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.state.sessions.pop(token, None)
                 self.json_response(200, {"ok": True}, (self.cookie_header(clear=True),))
                 return
+            if re.fullmatch(BASE + r"/router/(main|offline)/notes/delete", path):
+                router_id = path.split("/")[-3]
+                if state["username"] != TEST_USERNAME:
+                    self.error(403, "owner_required", "Fixture owner required")
+                elif not secrets.compare_digest(self.headers.get("X-Mobile-CSRF", ""), state["csrf"]):
+                    self.error(403, "csrf_failed", "Fixture mobile CSRF required")
+                else:
+                    entries = self.server.state.note_entries[router_id]
+                    selected = fields.get("note_id")
+                    if not any(entry["id"] == selected for entry in entries):
+                        self.error(404, "note_not_found", "Note not found")
+                        return
+                    entries[:] = [entry for entry in entries if entry["id"] != selected]
+                    self.server.state.notes[router_id] = entries[-1]["text"] if entries else ""
+                    self.json_response(200, {"ok": True, "router_id": router_id, "notes_entries": entries,
+                        "can_append": True, "can_delete": True, "supports_images": True, "deleted_note_id": selected})
+                return
             if re.fullmatch(BASE + r"/router/(main|offline)/notes", path):
                 router_id = path.split("/")[-2]
                 if state["username"] == TEST_VIEWER:
@@ -517,14 +576,14 @@ class Handler(BaseHTTPRequestHandler):
                     self.error(403, "csrf_failed", "Fixture mobile CSRF required")
                 else:
                     text = fields.get("text", "")
-                    if not isinstance(text, str) or not text.strip() or len(text) > 2000:
+                    if not isinstance(text, str) or (not text.strip() and not fields.get("images")) or len(text) > 2000:
                         self.error(400, "invalid_note", "Invalid fixture note")
                         return
                     self.server.state.note_entries[router_id].append({"id": secrets.token_hex(8), "text": text.strip(),
-                                                                    "created_at": int(time.time()), "images": []})
+                                                                    "created_at": int(time.time()), "images": [{"file_name":"fixture.png","name":"Fixture photo","content_type":"image/png"} for photo in fields.get("images",[])]})
                     self.server.state.notes[router_id] = text.strip()
                     self.json_response(200, {"ok": True, "router_id": router_id,
-                        "notes_entries": self.server.state.note_entries[router_id], "can_append": True})
+                        "notes_entries": self.server.state.note_entries[router_id], "supports_images": True, "can_append": True, "can_delete": True})
                 return
             match = re.fullmatch(r"/api/router/(main|offline)/(xray-control|notes|logs/clear|wol|wol/devices)", path)
             if not match:

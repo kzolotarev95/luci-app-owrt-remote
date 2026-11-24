@@ -185,6 +185,29 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(api.read_bytes(), b'WORKING_API = True\n')
         self.assertEqual(hub.hub_update_state(self.directory)['status'], 'failed')
 
+    def test_older_mobile_api_is_retained_through_real_confirmed_update(self):
+        import base64,zlib
+        source=versioned_source(CURRENT_VERSION+1)
+        api=hub.hub_mobile_api_payload()[0].replace(b'MOBILE_API_REVISION = 3',b'MOBILE_API_REVISION = 1')
+        replacements={'HUB_MOBILE_API_SHA256':hashlib.sha256(api).hexdigest(),'HUB_MOBILE_API_BUNDLE':base64.b64encode(zlib.compress(api,9)).decode()}
+        lines=source.splitlines(keepends=True)
+        for node in reversed(ast.parse(source).body):
+            if isinstance(node,ast.Assign) and len(node.targets)==1 and isinstance(node.targets[0],ast.Name) and node.targets[0].id in replacements:
+                name=node.targets[0].id;lines[node.lineno-1:node.end_lineno]=[(name+' = '+repr(replacements[name])+'\n').encode()]
+        older=b''.join(lines)
+        with mock.patch.object(hub.urllib.request,'urlopen',return_value=self.response(older)):
+            self.manager._check()
+        state=self.manager.snapshot()
+        self.assertEqual(state['error'],'');self.assertTrue(state['available']);self.assertFalse(state['source_incompatible'])
+        with mock.patch.object(hub.subprocess,'run'):
+            job=self.manager.start(state['remote_revision'])
+        with mock.patch.object(hub.time,'sleep'),mock.patch.object(hub.subprocess,'run'),mock.patch.object(hub,'hub_update_health',return_value=True):
+            self.assertEqual(hub.run_hub_update_worker(job['id'],self.directory,self.target),0)
+        installed=self.target.read_bytes()
+        self.assertEqual(hashlib.sha256(installed).hexdigest(),state['remote_revision'])
+        self.assertEqual(hub.hub_mobile_api_payload(installed)[0],hub.hub_mobile_api_payload()[0])
+        self.assertEqual(hub.hub_update_state(self.directory)['status'],'succeeded')
+
     def test_newer_version_is_offered_and_installed(self):
         newer = versioned_source(CURRENT_VERSION + 1)
         with mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response(newer)):

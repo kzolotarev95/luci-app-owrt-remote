@@ -20,6 +20,7 @@ public final class NativeAuditInstrumentation extends NativeSmokeInstrumentation
     private HubApiClient control;
     @Override public void onStart(){
         Bundle result=new Bundle();
+        HubNotifications.prefs(getTargetContext()).edit().putBoolean("offered",true).putBoolean("enabled",false).commit();
         try{
             store=new HubSessionStore(getTargetContext());store.clear();
             getUiAutomation().setRotation(UiAutomation.ROTATION_FREEZE_0);
@@ -29,18 +30,28 @@ public final class NativeAuditInstrumentation extends NativeSmokeInstrumentation
             checkMutationSession();
             checkErrors();
             launch(false);waitForNativeHome();
+            checkStableOverview();
+            checkNativeAlerts();
+            checkAddRouterDefaults();
             checkPartialResourceFailure();
             clickText("Роутеры");waitFor("routers",10000,()->hasText("Домашний роутер"));clickText("Домашний роутер");
+            assertCenteredRouter();
+            checkPhotoNotes();
+            checkNoteDeletion();
             checkNotesRotation();
+            checkAutomaticSshPassword();
             checkWol();
             checkConsole("SSH-терминал",false);
             checkConfig();
             clickText("Настройки");
+            assertCompactOwner();capture("native-owner-compact");
             checkNotifications();
             openSettingsTool("Обновление Hub");
             waitFor("incompatible source notice",10000,()->containsText("не поддерживает приложение Android"));
             require(!hasText("Установить обновление"),"Incompatible source never offers install");
             checks.add("native_update_source_compatibility_notice");backToMain();
+            checkHubUpdateFlow();
+            checkDonateBanner();
             checkConsole("Терминал VPS",true);
             checkUsers();
             checkRouterQueue();
@@ -53,7 +64,7 @@ public final class NativeAuditInstrumentation extends NativeSmokeInstrumentation
             result.putString("stream","\nOWRT_ANDROID_NATIVE_AUDIT_OK "+checks.size()+" checks\n"+String.join("\n",checks)+"\n");
             finish(Activity.RESULT_OK,result);
         }catch(Throwable e){
-            result.putString("stream","\nOWRT_ANDROID_NATIVE_AUDIT_FAILED after "+checks+"\n"+e+"\nLabels: "+visibleLabels()+"\n");
+            result.putString("stream","\nOWRT_ANDROID_NATIVE_AUDIT_FAILED after "+checks+"\n"+android.util.Log.getStackTraceString(e)+"\nLabels: "+visibleLabels()+"\n");
             finish(Activity.RESULT_CANCELED,result);
         }finally{try{getUiAutomation().setRotation(UiAutomation.ROTATION_UNFREEZE);}catch(Exception ignored){}}
     }
@@ -96,12 +107,101 @@ public final class NativeAuditInstrumentation extends NativeSmokeInstrumentation
         control.post("/api/router/main/xray-control",new org.json.JSONObject().put("action","clear_history"));
         checks.add("mutations_refresh_rotated_csrf_without_replay_or_account_switch");
     }
+    private void checkHubUpdateFlow()throws Exception {
+        control.get("/api/fixture/update-available");openSettingsTool("Обновление Hub");
+        waitFor("available update",10000,()->hasText("Установить обновление"));
+        clickText("Проверить обновление");waitFor("fresh update ready",10000,()->enabledText("Установить обновление"));
+        clickText("Установить обновление");acceptConfirmationIfPresent();
+        waitFor("confirmed update outcome",10000,()->containsText("Fixture Hub updated"));
+        checks.add("native_hub_update_check_offer_confirmation_and_result");backToMain();
+    }
+    private void checkDonateBanner()throws Exception {
+        openSettingsTool("Поддержать разработку");waitFor("donation banner",5000,()->containsText("Буду искренне благодарен")&&hasText("Т-БАНК")&&hasText("СБП"));
+        require(containsText("Основная ссылка")&&containsText("Резервная ссылка"),"Donation page retains both links");
+        capture("native-donate-banner");backToMain();checks.add("native_donate_banner_links_and_bank_logos");
+    }
+
+    private void checkStableOverview()throws Exception {
+        android.view.View eye=onUi(()->{for(android.view.View v:views())if("Показать или скрыть адрес Hub".contentEquals(v.getContentDescription()==null?"":v.getContentDescription()))return v;return null;});
+        require(eye!=null && hasText("Адрес скрыт"),"Private header by default");
+        runOnMainSync(()->eye.performClick());require(containsText("127.0.0.1"),"Eye reveals server");
+        runOnMainSync(()->eye.performClick());require(hasText("Адрес скрыт")&&!hasText("127.0.0.1"),"Eye hides server again");
+        android.view.View root=onUi(()->activity.getWindow().getDecorView());
+        android.view.View refresh=onUi(()->{for(android.view.View v:views())if(v instanceof android.widget.Button && ((android.widget.Button)v).getText().toString().equals("Обновить состояние"))return v;return null;});
+        require(refresh!=null,"Refresh button exists");
+        for(int n=0;n<35;n++) {SystemClock.sleep(200);require(onUi(()->refresh.isAttachedToWindow() && refresh.isEnabled() && activity.getWindow().getDecorView()==root),"Background refresh keeps window and controls attached and enabled");}
+        checks.add("live_refresh_preserves_attached_window_and_enabled_controls");
+    }
+    private void checkNativeAlerts()throws Exception {
+        if(android.os.Build.VERSION.SDK_INT>=33)getUiAutomation().grantRuntimePermission(getTargetContext().getPackageName(),android.Manifest.permission.POST_NOTIFICATIONS);
+        runOnMainSync(()->HubNotifications.enable(activity));
+        try {
+          waitFor("background notifications connected",15000,()->HubNotifications.prefs(getTargetContext()).getString("status","").startsWith("Подключено"));
+          control.get("/api/fixture/new-alert");
+          waitFor("real Android notification delivered",12000,()->{
+            for(android.service.notification.StatusBarNotification n:getTargetContext().getSystemService(android.app.NotificationManager.class).getActiveNotifications())
+              if("Fixture background alert".equals(n.getNotification().extras.getString(android.app.Notification.EXTRA_TITLE)))return true;
+            return false;
+          });
+          checks.add("background_hub_event_creates_system_android_notification");
+        }finally{runOnMainSync(()->HubNotifications.disable(getTargetContext()));getTargetContext().getSystemService(android.app.NotificationManager.class).cancelAll();}
+    }
+    private void checkAddRouterDefaults()throws Exception {
+        clickText("Настройки");openSettingsTool("Добавить роутер");
+        waitFor("server suggested router",10000,()->onUi(()->{boolean id=false,web=false,ssh=false;for(android.view.View v:views())if(v instanceof EditText){String t=((EditText)v).getText().toString();id|=t.equals("node-2");web|=t.equals("18090");ssh|=t.equals("19090");}return id&&web&&ssh;}));
+        Activity adding=activity;
+        clickText("Добавить роутер");
+        waitFor("created router config action",10000,()->hasText("Получить настройки OpenWrt"));
+        openTool("ru.owrthub.app.NativeRouterActivity", "Получить настройки OpenWrt");
+        waitFor("configuration after router creation",10000,()->containsText("Конфигурация получена"));
+        runOnMainSync(()->{activity.finish();adding.finish();}); activity=mainActivity;waitForNativeHome();
+        clickText("Обзор");
+        checks.add("server_router_defaults_create_and_open_ready_configuration");
+    }
+
     private void checkPartialResourceFailure()throws Exception{
         control.get("/api/fixture/resources-fail-next");
         clickText("Обновить состояние");
         waitFor("partial refresh result",12000,()->containsText("Ресурсы VPS временно недоступны"));
         require(hasText("Домашний роутер"),"Optional metric failure does not hide routers");
         checks.add("vps_metric_failure_does_not_break_router_refresh");
+    }
+    private void checkPhotoNotes()throws Exception {
+        require(containsText("Заметки"),"Router card exposes note entry point");
+        openRouterTool("Заметки");waitFor("notes loaded",10000,()->enabledText("Прикрепить изображения"));
+        Uri image=document("photo.png");
+        try(OutputStream out=getContext().getContentResolver().openOutputStream(image,"wt")){out.write(android.util.Base64.decode("iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAO0lEQVR4nO3RQREAMAjEwKMKK7FykFUJ4cMvK+CYCXVfZ9NZXY8HBvwBMhEyETIRMhEyETIRMhEyUcgHZIIB+IPjugkAAAAASUVORK5CYII=",0));}
+        documentResult(Intent.ACTION_OPEN_DOCUMENT,image,()->clickText("Прикрепить изображения"));
+        waitFor("photo selected",12000,()->hasText("Фото 1 · удалить"));
+        EditText draft=editorWithHint("запомнить");runOnMainSync(()->draft.setText("Фото из приложения"));
+        waitFor("photo note can send",10000,()->enabledText("Добавить заметку"));
+        waitFor("photo note can send",10000,()->enabledText("Добавить заметку"));
+        clickText("Добавить заметку");
+        waitFor("photo metadata in history",10000,()->onUi(()->{for(android.view.View v:views())if("note-image".equals(v.getTag()))return true;return false;}));
+        onUi(()->{for(android.view.View v:views())if("note-image".equals(v.getTag())){v.requestRectangleOnScreen(new android.graphics.Rect(0,0,v.getWidth(),v.getHeight()),true);break;}return null;});
+        waitFor("note image decoded",15000,()->onUi(()->{for(android.view.View v:views())if(v instanceof android.widget.ImageView && "note-image".equals(v.getTag()) && ((android.widget.ImageView)v).getDrawable()!=null)return true;return false;}));
+        require(containsText("Фото из приложения") && containsText("Тестовая заметка"),"Photo append preserves old notes");
+        capture("native-note-photo");backToMain();
+        checks.add("notes_attach_actual_saf_image_upload_display_preserve_history");
+    }
+
+    private void checkNoteDeletion()throws Exception {
+        openRouterTool("Заметки");waitFor("deletable notes",10000,()->enabledText("Удалить заметку"));
+        EditText draft=editorWithHint("запомнить");runOnMainSync(()->draft.setText("Черновик сохраняется при удалении"));
+        clickText("Удалить заметку");
+        waitFor("deletion confirmation",5000,()->{
+            android.view.accessibility.AccessibilityNodeInfo root=getUiAutomation().getRootInActiveWindow();
+            if(root==null)return false;
+            for(android.view.accessibility.AccessibilityNodeInfo button:root.findAccessibilityNodeInfosByViewId("android:id/button2"))
+                if(button.isVisibleToUser() && button.isEnabled())return button.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK);
+            return false;
+        });
+        waitFor("cancel keeps note",5000,()->containsText("Фото из приложения"));
+        clickText("Удалить заметку");acceptConfirmationIfPresent();
+        waitFor("selected note deleted",10000,()->hasText("Заметка удалена") && !hasText("Фото из приложения"));
+        require(containsText("Тестовая заметка"),"Deleting photo note preserves older entries");
+        require(onUi(()->draft.getText().toString().equals("Черновик сохраняется при удалении")),"Deleting history does not discard unsaved draft");
+        capture("native-note-deleted");backToMain();checks.add("selected_note_delete_confirmation_cancel_photo_removal_and_draft_preservation");
     }
     private void checkNotesRotation()throws Exception{
         openRouterTool("Заметки");waitFor("note editor",10000,()->enabledText("Добавить заметку"));
@@ -116,8 +216,19 @@ public final class NativeAuditInstrumentation extends NativeSmokeInstrumentation
         int previousSessions=control.get("/api/fixture/counters").optInt("terminals");
         if(vps)openTool("ru.owrthub.app.NativeRouterActivity",label);else openRouterTool(label);
         String connect=vps?"Открыть терминал VPS":"Подключить SSH";
-        waitFor("console ready",10000,()->enabledText(connect));clickText(connect);
+        waitFor("console ready",10000,()->enabledText(connect));require(!hasText("Отправить ↵") && editorWithHint("Команда или ответ")==null,"No terminal controls before connect");clickText(connect);
         waitFor("console output",12000,()->containsText("Fixture console ready"));
+        for(int sample=0;sample<12;sample++){SystemClock.sleep(100);require(enabledText("Отправить ↵"),"Terminal send never disables during background reads");}
+        if(!vps){
+          SshCredentialStore secrets=new SshCredentialStore(getTargetContext());
+          secrets.save(fixture,USERNAME,"main","fixture-ssh-secret");
+          require(secrets.load(fixture,USERNAME,"main").equals("fixture-ssh-secret"),"Keystore restores router password");
+          require(secrets.load(fixture,USERNAME,"offline").isEmpty() && secrets.load(fixture,"another-account","main").isEmpty(),"SSH credentials scoped to router and account");
+          require(!getTargetContext().getSharedPreferences("ssh_credentials",0).getAll().toString().contains("fixture-ssh-secret"),"No plaintext saved SSH secret");
+          secrets.save(fixture,USERNAME,"main","");
+          require(secrets.load(fixture,USERNAME,"main").isEmpty(),"Forget removes secret");
+          checks.add("ssh_credentials_encrypted_scoped_and_removable");
+        }
         EditText entry=editorWithHint("Команда или ответ");require(entry!=null,"Native console editor");runOnMainSync(()->entry.setText("audit-text-only"));
         waitFor("console can send",10000,()->enabledText("Отправить ↵"));clickText("Отправить ↵");
         waitFor("console echo",10000,()->containsText("Fixture echo: audit-text-only"));
@@ -127,6 +238,25 @@ public final class NativeAuditInstrumentation extends NativeSmokeInstrumentation
         require(control.get("/api/fixture/counters").optInt("terminals")==previousSessions,"Leaving a console closes its server session");
         checks.add(vps?"native_vps_console_opens_sends_closes":"native_router_console_opens_sends_closes");
     }
+    private void checkAutomaticSshPassword()throws Exception {
+        control.get("/api/fixture/password-next");
+        openRouterTool("SSH-терминал");waitFor("SSH password controls",10000,()->enabledText("Подключить SSH"));
+        require(editorWithHint("Пароль root")==null && !hasText("Отправить ↵"),"Terminal content hidden before connection");
+        clickText("Подключить SSH");
+        waitFor("SSH password prompt",10000,()->containsText("password:"));
+        EditText secret=editorWithHint("Пароль root");require(secret!=null,"SSH credential editor");
+        runOnMainSync(()->{secret.setText("fixture-ssh-secret");for(android.view.View v:views())if(v instanceof android.widget.Switch && ((android.widget.Switch)v).getText().toString().startsWith("Запомнить пароль"))((android.widget.Switch)v).setChecked(true);});
+        clickText("Отправить пароль SSH");
+        waitFor("saved password authenticates only on SSH password prompt",12000,()->containsText("Fixture authenticated SSH"));
+        require(!containsText("fixture-ssh-secret"),"Password never appears in terminal output");
+        backToMain();openRouterTool("SSH-терминал");
+        waitFor("saved credential ready",10000,()->enabledText("Подключить SSH"));clickText("Подключить SSH");
+        waitFor("saved credential restored",10000,()->onUi(()->{EditText e=editorWithHintOnUi("Пароль root");return e!=null&&e.getText().toString().equals("fixture-ssh-secret");}));
+        clickText("Забыть пароль этого роутера");
+        require(new SshCredentialStore(getTargetContext()).load(fixture,USERNAME,"main").isEmpty(),"Forget clears the selected router secret");
+        backToMain();checks.add("saved_ssh_password_answers_prompt_and_can_be_forgotten");
+    }
+
     private void checkWol()throws Exception{
         openRouterTool("Wake-on-LAN");waitFor("WOL ready",10000,()->enabledText("Разбудить устройство"));
         EditText mac=editorWithHint("AA:BB:CC");require(mac!=null,"MAC address editor");
@@ -246,6 +376,7 @@ public final class NativeAuditInstrumentation extends NativeSmokeInstrumentation
     private void checkBackups()throws Exception{
         openTool("ru.owrthub.app.NativeBackupActivity","Резервные копии");
         waitFor("backup owner permission",10000,()->enabledText("Сохранить резервную копию"));
+        int restoreBaseline=control.get("/api/fixture/counters").optInt("restores");
         Uri backup=document("backup.tar.gz");documentResult(Intent.ACTION_CREATE_DOCUMENT,backup,()->clickText("Сохранить резервную копию"));
         waitFor("export result",12000,()->containsText("Резервная копия сохранена"));
         try(InputStream stream=getContext().getContentResolver().openInputStream(backup);GZIPInputStream gzip=new GZIPInputStream(stream)){
@@ -255,7 +386,7 @@ public final class NativeAuditInstrumentation extends NativeSmokeInstrumentation
         Uri corrupt=document("corrupt.tar.gz");try(OutputStream out=getContext().getContentResolver().openOutputStream(corrupt,"wt")){out.write(new byte[]{31,(byte)139,8,0});}
         documentResult(Intent.ACTION_OPEN_DOCUMENT,corrupt,()->clickText("Выбрать архив для восстановления"));acceptConfirmationIfPresent();
         waitFor("corrupt import rejected",10000,()->containsText("повреждён"));
-        require(control.get("/api/fixture/counters").optInt("restores")==0,"Corrupt gzip is rejected before any restore request");
+        require(control.get("/api/fixture/counters").optInt("restores")==restoreBaseline,"Corrupt gzip is rejected before any restore request");
         checks.add("corrupt_backup_is_rejected_before_server_restore");
         documentResult(Intent.ACTION_OPEN_DOCUMENT,backup,()->clickText("Выбрать архив для восстановления"));acceptConfirmationIfPresent();
         waitFor("restore confirmed",12000,()->containsText("Hub подтвердил восстановление"));

@@ -171,7 +171,9 @@ owrt-remote status
 
 ### Android-приложение OWRT Hub
 
-В `main` добавлен нативный Android-клиент **0.2.1-v123** для Android 8.0+:
+[Скачать Android APK 0.2.4-v123](https://github.com/kzolotarev95/luci-app-owrt-remote/raw/refs/heads/main/android/apk/OWRT-Hub-Android-0.2.4-v123.apk) · [SHA256](android/apk/SHA256SUMS)
+
+В `main` добавлен нативный Android-клиент **0.2.4-v123** для Android 8.0+:
 вход с капчей и 2FA, роутеры, управление Xray через Heartbeat, журналы,
 консоли, настройки и резервные копии. LuCI и Tachyon открываются во встроенном
 браузере инструментов.

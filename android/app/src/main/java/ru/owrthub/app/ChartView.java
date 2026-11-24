@@ -100,6 +100,12 @@ public final class ChartView extends View {
     setData(observations, end - DAY_MILLIS, end);
   }
 
+  void copyObservations(ChartView source) {
+    setData(new ArrayList<>(source.points), source.periodStart, source.periodEnd);
+    setExpectedIntervalMillis(source.expectedIntervalMillis);
+    setGapAfterMillis(source.gapAfterMillis);
+  }
+
   public void setAccent(int color) {
     accent = color;
     invalidate();

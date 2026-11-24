@@ -191,17 +191,55 @@ public final class HubApiClient {
     return request("GET", apiPath, null);
   }
 
+  public byte[] noteImage(String path) throws IOException {
+    URI target = resolveApiPath(hub, path);
+    if (!target.getPath().matches("/api/mobile/v1/router/[^/]+/notes-media/[^/]+/[^/]+"))
+      throw new IOException("Недопустимый путь изображения");
+    synchronizeSession();
+    AuthSnapshot auth = authSnapshot();
+    HttpURLConnection connection = (HttpURLConnection) target.toURL().openConnection();
+    try {
+      connection.setInstanceFollowRedirects(false);
+      connection.setConnectTimeout(15000);
+      connection.setReadTimeout(20000);
+      connection.setRequestProperty("Cookie", auth.cookie);
+      connection.setRequestProperty("Accept", "image/*");
+      connection.setRequestProperty("Accept-Encoding", "identity");
+      if (connection.getResponseCode() != 200)
+        throw new IOException("Изображение недоступно. Обновите заметки и проверьте доступ.");
+      String type = connection.getContentType();
+      if (type == null || !type.startsWith("image/"))
+        throw new IOException("Hub вернул файл другого типа");
+      ByteArrayOutputStream data = new ByteArrayOutputStream();
+      try (InputStream input = connection.getInputStream()) {
+        byte[] buffer = new byte[8192];
+        int n;
+        while ((n = input.read(buffer)) != -1) {
+          if (data.size() + n > 8 * 1024 * 1024)
+            throw new IOException("Изображение слишком большое");
+          data.write(buffer, 0, n);
+        }
+      }
+      ensureCurrentSession(auth);
+      return data.toByteArray();
+    } finally {
+      connection.disconnect();
+    }
+  }
+
   public JSONObject post(String apiPath, JSONObject body) throws IOException {
     resolveApiPath(hub, apiPath);
     if (!apiPath.equals(MOBILE_BASE + "/login")) {
       String intendedSession = getCookieHeader();
       synchronizeSession();
-      if (!intendedSession.equals(getCookieHeader())) throw new AuthRequiredException("session_changed");
+      if (!intendedSession.equals(getCookieHeader()))
+        throw new AuthRequiredException("session_changed");
       // A Hub restart rotates operation CSRF tokens. Refresh before, never replay after,
       // a mutation; also do not submit an old screen's command under a different account.
       if (hasSession()) {
         session();
-        if (!intendedSession.equals(getCookieHeader())) throw new AuthRequiredException("session_changed");
+        if (!intendedSession.equals(getCookieHeader()))
+          throw new AuthRequiredException("session_changed");
       }
     }
     return request("POST", apiPath, body == null ? new JSONObject() : body);
@@ -244,7 +282,8 @@ public final class HubApiClient {
           connection = (HttpURLConnection) opened;
           connection.setInstanceFollowRedirects(false);
           connection.setConnectTimeout(15000);
-          connection.setReadTimeout(20000);
+          connection.setReadTimeout(
+              current.getPath().equals("/api/notifications/wait") ? 35000 : 20000);
           connection.setUseCaches(false);
           connection.setRequestMethod(method);
           connection.setRequestProperty("Accept", "application/json");

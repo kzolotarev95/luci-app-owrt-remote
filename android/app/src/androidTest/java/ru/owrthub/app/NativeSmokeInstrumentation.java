@@ -54,6 +54,7 @@ public class NativeSmokeInstrumentation extends Instrumentation {
 
     @Override public void onStart() {
         Bundle result = new Bundle();
+        HubNotifications.prefs(getTargetContext()).edit().putBoolean("offered",true).putBoolean("enabled",false).commit();
         try {
             require(getUiAutomation().setRotation(UiAutomation.ROTATION_FREEZE_0), "Set portrait fixture orientation");
             AccessibilityServiceInfo automation = getUiAutomation().getServiceInfo();
@@ -68,6 +69,10 @@ public class NativeSmokeInstrumentation extends Instrumentation {
             require(cleared.await(5, TimeUnit.SECONDS), "Clear browser cookies");
             launch(false);
             waitFor("connection form", 10000, () -> shown("hub_host"));
+            require(onUi(()->editorWithHintOnUi("https://hub.example.com").getText().length()==0),"Connection address starts empty");
+            require(!hasText("Нативное приложение"),"No native app promotional block");
+            assertCenteredFields();
+            checks.add("empty_connection_form_without_preset_server");
             fill("hub_host", "http://198.51.100.1");
             clickId("hub_connect");
             waitFor("public HTTP rejection", 5000, () -> containsText("HTTPS"));
@@ -82,6 +87,8 @@ public class NativeSmokeInstrumentation extends Instrumentation {
             require(!shown("hub_otp"), "Owner OTP is initially hidden before the username matches");
             fill("hub_user", USERNAME);
             waitFor("owner OTP field", 5000, () -> shown("hub_otp"));
+            assertCenteredFields();
+            checks.add("login_and_captcha_fields_centered");
             capture("native-login");
             assertNative("login");
             fillLogin("0000");
@@ -110,6 +117,8 @@ public class NativeSmokeInstrumentation extends Instrumentation {
             require(!stored.contains(PASSWORD) && !stored.contains(saved.cookie) && !stored.contains(USERNAME),
                     "Saved credentials and session metadata remain encrypted");
             checks.add("native_login_encrypted_session_without_webview");
+            require(hasText("Адрес скрыт") && !hasText("127.0.0.1"),"Header hides server by default");
+            checks.add("hub_address_hidden_by_default");
             capture("native-overview");
             checkLandscapeOverview();
 
@@ -141,8 +150,15 @@ public class NativeSmokeInstrumentation extends Instrumentation {
             clickText("Домашний роутер");
             waitFor("router details", 10000, () -> hasText("Remote управление Xray"));
             assertNative("router detail");
+            assertCenteredRouter();
             checks.add("native_selected_router_detail");
             capture("native-router-detail");
+            clickText("Роутеры");clickText("Дача");
+            waitFor("offline details",8000,()->containsText("Нет связи с агентом"));
+            assertCenteredRouter();capture("native-router-offline");
+            clickText("Роутеры");clickText("Домашний роутер");
+            waitFor("online details again",8000,()->hasText("Remote управление Xray"));
+            checks.add("online_offline_hero_and_equal_centered_stat_columns");
 
             openRouterTool("Remote управление Xray");
             waitFor("native Xray controls", 15000, () -> enabledText("Перезапустить Xray"));
@@ -170,6 +186,7 @@ public class NativeSmokeInstrumentation extends Instrumentation {
 
             clickText("Настройки");
             waitFor("native settings", 8000, () -> hasText("Оформление"));
+            assertCompactOwner();
             capture("native-settings");
             openSettingsTool("Активные сессии");
             waitFor("current native session data", 10000, () -> hasText("Android fixture") && hasText("Текущая сессия"));
@@ -235,6 +252,7 @@ public class NativeSmokeInstrumentation extends Instrumentation {
             observations.add(new ChartView.Point(60000, 2, 4));
             observations.add(new ChartView.Point(180000, 2, 4));
             chart.setData(observations, 0, 240000);
+            require(chart.getContentDescription().toString().contains("Доступность роутеров"), "Chart accessibility and labels use correct Russian encoding");
             chart.setExpectedIntervalMillis(60000);
             chart.setGapAfterMillis(90000);
             Bitmap gap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
@@ -421,6 +439,46 @@ public class NativeSmokeInstrumentation extends Instrumentation {
         });
     }
     protected String editorText(String id) { return onUi(() -> ((EditText) activity.findViewById(resourceId(id))).getText().toString()); }
+    protected void assertCenteredFields() {
+        onUi(()->{
+            for(View view:views())if(view instanceof EditText && view.isShown())
+                require((((EditText)view).getGravity() & android.view.Gravity.HORIZONTAL_GRAVITY_MASK)==android.view.Gravity.CENTER_HORIZONTAL,"Login hints and entered data are centered");
+            return null;
+        });
+    }
+    protected void assertCenteredRouter() {
+        onUi(()->{
+            android.widget.LinearLayout hero=null,stats=null;
+            for(View view:views()) {
+                if("router-hero".equals(view.getTag()))hero=(android.widget.LinearLayout)view;
+                if("router-stats".equals(view.getTag()))stats=(android.widget.LinearLayout)view;
+            }
+            require(hero!=null && stats!=null,"Router detail cards present");
+            require((hero.getGravity() & android.view.Gravity.HORIZONTAL_GRAVITY_MASK)==android.view.Gravity.CENTER_HORIZONTAL,"Heartbeat chip and icon centered");
+            for(int n=0;n<stats.getChildCount();n++)if(stats.getChildAt(n) instanceof android.widget.LinearLayout){
+                android.widget.LinearLayout row=(android.widget.LinearLayout)stats.getChildAt(n);
+                if(row.getChildCount()!=2)continue;
+                require(Math.abs(row.getChildAt(0).getWidth()-row.getChildAt(1).getWidth())<=1,"Device stat columns have equal width");
+                for(int j=0;j<2;j++)require((((TextView)row.getChildAt(j)).getGravity() & android.view.Gravity.HORIZONTAL_GRAVITY_MASK)==android.view.Gravity.CENTER_HORIZONTAL,"Device labels and values centered");
+            }
+            return null;
+        });
+    }
+    protected void assertCompactOwner() {
+        onUi(()->{
+            android.widget.LinearLayout card=null;boolean crown=false;
+            for(View view:views()) {
+                if("account-card".equals(view.getTag()))card=(android.widget.LinearLayout)view;
+                if("Владелец Hub · золотая корона".contentEquals(view.getContentDescription()==null?"":view.getContentDescription()))crown=true;
+            }
+            require(card!=null && crown,"Owner card displays gold crown");
+            require((card.getGravity() & android.view.Gravity.HORIZONTAL_GRAVITY_MASK)==android.view.Gravity.CENTER_HORIZONTAL,"Compact owner contents centered");
+            for(int i=0;i<card.getChildCount();i++)if(card.getChildAt(i) instanceof TextView)
+                require(((TextView)card.getChildAt(i)).getTextSize()/getTargetContext().getResources().getDisplayMetrics().scaledDensity<=15.1f,"Compact owner typography");
+            return null;
+        });
+        checks.add("compact_centered_owner_card_with_gold_crown");
+    }
     protected void fillSearch(String value) {
         EditText editor = editorWithHint("поиск");
         require(editor != null, "Router search editor");

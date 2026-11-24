@@ -4,6 +4,7 @@ The Hub calls dispatch_get/dispatch_post before its HTML authentication guard.
 This module does not grant access to any existing router or owner-only API.
 """
 
+import base64
 import hashlib
 import hmac
 import json
@@ -13,6 +14,7 @@ import sys
 import urllib.parse
 
 
+MOBILE_API_REVISION = 4
 BASE = "/api/mobile/v1"
 CSRF_HEADER = "X-Mobile-CSRF"
 MAX_LOGIN_BODY = 8192
@@ -200,6 +202,7 @@ def _notes(handler, hub, encoded_router_id, write=False):
     if not handler.require_router_access(router_id, "G" if write else "A", json_mode=True):
         return
     text = None
+    uploads = []
     if write:
         if not _same_origin(handler):
             return
@@ -210,7 +213,7 @@ def _notes(handler, hub, encoded_router_id, write=False):
         content_type = str(handler.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
         length = str(handler.headers.get("Content-Length") or "")
         if (handler.headers.get("Transfer-Encoding") or not length.isascii() or not length.isdigit()
-                or len(length) > 5 or not 0 < int(length) <= 16384 or content_type != "application/json"):
+                or len(length) > 7 or not 0 < int(length) <= 3 * 1024 * 1024 or content_type != "application/json"):
             _error(handler, 400, "invalid_request", "Expected a small JSON note request")
             return
         try:
@@ -218,10 +221,33 @@ def _notes(handler, hub, encoded_router_id, write=False):
             if not isinstance(payload, dict):
                 raise ValueError("Expected an object")
             text = payload.get("text")
-            if not isinstance(text, str) or not text.strip() or len(text) > hub.ROUTER_NOTE_TEXT_MAX_CHARS:
+            if not isinstance(text, str) or len(text) > hub.ROUTER_NOTE_TEXT_MAX_CHARS:
                 raise ValueError("Invalid note text")
+            images = payload.get('images', [])
+            if not isinstance(images, list) or len(images) > 4:
+                raise ValueError('Up to four images allowed')
+            total = 0
+            for image in images:
+                if not isinstance(image, dict) or image.get('content_type') not in hub.ROUTER_NOTE_IMAGE_TYPES:
+                    raise ValueError('Invalid image type')
+                encoded = image.get('data', '')
+                if not isinstance(encoded, str) or len(encoded) > 2800000:
+                    raise ValueError('Invalid image data')
+                raw = base64.b64decode(encoded, validate=True)
+                total += len(raw)
+                if not raw or total > 2 * 1024 * 1024:
+                    raise ValueError('Images exceed 2 MiB')
+                valid = ((image['content_type'] == 'image/jpeg' and raw.startswith(b'\xff\xd8\xff'))
+                    or (image['content_type'] == 'image/png' and raw.startswith(b'\x89PNG\r\n\x1a\n'))
+                    or (image['content_type'] == 'image/gif' and raw.startswith((b'GIF87a', b'GIF89a')))
+                    or (image['content_type'] == 'image/webp' and raw[:4] == b'RIFF' and raw[8:12] == b'WEBP'))
+                if not valid:
+                    raise ValueError('Image signature does not match type')
+                uploads.append({'body': raw, 'filename': str(image.get('name') or 'photo')[:160], 'content_type': image['content_type']})
+            if not text.strip() and not uploads:
+                raise ValueError('Text or photo required')
         except (UnicodeDecodeError, ValueError):
-            _error(handler, 400, "invalid_note", "Note text is required and must contain at most 2000 characters")
+            _error(handler, 400, "invalid_note", "Use text up to 2000 characters or up to four images, 2 MiB total")
             return
     try:
         with handler.app.conn() as conn:
@@ -230,15 +256,61 @@ def _notes(handler, hub, encoded_router_id, write=False):
                 _error(handler, 404, "router_not_found", "Router not found")
                 return
             if write:
-                row = hub.append_router_note(conn, router_id, text)
+                row = hub.append_router_note(conn, router_id, text, image_uploads=uploads)
             router = hub.router_with_access(hub.row_to_router(row), profile)
         handler.send_json(200, {
             "ok": True, "router_id": router_id,
             "notes_entries": router.get("notes_entries", []),
+            "supports_images": True, "image_max_files": 4, "image_total_max_bytes": 2 * 1024 * 1024,
             "can_append": bool((router.get("permissions") or {}).get("notes_edit")),
+            "can_delete": bool((router.get("permissions") or {}).get("notes_delete")),
         })
     except ValueError:
         _error(handler, 400, "invalid_note", "Could not append this note")
+
+
+def _delete_note(handler, hub, encoded_router_id):
+    session, profile = _current(handler)
+    if not session:
+        return
+    if not profile.get('is_owner'):
+        _error(handler, 403, 'owner_required', 'Удаление заметок доступно только владельцу Hub')
+        return
+    if not _same_origin(handler):
+        return
+    supplied = handler.headers.get(CSRF_HEADER, '').encode('utf-8')
+    if not secrets.compare_digest(supplied, _csrf(handler, session).encode('ascii')):
+        _error(handler, 403, 'csrf_failed', 'Refresh the Hub session and retry')
+        return
+    length = handler.headers.get('Content-Length', '')
+    if (handler.headers.get('Transfer-Encoding') or not length.isascii() or not length.isdigit()
+            or len(length)>4 or not 0<int(length)<=4096
+            or handler.headers.get('Content-Type','').split(';',1)[0].strip().lower()!='application/json'):
+        _error(handler,400,'invalid_request','Expected a small JSON request')
+        return
+    try:
+        router_id=urllib.parse.unquote(encoded_router_id)
+        if hub.clean_router_id(router_id)!=router_id:
+            raise ValueError('Invalid router')
+        payload=json.loads(handler.read_body().decode('utf-8'))
+        note_id=payload.get('note_id') if isinstance(payload,dict) else None
+        if not isinstance(note_id,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',note_id):
+            raise ValueError('Invalid note id')
+        with handler.app.conn() as conn:
+            row=hub.get_active_router(conn,router_id)
+            if not row:
+                _error(handler,404,'router_not_found','Router not found')
+                return
+            entries=hub.parse_router_notes_entries(row['notes'] or '', fallback_ts=row['updated_at'] or row['created_at'] or 0)
+            if not any(entry.get('id')==note_id for entry in entries):
+                _error(handler,404,'note_not_found','Заметка не найдена. Обновите список.')
+                return
+            row=hub.delete_router_note_entry(conn,router_id,note_id)
+            router=hub.router_with_access(hub.row_to_router(row),profile)
+        handler.send_json(200,{'ok':True,'router_id':router_id,'notes_entries':router.get('notes_entries',[]),
+                              'can_append':True,'can_delete':True,'supports_images':True,'deleted_note_id':note_id})
+    except (UnicodeDecodeError,ValueError):
+        _error(handler,400,'invalid_note','Не удалось удалить заметку. Проверьте выбранную запись.')
 
 
 def _config(handler, hub, encoded_router_id):
@@ -266,10 +338,54 @@ def _config(handler, hub, encoded_router_id):
     handler.send_json(200, {"ok": True, "router_id": router_id, "config": config})
 
 
+def _router_defaults(handler, hub):
+    session, profile = _current(handler)
+    if not session or not handler.require_add_router(json_mode=True):
+        return
+    with handler.app.conn() as conn:
+        rows = [dict(row) for row in conn.execute("select * from routers where coalesce(deleted_at, 0) = 0").fetchall()]
+        ids = {str(row['id']) for row in rows}
+        used = {int(row.get(key) or 0) for row in rows for key in ('entry_port', 'ssh_entry_port', 'tachyon_entry_port')}
+        router_id = 'main'
+        if router_id in ids:
+            number = 2
+            while 'node-' + str(number) in ids:
+                number += 1
+            router_id = 'node-' + str(number)
+        port = 18080
+        while port in used or port + 1000 in used:
+            port += 10
+        if port + 1000 > 65535:
+            _error(handler, 409, 'ports_exhausted', 'No free router ports available')
+            return
+        visible = handler.visible_routers(conn, profile)
+        host = next((row.get('vps_host') for row in visible if row.get('vps_host')), '')
+        host = host or hub.vps_host_name(handler.app.public_url or handler.request_origin())
+        groups = hub.list_router_groups(conn)
+        if not profile.get('is_owner'):
+            visible_groups = {row.get('group_id') for row in visible}
+            groups = [group for group in groups if group['id'] in visible_groups]
+    handler.send_json(200, {'ok': True, 'defaults': {
+        'id': router_id, 'name': 'Главный роутер' if router_id == 'main' else 'Роутер ' + router_id,
+        'role': 'main' if router_id == 'main' else 'node', 'entry_port': port,
+        'ssh_entry_port': port + 1000, 'vps_host': host, 'group_id': '',
+        'public_url': handler.request_origin(),
+    }, 'groups': groups})
+
+
 def dispatch_get(handler, path):
     """Return True after responding to an exact mobile API path."""
     if path != BASE and not path.startswith(BASE + "/"):
         return False
+    media = re.fullmatch(re.escape(BASE) + r"/router/([^/]+)/notes-media/([^/]+)/([^/]+)", path)
+    if media:
+        session, _ = _current(handler)
+        if session and handler.require_router_access(urllib.parse.unquote(media[1]), 'A', json_mode=True):
+            handler.router_note_media_page('/router/' + media[1] + '/notes-media/' + media[2] + '/' + media[3])
+        return True
+    if path == BASE + "/router-defaults":
+        _router_defaults(handler, _hub(handler))
+        return True
     config_match = CONFIG_PATH.fullmatch(path)
     if config_match:
         _config(handler, _hub(handler), config_match[1])
@@ -287,7 +403,7 @@ def dispatch_get(handler, path):
         _, captcha = _captcha(hub)
         native = captcha.get("effective_mode") == hub.CAPTCHA_MODE_DIGITS
         handler.send_json(200, {
-            "ok": True, "api_version": 1, "hub_version": hub.HUB_LOADED_VERSION,
+            "ok": True, "api_version": 1, "api_revision": MOBILE_API_REVISION, "hub_version": hub.HUB_LOADED_VERSION,
             "native_password_login": native, "browser_login_url": "/login", "endpoints": dict(ENDPOINTS),
         })
     elif path == ENDPOINTS["challenge"]:
@@ -314,6 +430,10 @@ def dispatch_post(handler, path):
         return False
     if CONFIG_PATH.fullmatch(path):
         _error(handler, 405, "method_not_allowed", "Router configuration is read-only")
+        return True
+    delete_match=re.fullmatch(re.escape(BASE)+r"/router/([^/]+)/notes/delete",path)
+    if delete_match:
+        _delete_note(handler,_hub(handler),delete_match[1])
         return True
     note_match = NOTE_PATH.fullmatch(path)
     if note_match:

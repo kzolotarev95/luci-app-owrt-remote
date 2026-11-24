@@ -332,7 +332,12 @@ public final class NativeSettingsActivity extends Activity {
             this::renderUsers);
         break;
       case "addRouter":
-        renderAddRouter();
+        request(
+            () -> api.get(HubApiClient.MOBILE_BASE + "/router-defaults"),
+            data -> {
+              snapshot = data;
+              renderAddRouter();
+            });
         break;
       case "donate":
         renderDonate();
@@ -375,11 +380,16 @@ public final class NativeSettingsActivity extends Activity {
                   }
                 } else {
                   showError(
-                      problem instanceof HubApiClient.AuthRequiredException
-                          ? "Сессия завершилась. Вернитесь на главный экран и войдите снова."
-                          : problem instanceof HubApiClient.ApiException
-                              ? problem.getMessage()
-                              : "Не удалось связаться с Hub. Проверьте сеть и сертификат.");
+                      tool.equals("addRouter")
+                              && problem instanceof HubApiClient.ApiException
+                              && ((HubApiClient.ApiException) problem).statusCode == 404
+                          ? "Обновите панель Hub: в этой сборке сервера ещё нет автоматических"
+                              + " параметров роутера."
+                          : problem instanceof HubApiClient.AuthRequiredException
+                              ? "Сессия завершилась. Вернитесь на главный экран и войдите снова."
+                              : problem instanceof HubApiClient.ApiException
+                                  ? problem.getMessage()
+                                  : "Не удалось связаться с Hub. Проверьте сеть и сертификат.");
                   if ((tool.equals("hubUpdate") || tool.equals("routerUpdates"))
                       && !(problem instanceof HubApiClient.AuthRequiredException)
                       && !(problem instanceof HubApiClient.PermissionException))
@@ -480,6 +490,22 @@ public final class NativeSettingsActivity extends Activity {
 
   private void renderNotifications(JSONObject data) {
     reset();
+    section("Уведомления на телефоне");
+    body(HubNotifications.prefs(this).getString("status", "Фоновые уведомления выключены"));
+    action(
+        "Включить уведомления Android",
+        NativeUi.Style.PRIMARY,
+        () -> HubNotifications.enable(this));
+    action(
+        "Выключить фоновые уведомления",
+        NativeUi.Style.QUIET,
+        () -> {
+          HubNotifications.disable(this);
+          refresh();
+        });
+    body(
+        "Фоновое подключение показывает события Hub без открытого экрана. После принудительной"
+            + " остановки Android нужно снова открыть приложение.");
     JSONArray items = data.optJSONArray("notifications");
     if (items == null || items.length() == 0) body("Уведомлений пока нет.");
     for (int i = 0; items != null && i < Math.min(items.length(), 80); i++) {
@@ -960,6 +986,8 @@ public final class NativeSettingsActivity extends Activity {
   private void renderHubUpdate(JSONObject data) {
     snapshot = data;
     reset();
+    if (data.optBoolean("available"))
+      section("Доступно обновление Hub " + data.optString("remote_version"));
     body(
         "Установлена "
             + data.optString("current_version", "—")
@@ -1172,13 +1200,44 @@ public final class NativeSettingsActivity extends Activity {
     body(
         "Создайте запись роутера в Hub. Затем настройте агент на самом роутере для подключения к"
             + " VPS.");
-    EditText id = field("ID роутера", "", false);
-    EditText name = field("Название", "", false);
-    EditText vpsHost = field("Адрес VPS для туннеля", api.getHub().getHost(), false);
-    EditText port = field("Порт Web-туннеля", "", false);
+    JSONObject defaults = snapshot == null ? new JSONObject() : snapshot.optJSONObject("defaults");
+    if (defaults == null) {
+      showError("Обновите Hub для автоматического добавления роутеров.");
+      return;
+    }
+    EditText id = field("ID роутера", defaults.optString("id"), false);
+    EditText name = field("Название", defaults.optString("name"), false);
+    EditText vpsHost =
+        field(
+            "Адрес VPS для туннеля", defaults.optString("vps_host", api.getHub().getHost()), false);
+    EditText port = field("Порт Web-туннеля", defaults.optString("entry_port"), false);
     port.setInputType(InputType.TYPE_CLASS_NUMBER);
-    EditText ssh = field("Порт SSH-туннеля", "", false);
+    EditText ssh = field("Порт SSH-туннеля", defaults.optString("ssh_entry_port"), false);
     ssh.setInputType(InputType.TYPE_CLASS_NUMBER);
+    android.widget.Spinner role = new android.widget.Spinner(this);
+    role.setAdapter(
+        new android.widget.ArrayAdapter<String>(
+            this, android.R.layout.simple_spinner_dropdown_item, new String[] {"node", "main"}));
+    role.setSelection(defaults.optString("role").equals("main") ? 1 : 0);
+    add(role);
+    JSONArray options = snapshot.optJSONArray("groups");
+    java.util.List<String> groupNames = new ArrayList<>(), groupIds = new ArrayList<>();
+    groupNames.add("Без группы");
+    groupIds.add("");
+    if (options != null)
+      for (int i = 0; i < options.length(); i++) {
+        JSONObject g = options.optJSONObject(i);
+        if (g != null) {
+          groupNames.add(g.optString("name"));
+          groupIds.add(g.optString("id"));
+        }
+      }
+    android.widget.Spinner group = new android.widget.Spinner(this);
+    group.setAdapter(
+        new android.widget.ArrayAdapter<String>(
+            this, android.R.layout.simple_spinner_dropdown_item, groupNames));
+    add(group);
+    body("ID, свободные порты и адрес получены от Hub. Можно изменить их перед сохранением.");
     action(
         "Добавить роутер",
         NativeUi.Style.PRIMARY,
@@ -1214,7 +1273,9 @@ public final class NativeSettingsActivity extends Activity {
                   "ssh_entry_port",
                   sshEntry,
                   "role",
-                  "node",
+                  role.getSelectedItem().toString(),
+                  "group_id",
+                  groupIds.get(group.getSelectedItemPosition()),
                   "vps_host",
                   value(vpsHost).trim(),
                   "public_url",
@@ -1230,9 +1291,28 @@ public final class NativeSettingsActivity extends Activity {
                         + "\nНастройте агент роутера для связи с "
                         + api.getHub().getHost()
                         + ".");
-                action("Вернуться к роутерам", NativeUi.Style.PRIMARY, this::finish);
+                action(
+                    "Получить настройки OpenWrt",
+                    NativeUi.Style.PRIMARY,
+                    () -> {
+                      JSONObject created = result.optJSONObject("router");
+                      if (created == null) created = json("id", routerId, "name", value(name));
+                      startActivity(
+                          new Intent(this, NativeRouterActivity.class)
+                              .putExtra(
+                                  NativeRouterActivity.EXTRA_HUB_ORIGIN, api.getHub().toString())
+                              .putExtra(NativeRouterActivity.EXTRA_ROUTER_JSON, created.toString())
+                              .putExtra(NativeRouterActivity.EXTRA_TOOL, "config"));
+                    });
+                action("Вернуться к роутерам", NativeUi.Style.SECONDARY, this::finish);
               });
         });
+  }
+
+  @Override
+  public void onRequestPermissionsResult(int request, String[] permissions, int[] grants) {
+    super.onRequestPermissionsResult(request, permissions, grants);
+    HubNotifications.permissionResult(this, request, grants);
   }
 
   private void renderAbout(JSONObject data) {
@@ -1255,17 +1335,58 @@ public final class NativeSettingsActivity extends Activity {
 
   private void renderDonate() {
     reset();
-    body(
-        "Поддержка помогает развивать OWRT Hub. Выберите ссылку, чтобы открыть платёжную страницу в"
-            + " браузере.");
-    action(
-        "Поддержать разработку",
-        NativeUi.Style.PRIMARY,
-        () -> external("https://donate.zks95.ugnss.ru"));
-    action(
-        "Резервная ссылка",
-        NativeUi.Style.SECONDARY,
-        () -> external("https://donate.zks95.ugnss.ru:8443"));
+    LinearLayout card = ui.card();
+    card.setGravity(android.view.Gravity.CENTER);
+    card.addView(ui.iconBadge("crown", ui.AMBER));
+    card.addView(ui.spacer(18));
+    card.addView(ui.text("Буду искренне благодарен за любой донат!", 18, true));
+    card.addView(ui.spacer(12));
+    card.addView(
+        ui.body(
+            "Совершенно не важно, какая сумма — важна ваша поддержка. Даже небольшой вклад помогает"
+                + " развивать проект и двигаться дальше."));
+    card.addView(ui.spacer(12));
+    card.addView(ui.body("Спасибо каждому, кто рядом! Всех обнял! 🤝🚀"));
+    card.addView(ui.spacer(18));
+    card.addView(
+        ui.button(
+            "Основная ссылка\ndonate.zks95.ugnss.ru",
+            NativeUi.Style.PRIMARY,
+            () -> external("https://donate.zks95.ugnss.ru")));
+    card.addView(ui.spacer(10));
+    card.addView(
+        ui.button(
+            "Резервная ссылка\ndonate.zks95.ugnss.ru:8443",
+            NativeUi.Style.SECONDARY,
+            () -> external("https://donate.zks95.ugnss.ru:8443")));
+    card.addView(ui.spacer(20));
+    card.addView(ui.compactDivider());
+    card.addView(ui.spacer(14));
+    String[] names = {"СБП", "СБЕР", "Альфа Банк", "ВТБ", "Т-БАНК"};
+    int[] marks = {
+      R.drawable.bank_sbp,
+      R.drawable.bank_sber,
+      R.drawable.bank_alfa,
+      R.drawable.bank_vtb,
+      R.drawable.bank_tbank
+    };
+    for (int start = 0; start < names.length; start += 3) {
+      LinearLayout row = ui.row();
+      row.setGravity(android.view.Gravity.CENTER);
+      for (int i = start; i < Math.min(start + 3, names.length); i++) {
+        LinearLayout brand = ui.column();
+        brand.setGravity(android.view.Gravity.CENTER);
+        brand.setPadding(ui.dp(5), ui.dp(6), ui.dp(5), ui.dp(6));
+        android.widget.ImageView mark = new android.widget.ImageView(this);
+        mark.setImageResource(marks[i]);
+        mark.setContentDescription(names[i]);
+        brand.addView(mark, new LinearLayout.LayoutParams(ui.dp(24), ui.dp(24)));
+        brand.addView(ui.text(names[i], 12, true));
+        row.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
+      }
+      card.addView(row);
+    }
+    add(card);
   }
 
   private void external(String url) {
