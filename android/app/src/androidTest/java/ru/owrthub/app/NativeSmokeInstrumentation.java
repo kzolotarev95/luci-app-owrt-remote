@@ -163,6 +163,11 @@ public class NativeSmokeInstrumentation extends Instrumentation {
             openRouterTool("Настройки Xray");
             waitFor("native Xray controls", 15000, () -> enabledText("Перезапустить Xray"));
             assertNative("Xray tool");
+            require(!enabledText("Запустить Xray"), "Start is disabled while Xray is running");
+            TextView stableStatus = onUi(() -> { for (View v : views()) if (v instanceof TextView && ((TextView)v).getText().toString().equals("Xray: запущен")) return (TextView)v; return null; });
+            SystemClock.sleep(3400);
+            require(onUi(() -> stableStatus != null && stableStatus.isAttachedToWindow()), "Polling keeps the Xray screen attached");
+            checks.add("running_xray_start_disabled_and_stable_status");
             clickText("Перезапустить Xray");
             acceptConfirmationIfPresent();
             waitFor("queued or running Xray command", 8000, () -> containsAnyText(
@@ -182,12 +187,46 @@ public class NativeSmokeInstrumentation extends Instrumentation {
 
             backToMain();
             waitFor("router detail after tool", 8000, () -> hasText("Настройки Xray"));
+            openRouterTool("Wake-on-LAN");
+            waitFor("WOL device list", 12000, () -> containsText("Найдено устройств: 1"));
+            onUi(() -> { for (View v : views()) if (v instanceof android.widget.Spinner) ((android.widget.Spinner)v).setSelection(1); return null; });
+            waitFor("WOL selected device", 5000, () -> enabledText("Разбудить"));
+            clickText("Разбудить");
+            waitFor("WOL result", 10000, () -> hasText("Пакет пробуждения отправлен"));
+            capture("native-wol-devices"); checks.add("wol_discovers_selects_and_wakes_device");
+            backToMain();
             checkNotesWhenAvailable();
 
             clickText("Настройки");
             waitFor("native settings", 8000, () -> hasText("Оформление"));
             assertCompactOwner();
             capture("native-settings");
+            clickText("Подключение");
+            waitFor("connection security label", 5000, () -> hasText("Сессия зашифрована в Android"));
+            require(onUi(() -> { for (View v : views()) if (v instanceof TextView && ((TextView)v).getText().toString().equals("Сессия зашифрована в Android")) {
+                View parent=(View)v.getParent(); return Math.abs((v.getLeft()+v.getRight())/2f-parent.getWidth()/2f)<3;
+              } return false; }), "Connection security label is centered");
+            sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK); waitForIdleSync();
+            checks.add("connection_security_label_centered");
+            openSettingsTool("Xray на VPS");
+            waitFor("VPS Xray controls", 10000, () -> enabledText("Обновить Xray CFG"));
+            clickText("Обновить Xray CFG"); acceptConfirmationIfPresent();
+            waitFor("VPS CFG result", 10000, () -> containsText("Конфигурация обновлена"));
+            clickText("Перезапустить Xray на VPS"); acceptConfirmationIfPresent();
+            waitFor("VPS restart result", 10000, () -> containsText("Xray на VPS перезапущен"));
+            capture("native-vps-xray"); checks.add("vps_xray_cfg_and_restart"); backToMain();
+            openSettingsTool("Обновить роутеры");
+            waitFor("router selection", 10000, () -> hasText("Обновить выбранные"));
+            clickText("Снять выбор");
+            onUi(() -> { for (View v : views()) if (v instanceof android.widget.CheckBox && ((android.widget.CheckBox)v).getText().toString().contains("Домашний")) ((android.widget.CheckBox)v).setChecked(true); return null; });
+            require(containsText("Выбрано 1 из 2"), "Router selection count");
+            capture("native-router-update-selection");
+            clickText("Обновить выбранные"); acceptConfirmationIfPresent();
+            waitFor("selected queue", 10000, () -> hasText("Остановить очередь"));
+            require(!hasText("Дача"), "Unselected router is not in queue results");
+            clickText("Остановить очередь"); acceptConfirmationIfPresent();
+            waitFor("cancelled selected queue", 10000, () -> hasText("Убрать результаты"));
+            checks.add("native_update_only_selected_router"); backToMain();
             openSettingsTool("Активные сессии");
             waitFor("current native session data", 10000, () -> hasText("Android fixture") && hasText("Текущая сессия"));
             assertNative("session settings");
@@ -201,6 +240,11 @@ public class NativeSmokeInstrumentation extends Instrumentation {
             checks.add("native_session_and_group_settings_show_server_data");
             clickText("Оформление");
             waitFor("theme options", 5000, () -> hasText("Зимний"));
+            clickText("Потоки");
+            require(getTargetContext().getSharedPreferences("native_design",0).getString("effect", "").equals("streams"), "Streams preference");
+            clickText("Снег");
+            require(getTargetContext().getSharedPreferences("native_design",0).getString("effect", "").equals("snow"), "Snow preference");
+            capture("native-snow-effect"); checks.add("native_streams_and_snow_effects");
             clickText("Графитовый");
             int dark = backgroundColor();
             clickText("Зимний");

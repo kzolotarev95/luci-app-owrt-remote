@@ -164,7 +164,7 @@ owrt-remote status
 
 ### Android-приложение OWRT Hub
 
-[Скачать Android APK 0.2.5-v124](https://github.com/kzolotarev95/luci-app-owrt-remote/raw/refs/heads/main/android/apk/OWRT-Hub-Android-0.2.5-v124.apk) 
+[Скачать Android APK 0.2.6-v124](https://github.com/kzolotarev95/luci-app-owrt-remote/raw/refs/heads/main/android/apk/OWRT-Hub-Android-0.2.6-v124.apk)
 
 
 <div align="center">

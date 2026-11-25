@@ -67,7 +67,7 @@ required = (
     "def router_update_cancel_script(task_id):",
     "def router_update_preflight_script():",
     "def router_reboot_launch_script(task_id, delay=3):",
-    "def start_reboot(self, password, request_id):",
+    "def start_reboot(self, password, request_id,",
     "rebootAll",
     "OWRT_UPDATE_NAME_TEXT=",
     "OWRT_UPDATE_OUTPUT_TEXT=",

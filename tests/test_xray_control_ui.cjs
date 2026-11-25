@@ -24,7 +24,7 @@ const url = 'http://127.0.0.1:9999/router/main/xray-control';
     for (const [width,height] of [[1280,900],[320,740],[390,844],[844,390]]) {
       const page = await browser.newPage({viewport:{width,height}});
       await page.clock.install({time:new Date(BASE*1000)});
-      const fixture = {now:BASE,history:[],reads:0,posts:[],inflight:0,maxInflight:0};
+      const fixture = {now:BASE,history:[],reads:0,posts:[],xray:"stopped",inflight:0,maxInflight:0};
       const errors=[];page.on('pageerror',error=>errors.push(error.message));
       await page.route('**/*', async route=>{
         const req=route.request();
@@ -37,7 +37,7 @@ const url = 'http://127.0.0.1:9999/router/main/xray-control';
               if(body.action==='clear_history')fixture.history=fixture.history.filter(item=>['queued','delivered','running'].includes(item.status));
               else fixture.history.unshift({id:body.request_id,action:body.action,status:'queued',result:'',created_at:fixture.now,delivered_at:0,completed_at:0});
             } else fixture.reads++;
-            await route.fulfill({json:{ok:true,name:'Роутер тест',online:true,xray:'running',supported:true,
+            await route.fulfill({json:{ok:true,name:'Роутер тест',online:true,xray:fixture.xray,supported:true,
               last_seen:fixture.now,server_time:fixture.now,heartbeat_interval:30,
               command_timeout_seconds:180,execution_timeout_seconds:45,history:fixture.history}});
           } finally {fixture.inflight--;}
@@ -58,10 +58,12 @@ const url = 'http://127.0.0.1:9999/router/main/xray-control';
         assert(await page.locator('#clearHistory').isDisabled(),'active-only journal cannot be erased');
         fixture.now+=12;
         fixture.history[0].status='succeeded';fixture.history[0].completed_at=fixture.now;
+        fixture.xray=action==='stop'?'stopped':'running';
         fixture.history[0].result='Configuration OK.\nXray запущен; процесс проверен.\n'+'длинная_строка_'.repeat(25);
         await page.clock.runFor(3000);
         await page.waitForFunction(()=>document.getElementById('resultTitle').textContent.startsWith('Успешно'));
         assert((await page.locator('#operationTimer').textContent()).includes('00:12'));
+        assert.equal(await page.locator('[data-action="start"]').isDisabled(),fixture.xray==='running');
         const completed=await page.locator('#operationTimer').textContent();
         await page.clock.runFor(1500);
         assert.equal(await page.locator('#operationTimer').textContent(),completed,'final duration stays fixed');

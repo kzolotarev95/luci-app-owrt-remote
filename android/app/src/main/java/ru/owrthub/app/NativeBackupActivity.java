@@ -208,7 +208,7 @@ public final class NativeBackupActivity extends Activity {
     status = ui.text("Проверка доступа…", 15, false);
     status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
     content.addView(status);
-    setContentView(root);
+    NativeEffects.install(this, root);
     root.requestApplyInsets();
     controls();
   }

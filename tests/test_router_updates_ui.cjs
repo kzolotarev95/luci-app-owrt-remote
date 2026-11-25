@@ -15,6 +15,7 @@ with tempfile.TemporaryDirectory() as state:
     hub=importlib.util.module_from_spec(spec);sys.modules[spec.name]=hub;spec.loader.exec_module(hub)
     out=Path('.test-output/router-updates')
     out.joinpath('updates.html').write_text(hub.router_updates_html('test-csrf'),encoding='utf-8')
+    out.joinpath('selection.html').write_bytes(hub.inject_hub_appearance('/router-updates/',hub.router_updates_html('test-csrf').encode('utf-8'),'text/html; charset=utf-8'))
     out.joinpath('dashboard.html').write_text(hub.dashboard_html([],'owner',auth_bootstrap={'username':'owner','is_owner':True}),encoding='utf-8')
     print(hub.RAW_REPO_BASE)
 `], {env:{...process.env,PYTHONIOENCODING:'utf-8'},encoding:'utf-8'}).trim();
@@ -55,12 +56,46 @@ const server = http.createServer((req,res)=>{
   if(url.pathname==='/api/auth/meta')return send(res,{username:'owner',is_owner:true,users:[],sessions:[],captcha:{mode:'digits'}});
   if(url.pathname.startsWith('/api/'))return send(res,{});
   res.setHeader('Content-Type','text/html; charset=utf-8');
-  res.end(fs.readFileSync(path.join(root,url.pathname==='/'?'dashboard.html':'updates.html')));
+  res.end(fs.readFileSync(path.join(root,url.pathname==='/'?'dashboard.html':url.pathname==='/router-updates-selection/'?'selection.html':'updates.html')));
 });
 (async()=>{
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const browser=await chromium.launch({headless:true,channel:'chrome'});
   try {
+    for(const width of [390,1280]) {
+      job=null;routers=['one','two','key','skip'].map((id,i)=>({id,name:'Роутер '+id,online:i!==3,last_seen:0,xray:'running'}));
+      const page=await browser.newPage({viewport:{width,height:900},isMobile:width<680,hasTouch:width<680});
+      await page.goto(`http://127.0.0.1:${server.address().port}/router-updates-selection/`);
+      await page.waitForFunction(()=>!document.getElementById('start').disabled);
+      const row=id=>page.locator('#routerSelection [data-router="'+id+'"]');
+      await page.locator('#selectNone').click();assert.equal(await page.locator('#start').isDisabled(),true);
+      await page.locator('#selectOnline').click();assert.equal(await row('skip').locator('input[type=checkbox]').isChecked(),false);
+      assert.equal(await page.locator('#selectionCount').textContent(),'Выбрано 3 из 4');
+      await row('one').locator('select').selectOption('individual');await row('one').locator('input[type=password]').fill('first-private');
+      await row('two').locator('select').selectOption('individual');
+      const before=starts.length;await page.locator('#start').click();assert.equal(starts.length,before);
+      assert.match(await page.locator('#status').textContent(),/Укажи SSH-пароль/);
+      await row('two').locator('input[type=password]').fill('second-private');
+      await row('key').locator('select').selectOption('key');await page.locator('#sshPassword').fill('shared-private');
+      await row('two').locator('input[type=password]').focus();
+      routers[0].online=false;routers.push({id:'new',name:'Новый',online:true,last_seen:0,xray:'running'});
+      await page.waitForFunction(()=>document.getElementById('selectionCount').textContent==='Выбрано 3 из 5');
+      assert.equal(await row('new').locator('input[type=checkbox]').isChecked(),false);
+      assert.equal(await row('two').locator('input[type=password]').evaluate(node=>document.activeElement===node),true);
+      assert.equal(await row('one').locator('input[type=password]').inputValue(),'first-private');
+      assert.equal(await row('two').locator('input[type=password]').inputValue(),'second-private');
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+      await page.screenshot({path:path.join(root,'selection-'+width+'.png'),fullPage:true});
+      await page.locator('#start').click();await page.waitForFunction(()=>document.getElementById('cancel').disabled===false);
+      assert.deepEqual(starts.at(-1).router_ids,['one','two','key']);
+      assert.deepEqual(starts.at(-1).ssh_passwords,{one:'first-private',two:'second-private',key:''});
+      assert.equal(starts.at(-1).ssh_password,'shared-private');
+      assert.equal(await row('one').locator('input[type=password]').inputValue(),'');
+      assert.equal(await row('two').locator('input[type=password]').inputValue(),'');
+      assert.equal(await row('one').locator('select').isDisabled(),true);
+      assert.equal(await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}).includes('private')),false);
+      await page.close();
+    }
     for(const mobile of [false,true]) {
       job=null;
       routers=[{id:'node-5',name:'АНТОН ВПН',online:true,last_seen:Math.floor(Date.now()/1000),xray:'running'}];
@@ -69,12 +104,13 @@ const server = http.createServer((req,res)=>{
       const base=`http://127.0.0.1:${server.address().port}`;
       await page.goto(base+'/router-updates/');
       await page.waitForFunction(()=>!document.getElementById('start').disabled);
-      assert.equal(await page.locator('.router strong').textContent(),'АНТОН ВПН');
-      assert.equal(await page.locator('.router small').textContent(),'ID: node-5');
+      assert.equal(await page.locator('.picker-device strong').textContent(),'АНТОН ВПН');
+      assert.equal(await page.locator('.picker-device small').textContent(),'node-5 · Онлайн');
+      assert.equal(await page.locator('#queueResults').isVisible(),false);
       assert.equal(await page.locator('#countTotal').textContent(),'1');
       assert.equal(await page.locator('#countSuccess').textContent(),'0');
       assert.equal(await page.locator('#queueOutcomePanel').isVisible(),false);
-      assert.equal(await page.locator('.live-badge').textContent(),'● Онлайн');
+      assert.equal(await page.locator('.picker-device small').getAttribute('class'),'ok');
       assert.equal(await page.locator('#command').inputValue(),'wget -O - "'+defaultRepo+'/install.sh?v=$(date +%s)" | sh');
       const command=mobile?'https://another.example/updates/router.sh?v=2&from=hub':'wget -O - "https://repo.example/install.sh?v=$(date +%s)" | sh';
       await page.locator('#command').fill(command);
@@ -185,12 +221,16 @@ const server = http.createServer((req,res)=>{
       await page.waitForFunction(()=>document.getElementById('status').textContent.includes('Можно запустить новую очередь'));
       assert.equal(job,null);
       assert.equal(starts.length,count,'Refresh must never execute an update');
-      assert.equal(await page.locator('.router').count(),2);
-      assert.equal(await page.locator('.router strong').first().textContent(),'АНТОН ВПН');
+      assert.equal(await page.locator('.picker-row').count(),2);
+      assert.equal(await page.locator('.picker-device strong').first().textContent(),'АНТОН ВПН');
+      assert.equal(await page.locator('#queueResults').isVisible(),false);
       assert.equal(await page.locator('#countTotal').textContent(),'2');
       assert.equal(await page.locator('#countSuccess').textContent(),'0');
       assert.equal(await page.locator('#queueOutcomePanel').isVisible(),false);
       assert.equal(await page.locator('#outcomeList article').count(),0);
+      assert.equal(await page.locator('#selectionCount').textContent(),'Выбрано 1 из 2');
+      assert.equal(await page.locator('#routerSelection [data-router="node-36"] .router-check').isChecked(),false);
+      await page.locator('#selectAll').click();
       assert.equal(await page.locator('#start').isEnabled(),true);
       assert.equal(await page.locator('#command').inputValue(),command);
       await page.reload();
@@ -244,7 +284,7 @@ const server = http.createServer((req,res)=>{
       const page=await browser.newPage({viewport:{width,height:900},isMobile:width<680,hasTouch:width<680});
       await page.goto(`http://127.0.0.1:${server.address().port}/router-updates/`);
       await page.waitForFunction(()=>!document.querySelector('#rebootAll').disabled);
-      assert.equal(await page.locator('#rebootAll').textContent(),'Перезапустить все роутера');
+      assert.equal(await page.locator('#rebootAll').textContent(),'Перезапустить выбранные');
       assert.equal(await page.locator('#rebootAll').evaluate(node=>getComputedStyle(node).backgroundColor),'rgb(185, 28, 28)');
       // Reboot uses only the password, never the update command or its validation.
       await page.locator('#command').fill('');

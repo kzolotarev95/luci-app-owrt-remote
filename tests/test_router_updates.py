@@ -121,7 +121,7 @@ class UpdatesTests(unittest.TestCase):
                 self.assertEqual(job['items'][1]['state'], 'success')
                 self.assertEqual(launches, ['node-2'] if failure in {'wrong_password', 'missing_tool'} else ['main', 'node-2'])
                 if failure == 'wrong_password':
-                    self.assertIn('Общий SSH-пароль не принят', job['items'][0]['message'])
+                    self.assertIn('SSH-пароль не принят', job['items'][0]['message'])
                 if failure == 'reboot_rc':
                     self.assertIn('rc=1', job['items'][0]['message'])
 
@@ -185,6 +185,68 @@ class UpdatesTests(unittest.TestCase):
             job = self.finish()
         self.assertEqual(launches, ['main', 'node-2'])
         self.assertTrue(all(x['state'] == 'success' for x in job['items']))
+
+    def test_selected_routers_receive_only_their_own_credentials(self):
+        calls = []
+        def ssh(row, script, password):
+            calls.append((row['id'], password))
+            if 'OWRT_UPDATE_READY=1' in script: return 'OWRT_UPDATE_READY=1\n'
+            return 'OWRT_UPDATE_STATE=done\nOWRT_UPDATE_RC=0\nOWRT_UPDATE_OUTPUT_TEXT=\n' + password
+        with mock.patch.object(self.manager, '_ssh', side_effect=ssh):
+            self.manager.start('echo install', 'common-secret', 'selected-one-request',
+                               router_ids=['node-2'], ssh_passwords={'node-2': 'second-secret'})
+            job = self.finish()
+        self.assertEqual([item['id'] for item in job['items']], ['node-2'])
+        self.assertTrue(all(item == ('node-2', 'second-secret') for item in calls))
+        self.assertNotIn('second-secret', json.dumps(job))
+        self.assertNotIn('common-secret', json.dumps(job))
+
+    def test_different_passwords_auth_failure_and_key_override(self):
+        calls = []
+        def ssh(row, script, password):
+            calls.append((row['id'], password))
+            if row['id'] == 'main': raise RuntimeError('Permission denied (password).')
+            if 'OWRT_UPDATE_READY=1' in script: return 'OWRT_UPDATE_READY=1\n'
+            return 'OWRT_UPDATE_STATE=done\nOWRT_UPDATE_RC=0\n'
+        for override in ['own-secret', '']:
+            calls.clear()
+            with mock.patch.object(self.manager, '_ssh', side_effect=ssh):
+                self.manager.start('echo install', 'first-secret', 'different-passwords-' + str(len(override)),
+                                   router_ids=['main', 'node-2'], ssh_passwords={'node-2': override})
+                job = self.finish()
+            self.assertEqual([item['state'] for item in job['items']], ['error', 'success'])
+            self.assertIn(('main', 'first-secret'), calls)
+            self.assertTrue(all(password == override for router, password in calls if router == 'node-2'))
+            self.assertIsNone(getattr(self.manager.thread, '_args', None))
+
+    def test_selection_validation_never_starts_a_worker(self):
+        invalid = [([], {}), (['missing'], {}), (['main', 'main'], {}), ('main', {}),
+                   ([None], {}), ([['main']], {}), (['main'], {'node-2': 'secret'}),
+                   (['main'], []), (['main'], {'main': None}), (['main'], {'main': 'x' * 1025}),
+                   (['main'], {'main': '\x00'})]
+        with mock.patch.object(self.manager, '_ssh') as ssh:
+            for ids, passwords in invalid:
+                with self.subTest(ids=ids, password_type=type(passwords).__name__):
+                    with self.assertRaises(ValueError):
+                        self.manager.start('echo install', '', 'invalid-selection-request',
+                                           router_ids=ids, ssh_passwords=passwords)
+                    self.assertIsNone(self.manager.snapshot())
+            ssh.assert_not_called()
+
+    def test_selected_reboot_uses_individual_password(self):
+        calls = []
+        def ssh(row, script, password):
+            calls.append((row['id'], password))
+            if 'OWRT_UPDATE_READY=1' in script:
+                return 'OWRT_UPDATE_READY=1\nOWRT_UPDATE_BOOT_ID=aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa\n'
+            if 'OWRT_REBOOT_RUNNER' in script: return 'OWRT_UPDATE_STARTED=1\n'
+            return 'OWRT_UPDATE_BOOT_ID=bbbbbbbb-2222-2222-2222-bbbbbbbbbbbb\n'
+        with mock.patch.object(self.manager, '_ssh', side_effect=ssh):
+            self.manager.start_reboot('common-secret', 'selected-reboot-request', ['node-2'], {'node-2': 'own-secret'})
+            job = self.finish()
+        self.assertEqual([item['id'] for item in job['items']], ['node-2'])
+        self.assertEqual(job['items'][0]['state'], 'success')
+        self.assertTrue(all(item == ('node-2', 'own-secret') for item in calls))
 
     def test_disconnected_router_does_not_block_remaining_queue_or_claim_success(self):
         launches = []
@@ -330,7 +392,7 @@ class UpdatesTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertTrue(all('OWRT_UPDATE_READY' in script for script in calls))
         self.assertTrue(all(item['state'] == 'error' for item in job['items']))
-        self.assertTrue(all('Общий SSH-пароль не принят' in item['message'] for item in job['items']))
+        self.assertTrue(all('SSH-пароль не принят' in item['message'] for item in job['items']))
         self.assertNotIn('строка с ключом или паролем скрыта', json.dumps(job, ensure_ascii=False))
         self.assertNotIn('wrong-password', json.dumps(job))
 
@@ -350,13 +412,13 @@ class UpdatesTests(unittest.TestCase):
         self.assertEqual(launches, ['node-2'])
         self.assertEqual([item['state'] for item in job['items']], ['error', 'success'])
         self.assertEqual(job['items'][0]['name'], 'Советская 30')
-        self.assertIn('отличается от общего', job['items'][0]['message'])
+        self.assertIn('индивидуальный пароль', job['items'][0]['message'])
         self.assertNotIn('common-secret', json.dumps(job))
 
     def test_authentication_diagnosis_preserves_other_errors_and_secret_filter(self):
         for response in ['Permission denied', 'Permission denied (password).', 'Authentication failed.']:
             with self.subTest(response=response):
-                self.assertIn('Общий SSH-пароль не принят', self.manager._ssh_error(response, 'secret'))
+                self.assertIn('SSH-пароль не принят', self.manager._ssh_error(response, 'secret'))
         self.assertIn('SSH-ключ', self.manager._ssh_error('Permission denied (publickey).', ''))
         self.assertIn('не предлагает вход по паролю', self.manager._ssh_error('Permission denied (publickey).', 'secret'))
         for response in ['ssh command timeout after 20s', 'Connection refused', '/root/file: Permission denied']:
@@ -578,14 +640,24 @@ class UpdatesTests(unittest.TestCase):
                 conn.execute('update routers set last_seen=?, status_json=? where id=?',
                              (hub.now_ts(), json.dumps({'name':'АНТОН ВПН', 'xray':'running'}), 'main'))
             self.assertEqual(request('/api/router-updates/start', payload, csrf=self.manager.csrf, origin='https://attacker.example')[0], 403)
+            for fields in [{'router_ids': None}, {'router_ids': []}, {'router_ids': ['missing']},
+                           {'router_ids': ['main'], 'ssh_passwords': None},
+                           {'router_ids': ['main'], 'ssh_passwords': {'node-2': 'secret'}}]:
+                self.assertEqual(request('/api/router-updates/start', {**payload, **fields}, csrf=self.manager.csrf)[0], 400)
+            payload.update(router_ids=['main'], ssh_passwords={'main': 'individual-secret'})
             def ssh(row, script, password):
+                self.assertEqual(row['id'], 'main')
+                self.assertEqual(password, 'individual-secret')
                 if 'OWRT_UPDATE_READY=1' in script: return 'OWRT_UPDATE_READY=1\n'
                 return 'OWRT_UPDATE_STATE=done\nOWRT_UPDATE_RC=0\n'
             with mock.patch.object(self.manager, '_ssh', side_effect=ssh):
                 self.assertEqual(request('/api/router-updates/start', payload, csrf=self.manager.csrf)[0], 200)
-                self.assertTrue(all(item['state'] == 'success' for item in self.finish()['items']))
+                job = self.finish()
+                self.assertEqual([item['id'] for item in job['items']], ['main'])
+                self.assertTrue(all(item['state'] == 'success' for item in job['items']))
             _, body = request('/api/router-updates')
             self.assertNotIn('ssh_password', body)
+            self.assertNotIn('individual-secret', body)
             data = json.loads(body)
             self.assertTrue(data['routers'][0]['online'])
             self.assertEqual(data['routers'][0]['xray'], 'running')

@@ -283,7 +283,9 @@ public final class HubApiClient {
           connection.setInstanceFollowRedirects(false);
           connection.setConnectTimeout(15000);
           connection.setReadTimeout(
-              current.getPath().equals("/api/notifications/wait") ? 35000 : 20000);
+              current.getPath().equals("/api/notifications/wait") ? 35000
+                  : current.getPath().endsWith("/wol") ? 90000
+                  : current.getPath().endsWith("/wol/devices") ? 30000 : 20000);
           connection.setUseCaches(false);
           connection.setRequestMethod(method);
           connection.setRequestProperty("Accept", "application/json");

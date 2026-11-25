@@ -385,8 +385,8 @@ class Handler(BaseHTTPRequestHandler):
                     "source_incompatible": True, "notice": "Опубликованная сборка пока не поддерживает приложение Android.",
                     "available": False, "checking": False, "error": "", "job": {}})
             elif path == "/api/router-updates":
-                self.json_response(200, {"ok": True, "job": self.server.state.router_update_job,
-                    "routers": [self.server.state.router('main')]})
+                self.json_response(200, {"ok": True, "selection_supported": True, "job": self.server.state.router_update_job,
+                    "routers": [self.server.state.router('main'), self.server.state.router('offline')]})
             elif path == "/api/notifications":
                 self.json_response(200, {"serial": self.server.state.notification_serial, "notifications": [{"id": "fixture-event", "title": "Роутер на связи", "body": "Fixture notification body", "ts": int(time.time())}]})
             elif path == "/fixture/forbidden":
@@ -459,6 +459,12 @@ class Handler(BaseHTTPRequestHandler):
         if state is None:
             return
         with self.server.state.lock:
+            if path in ('/api/xray/reload', '/api/xray/restart'):
+                if state['username'] != TEST_USERNAME:
+                    self.error(403, 'forbidden', 'Owner required')
+                else:
+                    self.json_response(200, {'ok': True, 'routers': 2, 'config': 'fixture-config', 'service': 'fixture-xray'})
+                return
             if path.startswith('/api/router-updates/'):
                 if state['username'] != TEST_USERNAME or self.headers.get('X-Router-Update-CSRF') != 'fixture-router-update-csrf-token-v1':
                     self.error(403, 'forbidden', 'Owner and operation CSRF required')
@@ -471,10 +477,15 @@ class Handler(BaseHTTPRequestHandler):
                 elif path.endswith('/refresh'):
                     self.server.state.router_update_job = None
                 else:
+                    ids = fields.get('router_ids', ['main', 'offline'])
+                    if not isinstance(ids, list) or not ids or set(ids) - {'main', 'offline'}:
+                        self.error(400, 'invalid_selection', 'Select fixture routers')
+                        return
                     self.server.state.router_update_job = {'id': 'fixture-queue-1234567890', 'operation': 'reboot' if path.endswith('/reboot') else 'update',
-                        'state': 'running', 'cancel_requested': False, 'items': [{'id': 'main', 'name': 'Домашний роутер',
-                            'state': 'queued', 'message': 'Fixture queue waiting; no command is executed', 'output': ''}]}
-                self.json_response(200, {'ok': True, 'job': self.server.state.router_update_job, 'routers': [self.server.state.router('main')]})
+                        'state': 'running', 'cancel_requested': False, 'items': [{'id': router_id,
+                            'name': self.server.state.router(router_id)['name'], 'state': 'queued',
+                            'message': 'Fixture queue waiting; no command is executed', 'output': ''} for router_id in ids]}
+                self.json_response(200, {'ok': True, 'selection_supported': True, 'job': self.server.state.router_update_job, 'routers': [self.server.state.router('main')]})
                 return
             if path in ('/api/auth/totp/setup', '/api/auth/totp/enable'):
                 if fields.get('current_password') != TEST_PASSWORD:

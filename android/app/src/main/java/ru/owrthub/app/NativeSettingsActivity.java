@@ -76,6 +76,7 @@ public final class NativeSettingsActivity extends Activity {
               "groups",
               "hubUpdate",
               "routerUpdates",
+              "vpsXray",
               "addRouter",
               "about",
               "donate")
@@ -143,7 +144,7 @@ public final class NativeSettingsActivity extends Activity {
     content.setPadding(ui.dp(18), ui.dp(20), ui.dp(18), ui.dp(28));
     scroll.addView(content);
     root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-    setContentView(root);
+    NativeEffects.install(this, root);
     root.requestApplyInsets();
     reset();
   }
@@ -162,6 +163,8 @@ public final class NativeSettingsActivity extends Activity {
         return "Группы роутеров";
       case "hubUpdate":
         return "Обновление Hub";
+      case "vpsXray":
+        return "Xray на VPS";
       case "routerUpdates":
         return "Обновление роутеров";
       case "addRouter":
@@ -274,7 +277,7 @@ public final class NativeSettingsActivity extends Activity {
           boolean owner = account != null && account.optBoolean("is_owner");
           boolean ownerPage =
               Arrays.asList(
-                      "notifications", "security", "users", "groups", "hubUpdate", "routerUpdates")
+                      "notifications", "security", "users", "groups", "hubUpdate", "routerUpdates", "vpsXray")
                   .contains(tool);
           if ((ownerPage && !owner)
               || (tool.equals("addRouter")
@@ -313,6 +316,9 @@ public final class NativeSettingsActivity extends Activity {
         break;
       case "routerUpdates":
         request(() -> api.get("/api/router-updates"), this::renderRouterUpdates);
+        break;
+      case "vpsXray":
+        renderVpsXray();
         break;
       case "security":
         renderSecurity();
@@ -429,6 +435,7 @@ public final class NativeSettingsActivity extends Activity {
             payload.remove("password");
             payload.remove("password_confirm");
             payload.remove("ssh_password");
+            payload.remove("ssh_passwords");
             payload.remove("code");
           }
         },
@@ -1095,57 +1102,55 @@ public final class NativeSettingsActivity extends Activity {
       command.setMinLines(3);
       command.setMaxLines(6);
       command.setFilters(new InputFilter[] {new InputFilter.LengthFilter(16384)});
-      EditText password = field("SSH-пароль роутеров (если нужен)", "", true);
-      action(
-          "Обновить все роутеры",
-          NativeUi.Style.PRIMARY,
-          () -> {
-            if (value(command).trim().isEmpty()) {
-              showError("Укажите команду обновления.");
-              return;
-            }
-            confirm(
-                "Обновить все роутеры?",
-                "Команда будет по очереди запущена на роутерах Hub. Проверьте её перед"
-                    + " подтверждением.",
-                () -> {
-                  JSONObject payload =
-                      json(
-                          "command",
-                          value(command),
-                          "ssh_password",
-                          value(password),
-                          "request_id",
-                          requestToken("update"));
-                  password.setText("");
-                  post(
-                      "/api/router-updates/start",
-                      payload,
-                      () -> {
-                        requestId = "";
-                        refresh();
-                      });
-                });
-          });
-      action(
-          "Перезагрузить все роутеры",
-          NativeUi.Style.DANGER,
-          () ->
-              confirm(
-                  "Перезагрузить все роутеры?",
-                  "Связь с роутерами временно пропадёт. Hub выполнит перезагрузки по очереди.",
-                  () -> {
-                    JSONObject payload =
-                        json("ssh_password", value(password), "request_id", requestToken("reboot"));
-                    password.setText("");
-                    post(
-                        "/api/router-updates/reboot",
-                        payload,
-                        () -> {
-                          requestId = "";
-                          refresh();
-                        });
-                  }));
+      EditText password = field("Общий SSH-пароль (необязательно)", "", true);
+      if (!data.optBoolean("selection_supported")) {
+        body("Обновите VPS-панель: установленная сборка ещё не поддерживает выбор роутеров и отдельные пароли.");
+        return;
+      }
+      JSONArray routers = data.optJSONArray("routers");
+      List<android.widget.CheckBox> checks = new ArrayList<>();
+      List<android.widget.Spinner> modes = new ArrayList<>();
+      List<EditText> passwords = new ArrayList<>();
+      List<String> ids = new ArrayList<>();
+      List<Boolean> online = new ArrayList<>();
+      TextView count = ui.body(""); add(count);
+      Runnable selectionCount = () -> {
+        int selected = 0; for (android.widget.CheckBox check : checks) if (check.isChecked()) selected++;
+        count.setText("Выбрано " + selected + " из " + checks.size());
+      };
+      action("Выбрать все", NativeUi.Style.SECONDARY, () -> { for (android.widget.CheckBox check : checks) check.setChecked(true); });
+      action("Только в сети", NativeUi.Style.SECONDARY, () -> {
+        for (int i = 0; i < checks.size(); i++) checks.get(i).setChecked(online.get(i));
+      });
+      action("Снять выбор", NativeUi.Style.SECONDARY, () -> { for (android.widget.CheckBox check : checks) check.setChecked(false); });
+      for (int i = 0; routers != null && i < Math.min(routers.length(), 512); i++) {
+        JSONObject router = routers.optJSONObject(i); if (router == null) continue;
+        String id = router.optString("id"); ids.add(id); online.add(router.optBoolean("online"));
+        LinearLayout card = ui.card();
+        android.widget.CheckBox check = new android.widget.CheckBox(this);
+        check.setText(router.optString("name", id) + " · " + id + " · " + (router.optBoolean("online") ? "Онлайн" : "Офлайн"));
+        check.setTextColor(ui.TEXT); check.setChecked(true); checks.add(check); card.addView(check);
+        android.widget.Spinner mode = new android.widget.Spinner(this); modes.add(mode);
+        mode.setContentDescription("Способ входа: " + id);
+        mode.setAdapter(new android.widget.ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item,
+            new String[] {"Общий пароль", "Свой пароль", "SSH-ключ"}));
+        card.addView(mode);
+        EditText own = ui.field("Пароль этого роутера", "", true); own.setSaveEnabled(false);
+        own.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
+        sensitiveFields.add(own); passwords.add(own); own.setVisibility(View.GONE); card.addView(own);
+        mode.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+          public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long item) {
+            own.setText(""); own.setVisibility(position == 1 ? View.VISIBLE : View.GONE);
+          }
+          public void onNothingSelected(android.widget.AdapterView<?> parent) { }
+        });
+        check.setOnCheckedChangeListener((button, selected) -> selectionCount.run()); add(card);
+      }
+      selectionCount.run();
+      action("Обновить выбранные", NativeUi.Style.PRIMARY,
+          () -> startSelectedQueue("update", command, password, ids, checks, modes, passwords));
+      action("Перезапустить выбранные", NativeUi.Style.DANGER,
+          () -> startSelectedQueue("reboot", command, password, ids, checks, modes, passwords));
     } else handler.postDelayed(poll, 3000);
     JSONArray routers = data.optJSONArray("routers");
     if (routers != null) {
@@ -1159,6 +1164,32 @@ public final class NativeSettingsActivity extends Activity {
                   + (router.optBoolean("online") ? "На связи" : "Не на связи"));
       }
     }
+  }
+
+  private void startSelectedQueue(String operation, EditText command, EditText common,
+      List<String> ids, List<android.widget.CheckBox> checks, List<android.widget.Spinner> modes, List<EditText> passwords) {
+    if (busy) return;
+    if (operation.equals("update") && value(command).trim().isEmpty()) { showError("Укажите команду обновления."); return; }
+    JSONArray selected = new JSONArray(); JSONObject secrets = new JSONObject();
+    for (int i = 0; i < ids.size(); i++) {
+      if (!checks.get(i).isChecked()) continue;
+      selected.put(ids.get(i)); int mode = modes.get(i).getSelectedItemPosition();
+      if (mode == 1 && value(passwords.get(i)).isEmpty()) {
+        passwords.get(i).setError("Введите пароль этого роутера"); passwords.get(i).requestFocus(); return;
+      }
+      try { if (mode != 0) secrets.put(ids.get(i), mode == 2 ? "" : value(passwords.get(i))); }
+      catch (Exception invalid) { showError("Не удалось подготовить очередь."); return; }
+    }
+    if (selected.length() == 0) { showError("Выберите хотя бы один роутер."); return; }
+    confirm(operation.equals("reboot") ? "Перезапустить выбранные роутеры?" : "Обновить выбранные роутеры?",
+        "Выбрано устройств: " + selected.length() + ". Для каждого будет использован его способ входа.", () -> {
+          JSONObject payload = json("router_ids", selected, "ssh_passwords", secrets,
+              "ssh_password", value(common), "request_id", requestToken(operation));
+          if (operation.equals("update")) try { payload.put("command", value(command)); } catch (Exception ignored) { }
+          common.setText(""); for (EditText field : passwords) field.setText("");
+          post("/api/router-updates/" + (operation.equals("reboot") ? "reboot" : "start"), payload,
+              () -> { requestId = ""; refresh(); });
+        });
   }
 
   private String requestToken(String operation) {
@@ -1313,6 +1344,21 @@ public final class NativeSettingsActivity extends Activity {
   public void onRequestPermissionsResult(int request, String[] permissions, int[] grants) {
     super.onRequestPermissionsResult(request, permissions, grants);
     HubNotifications.permissionResult(this, request, grants);
+  }
+
+  private void renderVpsXray() {
+    reset();
+    body("Эти действия выполняются на VPS. Для управления Xray роутера откройте его карточку.");
+    TextView result = ui.body("");
+    action("Обновить Xray CFG", NativeUi.Style.PRIMARY,
+        () -> confirm("Обновить Xray CFG?", "Hub пересоберёт конфигурацию по текущему списку роутеров и применит её на VPS.",
+            () -> request(() -> api.post("/api/xray/reload", json()),
+                data -> result.setText("Конфигурация обновлена. Роутеров: " + data.optInt("routers") + "\n" + data.optString("config")))));
+    action("Перезапустить Xray на VPS", NativeUi.Style.SECONDARY,
+        () -> confirm("Перезапустить Xray на VPS?", "Туннели роутеров временно переподключатся.",
+            () -> request(() -> api.post("/api/xray/restart", json()),
+                data -> result.setText("Xray на VPS перезапущен. " + data.optString("service")))));
+    result.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE); add(result);
   }
 
   private void renderAbout(JSONObject data) {

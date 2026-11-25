@@ -224,7 +224,7 @@ public final class MainActivity extends Activity {
               i.getSystemWindowInsetBottom());
           return i;
         });
-    setContentView(root);
+    NativeEffects.install(this, root);
     root.requestApplyInsets();
     LinearLayout header = ui.row();
     header.setPadding(ui.dp(16), ui.dp(9), ui.dp(12), ui.dp(9));
@@ -1290,7 +1290,8 @@ public final class MainActivity extends Activity {
         () -> {
           frame("connectionInfo", "Подключение", false);
           title("Сервер Hub", api.getHub().toString());
-          add(ui.chip("Сессия зашифрована в Android", ui.GREEN));
+          LinearLayout secured = ui.row(); secured.setGravity(Gravity.CENTER);
+          secured.addView(ui.chip("Сессия зашифрована в Android", ui.GREEN)); add(secured);
           space(24);
           add(
               ui.button(
@@ -1336,6 +1337,7 @@ public final class MainActivity extends Activity {
           "Обновить роутеры",
           "Последовательное обновление и перезапуск",
           () -> settingsTool("routerUpdates"));
+      action("shield", "Xray на VPS", "Обновление CFG и перезапуск сервера Xray", () -> settingsTool("vpsXray"));
       action(
           "terminal", "Терминал VPS", "Root-консоль сервера", () -> tool("vps", new JSONObject()));
     }
@@ -1372,10 +1374,12 @@ public final class MainActivity extends Activity {
             ui = new NativeUi(this, theme.equals("Зимний"));
             design();
           });
-    empty(
-        "Лёгкий интерфейс",
-        "Без браузерных эффектов и фоновых анимаций. Основные экраны состоят из нативных элементов"
-            + " Android.");
+    space(16); title("Эффекты", "Выбор сохраняется и применяется на экранах приложения.");
+    for (String effect : new String[] {"off", "streams", "snow"}) {
+      String label = effect.equals("off") ? "Выключены" : effect.equals("streams") ? "Потоки" : "Снег";
+      action("grid", label, prefs.getString("effect", "off").equals(effect) ? "Выбрано" : "Включить эффект",
+          () -> { prefs.edit().putString("effect", effect).apply(); design(); });
+    }
   }
 
   private void confirm(String title, String text, Runnable yes) {

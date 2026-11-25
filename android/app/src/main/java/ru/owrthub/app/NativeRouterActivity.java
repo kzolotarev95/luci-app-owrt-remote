@@ -71,7 +71,10 @@ public final class NativeRouterActivity extends Activity {
   private TextView error, status, detail, result, timer, output;
   private ProgressBar progress;
   private EditText notes, mac, iface, password, command;
-  private Button clearButton, sshConnect, sshSend, sshInterrupt;
+  private Button clearButton, sshConnect, sshSend, sshInterrupt, xrayStart, wolWake;
+  private android.widget.Spinner wolDevice;
+  private JSONArray wolDevices = new JSONArray();
+  private TextView wolCount;
   private volatile boolean visible;
   private volatile int generation;
   private boolean busy, sessionReady, snapshotFresh, notesLoaded, vpsOwner;
@@ -188,7 +191,7 @@ public final class NativeRouterActivity extends Activity {
     content.setPadding(ui.dp(18), ui.dp(14), ui.dp(18), ui.dp(28));
     scroll.addView(content);
     root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-    setContentView(root);
+    NativeEffects.install(this, root);
     root.requestApplyInsets();
 
     LinearLayout hero = ui.row();
@@ -277,6 +280,7 @@ public final class NativeRouterActivity extends Activity {
     card.addView(detail);
     add(card);
     action("Запустить Xray", NativeUi.Style.PRIMARY, () -> xrayAction("start"));
+    xrayStart = actions.get(actions.size() - 1);
     action(
         "Остановить Xray",
         NativeUi.Style.DANGER,
@@ -389,63 +393,58 @@ public final class NativeRouterActivity extends Activity {
   }
 
   private void buildWol() {
-    intro(
-        "Hub отправит Magic Packet из локальной сети выбранного роутера. Устройство должно"
-            + " поддерживать пробуждение по сети.");
-    mac = ui.field("AA:BB:CC:DD:EE:FF", "", false);
-    mac.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-    add(ui.labeledField("MAC-адрес устройства", mac));
-    iface = ui.field("Автоматический выбор", "", false);
-    add(ui.labeledField("Интерфейс роутера (необязательно)", iface));
-    password = ui.field("Пароль SSH роутера", "", true);
-    protectInput(password);
-    add(ui.labeledField("Пароль SSH, если требуется", password));
-    action(
-        "Разбудить устройство",
-        NativeUi.Style.PRIMARY,
-        () -> {
-          String target = mac.getText().toString().trim().replace('-', ':');
-          if (!target.matches("(?i)([0-9a-f]{2}:){5}[0-9a-f]{2}")) {
-            showError("Укажите MAC-адрес в формате AA:BB:CC:DD:EE:FF.");
-            return;
-          }
-          String interfaceName = iface.getText().toString().trim();
-          if (!interfaceName.matches("[A-Za-z0-9_.:@-]{0,32}")) {
-            showError("Проверьте имя сетевого интерфейса.");
-            return;
-          }
-          String secret = password.getText().toString();
-          password.setText("");
-          request(
-              () -> {
-                JSONObject payload =
-                    new JSONObject()
-                        .put("mac", target)
-                        .put("iface", interfaceName)
-                        .put("ssh_password", secret);
-                try {
-                  return api.post(base + "/wol", payload);
-                } finally {
-                  payload.remove("ssh_password");
-                }
-              },
-              data -> {
-                requireRouter(data);
-                status.setText("Пакет пробуждения отправлен");
-                status.setTextColor(ui.GREEN);
-                detail.setText(
-                    data.optString(
-                        "output", "Пробуждение устройства может занять некоторое время."));
-              },
-              false);
-        });
-    LinearLayout resultCard = ui.card();
-    status = ui.text("Готово к отправке", 16, true);
-    detail = ui.body("Пароль используется для одного запроса и не сохраняется.");
-    resultCard.addView(status);
-    resultCard.addView(ui.spacer(8));
-    resultCard.addView(detail);
-    add(resultCard);
+    intro("Выберите устройство локальной сети роутера. Для поиска и пробуждения нужен доступ root по SSH.");
+    wolDevice = new android.widget.Spinner(this);
+    wolDevice.setContentDescription("Устройство");
+    wolDevice.setAdapter(new android.widget.ArrayAdapter<String>(this,
+        android.R.layout.simple_spinner_dropdown_item, new String[] {"Выбери устройство из списка"}));
+    add(ui.label("Устройство")); add(wolDevice);
+    wolCount = ui.body("Найдено устройств: 0"); add(wolCount);
+    password = ui.field("Пароль SSH роутера", "", true); protectInput(password);
+    add(ui.labeledField("SSH пароль", password));
+    action("Обновить", NativeUi.Style.SECONDARY, this::discoverWol);
+    action("Разбудить", NativeUi.Style.PRIMARY, () -> {
+      int index = wolDevice.getSelectedItemPosition() - 1;
+      JSONObject device = wolDevices.optJSONObject(index);
+      if (device == null) { showError("Выбери устройство из списка."); return; }
+      JSONObject payload = new JSONObject();
+      try { payload.put("mac", device.optString("mac")).put("iface", device.optString("iface"))
+          .put("ssh_password", password.getText().toString()); } catch (Exception invalid) { return; }
+      password.setText("");
+      request(() -> { try { return api.post(base + "/wol", payload); }
+        finally { payload.remove("ssh_password"); } }, data -> {
+          requireRouter(data); status.setText("Пакет пробуждения отправлен"); status.setTextColor(ui.GREEN);
+          detail.setText(data.optString("output", data.optString("message")));
+        }, false);
+    });
+    wolWake = actions.get(actions.size() - 1);
+    wolDevice.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+      public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) { updateControls(); }
+      public void onNothingSelected(android.widget.AdapterView<?> parent) { updateControls(); }
+    });
+    LinearLayout card = ui.card(); status = ui.text("Выберите устройство", 16, true);
+    detail = ui.body("Пароль используется только для запроса и не сохраняется.");
+    card.addView(status); card.addView(ui.spacer(8)); card.addView(detail); add(card);
+  }
+
+  private void discoverWol() {
+    if (busy || !sessionReady) return;
+    JSONObject payload = new JSONObject();
+    try { payload.put("ssh_password", password.getText().toString()); } catch (Exception invalid) { return; }
+    request(() -> { try { return api.post(base + "/wol/devices", payload); }
+      finally { payload.remove("ssh_password"); } }, data -> {
+        requireRouter(data); JSONArray devices = data.optJSONArray("devices");
+        wolDevices = devices == null ? new JSONArray() : devices;
+        String[] labels = new String[wolDevices.length() + 1]; labels[0] = "Выбери устройство из списка";
+        for (int i = 0; i < wolDevices.length(); i++) {
+          JSONObject device = wolDevices.optJSONObject(i);
+          labels[i + 1] = device == null ? "—" : device.optString("label",
+              device.optString("name", device.optString("hostname")) + " · " + device.optString("ip") + " · " + device.optString("mac"));
+        }
+        wolDevice.setAdapter(new android.widget.ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, labels));
+        wolCount.setText("Найдено устройств: " + wolDevices.length());
+        status.setText(wolDevices.length() == 0 ? "Устройства не найдены" : "Список устройств обновлён");
+      }, false);
   }
 
   private void buildSsh() {
@@ -750,7 +749,10 @@ public final class NativeRouterActivity extends Activity {
 
   private void refresh() {
     if (!visible || busy || api == null || !sessionReady) return;
-    if (tool.equals("xray")) request(() -> api.get(base + "/xray-control"), this::renderXray, true);
+    if (tool.equals("xray")) {
+      readPoll = snapshot != null;
+      request(() -> api.get(base + "/xray-control"), this::renderXray, true);
+    }
     else if (tool.equals("notes")) request(() -> api.get(notesPath()), this::renderNotes, false);
     else if (tool.equals("config"))
       request(
@@ -780,7 +782,8 @@ public final class NativeRouterActivity extends Activity {
             }
           },
           true);
-    } else updateControls();
+    } else if (tool.equals("wol") && wolDevices.length() == 0) discoverWol();
+    else updateControls();
   }
 
   private void request(Callable<JSONObject> call, Consumer<JSONObject> success, boolean repeat) {
@@ -979,7 +982,8 @@ public final class NativeRouterActivity extends Activity {
   }
 
   private void xrayAction(String action) {
-    if (busy || !snapshotFresh || snapshot == null) return;
+    if (busy || !snapshotFresh || snapshot == null || hasActiveCommand()
+        || (action.equals("start") && snapshot.optString("xray").equals("running"))) return;
     final String requestId = UUID.randomUUID().toString().replace("-", "");
     request(
         () ->
@@ -1008,6 +1012,9 @@ public final class NativeRouterActivity extends Activity {
                       && snapshot.optBoolean("supported")
                       && !hasActiveCommand())
               && (!tool.equals("config") || snapshotFresh && !configuration.isEmpty()));
+    if (xrayStart != null && snapshot != null && snapshot.optString("xray").equals("running"))
+      xrayStart.setEnabled(false);
+    if (wolWake != null) wolWake.setEnabled(ready && wolDevice.getSelectedItemPosition() > 0);
     if (clearButton != null)
       clearButton.setEnabled(
           ready && snapshotFresh && (!tool.equals("xray") || hasCompletedCommand()));

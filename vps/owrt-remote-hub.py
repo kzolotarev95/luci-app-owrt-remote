@@ -14090,7 +14090,7 @@ def router_updates_html(csrf):
     default_command = 'wget -O - "' + RAW_REPO_BASE + '/install.sh?v=$(date +%s)" | sh'
     return r'''<!doctype html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Обновить все роутеры — OWRT Hub</title><style>
+<title>Обновить роутеры — OWRT Hub</title><style>
 :root{color-scheme:dark;--line:rgba(169,126,255,.3);--muted:#b9adc9}
 *{box-sizing:border-box}body{min-height:100vh;margin:0;background:#07040f;background-image:radial-gradient(circle at 16% 10%,#a855f740,transparent 35%),linear-gradient(145deg,#07040f,#120a24 54%,#05030a);background-attachment:fixed;color:#f7f2ff;font:14px/1.5 system-ui,sans-serif}
 .wrap{max-width:1100px;margin:auto;padding:20px}.panel{margin-bottom:14px;padding:18px;border:1px solid var(--line);border-radius:12px;background:#191226e8}.head,.actions{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}h1{font-size:22px;margin:0}h2{font-size:16px;margin:0 0 10px}.hint{color:var(--muted);font-size:13px}.form-hint{margin:10px 0 20px;line-height:1.65}.action-hint{margin-top:12px}.note{margin:14px 0;padding:10px 12px;border:1px solid #f59e0b70;border-left:3px solid #f59e0b;border-radius:8px;background:#f59e0b12;color:#fde68a}
@@ -14099,25 +14099,33 @@ label{display:block;margin:14px 0 6px;font-weight:700}textarea,input{display:blo
 .metrics{grid-auto-rows:1fr}.metric.outcome-toggle{display:block;width:100%;text-align:center;font:inherit}.outcome-toggle::after{content:'Подробнее ›';display:block;margin-top:7px;color:var(--muted);font-size:11px}.outcome-toggle:hover,.outcome-toggle[aria-pressed=true]{background:#ffffff0c;border-color:var(--accent)}.outcome-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.queue-outcomes{margin-top:16px;padding-top:16px;border-top:1px solid var(--line)}.outcome-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.outcome-heading h3{margin:0;font-size:15px}.outcome-list{max-height:440px;overflow:auto;scrollbar-gutter:stable;margin-top:10px}.outcome-router{padding:12px;border:1px solid var(--line);border-radius:8px;background:#100b1b70}.outcome-router+.outcome-router{margin-top:8px}.outcome-title{display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap}.outcome-title strong{min-width:0;overflow-wrap:anywhere}.outcome-badge{flex-shrink:0;font-size:12px}.outcome-router small{display:block;color:var(--muted);overflow-wrap:anywhere}.outcome-reason{margin:7px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}.outcome-router details{margin-top:7px}.outcome-empty{margin:8px 0;color:var(--muted)}[hidden]{display:none!important}
 .wrap{min-width:0}.panel,form,.head,.head-actions,.actions,.queue-dashboard,.queue-heading,.queue-outcomes,.outcome-heading,.outcome-list,.router,.outcome-router{min-width:0;max-width:100%}.head>*{min-width:0}h1,h2,h3,.hint,.note,.router small,.router-live span,.outcome-badge{overflow-wrap:anywhere}button,.btn{white-space:normal;overflow-wrap:anywhere}textarea{white-space:pre-wrap;overflow-wrap:anywhere}pre{max-width:100%;min-width:0}.outcome-title strong{flex:1 1 160px}.outcome-badge{max-width:100%}
 @media(max-width:680px){body{background-attachment:scroll;-webkit-text-size-adjust:100%;text-size-adjust:100%}.wrap{width:100%;padding:10px;padding-top:max(10px,env(safe-area-inset-top,0px));padding-right:max(10px,env(safe-area-inset-right,0px));padding-bottom:max(10px,env(safe-area-inset-bottom,0px));padding-left:max(10px,env(safe-area-inset-left,0px))}.panel{padding:12px}.head{align-items:stretch;flex-direction:column;gap:12px}h1{font-size:19px;line-height:1.35}.actions,.head-actions{display:grid;grid-template-columns:minmax(0,1fr);width:100%;gap:8px}.btn,button{width:100%;min-height:44px;padding:11px 12px}.head-actions .btn,.head-actions button,.actions button{font-size:14px}textarea,input{max-width:100%;font-size:16px;line-height:1.5}textarea{min-height:150px}input{max-width:none;min-height:46px}.note{margin:14px 0;padding:10px 12px;font-size:12px}.hint{font-size:12px}label{line-height:1.4}.queue-dashboard{padding:12px}.queue-heading{align-items:flex-start;flex-wrap:wrap;gap:8px}.queue-heading h2{font-size:16px;flex:1 1 160px}.queue-badge{max-width:100%;overflow-wrap:anywhere}.progress-label{font-size:11px}.progress-label>:first-child{min-width:0;overflow-wrap:anywhere}#progressPercent{flex-shrink:0}.metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.metric{padding:12px 10px}.metric span{font-size:12px;line-height:1.4}.metric strong{font-size:26px}.outcome-heading{align-items:stretch}.outcome-heading h3{width:100%;line-height:1.4}.outcome-list{max-height:min(440px,60vh);-webkit-overflow-scrolling:touch}.outcome-router{padding:10px}.outcome-title{align-items:flex-start}.outcome-badge{flex-shrink:1;text-align:left}summary{min-height:44px;padding:10px 0;line-height:1.5}.router{padding:14px 0}.router-live{align-items:flex-start;gap:6px}.router-live span{max-width:100%}pre{max-height:240px;padding:9px;font-size:12px}.outcome-reason{font-size:13px}}
+
+.router-picker{margin-top:18px;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--panel2,#18181c)}.router-picker h2{margin:0}.picker-tools{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}.picker-tools button{min-height:32px;padding:6px 10px;background:var(--panel2,#393044);color:var(--text,#f7f2ff)}.picker-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;padding:12px 0;border-top:1px solid var(--line)}.picker-device{display:flex;align-items:center;gap:10px;margin:0;min-width:0;cursor:pointer}.picker-device input[type=checkbox]{flex:none;width:18px;height:18px;min-height:0;margin:0;accent-color:#60a5fa}.picker-device span{min-width:0}.picker-device strong,.picker-device small{display:block;overflow-wrap:anywhere}.picker-device small{font-size:12px;font-weight:400;margin-top:3px}.picker-auth{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:10px;min-width:0}.picker-auth label{margin:0;font-size:12px;min-width:0}.picker-auth select,.picker-auth input{width:100%;max-width:none;min-width:0;min-height:38px;margin-top:5px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--panel,#111113);color:inherit;font:inherit}.picker-auth input:disabled,.picker-auth select:disabled{opacity:.6}#selectionCount{color:var(--muted);font-size:12px}
+@media(max-width:680px){.router-picker{padding:10px}.picker-row{grid-template-columns:minmax(0,1fr);gap:10px}.picker-tools{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.picker-tools button{font-size:12px;min-height:44px;padding:6px}.picker-auth{grid-template-columns:minmax(0,1fr)}.picker-auth select,.picker-auth input{font-size:16px;min-height:44px}.picker-device{min-height:44px}.router-picker .head{gap:6px}}
 </style></head><body><main class="wrap">
-<section class="panel"><div class="head"><h1>Обновить все роутеры разом</h1><div class="head-actions"><button id="refreshRouters" type="button" disabled>Обновить информацию о роутерах</button><a class="btn" href="/">Вернуться в Hub</a></div></div>
-<blockquote class="note">Команда выполняется на роутерах по очереди через SSH. Укажи один общий SSH-пароль root. Для каждого роутера будет отдельный итог. Если SSH-туннель не работает, отправить команду этому роутеру через VPS не получится.</blockquote>
+<section class="panel"><div class="head"><h1>Обновить роутеры</h1><div class="head-actions"><button id="refreshRouters" type="button" disabled>Обновить информацию о роутерах</button><a class="btn" href="/">Вернуться в Hub</a></div></div>
+<blockquote class="note">Отметь нужные роутеры в общем списке. Команда выполняется на выбранных устройствах по очереди через SSH. Для каждого можно указать свой пароль root или использовать SSH-ключ. Если SSH-туннель не работает, отправить команду этому роутеру через VPS не получится.</blockquote>
 <form id="updateForm"><label for="command">Ссылка или команда обновления</label><textarea id="command" name="command" required maxlength="8192" autocapitalize="off" autocorrect="off" spellcheck="false">__COMMAND__</textarea>
 <div class="hint form-hint">Вставь прямую ссылку HTTP/HTTPS на установочный shell-скрипт с любого своего источника или полную команду. Для ссылки загрузка и запуск выполняются автоматически.</div>
-<label for="sshPassword">Общий SSH-пароль root на роутерах</label><input id="sshPassword" name="ssh_password" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Оставь пустым, если настроен SSH-ключ">
+<label for="sshPassword">Общий SSH-пароль root (необязательно)</label><input id="sshPassword" name="ssh_password" type="password" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Для роутеров с режимом «Общий пароль»">
 <div class="hint form-hint">Пароль используется только текущей очередью и не сохраняется на диске или в браузере. Закрытие вкладки не останавливает обновления. Перезапуск Hub прерывает очередь; начатая установка на роутере продолжает работать.</div>
-<div class="actions"><button class="primary" id="start" type="submit" disabled>Обновить все по очереди</button><button class="reboot" id="rebootAll" type="button" disabled>Перезапустить все роутера</button><button id="cancel" type="button" disabled>Остановить всё</button></div></form>
+<section class="router-picker" aria-labelledby="pickerTitle"><div class="head"><h2 id="pickerTitle">Выбор роутеров</h2><span id="selectionCount" role="status">Загрузка списка…</span></div>
+<div class="picker-tools"><button type="button" id="selectAll" disabled>Выбрать все</button><button type="button" id="selectOnline" disabled>Только в сети</button><button type="button" id="selectNone" disabled>Снять выбор</button></div>
+<p class="hint">Пустой общий пароль означает вход по SSH-ключу. Режим «Свой пароль» требует пароль именно этого роутера. Режим «SSH-ключ» не использует общий пароль.</p><div id="routerSelection"></div></section>
+<div class="actions"><button class="primary" id="start" type="submit" disabled>Обновить выбранные</button><button class="reboot" id="rebootAll" type="button" disabled>Перезапустить выбранные</button><button id="cancel" type="button" disabled>Остановить всё</button></div></form>
 <div class="hint form-hint action-hint">«Остановить всё» сразу прекращает очередь и отправляет остановку текущей задачи. Уже внесённые установщиком изменения не откатываются. Если SSH недоступен, панель покажет, что остановка на роутере не подтверждена. При перезапуске очередь останавливается сразу, но уже отправленный reboot отменить нельзя.</div><div class="hint form-hint">Перезапуск идёт по очереди. «Успешно» означает, что роутер загрузился заново и SSH восстановился. Ожидание — до 3 минут на роутер; при ошибке или отсутствии подтверждения очередь продолжится.</div>
 <section class="queue-dashboard" aria-label="Статистика очереди"><div class="queue-heading"><h2 id="queueTitle">Список роутеров</h2><span class="queue-badge" id="queueBadge">Загрузка</span></div>
 <div class="progress-label"><span id="progressText">Получаю данные…</span><span id="progressPercent">0%</span></div><div class="progress-track" id="queueProgress" role="progressbar" aria-label="Ход очереди" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="progress-fill" id="progressFill"></div></div>
 <div class="metrics"><div class="metric" data-state="total"><span>Всего роутеров</span><strong id="countTotal">0</strong></div><div class="metric" data-state="active"><span id="activeLabel">Обновляются</span><strong id="countActive">0</strong></div><div class="metric" data-state="queued"><span>Ожидают</span><strong id="countQueued">0</strong></div><div class="metric" data-state="success"><span>Успешно</span><strong id="countSuccess">0</strong></div><button type="button" class="metric outcome-toggle" data-state="error" aria-controls="queueOutcomePanel" aria-pressed="false"><span>Ошибок</span><strong id="countError">0</strong></button><button type="button" class="metric outcome-toggle" data-state="unknown" aria-controls="queueOutcomePanel" aria-pressed="false"><span>Не подтверждено</span><strong id="countUnknown">0</strong></button><button type="button" class="metric outcome-toggle" data-state="cancelled" aria-controls="queueOutcomePanel" aria-pressed="false"><span>Остановлено</span><strong id="countCancelled">0</strong></button><button type="button" class="metric outcome-toggle" data-state="skipped" aria-controls="queueOutcomePanel" aria-pressed="false"><span>Пропущено</span><strong id="countSkipped">0</strong></button></div>
 <section class="queue-outcomes" id="queueOutcomePanel" aria-labelledby="outcomeTitle" hidden><div class="outcome-heading"><h3 id="outcomeTitle">Проблемы обновления</h3><button type="button" id="showAllOutcomes" hidden>Показать все категории</button></div><p class="hint" id="outcomeHint">Здесь перечислены роутеры без подтверждённого успеха и причины результата.</p><div class="outcome-list" id="outcomeList"></div></section></section>
 <div id="status" role="status" aria-live="polite">Получаю список роутеров…</div></section>
-<section class="panel"><h2>Роутеры</h2><div class="hint">Текущая связь определяется по Heartbeat. Итог команды показан отдельно и не означает, что роутер сейчас онлайн.</div><div id="results"></div></section>
+<section class="panel" id="queueResults" hidden><h2>Результаты очереди</h2><div class="hint">Текущая связь определяется по Heartbeat. Итог команды показан отдельно и не означает, что роутер сейчас онлайн.</div><div id="results"></div></section>
 </main><script>
 (()=>{
   const csrf=__CSRF__, endpoint='/api/router-updates', form=document.getElementById('updateForm'), command=document.getElementById('command'), password=document.getElementById('sshPassword'), start=document.getElementById('start'), rebootAll=document.getElementById('rebootAll'), cancel=document.getElementById('cancel'), status=document.getElementById('status'), results=document.getElementById('results');
   const refreshRouters=document.getElementById('refreshRouters'),outcomePanel=document.getElementById('queueOutcomePanel'),outcomeList=document.getElementById('outcomeList'),showAllOutcomes=document.getElementById('showAllOutcomes');
+  const selection=document.getElementById('routerSelection'),selectionCount=document.getElementById('selectionCount'),selectionState=new Map();
+  let selectionReady=false;
   const outcomeLabels={error:'Ошибка',unknown:'Не подтверждено',cancelled:'Остановлено',skipped:'Пропущено'},outcomeTitles={error:'Ошибки',unknown:'Не подтверждено',cancelled:'Остановлено',skipped:'Пропущено'};
   let timer=null, pending=false, refreshing=false, job=null, routers=[], lastRender='', stopped=false, generation=0,outcomeFilter='all',lastOutcomeRender='',outcomeJobId=null;
   let requestId='',requestAction='update';
@@ -14126,7 +14134,37 @@ label{display:block;margin:14px 0 6px;font-weight:700}textarea,input{display:blo
   function requestToken(action){if(requestId&&requestAction!==action)forgetRequest();if(!requestId){requestAction=action;const bytes=crypto.getRandomValues(new Uint8Array(16));requestId=Array.from(bytes,n=>n.toString(16).padStart(2,'0')).join('');try{sessionStorage.setItem(requestKey,requestId);sessionStorage.setItem(requestKey+'-action',action);}catch(error){}}return requestId;}
   function forgetRequest(){requestId='';try{sessionStorage.removeItem(requestKey);sessionStorage.removeItem(requestKey+'-action');}catch(error){}}
   function rebooting(){return job&&job.operation==='reboot';}
-  function controls(){const active=job&&job.state==='running';start.disabled=pending||active;rebootAll.disabled=pending||active;command.disabled=pending||active;password.disabled=pending||active;cancel.disabled=pending||!active||job.cancel_requested;refreshRouters.disabled=pending;refreshRouters.textContent=refreshing?'Обновляю информацию…':'Обновить информацию о роутерах';}
+  function selectedRouters(){return routers.filter(router=>selectionState.get(router.id)?.selected);}
+  function controls(){const active=job&&job.state==='running',locked=pending||active,chosen=selectedRouters();start.disabled=locked||!chosen.length;rebootAll.disabled=locked||!chosen.length;command.disabled=locked;password.disabled=locked;cancel.disabled=pending||!active||job.cancel_requested;refreshRouters.disabled=pending;refreshRouters.textContent=refreshing?'Обновляю информацию…':'Обновить информацию о роутерах';selectionCount.textContent='Выбрано '+chosen.length+' из '+routers.length;['selectAll','selectOnline','selectNone'].forEach(id=>document.getElementById(id).disabled=locked||!routers.length);selection.querySelectorAll('input,select').forEach(node=>node.disabled=locked);}
+  function renderSelection(){
+    const ids=new Set(routers.map(router=>router.id));
+    for(const id of selectionState.keys())if(!ids.has(id))selectionState.delete(id);
+    const existing=new Map(Array.from(selection.children).map(row=>[row.dataset.router,row]));
+    if(!routers.length){selection.replaceChildren();const empty=document.createElement('p');empty.className='hint';empty.textContent='В Hub пока нет роутеров.';selection.append(empty);return;}
+    existing.forEach((row,id)=>{if(!ids.has(id))row.remove();});
+    selection.querySelectorAll(':scope > p').forEach(node=>node.remove());
+    routers.forEach((router,index)=>{
+      if(!selectionState.has(router.id))selectionState.set(router.id,{selected:!selectionReady,mode:'common',password:''});
+      const state=selectionState.get(router.id);let row=existing.get(router.id);
+      if(!row){
+        row=document.createElement('div');row.className='picker-row';row.dataset.router=router.id;
+        const label=document.createElement('label'),check=document.createElement('input'),info=document.createElement('span'),name=document.createElement('strong'),meta=document.createElement('small'),auth=document.createElement('div'),modeLabel=document.createElement('label'),mode=document.createElement('select'),secretLabel=document.createElement('label'),secret=document.createElement('input');
+        label.className='picker-device';check.type='checkbox';check.className='router-check';info.append(name,meta);label.append(check,info);auth.className='picker-auth';modeLabel.textContent='Вход root';mode.className='router-auth';mode.setAttribute('aria-label','Способ входа: '+router.id);
+        [['common','Общий пароль'],['individual','Свой пароль'],['key','SSH-ключ']].forEach(([value,text])=>{const option=document.createElement('option');option.value=value;option.textContent=text;mode.append(option);});modeLabel.append(mode);
+        secretLabel.className='router-secret-label';secretLabel.textContent='Пароль этого роутера';secret.type='password';secret.className='router-password';secret.maxLength=1024;secret.autocomplete='off';secret.setAttribute('autocapitalize','off');secret.spellcheck=false;secret.setAttribute('aria-label','SSH-пароль: '+router.id);secretLabel.append(secret);auth.append(modeLabel,secretLabel);row.append(label,auth);
+        check.addEventListener('change',()=>{state.selected=check.checked;controls();});
+        mode.addEventListener('change',()=>{state.mode=mode.value;state.password='';secret.value='';secretLabel.hidden=state.mode!=='individual';controls();});
+        secret.addEventListener('input',()=>{state.password=secret.value;});
+      }
+      row.querySelector('.picker-device strong').textContent=router.name||router.id;
+      const meta=row.querySelector('.picker-device small');meta.textContent=router.id+' · '+(router.online?'Онлайн':'Офлайн');meta.className=router.online?'ok':'error';
+      row.querySelector('.router-check').checked=state.selected;row.querySelector('.router-auth').value=state.mode;row.querySelector('.router-secret-label').hidden=state.mode!=='individual';
+      // Keep existing fields in place so heartbeat polling preserves focus and typed passwords.
+      if(selection.children[index]!==row)selection.insertBefore(row,selection.children[index]||null);
+    });selectionReady=true;
+  }
+  function clearPasswords(){password.value='';selectionState.forEach(state=>state.password='');selection.querySelectorAll('.router-password').forEach(node=>node.value='');}
+  [['selectAll',()=>true],['selectOnline',router=>router.online===true],['selectNone',()=>false]].forEach(([id,test])=>document.getElementById(id).addEventListener('click',()=>{routers.forEach(router=>selectionState.get(router.id).selected=test(router));renderSelection();controls();}));
   function dashboard(){
     document.getElementById('activeLabel').textContent=rebooting()?'Перезапускаются':'Обновляются';
     const items=job?job.items:[],count=state=>items.filter(x=>x.state===state).length,counts={Total:job?items.length:routers.length,Active:items.filter(x=>['connecting','running','cancelling'].includes(x.state)).length,Queued:count('queued'),Success:count('success'),Error:count('error'),Unknown:count('unknown'),Cancelled:count('cancelled'),Skipped:count('skipped')};
@@ -14154,7 +14192,7 @@ label{display:block;margin:14px 0 6px;font-weight:700}textarea,input{display:blo
     outcomeList.replaceChildren(fragment);outcomeList.scrollTop=scrollTop;outcomeList.querySelectorAll('article').forEach(row=>{const output=row.querySelector('pre');if(output)output.scrollTop=open.get(row.dataset.router)?.top||0;});
   }
   function render(data){
-    job=data.job;routers=data.routers||[];controls();dashboard();renderOutcomes();const items=job?job.items:routers, signature=JSON.stringify([items,routers]);if(signature===lastRender)return;lastRender=signature;
+    job=data.job;routers=data.routers||[];renderSelection();controls();dashboard();renderOutcomes();document.getElementById('queueResults').hidden=!job;const items=job?job.items:[], signature=JSON.stringify([items,routers]);if(signature===lastRender)return;lastRender=signature;
     const open=new Map(Array.from(results.querySelectorAll('article')).map(row=>[row.dataset.router,{open:!!row.querySelector('details[open]'),top:row.querySelector('pre')?.scrollTop||0}])), fragment=document.createDocumentFragment();
     items.forEach(item=>{const row=document.createElement('article'), title=document.createElement('strong'), detail=document.createElement('p'), id=document.createElement('small');
       row.className='router';row.dataset.router=item.id;title.textContent=(item.state==='success'?'Успешно — ':item.state==='error'?'Ошибка — ':item.state==='unknown'?'Не подтверждено — ':item.state==='cancelled'?'Остановлено — ':'')+(item.name||'Имя роутера не получено');title.className=item.state==='success'?'ok':item.state==='error'?'error':['unknown','cancelled'].includes(item.state)?'warn':'';detail.textContent=item.message||'Готов к постановке в очередь';id.textContent='ID: '+item.id;row.append(title,id,detail);
@@ -14165,14 +14203,21 @@ label{display:block;margin:14px 0 6px;font-weight:700}textarea,input{display:blo
   function summary(){return !job?'Список роутеров обновлён':job.state==='running'?(job.cancel_requested?'Останавливаю очередь':rebooting()?'Перезапуск выполняется':'Обновление выполняется'):rebooting()?'Очередь перезапуска завершена':'Очередь завершена';}
   async function api(path,body){const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),15000);try{const response=await fetch(endpoint+path,{method:body?'POST':'GET',cache:'no-store',headers:body?{'Content-Type':'application/json','X-Router-Update-CSRF':csrf}:{},body:body?JSON.stringify(body):undefined,signal:controller.signal});if(response.status===401){window.location.replace('/login');throw new Error('Нужен вход в Hub');}const data=await response.json();if(!response.ok)throw new Error(data.error||'HTTP '+response.status);return data;}finally{clearTimeout(timeout);}}
   async function refresh(){if(stopped||pending)return;const current=++generation;if(timer!==null)clearTimeout(timer);timer=null;try{const data=await api('');if(current!==generation||pending)return;render(data);status.className='';status.textContent=summary();if(job&&job.state!=='running'&&job.request_id===requestId)forgetRequest();}catch(error){if(current===generation){status.className='error';status.textContent='Не удалось получить состояние: '+error.message;}}finally{if(!stopped&&!pending&&current===generation)timer=setTimeout(refresh,3000);}}
-  async function startQueue(action){if(pending||(job&&job.state==='running'))return;generation++;pending=true;controls();if(timer!==null)clearTimeout(timer);try{const body={ssh_password:password.value,request_id:requestToken(action)};if(action==='update')body.command=command.value;const data=await api(action==='reboot'?'/reboot':'/start',body);password.value='';render(data);status.className='';status.textContent=summary();}catch(error){password.value='';status.className='error';status.textContent='Запуск не подтверждён: '+error.message+'. Проверяю состояние очереди.';}finally{pending=false;controls();if(!stopped)timer=setTimeout(refresh,1000);}}
+  async function startQueue(action){
+    if(pending||(job&&job.state==='running'))return;
+    const selected=selectedRouters();if(!selected.length)return;
+    const missing=selected.find(router=>{const state=selectionState.get(router.id);return state.mode==='individual'&&!state.password;});
+    if(missing){status.className='error';status.textContent='Укажи SSH-пароль для '+(missing.name||missing.id)+'.';const row=Array.from(selection.children).find(row=>row.dataset.router===missing.id);row?.querySelector('.router-password').focus();return;}
+    generation++;pending=true;controls();if(timer!==null)clearTimeout(timer);
+    try{const body={ssh_password:password.value,router_ids:selected.map(router=>router.id),ssh_passwords:{},request_id:requestToken(action)};selected.forEach(router=>{const state=selectionState.get(router.id);if(state.mode!=='common')Object.defineProperty(body.ssh_passwords,router.id,{value:state.mode==='key'?'':state.password,enumerable:true});});if(action==='update')body.command=command.value;const data=await api(action==='reboot'?'/reboot':'/start',body);clearPasswords();render(data);status.className='';status.textContent=summary();}catch(error){clearPasswords();status.className='error';status.textContent='Запуск не подтверждён: '+error.message+'. Проверяю состояние очереди.';}finally{pending=false;controls();if(!stopped)timer=setTimeout(refresh,1000);}
+  }
   form.addEventListener('submit',event=>{event.preventDefault();startQueue('update');});
   rebootAll.addEventListener('click',()=>startQueue('reboot'));
   cancel.addEventListener('click',async()=>{if(!job||pending)return;generation++;if(timer!==null)clearTimeout(timer);pending=true;controls();status.textContent='Останавливаю текущую задачу и очередь…';try{const data=await api('/cancel',{id:job.id});render(data);status.textContent=summary();}catch(error){status.textContent='Остановка не подтверждена: '+error.message;}finally{pending=false;controls();if(!stopped)timer=setTimeout(refresh,1000);}});
   document.querySelectorAll('.outcome-toggle').forEach(button=>button.addEventListener('click',()=>{outcomeFilter=button.dataset.state;outcomeList.scrollTop=0;renderOutcomes();}));
   showAllOutcomes.addEventListener('click',()=>{outcomeFilter='all';outcomeList.scrollTop=0;renderOutcomes();});
   refreshRouters.addEventListener('click',async()=>{if(pending)return;const current=++generation;if(timer!==null)clearTimeout(timer);pending=true;refreshing=true;controls();status.className='';status.textContent='Обновляю список и статусы роутеров…';try{const data=await api('/refresh',{id:job?job.id:''});if(current!==generation)return;render(data);if(!job)forgetRequest();status.textContent=job?'Статусы обновлены. '+summary():'Список и статусы обновлены. Можно запустить новую очередь.';}catch(error){status.className='error';status.textContent='Не удалось обновить список: '+error.message;}finally{pending=false;refreshing=false;controls();if(!stopped)timer=setTimeout(refresh,3000);}});
-  window.addEventListener('pagehide',()=>{stopped=true;if(timer!==null)clearTimeout(timer);password.value='';});
+  window.addEventListener('pagehide',()=>{stopped=true;if(timer!==null)clearTimeout(timer);clearPasswords();});
   window.addEventListener('pageshow',()=>{if(stopped){stopped=false;refresh();}});refresh();
 })();
 </script></body></html>'''.replace('__COMMAND__', html.escape(default_command)).replace('__CSRF__', json.dumps(csrf))
@@ -14207,12 +14252,12 @@ def router_xray_control_html(router, csrf):
  const endpoint=__ENDPOINT__,csrf=__CSRF__,buttons=[...document.querySelectorAll('[data-action]')],result=document.getElementById('result'),history=document.getElementById('history');
  const resultTitle=document.getElementById('resultTitle'),resultOutput=document.getElementById('resultOutput'),operationTimer=document.getElementById('operationTimer'),clearHistory=document.getElementById('clearHistory');
  const labels={start:'Запустить Xray',stop:'Остановить Xray',restart:'Перезапустить Xray','set-host':'Изменить VPS host'}, states={queued:'Ожидает Heartbeat',delivered:'Доставлена агенту',running:'Выполняется на роутере',succeeded:'Успешно',failed:'Ошибка',interrupted:'Выполнение прервано',expired:'Не доставлена',unconfirmed:'Результат не подтверждён'};
- let timer=null,clockTimer=null,request=null,stopped=false,busy=false,snapshot=null,posting=false,serverBase=0,clockBase=0;
+ let timer=null,clockTimer=null,request=null,stopped=false,busy=false,snapshot=null,posting=false,serverBase=0,clockBase=0,lastHistory='';
  const stamp=value=>value?new Date(value*1000).toLocaleString('ru-RU'):'нет данных';
  const active=state=>['queued','delivered','running'].includes(state),tone=state=>state==='succeeded'?'ok':['failed','interrupted'].includes(state)?'error':'warn';
  const duration=value=>{const seconds=Math.max(0,Math.floor(value));return String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0');};
  const serverNow=()=>serverBase+(performance.now()-clockBase)/1000;
- function controls(){buttons.forEach(button=>button.disabled=posting||!snapshot||!snapshot.supported||snapshot.history.some(item=>active(item.status)));clearHistory.disabled=posting||!snapshot||!snapshot.history.some(item=>!active(item.status));}
+ function controls(){buttons.forEach(button=>button.disabled=posting||!snapshot||!snapshot.supported||(button.dataset.action==='start'&&snapshot.xray==='running')||snapshot.history.some(item=>active(item.status)));clearHistory.disabled=posting||!snapshot||!snapshot.history.some(item=>!active(item.status));}
  function timing(item,detail=false){
    const now=serverNow(),elapsed=Math.max(0,(item.completed_at||now)-item.created_at);
    if(!active(item.status))return 'Длительность ожидания и выполнения: '+duration(elapsed);
@@ -14247,8 +14292,9 @@ def router_xray_control_html(router, csrf):
    const latest=data.history[0];result.className='info '+(latest?tone(latest.status):'muted');
    resultTitle.textContent=latest?(states[latest.status]||latest.status)+' — '+labels[latest.action]:data.supported?'Журнал действий пуст.':'На роутере установлен агент без поддержки этой функции. Сначала обнови его.';
    resultOutput.textContent=latest?(latest.result||'Ожидается ответ агента.'):'';
-   history.replaceChildren();
-   data.history.forEach(item=>{const entry=document.createElement('article');entry.className='entry';const title=document.createElement('strong');title.className=tone(item.status);title.textContent=labels[item.action]+' · '+(states[item.status]||item.status);const time=document.createElement('small');time.textContent=stamp(item.created_at);const clock=document.createElement('p');clock.className='muted clockLine';clock.dataset.timingId=item.id;const p=document.createElement('p');p.textContent=item.result||'Ожидание доставки и результата';entry.append(title,document.createElement('br'),time,clock,p);history.append(entry);});controls();scheduleClock();
+   const historySignature=JSON.stringify(data.history);
+   if(historySignature!==lastHistory){lastHistory=historySignature;history.replaceChildren();
+   data.history.forEach(item=>{const entry=document.createElement('article');entry.className='entry';const title=document.createElement('strong');title.className=tone(item.status);title.textContent=labels[item.action]+' · '+(states[item.status]||item.status);const time=document.createElement('small');time.textContent=stamp(item.created_at);const clock=document.createElement('p');clock.className='muted clockLine';clock.dataset.timingId=item.id;const p=document.createElement('p');p.textContent=item.result||'Ожидание доставки и результата';entry.append(title,document.createElement('br'),time,clock,p);history.append(entry);});}controls();scheduleClock();
  }
  async function api(payload){
    request=new AbortController();const timeout=setTimeout(()=>request.abort(),10000);
@@ -16728,16 +16774,25 @@ class RouterUpdateManager:
             if self.job and self.job['id'] == job_id and self.job['state'] != 'running':
                 self.job = None
 
-    def start_reboot(self, password, request_id):
-        return self.start('', password, request_id, operation='reboot')
+    def start_reboot(self, password, request_id, router_ids=None, ssh_passwords=None):
+        return self.start('', password, request_id, operation='reboot', router_ids=router_ids, ssh_passwords=ssh_passwords)
 
-    def start(self, command, password, request_id, operation='update'):
+    def start(self, command, password, request_id, operation='update', router_ids=None, ssh_passwords=None):
         if operation not in {'update', 'reboot'}:
             raise ValueError('Неизвестное действие очереди.')
         if operation == 'update' and (not isinstance(command, str) or not command.strip() or len(command.encode('utf-8')) > 8192 or '\x00' in command):
             raise ValueError('Укажи команду обновления размером до 8 КиБ без нулевых символов.')
         if not isinstance(password, str) or len(password.encode('utf-8')) > 1024 or '\x00' in password:
             raise ValueError('Некорректный SSH-пароль.')
+        if router_ids is not None and (not isinstance(router_ids, list) or not router_ids or len(router_ids) > 512
+                                      or any(not isinstance(value, str) or not value or len(value) > 128 for value in router_ids)
+                                      or len(set(router_ids)) != len(router_ids)):
+            raise ValueError('Выбери от 1 до 512 разных роутеров.')
+        if ssh_passwords is not None and (not isinstance(ssh_passwords, dict) or len(ssh_passwords) > 512
+                                         or any(not isinstance(key, str) or not isinstance(value, str)
+                                                or len(value.encode('utf-8')) > 1024 or '\x00' in value
+                                                for key, value in ssh_passwords.items())):
+            raise ValueError('Некорректные индивидуальные SSH-пароли.')
         if not isinstance(request_id, str) or not re.fullmatch(r'[a-zA-Z0-9_-]{16,80}', request_id):
             raise ValueError('Некорректный идентификатор запроса. Обнови страницу.')
         command = normalize_router_update_command(command) if operation == 'update' else ''
@@ -16754,10 +16809,19 @@ class RouterUpdateManager:
             self.wake.clear()
             with self.app.conn() as conn:
                 rows = [dict(row) for row in list_router_rows(conn)]
+            if router_ids is not None:
+                selected = set(router_ids)
+                if selected - {row['id'] for row in rows}:
+                    raise ValueError('Выбранный роутер удалён или недоступен. Обнови список и повтори.')
+                rows = [row for row in rows if row['id'] in selected]
             if not rows:
                 raise ValueError('Нет роутеров для запуска очереди.')
             if len(rows) > 512:
                 raise ValueError('В одной очереди поддерживается до 512 роутеров.')
+            if set(ssh_passwords or {}) - {row['id'] for row in rows}:
+                raise ValueError('Индивидуальные пароли можно указать только для выбранных роутеров.')
+            # Credentials belong only to the worker, never to job snapshots or the database.
+            credentials = {row['id']: (ssh_passwords or {}).get(row['id'], password) for row in rows}
             items = []
             for row in rows:
                 items.append({'id': row['id'], 'name': router_update_name(row),
@@ -16765,11 +16829,12 @@ class RouterUpdateManager:
             job_id = secrets.token_hex(16)
             self.job = {'id': job_id, 'request_id': request_id, 'operation': operation, 'state': 'running', 'started_at': time.time(),
                         'finished_at': 0, 'cancel_requested': False, 'items': items}
-            self.thread = threading.Thread(target=self._run, args=(rows, command, password, job_id, operation), daemon=True,
+            self.thread = threading.Thread(target=self._run, args=(rows, command, credentials, job_id, operation), daemon=True,
                                            name='owrt-router-updates')
             try:
                 self.thread.start()
             except BaseException:
+                credentials.clear()
                 self.job = None
                 self.thread = None
                 raise
@@ -16821,8 +16886,7 @@ class RouterUpdateManager:
             if password:
                 if denied and denied.group(1) and not methods.intersection({'password', 'keyboard-interactive'}):
                     return 'SSH-сервер не предлагает вход по паролю. Проверь разрешение входа root по SSH.'
-                return ('Общий SSH-пароль не принят этим роутером. Возможно, пароль роутера отличается '
-                        'от общего; проверь его пароль и разрешение входа root по SSH.')
+                return 'SSH-пароль не принят этим роутером. Проверь индивидуальный пароль и разрешение входа root по SSH.'
             return 'SSH-авторизация отклонена. Укажи пароль root или проверь SSH-ключ доступа к этому роутеру.'
         safe = cls._safe(text, password)[:1200]
         if re.search(r'(?i)(?:connection timed out during banner exchange|banner exchange:.*(?:timed out|timeout))', text):
@@ -16831,9 +16895,11 @@ class RouterUpdateManager:
                     'Технический ответ: ' + safe)
         return cls._safe(text, password)[:1200] or 'Ошибка подключения по SSH'
 
-    def _run(self, rows, command, password, job_id, operation):
+    def _run(self, rows, command, credentials, job_id, operation):
+        password = ''
         try:
             for index, row in enumerate(rows):
+                password = credentials.pop(row['id'], '')
                 if self._cancelled():
                     self._set(index, state='skipped', message='Пропущен: очередь остановлена')
                     continue
@@ -16856,6 +16922,7 @@ class RouterUpdateManager:
                               message=('Остановлено до отправки команды ' + ('reboot' if operation == 'reboot' else 'установки'))
                               if cancelled else self._ssh_error(exc, password))
         finally:
+            credentials.clear()
             password = ''
             command = ''
             with self.lock:
@@ -19697,17 +19764,24 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
                 self.send_json(415, {'ok': False, 'error': 'Ожидается JSON.'})
                 return
             length = self.headers.get('Content-Length', '')
-            if self.headers.get('Transfer-Encoding') or not length.isdigit() or int(length) > 65536:
+            if self.headers.get('Transfer-Encoding') or not length.isdigit() or int(length) > 1048576:
                 self.send_json(413, {'ok': False, 'error': 'Слишком большой запрос.'})
                 return
             try:
                 payload = self.read_payload()
                 if not isinstance(payload, dict):
                     raise ValueError('Ожидается объект JSON.')
+                if action in {'start', 'reboot'}:
+                    if 'router_ids' in payload and not isinstance(payload['router_ids'], list):
+                        raise ValueError('Ожидается список выбранных роутеров.')
+                    if 'ssh_passwords' in payload and not isinstance(payload['ssh_passwords'], dict):
+                        raise ValueError('Ожидается объект индивидуальных SSH-паролей.')
                 if action == 'start':
-                    manager.start(payload.get('command'), payload.get('ssh_password', ''), payload.get('request_id'))
+                    manager.start(payload.get('command'), payload.get('ssh_password', ''), payload.get('request_id'),
+                                  router_ids=payload.get('router_ids'), ssh_passwords=payload.get('ssh_passwords'))
                 elif action == 'reboot':
-                    manager.start_reboot(payload.get('ssh_password', ''), payload.get('request_id'))
+                    manager.start_reboot(payload.get('ssh_password', ''), payload.get('request_id'),
+                                         router_ids=payload.get('router_ids'), ssh_passwords=payload.get('ssh_passwords'))
                 elif action == 'cancel':
                     manager.cancel(payload.get('id'))
                 elif action == 'refresh':
@@ -19729,7 +19803,7 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
             for item in job['items']:
                 if item['id'] in custom_names:
                     item['name'] = custom_names[item['id']]
-        self.send_json(200, {'ok': True, 'job': job, 'routers': routers})
+        self.send_json(200, {'ok': True, 'selection_supported': True, 'job': job, 'routers': routers})
 
     def ssh_ws(self):
         try:
