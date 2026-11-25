@@ -14,9 +14,8 @@ XRAY_RELEASE_VERSION="${XRAY_RELEASE_VERSION:-}"
 XRAY_RELEASE_API_URL="${XRAY_RELEASE_API_URL:-https://api.github.com/repos/yichya/openwrt-xray/releases}"
 
 log() {
-	# procd already captures stderr. Use only logger for managed processes.
+	# Interactive diagnostics go to stderr; managed services do not archive them.
 	[ "${OWRT_REMOTE_SERVICE_LOG:-0}" = 1 ] || printf '%s\n' "$*" >&2
-	logger -t owrt-remote "$*" 2>/dev/null || true
 }
 
 die() {
@@ -39,7 +38,6 @@ usage() {
   owrt-remote heartbeat-loop
   owrt-remote heartbeat-diagnostics
   owrt-remote tachyon-status
-  owrt-remote logs-sync
   owrt-remote network-diagnostics
 
 Настройки лежат в /etc/config/owrtremote.
@@ -821,8 +819,10 @@ EOF
 )
 
 heartbeat_json() {
-	local router_id router_name role public_url hub_url xray_state service_state ssh_state event heartbeat_interval
+	local router_id router_name role public_url hub_url xray_state service_state ssh_state event heartbeat_interval sample_ms boot_id
 	event="${1:-}"
+	sample_ms="$(remote_clock_ms)"
+	boot_id="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"
 	router_id="$(safe_id "$(uci_get router_id main)")"
 	router_name="$(uci_get router_name "$router_id")"
 	role="$(uci_get role node)"
@@ -850,6 +850,8 @@ heartbeat_json() {
 	cat <<EOF
 {
   "id": $(json_string "$router_id"),
+  "agent_boot_id": $(json_string "$boot_id"),
+  "sample_uptime_ms": $(safe_num "$sample_ms" 0),
   "name": $(json_string "$router_name"),
   "role": $(json_string "$role"),
   "model": $(json_string "$(host_model)"),
@@ -873,6 +875,7 @@ heartbeat_json() {
   "temperature": $(json_string "$(temperature_text)"),
   "xray": $(json_string "$xray_state"),
   "xray_control": $([ -r "$CONTROL_HELPER" ] && printf 1 || printf 0),
+  "vps_host_control": $([ -r "$CONTROL_HELPER" ] && command -v vps_host_control_execute >/dev/null 2>&1 && printf 1 || printf 0),
   "xray_control_result": $(xray_control_result_json || printf null),
   "ssh": $(json_string "$ssh_state"),
   "tachyon": $(tachyon_json),
@@ -1024,102 +1027,6 @@ log_post_json_bounded() (
 	# cannot affect heartbeat/Xray. POSIX -f uses 512-byte blocks (32 KiB here).
 	ulimit -f 64 || exit 1
 	post_json "$1" "$2" "$3"
-)
-
-global_logs_state() {
-	local enabled xray
-	enabled=false; xray=stopped
-	truthy "$(uci_get enabled 0)" && enabled=true
-	xray_running && xray=running
-	printf '{"enabled":%s,"xray":"%s"}' "$enabled" "$xray"
-}
-
-sync_global_logs() (
-	local helper router_id file response endpoint base token journal offset clear_token rc sync_lock owner attempt runtime TMPDIR stale
-	helper="${OWRT_REMOTE_LOG_HELPER:-/usr/lib/owrt-remote/logs.sh}"
-	[ -r "$helper" ] || return 0
-	token="$(uci_get hub_token '')"; [ -n "$token" ] || return 0
-	# The journal is independent of Remote's enabled flag and Xray lifecycle.
-	sh "$helper" check || return 1
-	runtime="${OWRT_REMOTE_LOG_RUNTIME:-/tmp/owrt-remote-log-runtime}"
-	# Older helpers create only their journal directory. An independent agent
-	# update still needs a private runtime directory for delivery and its lock.
-	(umask 077; mkdir -p "$runtime") || return 1
-	sync_lock="$runtime/sync-lock"
-	if ! mkdir "$sync_lock" 2>/dev/null; then
-		# Give a sender time to write its PID, then recover an abandoned lock.
-		for attempt in 1 2 3 4 5 6 7 8 9 10; do
-			owner="$(cat "$sync_lock/pid" 2>/dev/null)"
-			case "$owner" in ''|*[!0-9]*) sleep 0.1 ;; *) break ;; esac
-		done
-		owner="$(cat "$sync_lock/pid" 2>/dev/null)"
-		case "$owner" in ''|*[!0-9]*) ;; *) kill -0 "$owner" 2>/dev/null && return 0 ;; esac
-		if ! mkdir "$sync_lock/reap" 2>/dev/null; then
-			owner="$(cat "$sync_lock/reap/pid" 2>/dev/null)"
-			case "$owner" in ''|*[!0-9]*) sleep 1 ;; *) kill -0 "$owner" 2>/dev/null && return 0 ;; esac
-			rm -f "$sync_lock/reap/pid"; rmdir "$sync_lock/reap" 2>/dev/null || return 0
-			return 0
-		fi
-		printf '%s\n' "$$" >"$sync_lock/reap/pid"
-		owner="$(cat "$sync_lock/pid" 2>/dev/null)"
-		case "$owner" in ''|*[!0-9]*) ;; *) if kill -0 "$owner" 2>/dev/null; then rm -f "$sync_lock/reap/pid"; rmdir "$sync_lock/reap"; return 0; fi ;; esac
-		rm -f "$sync_lock/pid"
-		rm -f "$sync_lock/reap/pid"
-		rmdir "$sync_lock/reap" || return 0
-		rmdir "$sync_lock" 2>/dev/null || return 0
-		mkdir "$sync_lock" 2>/dev/null || return 0
-	fi
-	# ash keeps $$ unchanged inside a subshell. Store the actual sender PID so
-	# a killed sender is recoverable while its parent service is still alive.
-	if read -r owner attempt </proc/self/stat 2>/dev/null; then
-		printf '%s\n' "$owner" >"$sync_lock/pid"
-	else
-		printf '%s\n' "$$" >"$sync_lock/pid"
-	fi
-	file=''; response=''
-	trap 'rm -f "$file" "$response" "$sync_lock/pid"; rmdir "$sync_lock" 2>/dev/null || true' EXIT
-	trap 'exit 1' INT TERM
-	# A killed sender can leave one bounded payload; reclaim it under the singleton.
-	rm -f "$runtime"/sync.*
-	# Give this sender its own temporary HTTP directory; never sweep heartbeat's
-	# files. Clean a curl subprocess killed before its EXIT trap could run.
-	TMPDIR="$runtime/http"; export TMPDIR
-	mkdir -p "$TMPDIR" || return 1
-	for stale in "$TMPDIR"/owrt-remote-http.*; do
-		[ -d "$stale" ] || continue
-		rm -f "$stale/body" "$stale/stats" "$stale/error" "$stale/dns"
-		rmdir "$stale" 2>/dev/null || true
-	done
-	if truthy "$(uci_get wan_direct 0)" && [ ! -s "$WAN_STATE/active-interface" ]; then wan_prepare || return 1; fi
-	router_id="$(safe_id "$(uci_get router_id main)")"
-	# Export at most 16 KiB of raw records directly into a bounded request file.
-	# Neither the Flash journal nor a base64 packet is copied into a shell variable.
-	umask 077
-	file="$runtime/sync.$$"; response="$file.response"
-	{
-		printf '{"id":%s,"batch":' "$(json_string "$router_id")"
-		sh "$helper" export || exit 1
-		printf ',"state":%s}\n' "$(global_logs_state)"
-	} >"$file" || return 1
-	for endpoint in $(heartbeat_candidate_endpoints); do
-		base="$(heartbeat_base_from_endpoint "$endpoint")"
-		if log_post_json_bounded "$base/api/router-logs" "$token" "$file" >"$response" 2>/dev/null &&
-			grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' "$response"; then
-			journal="$(jsonfilter -i "$response" -e '@.journal_id' 2>/dev/null)"
-			offset="$(jsonfilter -i "$response" -e '@.offset' 2>/dev/null)"
-			clear_token="$(jsonfilter -i "$response" -e '@.clear_request' 2>/dev/null)"
-			sh "$helper" ack "$journal" "$offset" "$clear_token"
-			rc=$?
-			rm -f "$file" "$response"
-			rm -f "$sync_lock/pid"; rmdir "$sync_lock" 2>/dev/null || true
-			trap - EXIT INT TERM
-			return "$rc"
-		fi
-	done
-	rm -f "$file" "$response"
-	rm -f "$sync_lock/pid"; rmdir "$sync_lock" 2>/dev/null || true
-	trap - EXIT INT TERM
-	return 1
 )
 
 heartbeat_base_from_endpoint() {
@@ -2285,9 +2192,6 @@ case "$cmd" in
 		;;
 	heartbeat-diagnostics)
 		heartbeat_diagnostics
-		;;
-	logs-sync)
-		sync_global_logs
 		;;
 	*)
 		usage >&2

@@ -148,7 +148,7 @@ public class NativeSmokeInstrumentation extends Instrumentation {
             capture("native-routers");
 
             clickText("Домашний роутер");
-            waitFor("router details", 10000, () -> hasText("Remote управление Xray"));
+            waitFor("router details", 10000, () -> hasText("Настройки Xray"));
             assertNative("router detail");
             assertCenteredRouter();
             checks.add("native_selected_router_detail");
@@ -157,10 +157,10 @@ public class NativeSmokeInstrumentation extends Instrumentation {
             waitFor("offline details",8000,()->containsText("Нет связи с агентом"));
             assertCenteredRouter();capture("native-router-offline");
             clickText("Роутеры");clickText("Домашний роутер");
-            waitFor("online details again",8000,()->hasText("Remote управление Xray"));
+            waitFor("online details again",8000,()->hasText("Настройки Xray"));
             checks.add("online_offline_hero_and_equal_centered_stat_columns");
 
-            openRouterTool("Remote управление Xray");
+            openRouterTool("Настройки Xray");
             waitFor("native Xray controls", 15000, () -> enabledText("Перезапустить Xray"));
             assertNative("Xray tool");
             clickText("Перезапустить Xray");
@@ -181,8 +181,8 @@ public class NativeSmokeInstrumentation extends Instrumentation {
             checks.add("native_xray_history_clear");
 
             backToMain();
-            waitFor("router detail after tool", 8000, () -> hasText("Remote управление Xray"));
-            checkNotesAndLogsWhenAvailable();
+            waitFor("router detail after tool", 8000, () -> hasText("Настройки Xray"));
+            checkNotesWhenAvailable();
 
             clickText("Настройки");
             waitFor("native settings", 8000, () -> hasText("Оформление"));
@@ -276,14 +276,8 @@ public class NativeSmokeInstrumentation extends Instrumentation {
         checks.add("chart_respects_server_gap_threshold_without_invented_observations");
     }
 
-    protected void checkNotesAndLogsWhenAvailable() throws Exception {
-        if (hasText("Глобальные логи")) {
-            openRouterTool("Глобальные логи");
-            waitFor("native log contents", 15000, () -> containsAnyText("Fixture", "Heartbeat"));
-            assertNative("logs");
-            checks.add("native_logs_show_server_data");
-            backToMain();
-        }
+    protected void checkNotesWhenAvailable() throws Exception {
+        require(!hasText("Глобальные логи"), "Retired router journal is absent");
         if (hasAnyText("Заметки", "Заметка")) {
             openRouterTool("Заметки");
             waitFor("native note editor", 10000, () -> editorWithHint("запомнить") != null);

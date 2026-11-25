@@ -1,6 +1,6 @@
 # OWRT Hub — нативное приложение Android
 
-Тестовая версия **0.2.4-v123**, Android **8.0+**. Основные экраны состоят из
+Тестовая версия **0.2.5-v124**, Android **8.0+**. Основные экраны состоят из
 нативных View Android и работают через JSON API Hub. Дизайн: графитовая и зимняя
 темы, Inter с кириллицей, нижняя навигация и отдельные экраны инструментов.
 
@@ -30,7 +30,7 @@ LuCI и Tachyon — самостоятельные веб-интерфейсы �
 
 Мобильный API входит в текущий `main`, установщик VPS и обновление через кнопку
 панели. Для старой сборки v123 сначала выполните «Обновление панели».
-Номер Hub сохраняется v123; роутер переустанавливать не требуется.
+Текущий выпуск Hub — v124. Для смены VPS host через Heartbeat обновите также агент роутера.
 Для удаления заметок в Android 0.2.4 нужен API ревизии 4 из текущего `main`
 с маршрутом `/api/mobile/v1/router/<id>/notes/delete`. Установка и откат:
 см. [CHANGES-0.2.4.md](CHANGES-0.2.4.md).
@@ -67,14 +67,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Fix -Vps root@YOUR_VPS 
 `/root/owrt-remote-backup-before-mobile-update-check-v123`, чтобы сохранить
 установленный ранее мобильный API. APK для этого исправления менять не нужно.
 
-[Скачать готовую APK 0.2.4-v123](https://github.com/kzolotarev95/luci-app-owrt-remote/raw/refs/heads/main/android/apk/OWRT-Hub-Android-0.2.4-v123.apk).
+[Скачать готовую APK 0.2.5-v124](https://github.com/kzolotarev95/luci-app-owrt-remote/raw/refs/heads/main/android/apk/OWRT-Hub-Android-0.2.5-v124.apk).
 Контрольная сумма — в [android/apk/SHA256SUMS](apk/SHA256SUMS).
 
 Для самостоятельной сборки используйте раздел ниже. Результат —
 `android/app/build/outputs/apk/debug/app-debug.apk`. Для обновления поверх
 прежней APK используйте тот же ключ подписи. Локальная тестовая сборка
-`OWRT-Hub-Android-0.2.4-v123.apk` подписана прежним ключом 0.2.0/0.2.1.
-Готовая APK опубликована в [android/apk](apk/README.md), отдельно от пакетов OpenWrt в Releases.
+`OWRT-Hub-Android-0.2.5-v124.apk` подписана прежним ключом 0.2.0/0.2.1.
+Готовая APK опубликована в [android/apk](apk/README.md) и [Releases v124](https://github.com/kzolotarev95/luci-app-owrt-remote/releases/tag/v124), отдельно от пакетов OpenWrt. В 0.2.5 удалён экран глобальных журналов; история команд Xray сохранена. См. [изменения 0.2.5](CHANGES-0.2.5.md).
 Откройте приложение, укажите свой адрес, например
 `https://hub.example.com`, порт 443 или оставьте поле порта пустым. Вводите
 учётную запись **Hub**, а не SSH/root-пароль VPS. Настройки старой WebView-версии
@@ -113,7 +113,7 @@ SSH — построчная консоль, не полная эмуляция 
 
 Для удаления заметок нужен мобильный API ревизии 4: см. установку
 и откат `deploy-android-note-delete.ps1` в [CHANGES-0.2.4.md](CHANGES-0.2.4.md).
-Установите APK 0.2.4 поверх 0.2.3: подпись, имя пакета и формат зашифрованной
+Установите APK 0.2.5 поверх 0.2.4: подпись, имя пакета и формат зашифрованной
 сессии сохраняются. Старую APK оставьте для отката.
 
 При подключённом через USB телефоне с разрешённой отладкой, PowerShell Windows 11:
@@ -121,7 +121,7 @@ SSH — построчная консоль, не полная эмуляция 
 ```powershell
 $Repo = Join-Path $env:USERPROFILE 'Documents\openwrt overlay'
 $Adb = Join-Path $Repo '.test-output\android-build-tools\sdk\platform-tools\adb.exe'
-& $Adb -d install -r (Join-Path $Repo 'android\apk\OWRT-Hub-Android-0.2.4-v123.apk')
+& $Adb -d install -r (Join-Path $Repo 'android\apk\OWRT-Hub-Android-0.2.5-v124.apk')
 # Откат тестовой APK с сохранением данных:
 & $Adb -d install -r -d (Join-Path $Repo 'artifacts\android\OWRT-Hub-Android-0.2.3-v123.apk')
 ```

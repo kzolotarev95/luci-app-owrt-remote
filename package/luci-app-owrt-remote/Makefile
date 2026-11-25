@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-owrt-remote
-PKG_VERSION:=123
+PKG_VERSION:=124
 PKG_RELEASE:=1
 PKG_LICENSE:=MIT
 PKG_MAINTAINER:=kzolotarev95
@@ -21,7 +21,7 @@ endef
 
 define Package/luci-app-owrt-remote/description
   Router agent and LuCI panel for OWRT Hub. Includes Heartbeat,
-  independent remote Xray control, WAN direct and bounded persistent logs.
+  independent remote Xray control, WAN direct and router status.
   Xray is selected and verified for the router by the existing agent when
   applying the Hub configuration; it is not bundled into this noarch package.
 endef
@@ -62,7 +62,7 @@ exit 0
 endef
 
 # OpenWrt's generated postinst/prerm handle enable/start and stop/disable for
-# both procd services, and PKG_UPGRADE keeps upgrade semantics on IPK and APK.
+# the procd service, and PKG_UPGRADE keeps upgrade semantics on IPK and APK.
 # Do not duplicate them or depend on opkg's "configure" argument: apk invokes
 # post-install/post-upgrade with version arguments instead.
 $(eval $(call BuildPackage,luci-app-owrt-remote))

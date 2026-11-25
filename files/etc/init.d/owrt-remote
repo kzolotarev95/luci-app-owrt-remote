@@ -54,10 +54,6 @@ stop_xray_processes() {
 
 start_service() {
 	mkdir -p /var/lock /var/run /tmp/owrt-xray
-	if [ -x /etc/init.d/owrt-remote-logs ]; then
-		/etc/init.d/owrt-remote-logs start >/dev/null 2>&1 || true
-	fi
-	logger -t owrt-remote 'Сервис: запуск' 2>/dev/null || true
 
 	if ! config_enabled; then
 		echo "owrt-remote disabled in /etc/config/owrtremote"
@@ -70,8 +66,8 @@ start_service() {
 		procd_set_param command /usr/sbin/owrt-remote run
 		procd_set_param env OWRT_REMOTE_SERVICE_LOG=1
 		procd_set_param respawn 3600 5 5
-		procd_set_param stdout 1
-		procd_set_param stderr 1
+		procd_set_param stdout 0
+		procd_set_param stderr 0
 		procd_close_instance
 	fi
 
@@ -79,8 +75,8 @@ start_service() {
 	procd_set_param command /usr/sbin/owrt-remote heartbeat-loop
 	procd_set_param env OWRT_REMOTE_SERVICE_LOG=1
 	procd_set_param respawn 3600 5 5
-	procd_set_param stdout 1
-	procd_set_param stderr 1
+	procd_set_param stdout 0
+	procd_set_param stderr 0
 	procd_close_instance
 }
 
@@ -90,7 +86,6 @@ reload_service() {
 }
 
 stop_service() {
-	logger -t owrt-remote 'Сервис: остановка туннеля' 2>/dev/null || true
 	stop_xray_processes
 	/usr/sbin/owrt-remote wan-cleanup >/dev/null 2>&1 || true
 }

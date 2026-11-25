@@ -68,6 +68,22 @@ class StateTests(unittest.TestCase):
         clean = hub.normalize_tachyon(value)
         self.assertNotIn('host', clean); self.assertNotIn('token', clean)
 
+    def test_unknown_probe_keeps_last_confirmation_without_extending_it_forever(self):
+        with mock.patch.object(hub, 'now_ts', return_value=1000):
+            self.assertTrue(self.beat(tachyon=detected())['tachyon']['online'])
+        with mock.patch.object(hub, 'now_ts', return_value=1030):
+            state = self.beat(tachyon={'checked':False})['tachyon']
+            self.assertTrue(state['online'])
+            self.assertTrue(state['checking'])
+            self.assertEqual(state['observed_at'],1000)
+        with mock.patch.object(hub, 'now_ts', return_value=1121):
+            state = self.beat(tachyon={'checked':False})['tachyon']
+            self.assertFalse(state['online'])
+            self.assertTrue(state['checking'])
+            self.assertEqual(state['observed_at'],1000)
+        with mock.patch.object(hub, 'now_ts', return_value=1122):
+            self.assertTrue(self.beat(tachyon=detected())['tachyon']['online'])
+
     def test_both_generators_share_fixed_loopback_target_and_existing_reverse(self):
         a = self.beat(tachyon=detected())
         row = hub.get_router(self.conn, 'a')
@@ -177,6 +193,36 @@ print(str(value).lower() if isinstance(value,bool) else value)' "$@"
         self.root.joinpath('absent').touch()
         self.assertEqual(json.loads(self.run_shell('tachyon_json force').stdout), dict(checked=True, installed=False))
         self.assertFalse(list(self.root.glob('tachyon/probe.*')))
+
+    def test_rc2_authenticated_api_and_stopped_core_do_not_hide_reachable_web_ui(self):
+        result = self.harness.run_shell(self.mocks + 'tachyon_json force',
+            TEST_VERSION='2.0.0~rc.2-1', TEST_HTTP='200', TEST_SERVICE='false', TEST_API='0')
+        state = json.loads(result.stdout)
+        self.assertEqual(state['mode'],'standalone')
+        self.assertEqual(state['port'],1680)
+        self.assertEqual(state['service'],'stopped')
+        self.assertTrue(state['available'],'web reachability is independent of the core service')
+
+    def test_first_transient_web_failure_is_unknown_and_second_confirms_unreachable(self):
+        self.assertTrue(json.loads(self.run_shell('tachyon_json force').stdout)['available'])
+        first = self.harness.run_shell(self.mocks + 'tachyon_json force',
+            TEST_VERSION='2.0.0~rc.2-1', TEST_HTTP='fail', TEST_SERVICE='true')
+        self.assertFalse(json.loads(first.stdout)['checked'])
+        second = self.harness.run_shell(self.mocks + 'tachyon_json force',
+            TEST_VERSION='2.0.0~rc.2-1', TEST_HTTP='fail', TEST_SERVICE='true')
+        state = json.loads(second.stdout)
+        self.assertTrue(state['checked'])
+        self.assertFalse(state['available'])
+        self.assertTrue(json.loads(self.run_shell('tachyon_json force').stdout)['available'])
+
+    def test_missing_package_version_keeps_known_standalone_route_with_protected_api(self):
+        self.assertTrue(json.loads(self.run_shell('tachyon_json force').stdout)['available'])
+        result = self.harness.run_shell(self.mocks + 'tachyon_json force',
+            TEST_VERSION='', TEST_HTTP='200', TEST_SERVICE='false', TEST_API='0')
+        state = json.loads(result.stdout)
+        self.assertEqual(state['mode'],'standalone')
+        self.assertEqual(state['port'],1680)
+        self.assertTrue(state['available'])
 
     def test_apk_discovery_and_legacy_luci(self):
         code = r'''

@@ -33,8 +33,8 @@ class RouterSidebarDeploymentTests(unittest.TestCase):
             'effects': b'/* old design */\n',
         }
         self.candidate = {
-            'cgi': b'#!/bin/sh\n# v123 routerSidebar\necho new\n',
-            'luci': b'/* v123 */\n',
+            'cgi': b'#!/bin/sh\n# routerSidebar <title>OWRT Hub v124</title>\necho new\n',
+            'luci': b'/* OWRT Hub v124 */\n',
             'effects': b'const HUB_DESIGN_MODES = new Set();\n',
         }
         for name, target in self.targets.items():
@@ -144,6 +144,7 @@ mv() {
             {**self.candidate, 'cgi': b'#!/bin/sh\n# v123 routerSidebar\nif true; then\n'},
             {**self.candidate, 'cgi': b'#!/bin/sh\n# v123 old layout\n'},
             {**self.candidate, 'luci': b'/* v122 */\n'},
+            {**self.candidate, 'luci': b'/* OWRT Hub v123 */\n'},
             {name: data for name, data in self.candidate.items() if name != 'effects'},
         ]
         for candidate in cases:
@@ -172,7 +173,7 @@ mv() {
 
     def test_failed_verification_restores_previous_attempt_not_first_backup(self):
         self.assertEqual(self.deploy().returncode, 0)
-        second = {**self.candidate, 'cgi': b'#!/bin/sh\n# v123 routerSidebar\necho second\n'}
+        second = {**self.candidate, 'cgi': self.candidate['cgi'] + b'echo second\n'}
         result = self.deploy(candidate=second, fail_verify=True)
         self.assertNotEqual(result.returncode, 0)
         for name, content in self.candidate.items():

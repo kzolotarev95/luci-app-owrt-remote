@@ -9,7 +9,7 @@ assert(start>=0 && end>start);
 let clock = 10000, calls = 0, renders = 0, wol = false, finish;
 const timers = new Map();
 const fixture = {
-  hubDesignMode:'lite', lastAutomaticRouterPoll:0, routerPollInFlight:false,
+  hubDesignMode:'lite', lastAutomaticRouterPoll:0, routerPollInFlight:false,routerPollVersion:0,
   AbortController, Date:{now:()=>clock}, document:{hidden:false}, window:{ROUTERS:[{id:'main',name:'Router'}]},
   hasOpenWolPanel:()=>wol, renderRouterGroups(){},syncRouterNotesState(){},shouldDeferRouterRender:()=>false,
   renderRouterView(){renders++;},fillRouterForm(){},refreshDiagnosticPanel(){},
@@ -43,5 +43,21 @@ vm.runInContext(source.slice(start,end), fixture);
   fixture.hubDesignMode='winter';clock=35000;
   await fixture.loadRouters({automatic:true});assert.equal(calls,4,'normal designs retain the 5-second interval');
   assert.equal(renders,2);
+  fixture.respond=()=>new Promise(resolve=>{finish=resolve;});
+  const oldSnapshot=fixture.loadRouters();
+  const finishOld=finish;
+  fixture.respond=async()=>({ok:true,json:async()=>({routers:[{id:'main',name:'Current'}]})});
+  await fixture.loadRouters();
+  finishOld({ok:true,json:async()=>({routers:[{id:'main',name:'Obsolete'}]})});await oldSnapshot;
+  assert.equal(fixture.window.ROUTERS[0].name,'Current','late GET cannot replace a newer snapshot');
+  const mutationStart=source.indexOf('function replaceRouterInList(router) {');
+  const mutationEnd=source.indexOf('\nfunction wolPasswordKey(',mutationStart);
+  assert(mutationStart>=0&&mutationEnd>mutationStart);
+  vm.runInContext(source.slice(mutationStart,mutationEnd),fixture);
+  fixture.respond=()=>new Promise(resolve=>{finish=resolve;});
+  const beforeMutation=fixture.loadRouters();
+  fixture.replaceRouterInList({id:'main',name:'Confirmed mutation'});
+  finish({ok:true,json:async()=>({routers:[{id:'main',name:'Pre-mutation'}]})});await beforeMutation;
+  assert.equal(fixture.window.ROUTERS[0].name,'Confirmed mutation','late GET cannot undo a saved router change');
   console.log('HUB_DESIGN_POLLING_OK: lite 10s, normal 5s, no parallel fetches or idle repaints, timeout recovery, hidden tabs and WOL');
 })().catch(error=>{console.error(error);process.exitCode=1;});

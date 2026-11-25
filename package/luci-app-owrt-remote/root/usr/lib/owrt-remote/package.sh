@@ -5,6 +5,7 @@
 set -eu
 
 configure() {
+	/bin/sh /usr/lib/owrt-remote/retire-logs.sh
 	local dir key temp
 	dir=/etc/owrt-remote
 	umask 077

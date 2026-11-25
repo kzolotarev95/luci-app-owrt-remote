@@ -45,7 +45,6 @@ class FixtureState:
         self.note_entries = {router_id: [{"id": "fixture-note", "text": text, "created_at": int(time.time()), "images": []}]
                              for router_id, text in self.notes.items()}
         self.xray = {"main": "running", "offline": "stopped"}
-        self.logs = {"main": "[OK] Fixture: Heartbeat поступает.\n", "offline": "[WARN] Fixture: роутер offline.\n"}
         self.captcha_issued_at = time.time()
         self.fail_logout_once = False
         self.fail_resources_once = False
@@ -67,7 +66,7 @@ class FixtureState:
     def router(self, router_id, viewer=False):
         online = router_id == "main"
         permissions = {key: not viewer for key in (
-            "owner", "ssh", "manage", "notes_edit", "notes_delete", "config", "wol", "traffic", "logs", "delete", "diagnose")}
+            "owner", "ssh", "manage", "notes_edit", "notes_delete", "config", "wol", "traffic", "delete", "diagnose")}
         permissions.update(admin=True, notes=True)
         now = int(time.time())
         note = self.notes[router_id]
@@ -75,16 +74,16 @@ class FixtureState:
             "id": router_id, "name": "Домашний роутер" if online else "Дача",
             "group_id": "home" if online else "remote", "online": online,
             "last_seen": now if online else now - 7200, "last_seen_iso": "2026-11-24T12:00:00Z",
-            "service_enabled": True, "version": "v123", "agent_version": "v123",
+            "service_enabled": True, "version": "v124", "agent_version": "v124",
             "vps_host": "fixture.invalid", "public_ip": "198.51.100.10",
             "access_flags": ["A"] if viewer else ["A", "B", "G"], "permissions": permissions,
             "notes": note, "notes_preview": (self.note_entries[router_id][-1].get("text") or "Фото") if self.note_entries[router_id] else "", "notes_count": len(self.note_entries[router_id]),
             "has_notes": bool(self.note_entries[router_id]), "notes_entries": self.note_entries[router_id],
             "access_url": f"/access/{router_id}/", "ssh_url": f"/ssh/{router_id}/",
             "config_url": f"/router/{router_id}/config", "notes_url": f"/router/{router_id}/notes",
-            "logs_url": f"/router/{router_id}/logs", "status": {
+            "status": {
                 "xray": self.xray[router_id], "xray_control": 1, "heartbeat_interval": 30,
-                "version": "v123", "agent_version": "v123", "model": "Fixture OpenWrt Router",
+                "version": "v124", "agent_version": "v124", "model": "Fixture OpenWrt Router",
                 "hostname": "fixture-" + router_id, "ip": "192.168.2.1", "lan_ip": "192.168.2.1",
                 "uptime": 86400, "cpu_percent": 12.5, "memory_percent": 42, "service": "enabled",
             },
@@ -101,7 +100,6 @@ class FixtureState:
                     command["completed_at"] = now
                     command["result"] = "Fixture: команда подтверждена; shell не запускался."
                     self.xray[router_id] = "stopped" if command["action"] == "stop" else "running"
-                    self.logs[router_id] += "[OK] Fixture: Xray " + command["action"] + " succeeded.\n"
         history = [{key: value for key, value in item.items() if key not in ("polls", "hidden")}
                    for item in reversed(self.history[router_id]) if not item.get("hidden")]
         router = self.router(router_id)
@@ -229,7 +227,7 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response(200, {"ok": True, "fixture": True, "native": True})
             return
         if path == BASE + "/capabilities":
-            self.json_response(200, {"ok": True, "api_version": 1, "hub_version": "v123",
+            self.json_response(200, {"ok": True, "api_version": 1, "hub_version": "v124",
                                     "native_password_login": True, "browser_login_url": "/login", "endpoints": ENDPOINTS})
             return
         if path == ENDPOINTS["challenge"]:
@@ -381,9 +379,9 @@ class Handler(BaseHTTPRequestHandler):
                     data = terminal['buffer']; terminal['buffer'] = ''
                     self.json_response(200, {"ok": True, "data": data, "alive": True})
             elif path == "/api/hub-update" and self.server.state.hub_available:
-                self.json_response(200,{"ok":True,"current_version":"v123","remote_version":"v124","checked":True,"available":True,"checking":False,"error":"","remote_revision":"a"*64,"job":{}})
+                self.json_response(200,{"ok":True,"current_version":"v124","remote_version":"v124","checked":True,"available":True,"checking":False,"error":"","remote_revision":"a"*64,"job":{}})
             elif path == "/api/hub-update":
-                self.json_response(200, {"ok": True, "current_version": "v123", "remote_version": "v123", "checked": True,
+                self.json_response(200, {"ok": True, "current_version": "v124", "remote_version": "v124", "checked": True,
                     "source_incompatible": True, "notice": "Опубликованная сборка пока не поддерживает приложение Android.",
                     "available": False, "checking": False, "error": "", "job": {}})
             elif path == "/api/router-updates":
@@ -393,18 +391,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.json_response(200, {"serial": self.server.state.notification_serial, "notifications": [{"id": "fixture-event", "title": "Роутер на связи", "body": "Fixture notification body", "ts": int(time.time())}]})
             elif path == "/fixture/forbidden":
                 self.error(403, "forbidden", "Fixture permission failure")
-            elif re.fullmatch(r"/api/router/(main|offline)/(xray-control|logs|notes|wol/devices)", path):
+            elif re.fullmatch(r"/api/router/(main|offline)/(xray-control|notes|wol/devices)", path):
                 router_id, action = path.split("/")[3], "/".join(path.split("/")[4:])
                 if viewer and (router_id != "main" or action != "notes"):
                     self.error(403, "forbidden", "Fixture manage permission required")
                 elif action == "xray-control":
                     self.json_response(200, self.server.state.snapshot(router_id, advance=True))
-                elif action == "logs":
-                    text = self.server.state.logs[router_id]
-                    self.json_response(200, {"ok": True, "router_id": router_id, "online": router_id == "main", "text": text,
-                        "bytes": len(text.encode()), "updated_at": int(time.time()), "last_sync": int(time.time()),
-                        "pending_clear": False, "storage": {"bytes": len(text.encode())},
-                        "diagnosis": {"level": "ok" if router_id == "main" else "warn", "text": "Fixture log status", "at": int(time.time())}})
                 elif action == "notes":
                     self.json_response(200, {"ok": True, "router": self.server.state.router(router_id, viewer)})
                 else:
@@ -500,7 +492,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.error(403,'forbidden','Owner CSRF required')
                 else:
                     if path.endswith('/start'): self.server.state.hub_update_starts+=1
-                    self.json_response(200,{"ok":True,"current_version":"v123","remote_version":"v124","checked":True,"available":not path.endswith('/start'),"checking":False,"error":"","remote_revision":"a"*64,"job":{"status":"succeeded","message":"Fixture Hub updated; no services restarted"} if path.endswith('/start') else {}})
+                    self.json_response(200,{"ok":True,"current_version":"v124","remote_version":"v124","checked":True,"available":not path.endswith('/start'),"checking":False,"error":"","remote_revision":"a"*64,"job":{"status":"succeeded","message":"Fixture Hub updated; no services restarted"} if path.endswith('/start') else {}})
                 return
             if path == "/api/router":
                 if state['username'] == TEST_VIEWER: self.error(403,"forbidden","Owner required")
@@ -585,7 +577,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.json_response(200, {"ok": True, "router_id": router_id,
                         "notes_entries": self.server.state.note_entries[router_id], "supports_images": True, "can_append": True, "can_delete": True})
                 return
-            match = re.fullmatch(r"/api/router/(main|offline)/(xray-control|notes|logs/clear|wol|wol/devices)", path)
+            match = re.fullmatch(r"/api/router/(main|offline)/(xray-control|notes|wol|wol/devices)", path)
             if not match:
                 self.error(404, "not_found", "Unknown fixture write")
                 return
@@ -628,11 +620,6 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.state.note_entries[router_id] = ([{"id": secrets.token_hex(8), "text": note,
                     "created_at": int(time.time()), "images": []}] if note else [])
                 self.json_response(200, {"ok": True, "router": self.server.state.router(router_id)})
-            elif action == "logs/clear":
-                self.server.state.logs[router_id] = ""
-                self.json_response(200, {"ok": True, "router_id": router_id, "online": router_id == "main",
-                                       "text": "", "bytes": 0, "pending_clear": True, "updated_at": 0, "last_sync": 0,
-                                       "storage": {"bytes": 0}, "diagnosis": {"level": "ok", "text": "Fixture archive cleared", "at": int(time.time())}})
             elif action == "wol/devices":
                 self.json_response(200, {"ok": True, "router_id": router_id, "devices": self.wol_devices()})
             elif fields.get("mac") != "02:00:00:00:00:01":

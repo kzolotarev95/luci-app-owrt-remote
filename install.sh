@@ -434,27 +434,19 @@ verify_xray_start() {
 		fi
 		attempt=$((attempt+1)); sleep 1
 	done
-	warn 'Xray did not start within 30 seconds; configuration retained. Check Global logs on the router.'
+	warn 'Xray did not start within 30 seconds; configuration retained. Check the current Xray and WAN status on the router.'
 	return 1
 }
 
-# Stop the old log writer before replacing its storage code. Its bounded legacy
-# archive is migrated by the new log service, without moving any other /tmp data.
 ensure_install_dependencies
-
-if [ "${ROOT%/}" = "" ] && [ -x /etc/init.d/owrt-remote-logs ]; then
-	if /etc/init.d/owrt-remote-logs running >/dev/null 2>&1; then
-		run_step logs-stop /etc/init.d/owrt-remote-logs stop
-	fi
-fi
 
 INSTALL_STAGE=files
 install_file "usr/sbin/owrt-remote" 0755
 install_file "usr/lib/owrt-remote/wan.sh" 0644
 install_file "usr/lib/owrt-remote/control.sh" 0644
 install_file "usr/lib/owrt-remote/tachyon.sh" 0644
-install_file "usr/lib/owrt-remote/logs.sh" 0644
-install_file "etc/init.d/owrt-remote-logs" 0755
+install_file "usr/lib/owrt-remote/retire-logs.sh" 0644
+run_step retire-journal env OWRT_REMOTE_RETIRE_ROOT="$ROOT" sh "$(target_path usr/lib/owrt-remote/retire-logs.sh)"
 install_file "etc/init.d/owrt-remote" 0755
 install_file "etc/hotplug.d/iface/99-owrt-remote" 0755
 install_config
@@ -466,12 +458,7 @@ install_file "www/luci-static/resources/view/owrt_remote.js" 0644
 
 ensure_wol_support
 
-if [ "${ROOT%/}" = "" ]; then
-	run_step logs-enable /etc/init.d/owrt-remote-logs enable
-	# restart calls procd service delete, which returns "Not found" on the
-	# first installation. start is an idempotent procd service set operation.
-	run_step logs-start /etc/init.d/owrt-remote-logs start
-fi
+
 
 rm -f "$(target_path usr/lib/lua/luci/controller/owrt_remote.lua)" 2>/dev/null || true
 rm -rf "$(target_path tmp/luci-indexcache)" "$(target_path tmp/luci-modulecache)" "$(target_path tmp/luci-indexcache.)"* "$(target_path tmp/luci-modulecache.)"* 2>/dev/null || true

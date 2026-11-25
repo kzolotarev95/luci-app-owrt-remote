@@ -79,7 +79,6 @@ function renderDonation(key) {
       KEY_FILE:keyFile.replace(/\\/g,'/'),REQUEST_METHOD:'GET',CONTENT_TYPE:'',
       QUERY_STRING:'key='+key+'&action=donate',
       AGENT:path.join(output,'no-agent').replace(/\\/g,'/'),
-      OWRT_REMOTE_LOG_HELPER:path.join(output,'no-log-helper').replace(/\\/g,'/'),
       TMPDIR:output.replace(/\\/g,'/')}});
 }
 const donateResponse=renderDonation('fixture-key');
@@ -134,7 +133,6 @@ async function noOverflow(page,label) {
         requests.push({path:u.pathname,method:request.method(),action:u.searchParams.get('action')});
         if(u.pathname.endsWith('/luci-static/resources/owrt_remote_effects.js'))return route.fulfill({contentType:'text/javascript',body:runtime});
         if(u.pathname===pagePath && u.searchParams.get('action')==='donate')return route.fulfill({contentType:'text/html; charset=utf-8',body:donateHtml});
-        if(u.pathname===pagePath && u.searchParams.get('action')==='logs_live')return route.fulfill({contentType:'text/plain; charset=utf-8',body:'[OK] Heartbeat: OK\n[WARN] WAN fallback\n'});
         if(u.pathname===pagePath && u.searchParams.get('action')==='logs_clear'){
           assert.equal(request.method(),'POST','log clear remains POST');
           return route.fulfill({contentType:'text/plain; charset=utf-8',body:'Логи Remote очищены.'});
@@ -177,8 +175,8 @@ async function noOverflow(page,label) {
       };
       assert.equal(await menu.isVisible(),!!scenario.mobile,'menu follows mobile breakpoint');
       assert.equal(await sidebar.locator('details[open]').count(),0,'sidebar sections start collapsed');
-      assert.equal(await page.title(),'OWRT Hub v123');
-      assert((await page.locator('.routerBrand').textContent()).includes('OWRT Hub v123'));
+      assert.equal(await page.title(),'OWRT Hub v124');
+      assert((await page.locator('.routerBrand').textContent()).includes('OWRT Hub v124'));
       assert.equal(await page.locator('.routerPageHead h1').textContent(),routerName,'router name is safely escaped');
       for(const field of requiredFields)assert(await page.locator('#routerSettings [name="'+field+'"]').count(),'settings field retained: '+field);
       assert.equal(await page.locator('form form').count(),0,'forms are never nested');
@@ -186,10 +184,16 @@ async function noOverflow(page,label) {
       const size=await page.evaluate(()=>{
         const header=document.querySelector('.routerTopbar').getBoundingClientRect();
         const settings=document.getElementById('routerSettings').getBoundingClientRect();
-        return {rightGap:document.documentElement.clientWidth-header.right,settingsRight:settings.right,headerRight:header.right,
+        const sidebar=document.getElementById('routerSidebar').getBoundingClientRect();
+        const wrap=document.querySelector('.wrap').getBoundingClientRect();
+        return {leftGap:sidebar.left,wrapWidth:wrap.width,rightGap:document.documentElement.clientWidth-header.right,settingsRight:settings.right,headerRight:header.right,
           font:getComputedStyle(document.querySelector('#routerStatus h2')).fontSize,bg:getComputedStyle(document.body).backgroundColor};
       });
-      assert(Math.abs(size.rightGap-(scenario.mobile?12:24))<1,'workspace fills viewport: '+JSON.stringify(size));
+      if(scenario.mobile)assert(Math.abs(size.rightGap-12)<1,'mobile workspace keeps its side padding: '+JSON.stringify(size));
+      else {
+        assert(Math.abs(size.leftGap-size.rightGap)<1,'sidebar and workspace share equal outer margins: '+JSON.stringify(size));
+        assert(size.wrapWidth<=1360.1,'desktop shell has a bounded readable width');
+      }
       assert(Math.abs(size.settingsRight-size.headerRight)<1,'settings and header share the right edge');
       assert.equal(size.font,'12px','VPS typography retained');
       assert.equal(size.bg,'rgb(11, 11, 12)','default graphite palette');
@@ -246,19 +250,7 @@ async function noOverflow(page,label) {
       await page.locator('#routerEffectsClose').click();
       assert.equal(await effects.isVisible(),false);
 
-      await useNav(page.locator('#globalLogsToggle'));
-      await page.waitForFunction(()=>document.getElementById('globalLogsText').textContent.includes('Heartbeat: OK'));
-      assert.equal(await page.locator('#globalLogsPanel').isVisible(),true);
-      assert(requests.filter(request=>request.action==='logs_live').every(request=>request.path===pagePath),'logs stay on the selected router proxy');
-      await page.locator('#globalLogsLive').click();
-      await page.waitForFunction(()=>document.getElementById('globalLogsLive').getAttribute('aria-pressed')==='true');
-      await page.locator('#globalLogsClose').click();
-      assert.equal(await page.locator('#globalLogsPanel').isVisible(),false);
-      if(scenario.name==='desktop-1920'){
-        const reads=requests.filter(request=>request.action==='logs_live').length;
-        await page.waitForTimeout(3200);
-        assert.equal(requests.filter(request=>request.action==='logs_live').length,reads,'closing logs stops the polling loop');
-      }
+      assert.equal(await page.locator('#globalLogsToggle,#globalLogsPanel').count(),0,'router journal removed');
       if(scenario.draft){
         assert.equal(await page.locator('[name="xray_settings_script"]').inputValue(),draft,'Xray draft survives rendering');
         assert((await page.locator('.notice.bad').textContent()).includes('<script>'));

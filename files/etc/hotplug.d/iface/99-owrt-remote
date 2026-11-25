@@ -1,7 +1,6 @@
 #!/bin/sh
 
 PATH="/usr/sbin:/usr/bin:/sbin:/bin"
-TAG="owrt-remote"
 STATE_DIR="${TMPDIR:-/tmp}/owrt-remote-hotplug"
 STAMP_FILE="$STATE_DIR/wan.stamp"
 LAST_RESTART_FILE="$STATE_DIR/last-restart"
@@ -14,10 +13,6 @@ case "$(uci -q get owrtremote.main.enabled 2>/dev/null || echo 0)" in
 	1|yes|true|on|enabled) ;;
 	*) exit 0 ;;
 esac
-
-log() {
-	logger -t "$TAG" "$*" 2>/dev/null || true
-}
 
 proto=""
 if [ -n "$INTERFACE" ] && command -v ubus >/dev/null 2>&1; then
@@ -114,21 +109,16 @@ printf '%s\n' "$stamp" >"$STAMP_FILE"
 	now="$(safe_num "$(date +%s 2>/dev/null || echo 0)" 0)"
 	last_restart="$(safe_num "$(cat "$LAST_RESTART_FILE" 2>/dev/null)" 0)"
 	if [ "$now" -gt 0 ] && [ $((now - last_restart)) -lt "$RESTART_COOLDOWN" ]; then
-		log "WAN event $ACTION on ${INTERFACE:-unknown}/${DEVICE:-unknown}, restart skipped by cooldown"
 		exit 0
 	fi
 
 	if active_ssh_session; then
-		log "WAN event $ACTION on ${INTERFACE:-unknown}/${DEVICE:-unknown}, restart postponed because SSH session is active"
 		exit 0
 	fi
 
 	printf '%s\n' "$now" >"$LAST_RESTART_FILE"
-	log "WAN event $ACTION on ${INTERFACE:-unknown}/${DEVICE:-unknown}, restarting reverse tunnel"
 	if /etc/init.d/owrt-remote restart >/dev/null 2>&1; then
 		/usr/sbin/owrt-remote heartbeat wan-reconnect >/dev/null 2>&1 || true
-	else
-		log "restart failed"
 	fi
 ) &
 

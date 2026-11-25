@@ -6,7 +6,7 @@ let hubDesignInitialized = false;
 let seasonEffectsInitialized = false;
 let hubAppearanceInitialized = false;
 const SEASON_EFFECT_KEY = 'owrtRemote:seasonEffectMode';
-const SEASON_EFFECT_MODES = new Set(['off', 'snow', 'rain', 'cosmos', 'embers', 'orbit', 'prism', 'pulse', 'laser']);
+const SEASON_EFFECT_MODES = new Set(['off', 'snow', 'rain', 'cosmos', 'embers', 'orbit', 'prism', 'pulse', 'laser', 'streams']);
 const HUB_DESIGN_KEY = 'owrtRemote:hubDesign';
 const HUB_DESIGN_MODES = new Set(['default', 'winter', 'lite']);
 let hubDesignMode = document.documentElement.dataset.hubDesign || 'default';
@@ -18,6 +18,17 @@ let seasonalFxLastTs = 0;
 let seasonalFxParticles = [];
 let seasonalFxSize = {width: 0, height: 0, dpr: 1};
 let seasonalFxPointer = {x: 0, y: 0, lastX: 0, lastY: 0, targetWind: 0, wind: 0, lastMoveTs: 0, active: false};
+// Seven curved tracks, with the geometry, dash lengths and speeds seen in
+// Tachyon. Keep the effect in the existing canvas and its single lifecycle.
+const SEASON_STREAM_PATHS = [
+  {points:[-100,140,420,40,1080,280,1700,90], dash:[80,620], duration:5500, delay:0, color:'10,132,255', alpha:.55},
+  {points:[-100,290,480,190,1020,420,1700,240], dash:[50,540], duration:4100, delay:1600, color:'245,245,247', alpha:.32},
+  {points:[-100,450,520,370,1080,550,1700,420], dash:[110,720], duration:6800, delay:3200, color:'10,132,255', alpha:.62},
+  {points:[-100,620,460,520,1120,710,1700,580], dash:[40,480], duration:3400, delay:900, color:'64,156,255', alpha:.45},
+  {points:[-100,780,540,680,1060,840,1700,740], dash:[65,600], duration:4900, delay:2400, color:'245,245,247', alpha:.28},
+  {points:[180,-60,420,320,880,580,1480,960], dash:[50,540], duration:4100, delay:1600, color:'10,132,255', alpha:.4},
+  {points:[640,-60,820,300,1180,560,1680,880], dash:[40,480], duration:3400, delay:900, color:'10,132,255', alpha:.35}
+];
 function setHubDesign(nextMode, options = {}) {
   hubDesignMode = HUB_DESIGN_MODES.has(nextMode) ? nextMode : 'default';
   document.documentElement.dataset.hubDesign = hubDesignMode;
@@ -343,6 +354,7 @@ function seasonFxRandomGlyph() {
 }
 
 function seasonFxParticleCountForMode(mode, area, width, height) {
+  if (mode === 'streams') return SEASON_STREAM_PATHS.length;
   if (mode === 'snow') return Math.min(560, Math.max(180, Math.round(area / 2100)));
   if (mode === 'cosmos') return Math.min(420, Math.max(160, Math.round(area / 2600)));
   if (mode === 'embers') return Math.min(280, Math.max(90, Math.round(area / 6200)));
@@ -362,6 +374,10 @@ function seasonFxParticleCountForMode(mode, area, width, height) {
 function seasonFxBuildParticles() {
   if (seasonEffectMode === 'off') {
     seasonalFxParticles = [];
+    return;
+  }
+  if (seasonEffectMode === 'streams') {
+    seasonalFxParticles = SEASON_STREAM_PATHS.map(() => ({elapsed:0}));
     return;
   }
   const width = seasonalFxSize.width || window.innerWidth || 1;
@@ -407,6 +423,35 @@ function seasonFxHandlePointerLeave() {
   seasonalFxPointer.targetWind = 0;
 }
 
+function seasonFxDrawStreams(dt, width, height) {
+  const ctx = seasonalFxCtx;
+  const scale = Math.max(width / 1600, height / 900);
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  ctx.save();
+  ctx.translate((width - 1600 * scale) / 2, (height - 900 * scale) / 2);
+  ctx.scale(scale, scale);
+  ctx.lineCap = 'round';
+  SEASON_STREAM_PATHS.forEach((track, index) => {
+    const p = seasonalFxParticles[index];
+    p.elapsed = (p.elapsed + (reduced ? 0 : dt)) % track.duration;
+    const xy = track.points;
+    ctx.beginPath();
+    ctx.moveTo(xy[0], xy[1]);
+    ctx.bezierCurveTo(...xy.slice(2));
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,.028)';
+    ctx.stroke();
+    ctx.setLineDash(track.dash);
+    ctx.lineDashOffset = 800 * (1 - ((p.elapsed + track.delay) % track.duration) / track.duration);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = `rgba(${track.color},${track.alpha})`;
+    ctx.stroke();
+  });
+  ctx.restore();
+  return reduced;
+}
+
 function seasonFxStep(ts) {
   if (!seasonalFxCanvas || !seasonalFxCtx || seasonEffectMode === 'off' || hubDesignMode === 'lite' || document.hidden) {
     seasonalFxFrame = 0;
@@ -425,7 +470,13 @@ function seasonFxStep(ts) {
   seasonalFxCtx.globalCompositeOperation = 'source-over';
   seasonalFxCtx.shadowBlur = 0;
   seasonalFxCtx.shadowColor = 'rgba(0,0,0,0)';
-  if (seasonEffectMode === 'snow') {
+  if (seasonEffectMode === 'streams') {
+    // Reduced motion keeps the tracks visible without a running frame loop.
+    if (seasonFxDrawStreams(dt, width, height)) {
+      seasonalFxFrame = 0;
+      return;
+    }
+  } else if (seasonEffectMode === 'snow') {
     seasonalFxCtx.fillStyle = 'rgba(255,255,255,.8)';
     for (const p of seasonalFxParticles) {
       p.drift += p.driftSpeed * dt;
@@ -937,6 +988,9 @@ function initSeasonEffects() {
   window.addEventListener('pointermove', seasonFxHandlePointerMove, {passive: true});
   window.addEventListener('pointerleave', seasonFxHandlePointerLeave);
   window.addEventListener('blur', seasonFxHandlePointerLeave);
+  window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => {
+    if (seasonEffectMode === 'streams') seasonFxStart();
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) seasonFxStop();
     else seasonFxStart();

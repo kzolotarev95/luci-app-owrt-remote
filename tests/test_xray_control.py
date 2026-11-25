@@ -8,16 +8,16 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import test_router_log_archive as base
+import hub_http_fixture as base
 
 hub = base.hub
 ROOT = base.ROOT
 
 
 class ControlTests(unittest.TestCase):
-    setUp = base.ArchiveTests.setUp
-    close = base.ArchiveTests.close
-    request = base.ArchiveTests.request
+    setUp = base.HubHttpFixture.setUp
+    close = base.HubHttpFixture.close
+    request = base.HubHttpFixture.request
     def beat(self, router='main', result=None, capability=1):
         payload = {'id': router, 'name': 'Роутер тест', 'xray': 'stopped', 'xray_control': capability}
         if result:
@@ -49,9 +49,7 @@ class ControlTests(unittest.TestCase):
         self.beat(result=result)
         snapshot = self.snapshot_control()
         self.assertEqual(snapshot['history'][0]['status'], 'succeeded')
-        with self.app.conn() as conn:
-            log = hub.router_log_snapshot(conn, 'main')[1].decode()
-        self.assertEqual(log.count('Process verified'), 1)
+        self.assertEqual(sum(row['result'] == 'Process verified' for row in snapshot['history']), 1)
 
     def test_invalid_results_cannot_fake_success_or_affect_other_router(self):
         self.beat(); self.command(); self.beat()
@@ -83,7 +81,7 @@ class ControlTests(unittest.TestCase):
             post(headers)
         self.assertEqual(error.exception.code, 403)
         page, _ = self.request('/router/main/xray-control')
-        self.assertIn('Remote управление Xray'.encode(), page)
+        self.assertIn('Настройки Xray'.encode(), page)
 
     def test_concurrent_tabs_idempotency_and_legacy_agent(self):
         self.beat(capability=0)
@@ -133,8 +131,6 @@ class ControlTests(unittest.TestCase):
             urllib.request.urlopen(urllib.request.Request(url, data=body, headers=headers), timeout=5)
         self.assertEqual(error.exception.code, 403)
         self.assertEqual(len(self.snapshot_control()['history']), 1)
-        with self.app.conn() as conn:
-            original_logs = hub.router_log_snapshot(conn, 'main')[1]
         headers['X-Xray-Control-CSRF'] = self.app.xray_control_csrf
         for _ in range(2):
             with urllib.request.urlopen(urllib.request.Request(url, data=body, headers=headers), timeout=5) as response:
@@ -145,7 +141,7 @@ class ControlTests(unittest.TestCase):
                           'xray': 'running', 'message': 'поздний результат'})
         self.assertEqual(self.snapshot_control()['history'], [])
         with self.app.conn() as conn:
-            self.assertEqual(hub.router_log_snapshot(conn, 'main')[1], original_logs)
+            self.assertFalse(conn.execute("select 1 from sqlite_master where name='router_logs'").fetchone())
 
     def test_restart_persistence_offline_expiry_and_late_result(self):
         self.beat(); self.command()

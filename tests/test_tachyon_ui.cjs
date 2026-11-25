@@ -22,6 +22,10 @@ const withoutVersion = context.renderTachyon({permissions:{admin:true}, tachyon:
 assert.match(withoutVersion.replace(/<[^>]*>/g, ''), /Tachyon\s*Online/);
 router.tachyon.online = false;
 assert(context.renderTachyon(router).includes('Offline'));
+router.online = true; router.status = {xray:'running'}; router.tachyon.checking = true;
+assert(context.renderTachyon(router).includes('Проверяется'));
+assert(!context.renderTachyon(router).includes('Offline'));
+router.tachyon.checking = false;
 router.permissions.admin = false;
 assert(!context.renderTachyon(router).includes('<a '));
 router.permissions.admin = true; router.tachyon.version = '<img onerror=alert(1)>';

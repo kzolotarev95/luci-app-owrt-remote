@@ -1,6 +1,8 @@
 param(
     [ValidateNotNullOrEmpty()][string]$Router = 'root@192.168.2.1',
     [ValidateSet('Install', 'Rollback')][string]$Action = 'Install',
+    [ValidatePattern('^owrt-remote-backup-[A-Za-z0-9_-]{1,96}$')]
+    [string]$BackupName = 'owrt-remote-backup-before-router-sidebar-ui-v123',
     [switch]$PrepareOnly
 )
 
@@ -118,9 +120,11 @@ if [ '__ACTION__' = Install ]; then
         [ -s "$stage/$name" ] || { echo "Candidate file missing: $name" >&2; exit 1; }
     done
     sh -n "$stage/cgi"
-    grep -Fq 'v123' "$stage/cgi"
+    grep -Eq '<title>OWRT Hub v[0-9]+</title>' "$stage/cgi"
     grep -Fq 'routerSidebar' "$stage/cgi"
-    grep -Fq 'v123' "$stage/luci"
+    grep -Eq 'OWRT Hub v[0-9]+' "$stage/luci"
+    ui_version=$(sed -n 's/.*<title>OWRT Hub \(v[0-9][0-9]*\)<\/title>.*/\1/p' "$stage/cgi" | head -n 1)
+    [ -n "$ui_version" ] && grep -Fq "OWRT Hub $ui_version" "$stage/luci"
     grep -Fq 'HUB_DESIGN_MODES' "$stage/effects"
     step=backup
     if [ ! -e "$backup" ]; then
@@ -181,6 +185,7 @@ printf '\nBackup: %s\nROUTER_SIDEBAR_UI_V123_%s_OK\n' "$backup" '__ACTION__'
 '@
 
 $RemoteScript = $RemoteScript.Replace('__UPLOAD_NAME__', $UploadName).Replace('__ACTION__', $Action)
+$RemoteScript = $RemoteScript.Replace('/root/owrt-remote-backup-before-router-sidebar-ui-v123', '/root/' + $BackupName)
 try {
     [System.IO.Directory]::CreateDirectory($StageRoot) | Out-Null
     [System.IO.File]::WriteAllText((Join-Path $StageRoot 'run.sh'), $RemoteScript.Replace("`r`n", "`n") + "`n", $Utf8)
@@ -203,7 +208,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Upload failed. Router files were not changed.' }
     & ssh -T -o ConnectTimeout=15 $Router "sh /tmp/$UploadName/run.sh"
     if ($LASTEXITCODE -ne 0) { throw "$Action failed. Success was not confirmed; see the diagnostic above." }
-    Write-Host "Router sidebar UI v123 $Action finished successfully. Refresh with Ctrl+F5."
+    Write-Host "Router UI $Action finished successfully. Refresh with Ctrl+F5."
 }
 finally {
     if (-not $PrepareOnly) {

@@ -213,45 +213,38 @@ class HostPolicyTests(unittest.TestCase):
             self.assertEqual(hub.router_reported_connection({"status_json": status, "vps_host": "193.233.82.38"}), ("auto", "193.233.82.38"))
         self.assertEqual(hub.router_reported_connection({"status": {"vps_host_mode": "auto", "vps_host": "hub.example"}}), ("auto", "hub.example"))
 
-    def test_ui_script_validates_before_ssh_and_checks_agent_version(self):
+    def test_ui_validates_host_before_queueing(self):
         for host in ("", "https://hub.example", "host:8443", "x'; reboot", "bad..domain", "-bad.host", "999.999.999.999"):
             with self.assertRaises(ValueError):
-                hub.make_router_vps_host_script(host, "manual")
-        with self.assertRaises(ValueError):
-            hub.make_router_vps_host_script("193.233.82.38", "invalid")
-        self.assertIn("Сначала обнови агент", hub.make_router_vps_host_script("193.233.82.38", "manual"))
+                hub.validate_router_vps_host(host)
 
-    def test_hub_ui_endpoint_requires_owner_and_only_saves_after_remote_ack(self):
+    def test_hub_ui_endpoint_requires_owner_and_queues_without_ssh(self):
         from types import SimpleNamespace
         db = Path(STATE.name) / "policy-api.db"
         with hub.connect(db) as conn:
             hub.init_db(conn)
             hub.upsert_router(conn, {"id": "test", "vps_host": "old.example"})
+            conn.execute('update routers set status_json=? where id=?', (json.dumps({'xray_control': 1, 'vps_host_control': 1}), 'test'))
         handler = object.__new__(hub.Handler)
         handler.server = SimpleNamespace(app=SimpleNamespace(conn=lambda: hub.connect(db)))
         handler.parsed = lambda: SimpleNamespace(path="/api/router/test/vps-host")
         handler.maybe_proxy_luci_absolute = lambda path: False
         handler.require_admin = lambda: True
         handler.send_json = mock.Mock()
-        handler.run_router_ssh_script = mock.Mock(return_value="VPS_HOST_APPLIED\n")
-        handler.read_payload = mock.Mock(return_value={"vps_host": "193.233.82.38", "vps_host_mode": "manual", "ssh_password": "test-password"})
+        handler.headers = {'X-VPS-Host-Request': '1', 'Content-Type': 'application/json', 'Content-Length': '150'}
+        handler.run_router_ssh_script = mock.Mock(side_effect=AssertionError("SSH must never be used"))
+        handler.read_payload = mock.Mock(return_value={"vps_host": "193.233.82.38", "vps_host_mode": "manual", "request_id": "f" * 32})
         handler.require_owner = lambda **kwargs: False
         handler.do_POST()
         handler.read_payload.assert_not_called()
-        handler.run_router_ssh_script.assert_not_called()
         handler.require_owner = lambda **kwargs: True
-        handler.run_router_ssh_script.side_effect = RuntimeError("SSH failed")
         handler.do_POST()
-        with hub.connect(db) as conn:
-            self.assertEqual(hub.get_router(conn, "test")["vps_host"], "old.example")
-        self.assertEqual(handler.send_json.call_args.args[0], 400)
-        handler.run_router_ssh_script.side_effect = None
-        handler.do_POST()
-        self.assertEqual(handler.send_json.call_args.args[0], 200)
+        handler.run_router_ssh_script.assert_not_called()
+        self.assertEqual(handler.send_json.call_args.args[0], 202)
         with hub.connect(db) as conn:
             row = hub.get_router(conn, "test")
-            self.assertEqual(row["vps_host"], "193.233.82.38")
-            self.assertEqual(hub.router_reported_connection(row), ("manual", "193.233.82.38"))
+            self.assertEqual(row["vps_host"], "old.example")
+            self.assertEqual(hub.row_to_router(row)['vps_host_update']['status'], 'queued')
 
 
 @unittest.skipUnless(SH, "a POSIX shell (Git for Windows or Linux) is required")
@@ -273,14 +266,17 @@ class RouterShellTests(unittest.TestCase):
     def test_old_and_explicit_manual_modes_ignore_host_rewrite(self):
         response = {"hub_update": {"vps_host": "hub.example", "hub_url": "https://hub.example", "public_url": "https://hub.example"}}
         (self.directory / "response").write_text(json.dumps(response), encoding="utf-8")
+        diagnostics = ""
         for mode in (None, "manual", "invalid"):
             values = {"vps_host": "193.233.82.38", "hub_url": "https://hub.example", "public_url": "https://hub.example"}
             if mode: values["vps_host_mode"] = mode
             self.config(**values)
             result = self.run_shell('heartbeat_apply_hub_update "$TEST_ROOT/response" https://hub.example; uci_get vps_host ""')
+            diagnostics += result.stderr
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, "193.233.82.38")
-        self.assertIn("reason=manual", (self.directory / "log").read_text(encoding="utf-8"))
+        self.assertIn("reason=manual", diagnostics)
+        self.assertFalse((self.directory / "log").exists(), "CLI diagnostics are not archived")
 
     def test_explicit_auto_changes_host_and_logs_old_new_reason(self):
         self.config(vps_host="193.233.82.38", vps_host_mode="auto")
@@ -294,6 +290,7 @@ class RouterShellTests(unittest.TestCase):
         (self.directory / "response").write_text(json.dumps({"hub_update": {
             "hub_url": "http://hub.example", "public_url": "http://hub.example",
         }}), encoding="utf-8")
+        diagnostics = ""
         for mode in ("manual", "auto"):
             with self.subTest(mode=mode):
                 self.config(vps_host_mode=mode, vps_host="193.233.82.38",
@@ -303,11 +300,12 @@ heartbeat_apply_hub_update "$TEST_ROOT/response" http://hub.example:8088
 heartbeat_apply_hub_update "$TEST_ROOT/response" http://hub.example:8088
 printf '%s|%s|%s' "$(uci_get hub_url '')" "$(uci_get public_url '')" "$(uci_get vps_host '')"
 ''')
+                diagnostics += result.stderr
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout, "https://hub.example:9443|https://hub.example:9443|193.233.82.38")
         self.assertFalse((self.directory / "commits").exists())
-        log = (self.directory / "log").read_text()
-        self.assertEqual(log.count("reason=https-downgrade"), 2, "repeated proposals must not flood the log")
+        self.assertEqual(diagnostics.count("reason=https-downgrade"), 2)
+        self.assertFalse((self.directory / "log").exists(), "rejected proposals are not archived")
 
     def test_successful_fallback_heartbeat_does_not_replace_configured_hub_url(self):
         self.config(hub_url="https://hub.example", public_url="https://backup.example", hub_token="test-token", vps_host="193.233.82.38")
@@ -608,14 +606,6 @@ post_json http://hub.example/api/heartbeat test-token "$TEST_ROOT/payload"
                 self.assertEqual(outbound["settings"]["address"], "193.233.82.38")
             else:
                 self.assertNotIn("streamSettings", outbound)
-
-    def test_hub_ui_change_restores_previous_host_if_render_fails(self):
-        self.config(vps_host="193.233.82.38", vps_host_mode="manual")
-        result = self.run_shell(hub.make_router_vps_host_script("hub.example", "auto"), RENDER_FAIL="1")
-        self.assertNotEqual(result.returncode, 0)
-        config = (self.directory / "uci").read_text()
-        self.assertIn("vps_host=193.233.82.38", config)
-        self.assertIn("vps_host_mode=manual", config)
 
     def test_cgi_saves_manual_auto_and_wan_flags_without_exposing_secrets(self):
         cgi = (ROOT / "files/www/cgi-bin/owrt-remote").read_text(encoding="utf-8").split('\nread_request\n')[0]

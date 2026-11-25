@@ -15,7 +15,7 @@ DEPLOY = ROOT / 'vps/deploy-router-effects.ps1'
 class RouterEffectsTests(unittest.TestCase):
     def test_router_page_exposes_all_effects_and_designs(self):
         page = CGI.read_text(encoding='utf-8')
-        for mode in ('off', 'snow', 'rain', 'cosmos', 'embers', 'orbit', 'prism', 'pulse', 'laser'):
+        for mode in ('off', 'snow', 'rain', 'cosmos', 'embers', 'orbit', 'prism', 'pulse', 'laser', 'streams'):
             self.assertIn(f'data-season-mode="{mode}"', page)
         for mode in ('default', 'winter', 'lite'):
             self.assertIn(f'data-hub-design="{mode}"', page)

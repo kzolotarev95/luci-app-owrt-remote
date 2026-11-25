@@ -161,7 +161,7 @@ class NativeFixtureTests(unittest.TestCase):
         status, _, _ = self.request("GET", fixture.ENDPOINTS["session"], cookie=cookie)
         self.assertEqual(status, 200)
 
-    def test_notes_logs_wol_are_data_only(self):
+    def test_notes_wol_are_data_only_and_retired_logs_are_absent(self):
         cookie, session = self.owner()
         notes_path = fixture.BASE + "/router/main/notes"
         status, _, old_notes = self.request("GET", notes_path, cookie=cookie)
@@ -176,8 +176,7 @@ class NativeFixtureTests(unittest.TestCase):
         self.assertEqual(saved["notes_entries"][:-1], previous)
         self.assertEqual(saved["notes_entries"][-1]["text"], "Новая тестовая заметка")
         status, _, logs = self.request("GET", "/api/router/main/logs", cookie=cookie)
-        self.assertEqual(status, 200)
-        self.assertIn("Heartbeat", logs["text"])
+        self.assertEqual(status, 404)
         status, _, devices = self.request("GET", "/api/router/main/wol/devices", cookie=cookie)
         self.assertEqual(status, 200)
         device = devices["devices"][0]

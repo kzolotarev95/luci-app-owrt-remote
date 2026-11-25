@@ -1432,38 +1432,6 @@ def validate_router_vps_host(value):
     return host.lower()
 
 
-def make_router_vps_host_script(host, mode):
-    host = validate_router_vps_host(host)
-    if mode not in ("manual", "auto"):
-        raise ValueError("VPS host mode должен быть manual или auto")
-    return f'''set -eu
-owrt-remote status | grep -q '^vps_host_mode:' || {{ echo 'Сначала обнови агент на роутере' >&2; exit 1; }}
-old_host="$(uci -q get owrtremote.main.vps_host || true)"
-old_mode="$(uci -q get owrtremote.main.vps_host_mode || true)"
-applied=0
-cleanup() {{
-    code=$?
-    trap - EXIT
-    if [ "$applied" = 0 ]; then
-        uci set "owrtremote.main.vps_host=$old_host"
-        if [ -n "$old_mode" ]; then uci set "owrtremote.main.vps_host_mode=$old_mode"; else uci -q delete owrtremote.main.vps_host_mode || true; fi
-        uci commit owrtremote
-        owrt-remote render-client >/dev/null 2>&1 || true
-    fi
-    exit "$code"
-}}
-trap cleanup EXIT
-uci set 'owrtremote.main.vps_host={sh_quote(host)}'
-uci set 'owrtremote.main.vps_host_mode={mode}'
-uci commit owrtremote
-owrt-remote render-client >/dev/null
-applied=1
-logger -t owrt-remote "VPS host changed by Hub UI: old=$old_host new={host} mode={mode}" || true
-( sleep 2; /etc/init.d/owrt-remote restart >/dev/null 2>&1 ) </dev/null >/dev/null 2>&1 &
-echo VPS_HOST_APPLIED
-'''
-
-
 def router_hub_origins(router, app_public_url="", request_origin=""):
     router = dict(router or {})
     status = router_reported_status(router)
@@ -1504,7 +1472,8 @@ def canonical_router_hub_update(router, app_public_url="", request_origin=""):
     }
     # Router is authoritative for a manually fixed tunnel address. Patched
     # agents also protect it locally while the Hub is still on an old version.
-    if router_reported_connection(router)[0] == "auto":
+    if (router_reported_connection(router)[0] == "auto"
+            and (router.get('vps_host_update') or {}).get('status') not in {'queued', 'delivered', 'running', 'unconfirmed'}):
         update["vps_host"] = vps_host
     return update
 
@@ -3152,44 +3121,12 @@ def clean_router_name(value):
 
 
 ROUTER_NOTE_TEXT_MAX_CHARS = 2000
-ROUTER_LOG_MAX_BYTES = 2 * 1024 * 1024
-ROUTER_LOG_BATCH_MAX_BYTES = 65536
 
 
-def router_log_storage(db_path):
-    """Describe the archive's real backing mount, including symlinked DB paths."""
-    path = Path(db_path).resolve()
-    result = {'path': str(path), 'filesystem': 'unknown', 'persistent': None,
-              'limit_bytes': ROUTER_LOG_MAX_BYTES}
-    if sys.platform != 'linux':
-        return result
-    def unescape(value):
-        return re.sub(r'\\([0-7]{3})', lambda m: chr(int(m[1], 8)), value)
-    try:
-        mounts = []
-        with open('/proc/self/mountinfo', encoding='utf-8') as source:
-            for line in source:
-                fields, separator, tail = line.partition(' - ')
-                left, right = fields.split(), tail.split()
-                if not separator or len(left) < 6 or len(right) < 3:
-                    continue
-                mount = Path(unescape(left[4]))
-                if path.is_relative_to(mount):
-                    mounts.append((len(mount.parts), right[0], left[5]))
-        if mounts:
-            _, filesystem, flags = max(mounts, key=lambda item: item[0])
-            persistent = (False if filesystem in {'tmpfs', 'ramfs', 'rootfs'} else
-                          True if filesystem in {'ext2', 'ext3', 'ext4', 'xfs', 'btrfs', 'f2fs',
-                                                 'jfs', 'zfs', 'ubifs', 'jffs2', 'nfs', 'nfs4', 'ceph'} else None)
-            result.update(filesystem=filesystem, persistent=persistent,
-                          writable='rw' in flags.split(','))
-    except OSError:
-        pass
-    return result
 
 
-def redact_router_log_bytes(raw):
-    """Defense in depth: do not archive credentials supplied by older agents."""
+def redact_command_result_bytes(raw):
+    """Keep credentials out of remote command results."""
     secret = re.compile(rb'authorization|hub_token|vless_uuid|ssh_vless_uuid|password|passwd|web[._ -]?key|[?&](?:key|token)=|"(?:uuid|privatekey)"|[0-9a-f]{8}-[0-9a-f-]{27,}', re.I)
     redacted = []
     for line in raw.splitlines(keepends=True):
@@ -3201,146 +3138,14 @@ def redact_router_log_bytes(raw):
     return b''.join(redacted)
 
 
-def receive_router_logs(conn, router_id, batch, state=None):
-    router_id = clean_router_id(router_id)
-    if not get_active_router(conn, router_id):
-        raise ValueError('router not found; send a heartbeat first')
-    if not isinstance(batch, dict):
-        raise ValueError('invalid log batch')
-    journal_id = str(batch.get('journal_id') or '')
-    clear_ack = str(batch.get('clear_ack') or '')
-    if not re.fullmatch(r'[A-Za-z0-9._:-]{1,80}', journal_id) or (clear_ack and not re.fullmatch(r'[A-Za-z0-9._:-]{1,80}', clear_ack)):
-        raise ValueError('invalid log journal id')
-    start, end = batch.get('from'), batch.get('to')
-    if type(start) is not int or type(end) is not int or not 0 <= start <= end <= 2**53:
-        raise ValueError('invalid log cursor')
-    data = batch.get('data')
-    if not isinstance(data, str) or len(data) > 87384:
-        raise ValueError('log batch is too large')
-    raw = base64.b64decode(data, validate=True)
-    if len(raw) > ROUTER_LOG_BATCH_MAX_BYTES or end - start != len(raw):
-        raise ValueError('invalid log batch size')
-    ts = now_ts()
-    # Serialize ingestion and offline clears using SQLite's existing transaction.
-    conn.execute('update router_logs set last_sync = last_sync where router_id = ?', (router_id,))
-    row = conn.execute('select * from router_logs where router_id = ?', (router_id,)).fetchone()
-    if row is None:
-        conn.execute('insert into router_logs(router_id) values (?)', (router_id,))
-        row = conn.execute('select * from router_logs where router_id = ?', (router_id,)).fetchone()
-    if state is not None:
-        if (not isinstance(state, dict) or type(state.get('enabled')) is not bool
-                or state.get('xray') not in {'running', 'stopped'}):
-            raise ValueError('invalid log delivery state')
-        conn.execute('update router_logs set state_json = ?, state_at = ? where router_id = ?',
-                     (json.dumps({'enabled': state['enabled'], 'xray': state['xray']}), ts, router_id))
-    pending = row['clear_request']
-    if pending and clear_ack != pending:
-        conn.execute('update router_logs set last_sync = ? where router_id = ?', (ts, router_id))
-        return {'journal_id': journal_id, 'offset': end, 'clear_request': pending}
-    cursor = int(row['cursor']) if row['journal_id'] == journal_id else 0
-    # A status-only packet cannot prove delivery of any journal bytes. Older
-    # helpers sent from=to=total even when every chunk was skipped. Acknowledging
-    # that number permanently hid the retained records and invented rotation gaps.
-    if not raw and not pending:
-        conn.execute('update router_logs set last_sync = ? where router_id = ?', (ts, router_id))
-        return {'journal_id': journal_id, 'offset': cursor, 'clear_request': ''}
-    if not pending and row['journal_id'] == journal_id and end <= cursor:
-        conn.execute('update router_logs set last_sync = ? where router_id = ?', (ts, router_id))
-        return {'journal_id': journal_id, 'offset': cursor, 'clear_request': ''}
-    stored = bytes(row['content'])
-    if pending:
-        cursor = start
-        stored = b''
-    elif row['journal_id'] and row['journal_id'] != journal_id:
-        stored += ('[OK] ' + iso_time(ts) + ' Роутер начал новый журнал: очистка или восстановление сохранённой истории.\n').encode('utf-8')
-    if start > cursor:
-        stored += ('[WARN] ' + iso_time(ts) + ' Часть записей не доставлена до ротации журнала на роутере.\n').encode('utf-8')
-    if end > cursor:
-        stored += redact_router_log_bytes(raw[max(0, cursor - start):])
-    stored = stored[-ROUTER_LOG_MAX_BYTES:]
-    conn.execute('''update router_logs set content = ?, journal_id = ?, cursor = ?,
-                    updated_at = case when ? then ? else updated_at end, last_sync = ?, clear_request = ''
-                    where router_id = ?''',
-                 (stored, journal_id, max(cursor, end), bool(raw and end > cursor), ts, ts, router_id))
-    return {'journal_id': journal_id, 'offset': max(cursor, end), 'clear_request': ''}
 
 
-def router_log_snapshot(conn, router_id):
-    row = conn.execute('select * from router_logs where router_id = ?', (router_id,)).fetchone()
-    raw = bytes(row['content']) if row else b''
-    # The live browser view stays small; downloading returns the full archive.
-    live = raw[-65536:]
-    if len(raw) > 65536 and b'\n' in live:
-        live = live.split(b'\n', 1)[1]
-    diagnosis = router_log_diagnosis(conn, router_id, row, raw)
-    return {'text': live.decode('utf-8', errors='replace'), 'bytes': len(raw), 'diagnosis': diagnosis,
-            'updated_at': row['updated_at'] if row else 0, 'last_sync': row['last_sync'] if row else 0,
-            'pending_clear': bool(row and row['clear_request'])}, raw
 
 
-def router_log_diagnosis(conn, router_id, archive=None, raw=None):
-    """Report evidence received on the VPS; never invent a network failure cause."""
-    router_row = get_active_router(conn, router_id)
-    router = row_to_router(router_row) if router_row else {}
-    if archive is None:
-        archive = conn.execute('select * from router_logs where router_id = ?', (router_id,)).fetchone()
-    raw = bytes(archive['content']) if raw is None and archive else (raw or b'')
-    state = json.loads(archive['state_json'] or '{}') if archive else {}
-    state_at = int(archive['state_at']) if archive else 0
-    last_seen = int(router.get('last_seen') or 0)
-    fresh_state = bool(state_at and state_at >= last_seen)
-    if fresh_state and state.get('enabled') is False:
-        detail = 'Туннель и Heartbeat остановлены.' if state.get('xray') == 'stopped' else 'Xray ещё запущен.'
-        return {'level': 'warn', 'text': 'Remote выключен на роутере. ' + detail + ' Отправка логов не отключается вместе с Remote.', 'at': state_at}
-    if fresh_state and state.get('xray') == 'stopped':
-        return {'level': 'error', 'text': 'Роутер сообщил: Xray остановлен. Remote включён, но туннель не работает.', 'at': state_at}
-    # Older agents have no state metadata: use explicit lifecycle facts from
-    # their delivered journal. A later start cancels the earlier stop reason.
-    for line in reversed(raw.decode('utf-8', errors='replace').splitlines()):
-        if ' Hub:' in line:
-            continue
-        if 'Сервис: запуск' in line or 'Сервис перезапущен' in line or 'Сервис запущен' in line:
-            break
-        if 'Сервис остановлен; результат=warn' in line:
-            if not state_at:
-                return {'level': 'warn', 'text': 'Получен журнал: сервис Remote остановлен через панель роутера.', 'at': 0}
-            break
-    if router.get('online'):
-        return {'level': 'ok', 'text': 'Heartbeat поступает.' + (' Роутер сообщил: Xray запущен.' if fresh_state and state.get('xray') == 'running' else ''), 'at': last_seen}
-    # Highlight a delivered error, without claiming it caused an unseen outage.
-    for line in reversed(raw.decode('utf-8', errors='replace').splitlines()):
-        if ' Hub:' in line:
-            continue
-        if 'Heartbeat: OK;' in line or 'core: Xray ' in line and ' started' in line:
-            break
-        if line.startswith(('[ERROR]', '[WARN]')) and 'строка с ключом' not in line:
-            return {'level': 'warn', 'text': 'Heartbeat не поступает. Последнее доставленное предупреждение или ошибка: ' + line[:600], 'at': 0}
-    return {'level': 'warn', 'text': 'Heartbeat не поступает. Причина обрыва не доставлена на VPS; подтверждён только тайм-аут связи.', 'at': 0}
 
 
-def clear_router_log_archive(conn, router_id):
-    request = uuid.uuid4().hex
-    conn.execute('''insert into router_logs(router_id, clear_request) values (?, ?)
-                    on conflict(router_id) do update set content = X'', updated_at = 0, clear_request = excluded.clear_request''',
-                 (router_id, request))
-    return request
 
 
-def record_router_connection_log(conn, router_id, online):
-    # Take the same write lock as ingestion before reading/appending content.
-    conn.execute('update router_logs set last_sync = last_sync where router_id = ?', (router_id,))
-    if not get_active_router(conn, router_id):
-        return
-    row = conn.execute('select content from router_logs where router_id = ?', (router_id,)).fetchone()
-    raw = bytes(row['content']) if row else b''
-    message = ('[OK] ' if online else '[WARN] ') + iso_time(now_ts())
-    reason = router_log_diagnosis(conn, router_id, raw=raw)['text'] if not online else ''
-    message += (' Hub: Heartbeat снова поступает.\n' if online else
-                ' Hub: истекло время ожидания Heartbeat, карточка отмечена оффлайн. ' + reason + '\n')
-    raw = (raw + message.encode('utf-8'))[-ROUTER_LOG_MAX_BYTES:]
-    conn.execute('''insert into router_logs(router_id, content, updated_at) values (?, ?, ?)
-                    on conflict(router_id) do update set content = excluded.content, updated_at = excluded.updated_at''',
-                 (router_id, raw, now_ts()))
 
 ROUTER_NOTES_MAX_ENTRIES = 200
 ROUTER_NOTES_STORAGE_VERSION = 1
@@ -3585,6 +3390,11 @@ def connect(db_path=DB_PATH):
 
 
 def init_db(conn):
+    # Retire the old router journal once; other Hub tables are retained.
+    retired_journal = bool(conn.execute("select 1 from sqlite_master where type='table' and name='router_logs'").fetchone())
+    if retired_journal:
+        conn.execute('pragma secure_delete=ON')
+        conn.execute('drop table router_logs')
     conn.execute(
         """
         create table if not exists routers (
@@ -3627,11 +3437,6 @@ def init_db(conn):
         )
         """
     )
-    conn.execute('''create table if not exists router_logs (
-        router_id text primary key, content blob not null default X'',
-        journal_id text not null default '', cursor integer not null default 0,
-        updated_at integer not null default 0, last_sync integer not null default 0,
-        clear_request text not null default '')''')
     conn.execute('''create table if not exists router_xray_commands (
         id text primary key,
         router_id text not null,
@@ -3650,8 +3455,8 @@ def init_db(conn):
         primary key (bucket, router_id)
     ) without rowid''')
     ensure_column(conn, 'router_xray_commands', 'hidden', 'integer not null default 0')
-    ensure_column(conn, 'router_logs', 'state_json', "text not null default '{}'")
-    ensure_column(conn, 'router_logs', 'state_at', 'integer not null default 0')
+    ensure_column(conn, 'router_xray_commands', 'parameters', "text not null default '{}'")
+    ensure_column(conn, 'routers', 'vps_host_update_json', "text not null default '{}'")
     ensure_column(conn, "routers", "custom_name", "text not null default ''")
     ensure_column(conn, "routers", "group_id", "text not null default ''")
     ensure_column(conn, "routers", "deleted_at", "integer not null default 0")
@@ -3678,6 +3483,9 @@ def init_db(conn):
                 (ssh_uuid, ssh_tag, row["id"]),
             )
     conn.commit()
+    if retired_journal:
+        conn.execute('vacuum')
+        conn.execute('pragma wal_checkpoint(TRUNCATE)')
 
 
 def clean_router_group_id(value):
@@ -3800,6 +3608,8 @@ def normalize_tachyon(value):
             'package_version': re.sub(r'[^a-zA-Z0-9.+~_-]', '', str(value.get('package_version') or value.get('version') or ''))[:80],
             'service': value.get('service') if value.get('service') in {'running', 'stopped'} else 'unknown',
             'available': value.get('available') is True,
+            'checking': value.get('checking') is True,
+            'observed_at': max(0, value.get('observed_at', 0)) if type(value.get('observed_at', 0)) is int else 0,
             'api': value.get('api') if value.get('api') in {'/api/agent/v1', '/cgi-bin/tachyon-api', '/cgi-bin/tachyon-agent'} else ''}
 
 
@@ -3828,6 +3638,13 @@ def allocate_tachyon_entry(conn):
 
 def row_to_router(row):
     data = dict(row)
+    try:
+        data['vps_host_update'] = json.loads(data.pop('vps_host_update_json', '{}') or '{}')
+    except (TypeError, ValueError):
+        data['vps_host_update'] = {}
+    pending_host = data['vps_host_update']
+    if pending_host.get('status') in {'queued', 'delivered', 'running'} and now_ts() - pending_host.get('created_at', 0) > 180:
+        pending_host['status'] = 'unconfirmed' if pending_host.get('delivered_at') else 'expired'
     try:
         status = json.loads(data.get("status_json") or "{}")
     except json.JSONDecodeError:
@@ -3873,7 +3690,6 @@ def row_to_router(row):
     data["ssh_url"] = f"/ssh/{urllib.parse.quote(data['id'])}/"
     data["config_url"] = f"/router/{urllib.parse.quote(data['id'])}/config"
     data["notes_url"] = f"/router/{urllib.parse.quote(data['id'])}/notes"
-    data["logs_url"] = f"/router/{urllib.parse.quote(data['id'])}/logs"
     data["xray_client_url"] = f"/router/{urllib.parse.quote(data['id'])}/xray-client.json"
     data.pop("status_json", None)
     return data
@@ -3908,7 +3724,6 @@ def router_with_access(router, account):
         "config": bool(can_manage),
         "wol": bool(can_manage),
         "traffic": bool(can_manage),
-        "logs": bool(can_manage),
         "delete": bool(account and account.get("is_owner")),
         "diagnose": bool(can_manage),
     }
@@ -4307,16 +4122,25 @@ def upsert_router(conn, values):
     return get_router(conn, router_id)
 
 
-XRAY_CONTROL_ACTIONS = {'start': 'Запустить', 'stop': 'Остановить', 'restart': 'Перезапустить'}
+XRAY_CONTROL_ACTIONS = {'start': 'Запустить', 'stop': 'Остановить', 'restart': 'Перезапустить', 'set-host': 'Изменить VPS host'}
 XRAY_CONTROL_TIMEOUT_SECONDS = 180
 XRAY_CONTROL_EXECUTION_SECONDS = 45
 
 
-def xray_control_audit(conn, router_id, message, level='OK'):
-    conn.execute('insert or ignore into router_logs(router_id) values (?)', (router_id,))
-    raw = bytes(conn.execute('select content from router_logs where router_id=?', (router_id,)).fetchone()[0])
-    raw = (raw + f'[{level}] {iso_time(now_ts())} Hub: Remote Xray: {message}\n'.encode())[-ROUTER_LOG_MAX_BYTES:]
-    conn.execute('update router_logs set content=?, updated_at=? where router_id=?', (raw, now_ts(), router_id))
+
+
+def sync_vps_host_command(conn, command_id):
+    command = conn.execute('select * from router_xray_commands where id=?', (command_id,)).fetchone()
+    if not command or command['action'] != 'set-host':
+        return
+    latest = conn.execute("select id from router_xray_commands where router_id=? and action='set-host' order by created_at desc,rowid desc limit 1",
+                          (command['router_id'],)).fetchone()
+    if not latest or latest['id'] != command_id:
+        return
+    summary = {key: command[key] for key in ('id', 'status', 'result', 'created_at', 'delivered_at', 'completed_at')}
+    summary.update(json.loads(command['parameters']))
+    conn.execute('update routers set vps_host_update_json=? where id=?',
+                 (json.dumps(summary, ensure_ascii=False), command['router_id']))
 
 
 def xray_control_expire(conn, router_id):
@@ -4335,10 +4159,10 @@ def xray_control_expire(conn, router_id):
                    'Результат не подтверждён: агент не прислал итог за 3 минуты. Проверь журнал и текущий статус Xray.')
         status = 'expired' if not row['delivered_at'] else 'unconfirmed'
         conn.execute('update router_xray_commands set status=?, result=?, completed_at=? where id=?', (status, message, ts, row['id']))
-        xray_control_audit(conn, router_id, message, 'WARN')
+        sync_vps_host_command(conn, row['id'])
 
 
-def xray_control_enqueue(conn, router_id, action, request_id):
+def xray_control_enqueue(conn, router_id, action, request_id, parameters=None):
     if not isinstance(action, str) or action not in XRAY_CONTROL_ACTIONS or not re.fullmatch(r'[a-f0-9]{32}', str(request_id or '')):
         raise ValueError('Недопустимая команда или идентификатор запроса.')
     # Acquire the DB writer before checking the queue; concurrent tabs cannot enqueue two operations.
@@ -4346,19 +4170,31 @@ def xray_control_enqueue(conn, router_id, action, request_id):
     row = get_active_router(conn, router_id)
     if not row:
         raise ValueError('Роутер не найден.')
+    parameters = parameters or {}
+    if action == 'set-host':
+        host = validate_router_vps_host(parameters.get('vps_host'))
+        mode = parameters.get('vps_host_mode')
+        if mode not in {'manual', 'auto'}:
+            raise ValueError('VPS host mode должен быть manual или auto')
+        parameters = {'vps_host': host, 'vps_host_mode': mode}
+    else:
+        parameters = {}
     previous = conn.execute('select * from router_xray_commands where id=?', (request_id,)).fetchone()
     if previous:
-        if previous['router_id'] != router_id or previous['action'] != action:
+        if previous['router_id'] != router_id or previous['action'] != action or json.loads(previous['parameters']) != parameters:
             raise ValueError('Этот идентификатор уже использован другой командой.')
         return
     if router_reported_status(row).get('xray_control') != 1:
         raise ValueError('Сначала обнови агент на этом роутере: управление через Heartbeat ещё не поддерживается.')
+    if action == 'set-host' and router_reported_status(row).get('vps_host_control') != 1:
+        raise ValueError('Сначала обнови агент на этом роутере: смена VPS host через Heartbeat ещё не поддерживается.')
     xray_control_expire(conn, router_id)
     if conn.execute("select 1 from router_xray_commands where router_id=? and status in ('queued','delivered','running')", (router_id,)).fetchone():
         raise ValueError('Предыдущая команда ещё выполняется или ожидает Heartbeat.')
-    conn.execute('insert into router_xray_commands(id,router_id,action,created_at) values (?,?,?,?)', (request_id, router_id, action, now_ts()))
+    conn.execute('insert into router_xray_commands(id,router_id,action,created_at,parameters) values (?,?,?,?,?)',
+                 (request_id, router_id, action, now_ts(), json.dumps(parameters)))
+    sync_vps_host_command(conn, request_id)
     conn.execute('delete from router_xray_commands where router_id=? and id not in (select id from router_xray_commands where router_id=? order by created_at desc,rowid desc limit 100)', (router_id, router_id))
-    xray_control_audit(conn, router_id, f'{XRAY_CONTROL_ACTIONS[action]} Xray: команда {request_id[:8]} поставлена в очередь.')
 
 
 def xray_control_exchange(conn, router_id, payload):
@@ -4375,21 +4211,32 @@ def xray_control_exchange(conn, router_id, payload):
                 and type(rc) is int and 0 <= rc <= 255 and xray in {'running', 'stopped'}):
             if state == 'succeeded' and (rc != 0 or xray != ('stopped' if command['action'] == 'stop' else 'running')):
                 state = 'failed'
+            if command['action'] == 'set-host' and state == 'succeeded':
+                expected = json.loads(command['parameters'])
+                if any(result.get(key) != value or payload.get(key) != value for key, value in expected.items()):
+                    state = 'failed'
+                else:
+                    conn.execute('update routers set vps_host=?,updated_at=? where id=?',
+                                 (expected['vps_host'], now_ts(), router_id))
             message = str(result.get('message') or '')[:1500]
-            message = redact_router_log_bytes(message.encode()).decode('utf-8', 'replace')
+            if command['action'] == 'set-host' and result.get('status') == 'succeeded' and state == 'failed':
+                message = 'Агент не подтвердил одновременно новый VPS host, режим и работающий процесс Xray.'
+            message = redact_command_result_bytes(message.encode()).decode('utf-8', 'replace')
             if state != command['status']:
                 conn.execute('update router_xray_commands set status=?,result=?,started_at=case when started_at=0 then ? else started_at end,completed_at=? where id=?',
                              (state, message, now_ts(), 0 if state == 'running' else now_ts(), command['id']))
-                xray_control_audit(conn, router_id, f'{XRAY_CONTROL_ACTIONS[command["action"]]} Xray: {message} (rc={rc}, Xray={xray}).',
-                                   'OK' if state in {'running', 'succeeded'} else 'ERROR')
+                sync_vps_host_command(conn, command['id'])
     xray_control_expire(conn, router_id)
     if payload.get('xray_control') != 1:
         return None
     row = conn.execute("select * from router_xray_commands where router_id=? and status in ('queued','delivered') order by created_at limit 1", (router_id,)).fetchone()
     if not row:
         return None
+    if row['action'] == 'set-host' and payload.get('vps_host_control') != 1:
+        return None
     conn.execute("update router_xray_commands set status='delivered',delivered_at=case when delivered_at=0 then ? else delivered_at end where id=?", (now_ts(), row['id']))
-    return {'id': row['id'], 'action': row['action']}
+    sync_vps_host_command(conn, row['id'])
+    return {'id': row['id'], 'action': row['action'], **({'parameters': json.loads(row['parameters'])} if row['action'] == 'set-host' else {})}
 
 
 def xray_control_clear_history(conn, router_id):
@@ -4423,15 +4270,50 @@ def xray_control_snapshot(conn, router_id):
 
 def heartbeat(conn, payload):
     router_id = clean_router_id(payload.get("id"))
+    # Serialize the read/compare/write, including concurrent manual heartbeats.
+    conn.execute('update routers set last_seen=last_seen where id=?', (router_id,))
     row = get_router(conn, router_id)
     payload = dict(payload)
+    ts = now_ts()
+    previous = router_reported_status(row) if row else {}
+    order = previous.get('_heartbeat_order') or {}
+    payload.pop('_heartbeat_order', None)
+    boot = payload.get('agent_boot_id')
+    sample = payload.get('sample_uptime_ms')
+    ordered = (isinstance(boot, str) and re.fullmatch(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', boot)
+               and type(sample) is int and 0 <= sample <= 10**15)
+    grace = router_online_timeout(previous)
+    retired = list(order.get('retired') or [])[-4:]
+    ignored = bool(ordered and (boot in retired or boot == order.get('boot') and sample <= order.get('sample', -1)))
+    if order and not ordered and ts - order.get('received_at', 0) <= grace:
+        ignored = True
+    # Upgrade compatibility: an already in-flight old process has no ordering
+    # fields. A proven set-host receipt protects the immediate transition too.
+    operation = row_to_router(row).get('vps_host_update', {}) if row else {}
+    if not ordered and not order and operation.get('status') == 'succeeded' and ts - operation.get('completed_at', 0) <= grace:
+        receipt = payload.get('xray_control_result') or {}
+        has_receipt = isinstance(receipt, dict) and receipt.get('id') == operation.get('id') and receipt.get('status') == 'succeeded'
+        if previous.get('vps_host_control') == 1 and (payload.get('vps_host_control') != 1 or
+                not has_receipt and payload.get('vps_host') != previous.get('vps_host')):
+            ignored = True
+    if ignored and row:
+        router = row_to_router(row)
+        router['_heartbeat_ignored'] = True
+        return router
+    if ordered:
+        if order.get('boot') and order['boot'] != boot:
+            retired = (retired + [order['boot']])[-4:]
+        payload['_heartbeat_order'] = {'boot': boot, 'sample': sample, 'received_at': ts, 'retired': retired}
     tachyon = normalize_tachyon(payload.get('tachyon'))
     if tachyon is None:
         tachyon = router_tachyon(row) if row else {}
         if tachyon:
-            tachyon = {**tachyon, 'available': False}
+            observed = min(ts, int(tachyon.get('observed_at') or (row['last_seen'] if row else 0)))
+            tachyon = {**tachyon, 'checking': True, 'observed_at': observed,
+                       'available': bool(tachyon.get('available') and ts - observed <= 120)}
+    elif tachyon.get('installed'):
+        tachyon = {**tachyon, 'checking': False, 'observed_at': ts}
     payload['tachyon'] = tachyon
-    ts = now_ts()
     status_json = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     was_deleted = router_deleted(row)
     known_before = bool(row and not was_deleted)
@@ -5323,7 +5205,9 @@ html[data-hub-design] .inputShell :is(input,.inputAction){background:transparent
 html[data-hub-design] .inputShell input:focus-visible{outline:none}
 html[data-hub-design] input:-webkit-autofill{-webkit-text-fill-color:var(--text);box-shadow:0 0 0 1000px var(--panel2) inset!important;caret-color:var(--text)}
 html[data-hub-design] :is(.authTabBtn,.fieldIcon,.inputAction,.captchaRefresh,.captchaInputMark,.captchaHeading,.methodDetails summary,.methodDetails summary::after,.altAuthSummary,.authGroupTitle strong,.authSocialName,.notesPreview strong,.noteBody,.cmdLabel,.cmd pre,.notifyBody,.diagCommand code){color:var(--text)}
-html[data-hub-design] :is(.securityNote,.divider,.statCard em,#logsStatus){color:var(--muted)}
+html[data-hub-design] :is(.divider,.statCard em,#logsStatus){color:var(--muted)}
+html[data-hub-design] .securityNote{color:var(--green)}
+html[data-hub-design] .hubNotesPage :is(.shell,.hero,.notesLayout,.editor,.history,.noteCard,.noteEmpty,.noteShot,.noteShot img,.viewOnlyBox,.pill,textarea){background:var(--panel2)!important;border-color:var(--line);box-shadow:none}
 html[data-hub-design] .hint:not(.warn){color:var(--muted)}
 html[data-hub-design] :is(.authTabBtn[aria-selected="true"],.routerGroupChoice.active){background:var(--accent-soft);border-color:var(--cyan);color:var(--text);box-shadow:none}
 html[data-hub-design] :is(.authTabs,.authTabBtn,.methodMark,.methodMeta,.authMark,.brandSeal::before,.noteEmpty,.noteShot){border-color:var(--line)}
@@ -5452,6 +5336,7 @@ html[data-hub-shared-effects="1"] body>*:not(.seasonalFx){position:relative;z-in
 def hub_design_runtime_script():
     """The dashboard renderer and pointer physics shared by every Hub page."""
     return r'''<script>
+/* Shared Hub effects and design for the OpenWrt router panel. */
 let seasonalFxCanvas = null;
 let seasonButtons = [];
 let seasonSwitches = [];
@@ -5459,7 +5344,7 @@ let hubDesignInitialized = false;
 let seasonEffectsInitialized = false;
 let hubAppearanceInitialized = false;
 const SEASON_EFFECT_KEY = 'owrtRemote:seasonEffectMode';
-const SEASON_EFFECT_MODES = new Set(['off', 'snow', 'rain', 'cosmos', 'embers', 'orbit', 'prism', 'pulse', 'laser']);
+const SEASON_EFFECT_MODES = new Set(['off', 'snow', 'rain', 'cosmos', 'embers', 'orbit', 'prism', 'pulse', 'laser', 'streams']);
 const HUB_DESIGN_KEY = 'owrtRemote:hubDesign';
 const HUB_DESIGN_MODES = new Set(['default', 'winter', 'lite']);
 let hubDesignMode = document.documentElement.dataset.hubDesign || 'default';
@@ -5471,6 +5356,17 @@ let seasonalFxLastTs = 0;
 let seasonalFxParticles = [];
 let seasonalFxSize = {width: 0, height: 0, dpr: 1};
 let seasonalFxPointer = {x: 0, y: 0, lastX: 0, lastY: 0, targetWind: 0, wind: 0, lastMoveTs: 0, active: false};
+// Seven curved tracks, with the geometry, dash lengths and speeds seen in
+// Tachyon. Keep the effect in the existing canvas and its single lifecycle.
+const SEASON_STREAM_PATHS = [
+  {points:[-100,140,420,40,1080,280,1700,90], dash:[80,620], duration:5500, delay:0, color:'10,132,255', alpha:.55},
+  {points:[-100,290,480,190,1020,420,1700,240], dash:[50,540], duration:4100, delay:1600, color:'245,245,247', alpha:.32},
+  {points:[-100,450,520,370,1080,550,1700,420], dash:[110,720], duration:6800, delay:3200, color:'10,132,255', alpha:.62},
+  {points:[-100,620,460,520,1120,710,1700,580], dash:[40,480], duration:3400, delay:900, color:'64,156,255', alpha:.45},
+  {points:[-100,780,540,680,1060,840,1700,740], dash:[65,600], duration:4900, delay:2400, color:'245,245,247', alpha:.28},
+  {points:[180,-60,420,320,880,580,1480,960], dash:[50,540], duration:4100, delay:1600, color:'10,132,255', alpha:.4},
+  {points:[640,-60,820,300,1180,560,1680,880], dash:[40,480], duration:3400, delay:900, color:'10,132,255', alpha:.35}
+];
 function setHubDesign(nextMode, options = {}) {
   hubDesignMode = HUB_DESIGN_MODES.has(nextMode) ? nextMode : 'default';
   document.documentElement.dataset.hubDesign = hubDesignMode;
@@ -5482,7 +5378,7 @@ function setHubDesign(nextMode, options = {}) {
   });
   document.querySelectorAll('[data-hub-design-hint]').forEach(hint => {
     hint.textContent = hubDesignMode === 'lite'
-      ? 'Эффекты отключены. Статистика VPS — раз в 5 с, роутеры — раз в 10 с. Выбор сохранён в этом браузере.'
+      ? 'Эффекты, размытие и анимация отключены. Облегчённый дизайн роутера. Выбор сохранён в этом браузере.'
       : hubDesignMode === 'winter'
         ? 'Зимние цвета и снежные детали. Падающий снег можно включить отдельно выше. Выбор сохранён в этом браузере.'
         : 'Обычный дизайн Hub. Выбор сохранён в этом браузере.';
@@ -5796,6 +5692,7 @@ function seasonFxRandomGlyph() {
 }
 
 function seasonFxParticleCountForMode(mode, area, width, height) {
+  if (mode === 'streams') return SEASON_STREAM_PATHS.length;
   if (mode === 'snow') return Math.min(560, Math.max(180, Math.round(area / 2100)));
   if (mode === 'cosmos') return Math.min(420, Math.max(160, Math.round(area / 2600)));
   if (mode === 'embers') return Math.min(280, Math.max(90, Math.round(area / 6200)));
@@ -5815,6 +5712,10 @@ function seasonFxParticleCountForMode(mode, area, width, height) {
 function seasonFxBuildParticles() {
   if (seasonEffectMode === 'off') {
     seasonalFxParticles = [];
+    return;
+  }
+  if (seasonEffectMode === 'streams') {
+    seasonalFxParticles = SEASON_STREAM_PATHS.map(() => ({elapsed:0}));
     return;
   }
   const width = seasonalFxSize.width || window.innerWidth || 1;
@@ -5860,6 +5761,35 @@ function seasonFxHandlePointerLeave() {
   seasonalFxPointer.targetWind = 0;
 }
 
+function seasonFxDrawStreams(dt, width, height) {
+  const ctx = seasonalFxCtx;
+  const scale = Math.max(width / 1600, height / 900);
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  ctx.save();
+  ctx.translate((width - 1600 * scale) / 2, (height - 900 * scale) / 2);
+  ctx.scale(scale, scale);
+  ctx.lineCap = 'round';
+  SEASON_STREAM_PATHS.forEach((track, index) => {
+    const p = seasonalFxParticles[index];
+    p.elapsed = (p.elapsed + (reduced ? 0 : dt)) % track.duration;
+    const xy = track.points;
+    ctx.beginPath();
+    ctx.moveTo(xy[0], xy[1]);
+    ctx.bezierCurveTo(...xy.slice(2));
+    ctx.setLineDash([]);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(255,255,255,.028)';
+    ctx.stroke();
+    ctx.setLineDash(track.dash);
+    ctx.lineDashOffset = 800 * (1 - ((p.elapsed + track.delay) % track.duration) / track.duration);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = `rgba(${track.color},${track.alpha})`;
+    ctx.stroke();
+  });
+  ctx.restore();
+  return reduced;
+}
+
 function seasonFxStep(ts) {
   if (!seasonalFxCanvas || !seasonalFxCtx || seasonEffectMode === 'off' || hubDesignMode === 'lite' || document.hidden) {
     seasonalFxFrame = 0;
@@ -5878,7 +5808,13 @@ function seasonFxStep(ts) {
   seasonalFxCtx.globalCompositeOperation = 'source-over';
   seasonalFxCtx.shadowBlur = 0;
   seasonalFxCtx.shadowColor = 'rgba(0,0,0,0)';
-  if (seasonEffectMode === 'snow') {
+  if (seasonEffectMode === 'streams') {
+    // Reduced motion keeps the tracks visible without a running frame loop.
+    if (seasonFxDrawStreams(dt, width, height)) {
+      seasonalFxFrame = 0;
+      return;
+    }
+  } else if (seasonEffectMode === 'snow') {
     seasonalFxCtx.fillStyle = 'rgba(255,255,255,.8)';
     for (const p of seasonalFxParticles) {
       p.drift += p.driftSpeed * dt;
@@ -6390,6 +6326,9 @@ function initSeasonEffects() {
   window.addEventListener('pointermove', seasonFxHandlePointerMove, {passive: true});
   window.addEventListener('pointerleave', seasonFxHandlePointerLeave);
   window.addEventListener('blur', seasonFxHandlePointerLeave);
+  window.matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => {
+    if (seasonEffectMode === 'streams') seasonFxStart();
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) seasonFxStop();
     else seasonFxStart();
@@ -6536,7 +6475,6 @@ def hub_sidebar_icon(name):
         'folder': '<path d="M3 6a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
         'terminal': '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3m6 0h4"/>',
         'refresh': '<path d="M21 7v5h-5M3 17v-5h5"/><path d="M5 7a8 8 0 0 1 14-2l2 4M3 15l2 4a8 8 0 0 0 14-2"/>',
-        'logs': '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
         'shield': '<path d="M12 3l8 3v6c0 5-8 9-8 9s-8-4-8-9V6z"/><path d="M8 12l3 3 5-6"/>',
         'design': '<circle cx="12" cy="12" r="9"/><path d="M16 19v-4h5M7 10h.01M10 6h.01M16 8h.01"/>',
         'download': '<path d="M12 3v12m-5-5l5 5 5-5M4 16v4h16v-4"/>',
@@ -6556,7 +6494,7 @@ def hub_sidebar_html(username, is_owner):
     icon = hub_sidebar_icon
     return f'''<button class="hubSidebarBackdrop" id="hubSidebarBackdrop" aria-label="Закрыть меню Hub" hidden></button>
 <aside class="hubSidebar" id="hubSidebar" aria-label="Главное меню Hub" tabindex="-1">
-  <a class="hubSidebarBrand" href="/" aria-label="OWRT Hub v123"><span class="hubBrandMark">{icon('hub')}</span><strong>OWRT Hub <b>v123</b></strong></a>
+  <a class="hubSidebarBrand" href="/" aria-label="OWRT Hub v124"><span class="hubBrandMark">{icon('hub')}</span><strong>OWRT Hub <b>v124</b></strong></a>
   <button class="hubSidebarClose" id="hubSidebarClose" type="button" aria-label="Закрыть меню Hub">{icon('close')}</button>
   <nav class="hubSidebarNav" aria-label="Разделы панели">
     <details class="hubNavSection" id="hubWorkspaceSection">
@@ -6570,11 +6508,9 @@ def hub_sidebar_html(username, is_owner):
     <details class="hubNavSection" id="hubManagementSection">
       <summary class="hubNavSectionToggle"><span>Управление</span>{icon('chevron')}</summary>
       <div class="hubNavSectionItems">
-        <button class="hubNavItem" id="hubRefreshRouters" data-hub-action="refresh" type="button">{icon('refresh')}<span>Обновить</span></button>
         <button class="hubNavItem" id="hubAddRouter" data-hub-action="add" type="button" data-hub-add hidden>{icon('plus')}<span>Добавить роутер</span></button>
         <a class="hubNavItem" href="/vps-terminal/" target="_blank" rel="noopener noreferrer" data-hub-owner{owner_hidden}>{icon('terminal')}<span>Терминал VPS</span></a>
         <a class="hubNavItem" href="/router-updates/" target="_blank" rel="noopener noreferrer" data-hub-owner{owner_hidden}>{icon('refresh')}<span>Обновить роутеры</span></a>
-        <button class="hubNavItem" data-hub-action="logs" type="button">{icon('logs')}<span>Глобальные логи</span></button>
         <button class="hubNavItem" data-hub-action="vps-xray" data-hub-owner type="button"{owner_hidden}>{icon('shield')}<span>Xray на VPS</span></button>
       </div>
     </details>
@@ -6588,7 +6524,7 @@ def hub_sidebar_html(username, is_owner):
       </div>
     </details>
     <div class="hubNavCaption">Сообщество</div>
-    <a class="hubNavItem" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">{icon('chat')}<span>NetHaven VPN · чат</span></a>
+    <a class="hubNavItem" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer">{icon('chat')}<span>NetHaven · чат</span></a>
     <a class="hubNavItem hubNavDonate" href="/donate/" target="_blank" rel="noopener noreferrer">{icon('heart')}<span>Поддержать разработку</span></a>
   </nav>
   <div class="hubSidebarFooter"><div id="hubSidebarConnection" role="status"><i class="hubStateDot"></i>Подключение к Hub</div><button class="hubSidebarAccount" type="button" data-hub-action="access"><span class="hubAvatar">{html.escape((username or 'U')[:2].upper())}</span><span data-hub-username>{safe_username}</span></button><a class="hubSidebarAccount" href="/logout">Выйти из Hub</a></div>
@@ -6600,8 +6536,8 @@ def hub_sidebar_top_html():
     return f'''<header class="hubShellTopbar" id="hubShellTopbar">
   <button class="hubSidebarMenuButton" id="hubSidebarMenuButton" type="button" aria-controls="hubSidebar" aria-expanded="false" aria-label="Открыть меню Hub">{icon('menu')}</button>
   <div class="hubShellBreadcrumb">{icon('hub')}<span>Рабочее пространство <b>/</b> <strong>Дашборд</strong></span></div>
-  <div class="hubPhoneBrand"><strong>OWRT Hub <b>v123</b></strong></div>
-  <div class="hubShellTools"><div class="hubShellControlsRow"><div id="hubShellSearchHost"></div><div id="hubShellUpdateHost"></div></div></div>
+  <div class="hubPhoneBrand"><strong>OWRT Hub <b>v124</b></strong></div>
+  <div class="hubShellTools"><div class="hubShellControlsRow"><div id="hubShellUpdateHost"></div></div></div>
 </header>
 <div class="hubSidebarPanels"><div id="hubShellDesignHost"></div><div id="hubShellAccountHost"><div class="hubAccessBackdrop" id="hubAccessBackdrop" aria-hidden="true" hidden></div></div></div>
 '''
@@ -6629,21 +6565,20 @@ def hub_sidebar_overview_html(resources=None):
   </article>
   <article class="hubOverviewPanel hubResourcesPanel" id="hubResourcesPanel"><div class="hubOverviewHead"><h2>Ресурсы VPS</h2><span>Текущее состояние</span></div>{vps_resource_widgets_html(resources=resources)}<div class="hubOverviewFoot"><span><i class="hubStateDot"></i>Обновление без перезагрузки</span><span id="hubDataFreshness">Загрузка данных</span></div></article>
 </section>
-<section class="hubServiceStrip"><span>Состояние сети</span><span id="hubHeartbeatSummary">Ожидаем Heartbeat</span><span>Журналы доступны в карточках</span></section>
-<section class="hubRoutersHeading" id="hubRoutersHeading"><h2>Роутеры <span id="hubVisibleCount"></span></h2><div id="hubGroupFilterHost" data-hub-owner></div></section>
+<section class="hubRoutersHeading" id="hubRoutersHeading"><h2>Роутеры <span id="hubVisibleCount"></span></h2><div class="hubRouterFilters"><label class="hubStatusControl"><select id="routerStatusFilter" aria-label="Статус роутеров"><option value="all">Все роутеры</option><option value="online">В сети</option><option value="offline">Не в сети</option></select></label><div id="hubShellSearchHost"></div><div id="hubGroupFilterHost" data-hub-owner></div></div></section>
 <div class="hubShellDialog" id="hubShellDialog" hidden><section class="hubShellDialogCard" role="dialog" aria-modal="true" aria-labelledby="hubShellDialogTitle"><div class="hubShellDialogHead"><h2 id="hubShellDialogTitle"></h2><button class="btn hubShellDialogClose" id="hubShellDialogClose" type="button">Закрыть</button></div><div id="hubShellDialogContent"></div></section></div>'''
 
 
 def hub_sidebar_css():
     return r'''<style id="hub-sidebar-style">
 :root[data-hub-design="default"]{--bg:#0b0b0c;--panel:#111113;--panel2:#19191d;--text:#f5f5f7;--muted:#9999a6;--line:#2b2b32;--blue:#165895;--cyan:#5eaeff;--green:#46c58b;--red:#ee8792;--amber:#e4b968}
-.hubDashboard{font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:0;color:var(--text)}
+.hubDashboard{--hub-layout-max:1360px;font:13px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:0;color:var(--text)}
 html[data-hub-design="default"] .hubDashboard{background:var(--bg);animation:none}
 html[data-hub-design="default"] .hubDashboard::before{inset:0;background:linear-gradient(149deg,transparent 40%,#6595c707 40.1%,transparent 40.2%),linear-gradient(25deg,transparent 61%,#6595c708 61.1%,transparent 61.2%);filter:none;opacity:1;animation:none}
-.hubDashboard .wrap{width:auto;max-width:none;min-width:0;margin:0 0 0 224px;padding:16px 24px 24px 16px;display:block}
+.hubDashboard .wrap{width:100%;max-width:var(--hub-layout-max);min-width:0;margin:0 auto;padding:16px 16px 24px 240px;display:block}
 .hubDashboard .top,.hubDashboard #routerFormToggle,.hubDashboard #routerStatsToggle{display:none!important}
 .hubIcon{display:block;width:17px;height:17px;flex:none;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
-.hubSidebar{position:fixed;inset:16px auto auto 16px;width:208px;max-height:calc(100dvh - 32px);z-index:65;display:flex;flex-direction:column;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel);min-height:0;overflow:hidden}
+.hubSidebar{position:fixed;inset:16px auto auto max(16px,calc((100% - var(--hub-layout-max))/2 + 16px));width:208px;max-height:calc(100dvh - 32px);z-index:65;display:flex;flex-direction:column;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel);min-height:0;overflow:hidden}
 .hubSidebarBrand{display:flex;align-items:center;gap:10px;flex-shrink:0;padding:4px 6px 10px;border-bottom:1px solid var(--line);color:var(--text);text-decoration:none}
 .hubBrandMark{display:grid;place-items:center;width:32px;height:36px;flex:none;color:var(--cyan);background:color-mix(in srgb,var(--cyan) 10%,transparent);border:1px solid color-mix(in srgb,var(--cyan) 30%,transparent);border-radius:9px}
 .hubBrandMark .hubIcon{width:23px;height:23px}.hubSidebarBrand strong{display:block;font-size:14px;letter-spacing:-.3px}.hubSidebarBrand small{display:block;margin-top:1px;color:var(--muted);font-size:11px}.hubSidebarBrand b{color:var(--cyan);font-weight:550}
@@ -6661,21 +6596,40 @@ html[data-hub-design="default"] .hubDashboard::before{inset:0;background:linear-
 .hubDashboard #routerSearchDock,.hubDashboard #mobileRouterSearchDock{width:156px;min-width:0}.hubDashboard #seasonDock,.hubDashboard #mobileSeasonDock{width:86px;max-width:none;min-width:0}.hubDashboard :is(#routerSearchToggle,#mobileRouterSearchToggle,#seasonToggle,#mobileSeasonToggle,.hubUpdateButton){min-height:32px;width:100%;margin:0;padding:7px 9px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;font-size:11px;font-weight:550;line-height:1.3;box-shadow:none}.hubDashboard #hubShellUpdateHost{width:166px}.hubDashboard .hubUpdateButton[data-update-state="current"]{background:color-mix(in srgb,var(--green) 9%,var(--panel));border-color:color-mix(in srgb,var(--green) 35%,var(--line));color:var(--green)}.hubDashboard .hubUpdateButton[data-update-state="available"]{background:color-mix(in srgb,var(--amber) 10%,var(--panel));border-color:color-mix(in srgb,var(--amber) 40%,var(--line));color:var(--amber)}
 .hubDashboard :is(.seasonPanel,.routerSearchPanel){position:absolute;top:calc(100% + 10px);right:0;left:auto;z-index:90;width:310px;margin:0;max-height:calc(100dvh - 105px);overflow:auto;overscroll-behavior:contain}.hubDashboard :is(.seasonCard,.routerSearchCard){padding:13px;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 60px #0005;backdrop-filter:none}.hubDashboard :is(.seasonLabel,.routerSearchTitle){color:var(--text);font-size:11px}.hubDashboard :is(.seasonBtn,.routerSearchField,.routerSearchClear){border-color:var(--line);border-radius:7px;background:var(--panel2);color:var(--text)}.hubDashboard .seasonBtn[data-active="true"]{background:color-mix(in srgb,var(--cyan) 12%,var(--panel));border-color:var(--cyan);box-shadow:none}
 .hubPageHeading{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin:23px 0 17px}.hubEyebrow{display:block;color:var(--muted);opacity:.65;font-size:9px;letter-spacing:1px}.hubPageHeading h1{font-size:17px;font-weight:600;letter-spacing:-.3px;line-height:1.25;margin:4px 0 0}.hubPageHeading h1>span{color:var(--muted)}.hubPageHeading p{font-size:12px;color:var(--muted);margin:5px 0 0}.hubPageActions{display:flex;gap:7px}.hubPageActions .btn{display:flex;gap:6px;align-items:center}.hubPageActions .hubIcon{width:14px;height:14px}
-.hubDashboard .routerStats{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 12px}.hubDashboard .statCard{min-height:80px;padding:10px 12px;border-radius:11px;background:var(--panel);border:1px solid var(--line);box-shadow:none;text-align:left;overflow:visible}.hubDashboard .statCard::before,.hubDashboard .statCard::after{display:none}.hubDashboard .statCardHead{min-height:13px;justify-content:flex-start}.hubDashboard .statCardHead span{font-size:10px;font-weight:550;color:var(--muted);letter-spacing:0;text-transform:none}.hubDashboard :is(.statValueRow,.offlineStatRow){justify-content:flex-start;min-height:25px;margin-top:3px}.hubDashboard .statCard strong{font-size:22px;line-height:1.15;font-weight:650;letter-spacing:-.8px;color:var(--text)}.hubDashboard .statCard em{display:block;font-size:9px;color:var(--muted);font-style:normal;margin-top:3px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hubDashboard .statCard.online em{color:var(--green)}.hubDashboard .statCard.offline em{color:var(--red)}.hubDashboard .offlineMoreBtn{position:static;margin-left:auto;padding:3px 7px;font-size:9px;min-height:23px;background:var(--panel2);color:var(--muted)}.hubDashboard .offlinePopover{z-index:55;top:calc(100% + 7px);background:var(--panel);border-color:var(--line);box-shadow:0 18px 45px #0005}
-.hubOverview{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:11px;margin-top:10px}.hubOverviewPanel{min-width:0;padding:14px 16px 11px;background:var(--panel);border:1px solid var(--line);border-radius:11px}.hubOverviewHead{display:flex;align-items:center;justify-content:space-between;gap:10px}.hubOverviewHead h2{font-size:12px;font-weight:600;margin:0}.hubOverviewHead>span{font-size:9px;color:var(--muted)}.hubAvailabilityChart{height:115px;padding-top:17px}.hubAvailabilityChart svg{display:block;width:100%;height:87px;overflow:visible}.hubChartGrid{stroke:var(--line);stroke-dasharray:2 4;fill:none}.hubChartLabels{display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:6px}.hubChartHint{font-size:9px;color:var(--muted);margin:19px 0 0}.hubDashboard .hubResourcesPanel .vpsResources{display:grid!important;grid-template-columns:1fr;gap:10px;margin:14px 0 0;padding:0}.hubDashboard .hubResourcesPanel .vpsResource{position:relative;display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:0;min-height:0;padding:0 0 10px;border:0;border-radius:0;background:none;color:var(--muted);font-size:10px;font-weight:400}.hubResourcesPanel .vpsResource strong{font-size:11px;color:var(--text)!important;font-weight:600}.hubResourcesPanel .vpsResource::after{content:"";position:absolute;left:0;right:0;bottom:0;height:4px;border-radius:4px;background:linear-gradient(to right,var(--cyan) var(--hub-usage,0%),var(--line) var(--hub-usage,0%))}.hubResourcesPanel .vpsResource[data-vps-resource="memory"]::after{background:linear-gradient(to right,var(--green) var(--hub-usage,0%),var(--line) var(--hub-usage,0%))}.hubResourcesPanel .vpsResource[data-vps-resource="disk"]::after{background:linear-gradient(to right,var(--amber) var(--hub-usage,0%),var(--line) var(--hub-usage,0%))}.hubOverviewFoot{display:flex;justify-content:space-between;gap:8px;font-size:9px;color:var(--muted);border-top:1px solid var(--line);margin-top:11px;padding-top:9px}.hubOverviewFoot .hubStateDot{width:5px;height:5px}.hubServiceStrip{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--line);border-radius:7px;background:var(--panel);margin:10px 0 0;font-size:10px;color:var(--muted)}
+.hubDashboard .routerStats{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 12px}.hubDashboard .statCard{min-height:80px;padding:10px 12px;border-radius:11px;background:var(--panel);border:1px solid var(--line);box-shadow:none;text-align:center;overflow:visible}.hubDashboard .statCard::before,.hubDashboard .statCard::after{display:none}.hubDashboard .statCardHead{min-height:13px;justify-content:center}.hubDashboard .statCardHead span{font-size:10px;font-weight:550;color:var(--muted);letter-spacing:0;text-transform:none}.hubDashboard :is(.statValueRow,.offlineStatRow){justify-content:center;min-height:25px;margin-top:3px}.hubDashboard .statCard strong{font-size:22px;line-height:1.15;font-weight:650;letter-spacing:-.8px;color:var(--text)}.hubDashboard .statCard em{display:block;font-size:9px;color:var(--muted);font-style:normal;margin-top:3px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hubDashboard .statCard.online em{color:var(--green)}.hubDashboard .statCard.offline em{color:var(--red)}.hubDashboard .offlineMoreBtn{position:static;margin-left:auto;padding:3px 7px;font-size:9px;min-height:23px;background:var(--panel2);color:var(--muted)}.hubDashboard .offlinePopover{z-index:55;top:calc(100% + 7px);background:var(--panel);border-color:var(--line);box-shadow:0 18px 45px #0005}
+.hubOverview{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:11px;margin-top:10px}.hubOverviewPanel{min-width:0;padding:14px 16px 11px;background:var(--panel);border:1px solid var(--line);border-radius:11px}.hubOverviewHead{display:flex;align-items:center;justify-content:space-between;gap:10px}.hubOverviewHead h2{font-size:12px;font-weight:600;margin:0}.hubOverviewHead>span{font-size:9px;color:var(--muted)}.hubAvailabilityChart{height:115px;padding-top:17px}.hubAvailabilityChart svg{display:block;width:100%;height:87px;overflow:visible}.hubChartGrid{stroke:var(--line);stroke-dasharray:2 4;fill:none}.hubChartLabels{display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:6px}.hubChartHint{font-size:9px;color:var(--muted);margin:19px 0 0}.hubDashboard .hubResourcesPanel .vpsResources{display:grid!important;grid-template-columns:1fr;gap:10px;margin:14px 0 0;padding:0}.hubDashboard .hubResourcesPanel .vpsResource{position:relative;display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-width:0;min-height:0;padding:0 0 10px;border:0;border-radius:0;background:none;color:var(--muted);font-size:10px;font-weight:400}.hubResourcesPanel .vpsResource strong{font-size:11px;color:var(--text)!important;font-weight:600}.hubResourcesPanel .vpsResource::after{content:"";position:absolute;left:0;right:0;bottom:0;height:4px;border-radius:4px;background:linear-gradient(to right,var(--cyan) var(--hub-usage,0%),var(--line) var(--hub-usage,0%))}.hubResourcesPanel .vpsResource[data-vps-resource="memory"]::after{background:linear-gradient(to right,var(--green) var(--hub-usage,0%),var(--line) var(--hub-usage,0%))}.hubResourcesPanel .vpsResource[data-vps-resource="disk"]::after{background:linear-gradient(to right,var(--amber) var(--hub-usage,0%),var(--line) var(--hub-usage,0%))}.hubOverviewFoot{display:flex;justify-content:space-between;gap:8px;font-size:9px;color:var(--muted);border-top:1px solid var(--line);margin-top:11px;padding-top:9px}.hubOverviewFoot .hubStateDot{width:5px;height:5px}
 .hubRoutersHeading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:22px 0 12px}.hubRoutersHeading h2{font-size:17px;font-weight:600;letter-spacing:-.3px;margin:0}.hubRoutersHeading h2 span{color:var(--muted);font-size:11px;font-weight:400;margin-left:5px}.hubDashboard #hubGroupFilterHost label{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--muted)}.hubDashboard #hubGroupFilterHost select{padding:6px 9px;min-height:30px;background:var(--panel);font-size:11px;border-color:var(--line);color:var(--text)}.hubDashboard>#routerGroupsToggle{display:none}.hubDashboard #routerGroupsToggle{display:none!important}.hubDashboard .toolbar{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px;box-shadow:none;backdrop-filter:none}.hubDashboard #routerFormWrap{margin:0 0 16px}.hubDashboard input,.hubDashboard select,.hubDashboard textarea{background:var(--panel2);color:var(--text);border-color:var(--line);border-radius:7px}.hubDashboard .routerGroupsPanel{background:var(--panel);border-color:var(--line);margin:0 0 14px;border-radius:11px}.hubDashboard .formMsg{background:var(--panel2);border-color:var(--line);color:var(--text);margin:10px 0 0;padding:9px 12px}
 .hubDashboard .cards,.hubDashboard .routerGroupCards{gap:11px}.hubDashboard .routerGroupHeading{min-height:38px;margin:0 0 1px;padding:8px 11px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--text);font-size:12px}.hubDashboard .routerGroupHeading em{font-size:10px;color:var(--muted);font-weight:400}.hubDashboard .routerGroupToggle{min-height:25px;padding:4px 9px;font-size:10px}.hubDashboard .routerGroupSection{gap:9px}.hubDashboard .card{padding:13px;border:1px solid var(--line);border-radius:11px;background:var(--panel);box-shadow:none;backdrop-filter:none;text-align:center}.hubDashboard .card::before{height:2px;background:var(--green);opacity:.55}.hubDashboard .card.off::before{background:var(--red)}.hubDashboard .card.off{border-color:color-mix(in srgb,var(--red) 25%,var(--line))}.hubDashboard .card.online{border-color:var(--line)}.hubDashboard .nameRow{margin-top:10px;gap:5px}.hubDashboard .name{font-size:13px;max-width:100%;min-height:30px;line-height:1.3;padding:4px 8px;background:transparent;color:var(--text);border:1px solid transparent;border-radius:5px;box-shadow:none;text-shadow:none;font-weight:650}.hubDashboard .nameEditBtn{background:none;color:var(--muted);border-color:transparent;border-radius:5px;width:24px;height:24px;flex-basis:24px}.hubDashboard .nameRow::before{width:24px;height:24px;flex-basis:24px}.hubDashboard .status{padding:4px 7px;border-radius:5px;font-size:10px;font-weight:550;line-height:1.3;color:var(--green);background:color-mix(in srgb,var(--green) 7%,var(--panel));border-color:color-mix(in srgb,var(--green) 30%,var(--line));box-shadow:none}.hubDashboard .status.off{color:var(--red);background:color-mix(in srgb,var(--red) 7%,var(--panel));border-color:color-mix(in srgb,var(--red) 30%,var(--line))}.hubDashboard .status i{width:5px;height:5px;box-shadow:none;animation:none}.hubDashboard .routerCardGroup{margin-top:7px;padding:0;gap:6px}.hubDashboard .routerGroupPickerToggle{min-height:25px;padding:5px 9px;font-size:10px;color:var(--muted);border-color:var(--line);background:var(--panel2)}
-.hubDashboard .cardDetailsToggle{min-height:32px;margin-top:10px;padding:7px 10px;border-color:var(--line);background:var(--panel2);color:var(--muted);font-size:11px;font-weight:550}.hubDashboard .metrics{gap:7px;margin-top:11px}.hubDashboard .metric{padding:9px 7px;border-color:var(--line);background:var(--panel2);border-radius:7px;box-shadow:none}.hubDashboard .metric>span{color:var(--muted);font-size:10px;font-weight:400;letter-spacing:0}.hubDashboard .metric-compact .metric-line{font:inherit;color:var(--text)}.hubDashboard .metric b{font-size:12px;font-weight:550;color:var(--text)}.hubDashboard .modelMetricValue{font-size:12px!important}.hubDashboard .modelLegendBadge{box-shadow:none;animation:none;background:color-mix(in srgb,var(--cyan) 10%,var(--panel));border-color:color-mix(in srgb,var(--cyan) 35%,var(--line));color:var(--cyan)}.hubDashboard .modelLegendBadge::before{display:none}.hubDashboard .actions{gap:6px}.hubDashboard .actions .btn{min-height:30px;padding:6px 8px;font-size:10px}.hubDashboard .actions .btn[data-admin-link]{color:var(--cyan);border-color:color-mix(in srgb,var(--cyan) 30%,var(--line));background:color-mix(in srgb,var(--blue) 25%,var(--panel))}.hubDashboard .tachyonIntegration{border-color:var(--line);background:var(--panel2);border-radius:8px!important;padding:9px!important}.hubDashboard .tachyonMeta{font-size:11px;min-height:25px!important;gap:7px!important}.hubDashboard .tachyonMeta .status{font-size:9px}.hubDashboard .tachyonAction .btn{min-height:28px;font-size:10px}.hubDashboard .actionToggle{background:var(--panel2);border-color:var(--line);color:var(--text)}.hubDashboard .routerCardSlot.isFloating>.card{background:var(--panel);box-shadow:0 24px 64px #0007}.hubDashboard .notesPreview,.hubDashboard .wolPanel,.hubDashboard .trafficPanel{background:var(--panel2);border-color:var(--line);color:var(--text);box-shadow:none}
+.hubDashboard .cardDetailsToggle{min-height:32px;margin-top:10px;padding:7px 10px;border-color:var(--line);background:var(--panel2);color:var(--muted);font-size:11px;font-weight:550}.hubDashboard .metrics{gap:7px;margin-top:11px}.hubDashboard .metric{padding:9px 7px;border-color:var(--line);background:var(--panel2);border-radius:7px;box-shadow:none}.hubDashboard .metric>span{color:var(--muted);font-size:10px;font-weight:400;letter-spacing:0}.hubDashboard .metric-compact .metric-line{font:inherit;color:var(--text)}.hubDashboard .metric b{font-size:12px;font-weight:550;color:var(--text)}.hubDashboard .modelMetricValue{font-size:12px!important}.hubDashboard .modelLegendBadge{box-shadow:none;animation:none;background:color-mix(in srgb,var(--cyan) 10%,var(--panel));border-color:color-mix(in srgb,var(--cyan) 35%,var(--line));color:var(--cyan)}.hubDashboard .modelLegendBadge::before{display:none}.hubDashboard .actions{gap:6px}.hubDashboard .actions .btn{min-height:30px;padding:6px 8px;font-size:10px}.hubDashboard .actions .btn[data-admin-link]{color:var(--text);border-color:var(--line);background:var(--panel2)}.hubDashboard .tachyonIntegration{border-color:var(--line);background:var(--panel2);border-radius:8px!important;padding:9px!important}.hubDashboard .tachyonMeta{font-size:11px;min-height:25px!important;gap:7px!important}.hubDashboard .tachyonMeta .status{font-size:9px}.hubDashboard .tachyonAction .btn{min-height:28px;font-size:10px}.hubDashboard .actionToggle{background:var(--panel2);border-color:var(--line);color:var(--text)}.hubDashboard .routerCardSlot.isFloating>.card{background:var(--panel);box-shadow:0 24px 64px #0007}.hubDashboard .notesPreview,.hubDashboard .wolPanel,.hubDashboard .trafficPanel{background:var(--panel2);border-color:var(--line);color:var(--text);box-shadow:none}
 .hubSidebarClose,.hubSidebarMenuButton,.hubPhoneBrand,.hubSidebarBackdrop{display:none}.hubDashboard .hubUpdateNotice{margin:0 auto 12px;border-color:var(--line);font-size:11px}.hubDashboard .hubUpdateConfirmCard{background:var(--panel);border-color:var(--line);border-radius:13px}.hubDashboard .hubUpdateConfirmTitle{color:var(--text)}.hubDashboard .hubUpdateConfirmMeta{background:var(--panel2);border-color:var(--line)}
-.hubShellDialog{position:fixed;inset:0;z-index:105;display:grid;place-items:center;padding:20px;background:#0009}.hubShellDialogCard{width:min(100%,520px);max-height:calc(100dvh - 40px);overflow:auto;padding:18px;border:1px solid var(--line);border-radius:13px;background:var(--panel);box-shadow:0 24px 70px #0006}.hubShellDialogHead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}.hubShellDialogHead h2{font-size:17px;margin:0}.hubShellDialogCard p{font-size:12px;color:var(--muted)}.hubLogLink{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 11px;margin:7px 0;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:7px;text-decoration:none;font-size:12px}.hubLogLink small{color:var(--muted);font-size:10px}.hubXrayActions{display:flex;flex-wrap:wrap;gap:8px}.hubDashboard .hubSidebar [hidden],.hubDashboard .hubShellDialog[hidden]{display:none!important}
-@media(min-width:681px) and (max-width:1180px){.hubShellBreadcrumb>span{display:none}.hubShellTools{width:100%;justify-content:flex-end}.hubDashboard #hubShellSearchHost{margin-right:auto}.hubDashboard .toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}.hubDashboard .routerGroupCards{grid-template-columns:repeat(2,minmax(0,1fr))}.hubOverview{grid-template-columns:1fr 1fr}.hubDashboard #routerSearchDock{width:130px}.hubDashboard #hubShellUpdateHost{width:145px}.hubDashboard #seasonDock{width:73px}.hubSidebar{width:190px}.hubDashboard .wrap{margin-left:206px;padding-right:16px}.hubDashboard .authMenu{width:min(600px,calc(100vw - 240px))}}
+.hubShellDialog{position:fixed;inset:0;z-index:105;display:grid;place-items:center;padding:20px;background:#0009}.hubShellDialogCard{width:min(100%,520px);max-height:calc(100dvh - 40px);overflow:auto;padding:18px;border:1px solid var(--line);border-radius:13px;background:var(--panel);box-shadow:0 24px 70px #0006}.hubShellDialogHead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}.hubShellDialogHead h2{font-size:17px;margin:0}.hubShellDialogCard p{font-size:12px;color:var(--muted)}.hubXrayActions{display:flex;flex-wrap:wrap;gap:8px}.hubDashboard .hubSidebar [hidden],.hubDashboard .hubShellDialog[hidden]{display:none!important}
+@media(min-width:681px) and (max-width:1180px){.hubShellBreadcrumb>span{display:none}.hubShellTools{width:100%;justify-content:flex-end}.hubDashboard #hubShellSearchHost{margin-right:auto}.hubDashboard .toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}.hubDashboard .routerGroupCards{grid-template-columns:repeat(2,minmax(0,1fr))}.hubOverview{grid-template-columns:1fr 1fr}.hubDashboard #routerSearchDock{width:130px}.hubDashboard #hubShellUpdateHost{width:145px}.hubDashboard #seasonDock{width:73px}.hubSidebar{width:190px}.hubDashboard .wrap{padding-left:222px}.hubDashboard .authMenu{width:min(600px,calc(100vw - 240px))}}
 @media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){
- .hubDashboard .wrap{margin:0;padding:10px 12px 22px;display:block;width:100%;max-width:none}.hubSidebar{inset:12px auto auto 12px;width:min(264px,calc(100vw - 32px));max-height:calc(100dvh - 24px);border-radius:12px;z-index:110;padding:10px;visibility:hidden;transform:translateX(calc(-100% - 16px));transition:transform .2s ease,visibility .2s}.hubSidebar.is-open{visibility:visible;transform:none}.hubSidebarBackdrop:not([hidden]){display:block;position:fixed;inset:0;z-index:100;border:0;border-radius:0;background:#0009;width:100%;height:100%;padding:0}.hubSidebarClose{display:grid;place-items:center;position:absolute;top:15px;right:10px;padding:3px;min-height:27px;width:27px;border:0;background:transparent;color:var(--muted)}.hubSidebarClose .hubIcon{width:15px;height:15px}.hubSidebarBrand{padding-right:30px}.hubSidebarNav{padding-bottom:8px}.hubNavCaption{padding-top:12px}.hubDashboard .hubNavItem{min-height:34px;font-size:12px}.hubDashboard.hubSidebarOpen{overflow:hidden}.hubShellTopbar{gap:8px;min-height:55px;padding:8px 9px;border-radius:10px;flex-wrap:wrap}.hubSidebarMenuButton{display:grid;place-items:center;width:32px;min-height:32px;padding:7px;border:1px solid var(--line);background:var(--panel2);border-radius:7px;color:var(--text)}.hubPhoneBrand{display:block;flex:1;min-width:0}.hubPhoneBrand strong{display:block;font-size:12px;font-weight:600;line-height:1.25}.hubPhoneBrand small{font-size:9px;color:var(--muted)}.hubShellBreadcrumb{display:none}.hubShellTools{display:contents}.hubDashboard #hubShellAccountHost{margin-left:auto}.hubDashboard .headerActions{gap:4px;width:auto!important;display:flex!important}.hubDashboard .headerActions>.btn[href="/logout"]{display:none}.hubDashboard #authToggle{font-size:10px;padding:5px 7px;min-height:28px;max-width:80px}.hubDashboard #hubShellSearchHost,.hubDashboard #hubShellUpdateHost,.hubDashboard #hubShellDesignHost{flex:1 1 28%;min-width:0;display:block}.hubDashboard #hubShellSearchHost{order:10}.hubDashboard #hubShellUpdateHost{order:11;width:auto}.hubDashboard #hubShellDesignHost{order:12}.hubDashboard #routerSearchDock,.hubDashboard #seasonDock{display:none}.hubDashboard #mobileRouterSearchDock,.hubDashboard #mobileSeasonDock{display:block;width:100%;margin:0}.hubDashboard #mobileHubUpdateDock{display:none}.hubDashboard :is(#mobileRouterSearchToggle,#mobileSeasonToggle,.hubUpdateButton){min-height:32px;font-size:10px;padding:7px 6px;width:100%;margin:0}.hubDashboard :is(.seasonPanel,.routerSearchPanel){position:fixed;top:116px;right:12px;left:12px;width:auto;max-height:calc(100dvh - 130px);margin:0;overflow:auto}.hubDashboard :is(.seasonCard,.routerSearchCard){width:100%;padding:13px}.hubDashboard .authMenu{top:72px;right:12px;left:12px;width:auto;max-height:calc(100dvh - 90px);padding:13px}.hubDashboard .authMenuHead{min-height:34px;padding-right:80px}.hubDashboard .authMenuHead h2{font-size:16px;margin:0}.hubDashboard .authMenuClose{min-height:28px;font-size:11px}.hubPageHeading{margin:18px 0 13px;gap:8px;align-items:center}.hubEyebrow{display:none}.hubPageHeading h1{font-size:16px;margin:0}.hubPageHeading p{font-size:10px;max-width:215px;margin-top:4px}.hubPageActions{gap:5px}.hubDashboard #hubRefreshRouters{padding:6px;min-height:30px}.hubDashboard #hubRefreshRouters>span{display:none}.hubDashboard #hubAddRouter{padding:7px 8px;font-size:10px;min-height:30px;max-width:134px}.hubDashboard #hubAddRouter .hubIcon{width:12px;height:12px}.hubDashboard .routerStats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 14px}.hubDashboard .statCard{min-height:72px;padding:8px 10px}.hubDashboard .statCardHead span{font-size:10px}.hubDashboard .statCard strong{font-size:20px}.hubDashboard .statCard em{font-size:9px}.hubDashboard .offlineMoreBtn{padding:3px 6px;font-size:8px}.hubOverview{grid-template-columns:1fr;gap:14px;margin:0}.hubAvailabilityPanel{display:block}.hubAvailabilityPanel .hubOverviewHead{flex-direction:column;align-items:flex-start;gap:4px}.hubAvailabilityChart{height:auto;padding-top:10px}.hubAvailabilityChart svg{height:72px}.hubChartHint{margin-top:12px}.hubOverviewPanel{padding:12px}.hubOverviewHead h2{font-size:11px}.hubDashboard .hubResourcesPanel .vpsResources{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:8px}.hubDashboard .hubResourcesPanel .vpsResource{height:auto;align-items:flex-start;justify-content:flex-start;flex-direction:column;gap:0;line-height:1.2;font-size:9px}.hubDashboard .hubResourcesPanel .vpsResource :is(span,strong){line-height:1.2}.hubResourcesPanel .vpsResource strong{font-size:13px}.hubOverviewFoot{font-size:8px}.hubServiceStrip{padding:8px 9px;font-size:9px;gap:7px}.hubServiceStrip>span:first-child{display:none}.hubRoutersHeading{margin:20px 0 11px;gap:8px}.hubRoutersHeading h2{font-size:16px;white-space:nowrap}.hubRoutersHeading h2 span{font-size:10px;margin-left:3px}.hubDashboard #hubGroupFilterHost .routerGroupFilterCaption{display:none}.hubDashboard #hubGroupFilterHost select{max-width:155px;font-size:10px;padding:5px 7px;min-height:28px}.hubDashboard .cards,.hubDashboard .routerGroupCards{grid-template-columns:1fr;gap:9px}.hubDashboard .card{padding:12px}.hubDashboard .routerGroupHeading{font-size:11px}.hubDashboard .routerGroupHeading em{font-size:9px}.hubDashboard .status{font-size:10px}.hubDashboard .name{font-size:13px}.hubDashboard .toolbar{grid-template-columns:1fr;padding:12px}.hubDashboard .hubShellDialog{padding:12px}.hubShellDialogCard{padding:15px}.hubShellDialogHead h2{font-size:16px}.hubDashboard .hubShellDialogClose{font-size:11px}.hubDashboard .actions{grid-template-columns:repeat(2,minmax(0,1fr))}.hubDashboard .cardDetailsToggle{min-height:32px;font-size:10px}.hubDashboard .hubUpdateNotice{margin-bottom:10px}.hubDashboard .hubUpdateConfirm{z-index:130}
+ .hubDashboard .wrap{margin:0;padding:10px 12px 22px;display:block;width:100%;max-width:none}.hubSidebar{inset:12px auto auto 12px;width:min(264px,calc(100vw - 32px));max-height:calc(100dvh - 24px);border-radius:12px;z-index:110;padding:10px;visibility:hidden;transform:translateX(calc(-100% - 16px));transition:transform .2s ease,visibility .2s}.hubSidebar.is-open{visibility:visible;transform:none}.hubSidebarBackdrop:not([hidden]){display:block;position:fixed;inset:0;z-index:100;border:0;border-radius:0;background:#0009;width:100%;height:100%;padding:0}.hubSidebarClose{display:grid;place-items:center;position:absolute;top:15px;right:10px;padding:3px;min-height:27px;width:27px;border:0;background:transparent;color:var(--muted)}.hubSidebarClose .hubIcon{width:15px;height:15px}.hubSidebarBrand{padding-right:30px}.hubSidebarNav{padding-bottom:8px}.hubNavCaption{padding-top:12px}.hubDashboard .hubNavItem{min-height:34px;font-size:12px}.hubDashboard.hubSidebarOpen{overflow:hidden}.hubShellTopbar{gap:8px;min-height:55px;padding:8px 9px;border-radius:10px;flex-wrap:wrap}.hubSidebarMenuButton{display:grid;place-items:center;width:32px;min-height:32px;padding:7px;border:1px solid var(--line);background:var(--panel2);border-radius:7px;color:var(--text)}.hubPhoneBrand{display:block;flex:1;min-width:0}.hubPhoneBrand strong{display:block;font-size:12px;font-weight:600;line-height:1.25}.hubPhoneBrand small{font-size:9px;color:var(--muted)}.hubShellBreadcrumb{display:none}.hubShellTools{display:contents}.hubDashboard #hubShellAccountHost{margin-left:auto}.hubDashboard .headerActions{gap:4px;width:auto!important;display:flex!important}.hubDashboard .headerActions>.btn[href="/logout"]{display:none}.hubDashboard #authToggle{font-size:10px;padding:5px 7px;min-height:28px;max-width:80px}.hubDashboard #hubShellSearchHost,.hubDashboard #hubShellUpdateHost,.hubDashboard #hubShellDesignHost{flex:1 1 28%;min-width:0;display:block}.hubDashboard #hubShellSearchHost{order:10}.hubDashboard #hubShellUpdateHost{order:11;width:auto}.hubDashboard #hubShellDesignHost{order:12}.hubDashboard #routerSearchDock,.hubDashboard #seasonDock{display:none}.hubDashboard #mobileRouterSearchDock,.hubDashboard #mobileSeasonDock{display:block;width:100%;margin:0}.hubDashboard #mobileHubUpdateDock{display:none}.hubDashboard :is(#mobileRouterSearchToggle,#mobileSeasonToggle,.hubUpdateButton){min-height:32px;font-size:10px;padding:7px 6px;width:100%;margin:0}.hubDashboard :is(.seasonPanel,.routerSearchPanel){position:fixed;top:116px;right:12px;left:12px;width:auto;max-height:calc(100dvh - 130px);margin:0;overflow:auto}.hubDashboard :is(.seasonCard,.routerSearchCard){width:100%;padding:13px}.hubDashboard .authMenu{top:72px;right:12px;left:12px;width:auto;max-height:calc(100dvh - 90px);padding:13px}.hubDashboard .authMenuHead{min-height:34px;padding-right:80px}.hubDashboard .authMenuHead h2{font-size:16px;margin:0}.hubDashboard .authMenuClose{min-height:28px;font-size:11px}.hubPageHeading{margin:18px 0 13px;gap:8px;align-items:center}.hubEyebrow{display:none}.hubPageHeading h1{font-size:16px;margin:0}.hubPageHeading p{font-size:10px;max-width:215px;margin-top:4px}.hubPageActions{gap:5px}.hubDashboard #hubAddRouter{padding:7px 8px;font-size:10px;min-height:30px;max-width:134px}.hubDashboard #hubAddRouter .hubIcon{width:12px;height:12px}.hubDashboard .routerStats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:0 0 14px}.hubDashboard .statCard{min-height:72px;padding:8px 10px}.hubDashboard .statCardHead span{font-size:10px}.hubDashboard .statCard strong{font-size:20px}.hubDashboard .statCard em{font-size:9px}.hubDashboard .offlineMoreBtn{padding:3px 6px;font-size:8px}.hubOverview{grid-template-columns:1fr;gap:14px;margin:0}.hubAvailabilityPanel{display:block}.hubAvailabilityPanel .hubOverviewHead{flex-direction:column;align-items:flex-start;gap:4px}.hubAvailabilityChart{height:auto;padding-top:10px}.hubAvailabilityChart svg{height:72px}.hubChartHint{margin-top:12px}.hubOverviewPanel{padding:12px}.hubOverviewHead h2{font-size:11px}.hubDashboard .hubResourcesPanel .vpsResources{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:8px}.hubDashboard .hubResourcesPanel .vpsResource{height:auto;align-items:flex-start;justify-content:flex-start;flex-direction:column;gap:0;line-height:1.2;font-size:9px}.hubDashboard .hubResourcesPanel .vpsResource :is(span,strong){line-height:1.2}.hubResourcesPanel .vpsResource strong{font-size:13px}.hubOverviewFoot{font-size:8px}.hubRoutersHeading{margin:20px 0 11px;gap:8px}.hubRoutersHeading h2{font-size:16px;white-space:nowrap}.hubRoutersHeading h2 span{font-size:10px;margin-left:3px}.hubDashboard #hubGroupFilterHost .routerGroupFilterCaption{display:none}.hubDashboard #hubGroupFilterHost select{max-width:155px;font-size:10px;padding:5px 7px;min-height:28px}.hubDashboard .cards,.hubDashboard .routerGroupCards{grid-template-columns:1fr;gap:9px}.hubDashboard .card{padding:12px}.hubDashboard .routerGroupHeading{font-size:11px}.hubDashboard .routerGroupHeading em{font-size:9px}.hubDashboard .status{font-size:10px}.hubDashboard .name{font-size:13px}.hubDashboard .toolbar{grid-template-columns:1fr;padding:12px}.hubDashboard .hubShellDialog{padding:12px}.hubShellDialogCard{padding:15px}.hubShellDialogHead h2{font-size:16px}.hubDashboard .hubShellDialogClose{font-size:11px}.hubDashboard .actions{grid-template-columns:repeat(2,minmax(0,1fr))}.hubDashboard .cardDetailsToggle{min-height:32px;font-size:10px}.hubDashboard .hubUpdateNotice{margin-bottom:10px}.hubDashboard .hubUpdateConfirm{z-index:130}
 }
 @media(prefers-reduced-motion:reduce){.hubSidebar{transition:none}}
 .hubShellControlsRow{display:contents}
 .hubDashboard{overflow-y:scroll}
 .hubDashboard .cards{overflow-anchor:none}
+.hubDashboard .offlineStatRow{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:5px}
+.hubDashboard .offlineStatRow>strong{grid-column:2}
+.hubDashboard .offlineMoreBtn{grid-column:3;justify-self:end;margin-left:0;max-width:100%;white-space:normal}
+.hubRoutersHeading{flex-wrap:wrap}
+.hubRouterFilters{display:flex;align-items:center;gap:12px;min-width:0;max-width:100%}
+.hubStatusControl{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--muted)}
+.hubDashboard #routerStatusFilter{min-height:30px;padding:6px 9px;border:1px solid var(--line);border-radius:7px;background:var(--panel);font-size:11px;color:var(--text)}
+.hubDashboard #routerGroupFilter:disabled{opacity:.55}
+@media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){
+ .hubRouterFilters{width:100%;display:flex;gap:8px}
+ .hubRouterFilters>label,.hubRouterFilters>div{flex:1 1 0;min-width:0}
+ .hubStatusFilterCaption{display:none}
+ .hubDashboard .hubRouterFilters select{width:100%;min-width:0;max-width:100%!important;font-size:11px}
+}
+.hubDashboard .cardNotesPreview{flex-shrink:0;overflow-wrap:anywhere;white-space:pre-wrap}
+.hubDashboard .cardNotesPreview :is(strong,span){color:var(--text)}
+.hubDashboard #routerCardTooltip{position:fixed;z-index:90;display:flex;align-items:center;gap:8px;max-width:calc(100vw - 16px);padding:8px 11px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);color:var(--text);box-shadow:0 8px 24px #0005;pointer-events:none;font:600 12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow-wrap:anywhere}
+.hubDashboard #routerCardTooltip[hidden]{display:none!important}
+.hubDashboard #routerCardTooltip svg{width:16px;height:16px;flex:none;stroke:var(--muted);stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
 .hubDashboard .offlineMoreBtn{transform:none}
 .hubDashboard .offlinePopover{left:0;right:auto;width:100%;max-width:calc(100vw - 24px)}
 .hubDashboard .offlineName{overflow-wrap:anywhere}
@@ -6689,10 +6643,10 @@ html[data-hub-design="default"] .hubDashboard::before{inset:0;background:linear-
 .hubNavSection[open]>.hubNavSectionToggle .hubIcon{transform:rotate(90deg);color:var(--cyan)}
 .hubNavSectionToggle:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
 .hubNavSectionItems{margin:4px 0 0 8px;padding:0 0 3px 5px;border-left:1px solid var(--line)}
-.hubDashboard #hubSidebar :is(#hubRefreshRouters,#hubAddRouter){width:100%;max-width:none;min-height:34px;padding:6px 9px}
-.hubDashboard #hubSidebar #hubRefreshRouters>span{display:block}
-.hubDashboard #hubSidebar :is(#hubRefreshRouters,#hubAddRouter) .hubIcon{width:16px;height:16px}
-.hubDashboard #hubShellSearchHost :is(#routerSearchToggle,#mobileRouterSearchToggle),.hubDashboard #hubShellUpdateHost [data-hub-update]{height:48px;min-height:48px}
+.hubDashboard #hubSidebar #hubAddRouter{width:100%;max-width:none;min-height:34px;padding:6px 9px}
+
+.hubDashboard #hubSidebar #hubAddRouter .hubIcon{width:16px;height:16px}
+.hubDashboard #hubShellSearchHost :is(#routerSearchToggle,#mobileRouterSearchToggle),.hubDashboard #hubShellUpdateHost [data-hub-update]{height:30px;min-height:30px;font-size:11px!important}
 .hubDashboard.hubAccessOpen{overflow:hidden}
 .hubDashboard .hubAccessBackdrop{position:fixed;inset:0;z-index:139;background:#0009}
 .hubDashboard .hubAccessBackdrop[hidden]{display:none}
@@ -6787,9 +6741,44 @@ html[data-hub-design="default"] .hubDashboard::before{inset:0;background:linear-
 .hubDashboard .card :is(.actions .btn,.tachyonAction .btn){min-height:36px;white-space:normal;overflow-wrap:anywhere;text-align:center}
 .hubDashboard .card .tachyonMeta{flex-wrap:wrap}
 @media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){
- .hubDashboard .card .actions :is(.routerLogsAction,a[href$="/xray-control"]){grid-column:1/-1}
- .hubDashboard #hubSidebar :is(#hubRefreshRouters,#hubAddRouter){min-height:34px}
+ .hubDashboard .card .actions a[href$="/xray-control"]{grid-column:1/-1}
+ .hubDashboard #hubSidebar #hubAddRouter{min-height:34px}
 }
+/* Appearance chooser is a viewport dialog on desktop and mobile. */
+.hubDashboard #hubShellDesignHost .seasonPanel{position:fixed;top:50%;left:50%;right:auto;transform:translate(-50%,-50%);width:min(360px,calc(100vw - 24px));max-height:calc(100dvh - 24px);margin:0;overflow:auto;z-index:120}
+.hubDashboard .seasonSwitch [data-season-mode="streams"]{grid-column:1/-1}
+.hubDashboard #hubShellSearchHost{flex:0 1 auto;margin:0;order:initial}.hubDashboard :is(#routerSearchToggle,#mobileRouterSearchToggle,.hubUpdateButton){width:auto;min-height:30px;padding:6px 10px;font-size:11px;line-height:1.25}
+.hubDashboard #hubShellSearchHost :is(#routerSearchDock,#mobileRouterSearchDock){width:auto;min-width:0}
+.hubDashboard #hubShellSearchHost .routerSearchPanel{position:absolute;top:calc(100% + 8px);left:50%;right:auto;transform:translateX(-50%);width:min(310px,calc(100vw - 24px));max-height:min(360px,calc(100dvh - 24px));margin:0}
+.hubDashboard #hubShellUpdateHost{width:auto;flex:0 1 auto}
+@media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){.hubDashboard #hubShellSearchHost :is(#routerSearchToggle,#mobileRouterSearchToggle),.hubDashboard #hubShellUpdateHost [data-hub-update]{height:28px;min-height:28px;padding:5px 8px;font-size:11px!important}.hubDashboard .hubShellControlsRow{grid-template-columns:minmax(0,1fr);justify-items:end}.hubDashboard #hubShellSearchHost{flex:1 1 0}.hubDashboard #hubShellSearchHost :is(#routerSearchToggle,#mobileRouterSearchToggle){width:100%;white-space:nowrap}.hubRouterFilters{gap:6px}}
+@media(max-width:360px){.hubDashboard #hubShellSearchHost #mobileRouterSearchToggle,.hubDashboard .hubRouterFilters select{font-size:10px!important;padding-left:5px;padding-right:5px}.hubDashboard .hubRouterFilters :is(#routerStatusFilter,#routerGroupFilter){appearance:none;padding-left:5px;padding-right:16px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='m3 4.5 3 3 3-3' fill='none' stroke='%239a9aa2' stroke-width='1.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 4px center;background-size:10px}}
+
+.hubDashboard .wolPanel{background:var(--panel2);color:var(--text);border-color:var(--line);box-shadow:none}
+.hubDashboard .wolPanel :is(input,select,.wolPickerToggle,.wolPickerList,.wolDeviceBtn,.wolPickerEmpty){background:var(--panel);background-image:none;color:var(--text);border-color:var(--line);box-shadow:none}
+.hubDashboard .wolPanel :is(.wolTitle,.wolDeviceName,.wolPickerValue strong){color:var(--text)}
+.hubDashboard .wolPanel :is(.wolDeviceMeta,.wolPickerValue small,.wolPickerChevron,.wolMac,.wolField>span,.wolMeta){color:var(--muted)}
+.hubDashboard .wolPanel .wolMeta.bad{color:var(--red)}
+.hubDashboard .wolPanel .btn{background:var(--panel2);background-image:none;border-color:var(--line);color:var(--text);box-shadow:none}
+.hubDashboard .wolPanel .wolDeviceBtn:is(.active,[aria-pressed="true"]){border-color:var(--cyan);background:color-mix(in srgb,var(--cyan) 8%,var(--panel))}
+.hubDashboard .wolPanel :is(input,.wolPickerToggle):focus-visible{outline:2px solid var(--cyan);outline-offset:2px;border-color:var(--cyan);box-shadow:none}
+.hubDashboard .actions>.vpsHostSettings{flex:1 0 100%;grid-column:1/-1;min-width:0;width:100%;margin:4px 0;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+.hubDashboard .actions>.vpsHostToggle{flex:0 1 auto;width:auto;margin:0}
+@media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){
+ .hubDashboard .hubShellTopbar{grid-template-columns:32px max-content minmax(0,1fr);gap:6px}
+ .hubDashboard .hubShellControlsRow{display:block;grid-column:3;grid-row:1;min-width:0}
+ .hubDashboard .hubPhoneBrand strong{white-space:nowrap}
+ .hubDashboard #hubShellUpdateHost{display:flex;width:100%;min-width:0;justify-content:flex-end}
+ .hubDashboard #hubShellUpdateHost [data-hub-update]{height:auto;min-height:32px;max-width:100%;padding:5px 6px;white-space:normal;line-height:1.25}
+ .hubDashboard .card .actions>.vpsHostToggle{width:100%;min-width:0}
+ .hubDashboard .card .actions>.deleteRouterButton{grid-column:1/-1}
+}
+@media(hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference){
+ html:not([data-hub-design="lite"]) .hubDashboard :is(.statCard,.routerCardSlot>.card){transition:transform .2s ease,background-color .2s ease,box-shadow .2s ease}
+ html:not([data-hub-design="lite"]) .hubDashboard .statCard:hover,html:not([data-hub-design="lite"]) .hubDashboard .routerCardSlot:not(.isFloating)>.card:hover{transform:translateY(-2px);background-color:color-mix(in srgb,var(--text) 3%,var(--panel));box-shadow:0 8px 24px #0004}
+ html:not([data-hub-design="lite"]) .hubDashboard .routerCardSlot.isFloating>.card:hover{box-shadow:0 24px 64px #0008}
+}
+.hubDashboard .tachyonStatus.pending{color:var(--muted);background:var(--panel2);border-color:var(--line)}
 </style>'''
 
 
@@ -6801,7 +6790,6 @@ function updateHubSidebarSummary(list) {
   const online = routers.filter(router => Boolean(router.online)).length;
   document.getElementById('hubNavCount').textContent = String(routers.length);
   document.getElementById('hubVisibleCount').textContent = `${filteredRouters(routers).length} из ${routers.length}`;
-  document.getElementById('hubHeartbeatSummary').textContent = `Heartbeat: ${online} из ${routers.length} в сети`;
   renderHubAvailability(routers);
 }
 
@@ -6931,6 +6919,22 @@ function initHubSidebar() {
   const sidebar = document.getElementById('hubSidebar');
   if (!sidebar || sidebar.dataset.initialized) return;
   sidebar.dataset.initialized = 'true';
+  const sectionKey = 'owrtRemote:hubNavSections:v1:' + encodeURIComponent(String(authMeta.username || ''));
+  const sections = Array.from(sidebar.querySelectorAll('.hubNavSection'));
+  const restoreSections = () => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(sectionKey) || '{}');
+      if (!saved || typeof saved !== 'object') return;
+      sections.forEach(section => { if (typeof saved[section.id] === 'boolean') section.open = saved[section.id]; });
+    } catch (_) {}
+  };
+  const saveSections = () => {
+    try { localStorage.setItem(sectionKey, JSON.stringify(Object.fromEntries(sections.map(section => [section.id, section.open])))); } catch (_) {}
+  };
+  restoreSections();
+  sections.forEach(section => section.addEventListener('toggle', saveSections));
+  window.addEventListener('pagehide', saveSections);
+  window.addEventListener('pageshow', restoreSections);
   const backdrop = document.getElementById('hubSidebarBackdrop');
   const menu = document.getElementById('hubSidebarMenuButton');
   const dialog = document.getElementById('hubShellDialog');
@@ -6955,6 +6959,25 @@ function initHubSidebar() {
   place('hubShellUpdateHost', update);
   const filterLabel = routerGroupFilter && routerGroupFilter.closest('label');
   place('hubGroupFilterHost', filterLabel);
+  const statusKey = 'owrtRemote:routerStatus:v1:' + encodeURIComponent(String(authMeta.username || ''));
+  try { const saved = localStorage.getItem(statusKey); if (['all','online','offline'].includes(saved)) routerStatusFilter.value = saved; } catch (_) {}
+  const applyStatus = () => {
+    routerStatusFilterValue = ['online','offline'].includes(routerStatusFilter.value) ? routerStatusFilter.value : 'all';
+    if (routerStatusFilterValue !== 'all') {
+      routerGroupFilterValue = '';
+      if (routerGroupFilter) routerGroupFilter.value = '';
+    }
+    if (routerGroupFilter) {
+      routerGroupFilter.disabled = routerStatusFilterValue !== 'all';
+      routerGroupFilter.title = routerGroupFilter.disabled ? 'Показаны роутеры из всех групп' : 'Группа роутеров';
+    }
+    renderRouterView();
+  };
+  routerStatusFilter.addEventListener('change', () => {
+    applyStatus();
+    try { localStorage.setItem(statusKey, routerStatusFilterValue); } catch (_) {}
+  });
+  applyStatus();
   headerActions.hidden = false;
   const setOpen = (open, restoreFocus = false) => {
     const isOpen = Boolean(open && mobileLayoutMq.matches);
@@ -7013,13 +7036,6 @@ function initHubSidebar() {
     updateRouterFormToggle();
     if (!routerFormWrap.hidden) { scrollTo(routerFormWrap); routerNameInput?.focus({preventScroll:true}); }
   };
-  const refreshRouters = async button => {
-    if (button.disabled) return;
-    button.disabled = true;
-    try { await loadRouters(); }
-    catch (error) { showRouterMsg('Не удалось обновить список роутеров. Проверь соединение с Hub.',true); }
-    finally { button.disabled = false; }
-  };
   sidebar.addEventListener('click', event => {
     const button = event.target.closest('[data-hub-action]');
     if (!button) { if (event.target.closest('a')) close(); return; }
@@ -7027,11 +7043,10 @@ function initHubSidebar() {
     const action = button.dataset.hubAction;
     if (button.hasAttribute('data-hub-owner') && !authIsOwner()) return;
     setOpen(false, true);
-    if (action !== 'refresh' && action !== 'add') sidebar.querySelectorAll('.hubNavItem').forEach(node => node.classList.toggle('is-active',node === button));
+    if (action !== 'add') sidebar.querySelectorAll('.hubNavItem').forEach(node => node.classList.toggle('is-active',node === button));
     if (action === 'dashboard') { scrollTo(document.getElementById('hubShellTopbar')); }
     else if (action === 'routers') { scrollTo(document.getElementById('hubRoutersHeading')); }
     else if (action === 'add') { showAdd(); }
-    else if (action === 'refresh') { refreshRouters(button); }
     else if (action === 'groups') {
       routerGroupsPanelOpen = !routerGroupsPanelOpen;
       renderRouterGroups();
@@ -7051,10 +7066,7 @@ function initHubSidebar() {
       button.setAttribute('aria-expanded', String(!routerStats.hidden));
       button.querySelector('span').textContent = routerStats.hidden ? 'Открыть статистику' : 'Скрыть статистику';
     }
-    else if (action === 'logs') {
-      const links = (window.ROUTERS || []).filter(router => (router.permissions || {}).logs).map(router => `<a class="hubLogLink" href="${escapeAttr(router.logs_url || ('/router/' + encodeURIComponent(router.id) + '/logs'))}" target="_blank" rel="noopener noreferrer"><span>${escapeHtml(router.name || router.id)}</span><small>${escapeHtml(router.id)}</small></a>`).join('');
-      openModal('Глобальные логи', '<p>Выбери роутер, чтобы открыть его журнал на VPS.</p>' + (links || '<p>Нет роутеров с доступным журналом.</p>'), button);
-    } else if (action === 'vps-xray') {
+    else if (action === 'vps-xray') {
       openModal('Xray на VPS', '<p>Эти действия управляют Xray на сервере Hub. Управление Xray роутера находится в его карточке.</p><div class="hubXrayActions"><button class="btn" data-hub-xray="reload" type="button">Обновить Xray CFG</button><button class="btn" data-hub-xray="restart" type="button">Рестарт Xray VPS</button></div><p id="hubXrayResult" role="status"></p>', button, 'vps-xray');
     }
   });
@@ -7263,7 +7275,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
     <div class="brand">
       <div class="desktopHeader">
         <div class="desktopHeaderTop">
-          <h1 class="appBanner"><span>OWRT Hub <span class="appBannerVersion">v123</span></span></h1>
+          <h1 class="appBanner"><span>OWRT Hub <span class="appBannerVersion">v124</span></span></h1>
           <button class="badge hubUpdateButton" data-hub-update type="button" {'hidden' if not is_owner else ''}>Проверить обновление панели</button>
           <div class="routerSearchDock" id="routerSearchDock">
             <button class="routerSearchToggle" id="routerSearchToggle" type="button" aria-expanded="false" aria-controls="routerSearchPanel" data-active="false">
@@ -7283,11 +7295,11 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
               </div>
             </section>
           </div>
-          <div class="seasonDock" id="seasonDock" aria-label="Зимние эффекты">
+          <div class="seasonDock" id="seasonDock" aria-label="Дизайн и эффекты">
             <button class="routerSearchToggle seasonToggle" id="seasonToggle" type="button" aria-expanded="false" aria-controls="seasonPanel" data-open="false">
               <span class="seasonToggleText">Эффекты</span>
             </button>
-            <section class="seasonPanel" id="seasonPanel" aria-label="Зимние эффекты" hidden>
+            <section class="seasonPanel" id="seasonPanel" aria-label="Дизайн и эффекты" hidden>
               <div class="seasonCard">
                 <div class="seasonLabel">Эффекты Hub</div>
                 <div class="seasonSwitch" role="group" aria-label="Выбор эффектов">
@@ -7300,6 +7312,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
                   <button class="seasonBtn" type="button" data-season-mode="prism" data-active="false" aria-pressed="false">&#1055;&#1088;&#1080;&#1079;&#1084;&#1072;</button>
                   <button class="seasonBtn" type="button" data-season-mode="pulse" data-active="false" aria-pressed="false">&#1055;&#1091;&#1083;&#1100;&#1089;</button>
                   <button class="seasonBtn" type="button" data-season-mode="laser" data-active="false" aria-pressed="false">&#1051;&#1091;&#1095;&#1080;</button>
+                  <button class="seasonBtn" type="button" data-season-mode="streams" data-active="false" aria-pressed="false">Потоки</button>
                 </div>
                 {hub_design_controls_html()}
               </div>
@@ -7599,11 +7612,11 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
         </div>
       </div>
     </div>
-    <div class="mobileSearchDock" id="mobileSeasonDock" aria-label="Зимние эффекты">
+    <div class="mobileSearchDock" id="mobileSeasonDock" aria-label="Дизайн и эффекты">
       <button class="routerSearchToggle seasonToggle mobilePanelToggle primary" id="mobileSeasonToggle" type="button" aria-expanded="false" aria-controls="mobileSeasonPanel" data-open="false">
         <span class="seasonToggleText">Эффекты</span>
       </button>
-      <section class="seasonPanel" id="mobileSeasonPanel" aria-label="Зимние эффекты" hidden>
+      <section class="seasonPanel" id="mobileSeasonPanel" aria-label="Дизайн и эффекты" hidden>
         <div class="seasonCard">
           <div class="seasonLabel">Эффекты Hub</div>
           <div class="seasonSwitch" role="group" aria-label="Выбор эффектов">
@@ -7616,6 +7629,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
             <button class="seasonBtn" type="button" data-season-mode="prism" data-active="false" aria-pressed="false">&#1055;&#1088;&#1080;&#1079;&#1084;&#1072;</button>
             <button class="seasonBtn" type="button" data-season-mode="pulse" data-active="false" aria-pressed="false">&#1055;&#1091;&#1083;&#1100;&#1089;</button>
             <button class="seasonBtn" type="button" data-season-mode="laser" data-active="false" aria-pressed="false">&#1051;&#1091;&#1095;&#1080;</button>
+            <button class="seasonBtn" type="button" data-season-mode="streams" data-active="false" aria-pressed="false">Потоки</button>
           </div>
           {hub_design_controls_html()}
         </div>
@@ -7669,7 +7683,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
         <input id="routerGroupNameInput" name="name" placeholder="Например: Дом" autocomplete="off" required>
         <button class="primary" type="submit">Создать группу</button>
       </form>
-      <label class="routerGroupFilterLabel"><span class="routerGroupFilterCaption">Показать</span><select id="routerGroupFilter" aria-label="Группа роутеров"><option value="">Все группы</option></select></label>
+      <label class="routerGroupFilterLabel"><select id="routerGroupFilter" aria-label="Группа роутеров"><option value="">Все группы</option></select></label>
     </div>
     <div class="routerGroupList" id="routerGroupList"></div>
     <div class="formMsg" id="routerGroupMsg" hidden></div>
@@ -7711,6 +7725,73 @@ const APP_CLIENT_VERSION = {json.dumps(SERVICE_WORKER_VERSION)};
 const mobileLayoutMq = window.matchMedia('(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse)');
 const mobileCardsMq = mobileLayoutMq;
 const cards = document.getElementById('cards');
+const routerCardTooltip = (() => {{
+  const tip = document.createElement('div');
+  tip.id = 'routerCardTooltip';
+  tip.setAttribute('role', 'tooltip');
+  tip.hidden = true;
+  tip.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="12" width="18" height="8" rx="2"/><path d="M7 12V5m10 7V5M7 16h.01M11 16h.01M15 16h2"/></svg>';
+  const label = document.createElement('span');
+  tip.append(label);
+  document.body.append(tip);
+  let active = false, lastX = 0, lastY = 0, card = null, width = 0, height = 0;
+  const hide = () => {{
+    if (card) card.removeAttribute('aria-describedby');
+    card = null; active = false; tip.hidden = true;
+  }};
+  const cardAtTarget = target => {{
+    const trigger = target?.closest?.('.cardTop > .status,.nameRow > .name,.routerGroupPickerToggle,.cardDetailsToggle');
+    if (!trigger || trigger.closest('.cardBody')) return null;
+    const next = trigger.closest('.card[data-router-id]');
+    return next && cards.contains(next) ? next : null;
+  }};
+  const show = (next, x, y) => {{
+    const id = next?.dataset.routerId;
+    if (!id) {{ hide(); return; }}
+    if (card !== next) {{
+      if (card) card.removeAttribute('aria-describedby');
+      card = next;
+      card.setAttribute('aria-describedby', tip.id);
+    }}
+    if (label.textContent !== id || tip.hidden) {{
+      label.textContent = id;
+      tip.hidden = false;
+      tip.style.left = '0px'; tip.style.top = '0px';
+      const bounds = tip.getBoundingClientRect();
+      width = bounds.width; height = bounds.height;
+    }}
+    const viewport = document.documentElement.clientWidth;
+    const left = Math.max(8, Math.min(x + 14, viewport - width - 8));
+    const top = y + height + 22 <= innerHeight ? y + 14 : Math.max(8, y - height - 10);
+    tip.style.left = left + 'px'; tip.style.top = top + 'px';
+  }};
+  const move = event => {{
+    if (event.pointerType && event.pointerType !== 'mouse') {{ hide(); return; }}
+    const next = cardAtTarget(event.target);
+    if (!next) {{ hide(); return; }}
+    active = true; lastX = event.clientX; lastY = event.clientY;
+    show(next, lastX, lastY);
+  }};
+  cards.addEventListener('pointerover', move);
+  cards.addEventListener('pointermove', move);
+  cards.addEventListener('pointerout', event => {{
+    if (cardAtTarget(event.relatedTarget) !== card) hide();
+  }});
+  cards.addEventListener('pointerdown', event => {{
+    if (event.target.closest?.('button,a,input,select,textarea')) hide();
+  }});
+  document.addEventListener('keydown', event => {{ if (event.key === 'Escape') hide(); }});
+  window.addEventListener('blur', hide);
+  window.addEventListener('scroll', hide, {{passive:true, capture:true}});
+  window.addEventListener('resize', hide);
+  window.addEventListener('pagehide', hide);
+  return {{hide, sync() {{
+    if (!active) return;
+    const next = cardAtTarget(document.elementFromPoint(lastX, lastY));
+    if (next) show(next, lastX, lastY);
+    else hide();
+  }}}};
+}})();
 const routerStats = document.getElementById('routerStats');
 const routerStatsToggle = document.getElementById('routerStatsToggle');
 const headerActions = document.querySelector('.headerActions');
@@ -7729,6 +7810,7 @@ const routerGroupsToggle = document.getElementById('routerGroupsToggle');
 const routerGroupForm = document.getElementById('routerGroupForm');
 const routerGroupNameInput = document.getElementById('routerGroupNameInput');
 const routerGroupFilter = document.getElementById('routerGroupFilter');
+const routerStatusFilter = document.getElementById('routerStatusFilter');
 const routerGroupList = document.getElementById('routerGroupList');
 const routerGroupMsg = document.getElementById('routerGroupMsg');
 const routerSearchDock = document.getElementById('routerSearchDock');
@@ -7782,12 +7864,14 @@ let activeDiagnosticRouterId = '';
 let offlineStatsExpanded = false;
 let routerSearchQuery = '';
 let routerGroupFilterValue = '';
+let routerStatusFilterValue = 'all';
 let routerGroups = [];
 const openRouterGroups = new Set(['__ungrouped__']);
 let routerGroupsPanelOpen = false;
 let lastRouterSearchTrigger = null;
 let lastAutomaticRouterPoll = 0;
 let routerPollInFlight = false;
+let routerPollVersion = 0;
 let seasonPanelOpen = false;
 
 const routerSearchToggles = [routerSearchToggle, mobileRouterSearchToggle].filter(Boolean);
@@ -7885,6 +7969,7 @@ function setNoteState(routerId, patch) {{
 function replaceRouterInList(router) {{
   const nextRouter = router && typeof router === 'object' ? router : null;
   if (!nextRouter || !nextRouter.id) return;
+  ++routerPollVersion; // An older GET cannot undo a confirmed mutation response.
   const list = Array.isArray(window.ROUTERS) ? window.ROUTERS.slice() : [];
   const index = list.findIndex((item) => String(item && item.id || '') === String(nextRouter.id || ''));
   if (index >= 0) list[index] = Object.assign({{}}, list[index], nextRouter);
@@ -8430,7 +8515,9 @@ function routerMatchesSearch(router, query) {{
 function filteredRouters(list = window.ROUTERS || []) {{
   const query = normalizeRouterSearch(routerSearchQuery);
   return list.filter((router) => {{
-    if (routerGroupFilterValue && String(router.group_id || '') !== routerGroupFilterValue) return false;
+    if (routerStatusFilterValue === 'online' && !router.online) return false;
+    if (routerStatusFilterValue === 'offline' && router.online) return false;
+    if (routerStatusFilterValue === 'all' && routerGroupFilterValue && String(router.group_id || '') !== routerGroupFilterValue) return false;
     if (!query) return true;
     return routerMatchesSearch(router, query);
   }});
@@ -8438,7 +8525,7 @@ function filteredRouters(list = window.ROUTERS || []) {{
 
 function updateRouterSearchMeta(total, visible) {{
   if (!routerSearchMetas.length) return;
-  const text = !routerSearchQuery.trim()
+  const text = !routerSearchQuery.trim() && routerStatusFilterValue === 'all' && !routerGroupFilterValue
     ? `Всего роутеров: ${{total}}`
     : (visible ? `Найдено: ${{visible}} из ${{total}}` : 'Ничего не найдено');
   routerSearchMetas.forEach((meta) => {{
@@ -9308,12 +9395,13 @@ function formatLoad(value) {{
 function renderTachyon(router) {{
   const t = router.tachyon;
   if (!t || !t.installed) return '';
-  const label = t.online ? 'Online' : 'Offline';
+  const checking = !t.online && t.checking && router.online && (router.status || {{}}).xray === 'running';
+  const label = t.online ? 'Online' : checking ? 'Проверяется' : 'Offline';
   const button = (router.permissions || {{}}).admin
     ? `<a class="btn" href="${{escapeAttr(t.url)}}" target="_blank" rel="noopener noreferrer">Открыть Tachyon</a>`
     : '<span class="btn disabled">Открыть Tachyon</span>';
   const crown = '<svg class="tachyonCrown" width="18" height="16" viewBox="0 0 24 20" style="flex:0 0 18px;color:#fbbf24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 5l4.5 4L12 2l4.5 7L21 5l-2 10H5z"/><path fill="#f59e0b" d="M5 16h14v3H5z"/><g fill="#fde68a"><circle cx="3" cy="4" r="1.5"/><circle cx="12" cy="2" r="1.5"/><circle cx="21" cy="4" r="1.5"/></g></svg>';
-  return `<div class="tachyonIntegration" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:10px;margin-top:10px;border:1px solid var(--line,rgba(180,150,220,.25));border-radius:12px"><div class="tachyonMeta" style="display:flex;align-items:center;justify-content:center;gap:8px;min-height:40px;max-width:100%"><strong class="tachyonName" style="display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:0;max-width:100%;text-align:center">${{crown}}<span style="min-width:0;overflow-wrap:anywhere">Tachyon${{t.version ? ' ' + escapeHtml(t.version) : ''}}</span></strong><span class="status tachyonStatus${{t.online ? '' : ' off'}}" style="flex-shrink:0"><i aria-hidden="true"></i>${{label}}</span></div><div class="tachyonAction">${{button}}</div></div>`;
+  return `<div class="tachyonIntegration" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:10px;margin-top:10px;border:1px solid var(--line,rgba(180,150,220,.25));border-radius:12px"><div class="tachyonMeta" style="display:flex;align-items:center;justify-content:center;gap:8px;min-height:40px;max-width:100%"><strong class="tachyonName" style="display:inline-flex;align-items:center;justify-content:center;gap:5px;min-width:0;max-width:100%;text-align:center">${{crown}}<span style="min-width:0;overflow-wrap:anywhere">Tachyon${{t.version ? ' ' + escapeHtml(t.version) : ''}}</span></strong><span class="status tachyonStatus${{t.online ? '' : checking ? ' pending' : ' off'}}" style="flex-shrink:0"><i aria-hidden="true"></i>${{label}}</span></div><div class="tachyonAction">${{button}}</div></div>`;
 }}
 
 function render(list) {{
@@ -9322,7 +9410,7 @@ function render(list) {{
     cards.innerHTML = '<div class="empty">Пока нет роутеров. Добавь первый, например <b>main</b>.</div>';
     return;
   }}
-  const groupedList = list.slice().sort((a, b) => groupName(a.group_id).localeCompare(groupName(b.group_id), 'ru') || String(a.name || a.id).localeCompare(String(b.name || b.id), 'ru'));
+  const groupedList = list.slice().sort((a, b) => (routerStatusFilterValue === 'all' ? groupName(a.group_id).localeCompare(groupName(b.group_id), 'ru') : 0) || String(a.name || a.id).localeCompare(String(b.name || b.id), 'ru'));
   cards.innerHTML = groupedList.map((r, idx) => {{
     const permissions = r.permissions && typeof r.permissions === 'object' ? r.permissions : {{}};
     const role = String(r.role || 'node');
@@ -9354,13 +9442,10 @@ function render(list) {{
     const wolButton = wolReady
       ? `<button class="btn" data-wol-toggle="${{escapeAttr(r.id)}}" type="button">${{wolState.open ? 'Скрыть Wake-on-LAN' : 'Wake-on-LAN'}}</button>`
       : `<span class="btn disabled">Wake-on-LAN</span>`;
-    const notesPreview = String(r.notes_preview || routerNotesPreview(r.notes || ''));
+    const notesPreview = String(r.notes_preview || routerNotesPreview(r.notes || '') || (r.has_notes ? 'Заметка с изображением' : ''));
     const notesButton = !!permissions.notes
       ? `<a class="btn" href="${{escapeAttr(r.notes_url || ('/router/' + encodeURIComponent(r.id) + '/notes'))}}" target="_blank" rel="noopener noreferrer">Заметки</a>`
       : `<span class="btn disabled">Заметки</span>`;
-    const logsButton = !!permissions.logs
-      ? `<a class="btn routerLogsAction" data-global-logs-link="true" href="${{escapeAttr(r.logs_url || ('/router/' + encodeURIComponent(r.id) + '/logs'))}}" target="_blank" rel="noopener noreferrer">Глобал логи</a>`
-      : `<span class="btn disabled routerLogsAction">Глобал логи</span>`;
     const renameLabel = 'Переименовать ' + (r.name || r.id || 'роутер');
     const renameButton = !!permissions.manage
       ? `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`
@@ -9384,11 +9469,12 @@ function render(list) {{
       metricHtml('Температура', formatTemperatureHtml(temperature), tempClass(temperature)),
       metric('Нагрузка', load, 'span2')
     ].join('');
-    return `${{groupHeading}}<div class="routerCardSlot"><article class="card ${{isMain ? 'main' : ''}} ${{online ? 'online' : 'off'}}">
+    return `${{groupHeading}}<div class="routerCardSlot"><article class="card ${{isMain ? 'main' : ''}} ${{online ? 'online' : 'off'}}" data-router-id="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr('Роутер ' + (r.name || r.id) + ', ID ' + r.id)}}">
       <div class="cardTop">
         <div class="status ${{stateClass}}"><i></i>${{stateText}}</div>
       </div>
-      <div class="nameRow"><div class="name">${{escapeHtml(r.name)}}</div>${{renameButton}}</div>
+      <div class="nameRow"><div class="name">${{escapeHtml(r.name || r.id)}}</div>${{renameButton}}</div>
+      ${{notesPreview ? `<div class="notesPreview cardNotesPreview"><strong>Заметки:</strong> <span>${{escapeHtml(notesPreview)}}</span></div>` : ''}}
       <button class="mobileToggle cardDetailsToggle" type="button" data-card-toggle="${{escapeAttr(detailsId)}}" aria-controls="${{escapeAttr(detailsId)}}" aria-expanded="${{collapseCards ? 'false' : 'true'}}">${{collapseCards ? 'Открыть данные' : 'Скрыть данные'}}</button>
       <div class="cardBody" id="${{escapeAttr(detailsId)}}" role="region" aria-label="${{escapeAttr('Данные роутера ' + (r.name || r.id))}}"${{collapseCards ? ' hidden' : ''}}>
       <div class="metrics">
@@ -9400,10 +9486,10 @@ function render(list) {{
         ${{adminButton}}
         ${{sshButton}}
         ${{wolButton}}
-        ${{logsButton}}
-        ${{permissions.manage ? `<a class="btn" href="/router/${{encodeURIComponent(r.id)}}/xray-control" target="_blank" rel="noopener noreferrer">Remote управление Xray</a>` : ''}}
+        ${{permissions.manage ? `<a class="btn" href="/router/${{encodeURIComponent(r.id)}}/xray-control" target="_blank" rel="noopener noreferrer">Настройки Xray</a>` : ''}}
         ${{permissions.config ? `<a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>` : '<span class="btn disabled">OpenWrt config</span>'}}
-        ${{permissions.delete ? `<button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>` : '<span class="btn disabled">Удалить</span>'}}
+        ${{renderVpsHostSettings(r)}}
+        ${{permissions.delete ? `<button class="btn deleteRouterButton" data-delete="${{escapeAttr(r.id)}}">Удалить</button>` : '<span class="btn disabled deleteRouterButton">Удалить</span>'}}
       </div>
       ${{wolReady ? renderWolPanelResponsive(r) : ''}}
       </div>
@@ -9429,12 +9515,16 @@ const vpsHostDrafts = new Map();
 function getVpsHostDraft(router) {{
   if (!vpsHostDrafts.has(router.id)) {{
     const status = router.status || {{}};
-    vpsHostDrafts.set(router.id, {{open: false, host: status.vps_host || router.vps_host || '', auto: status.vps_host_mode === 'auto', password: '', dirty: false, saving: false, message: ''}});
+    vpsHostDrafts.set(router.id, {{open: false, host: status.vps_host || router.vps_host || '', auto: status.vps_host_mode === 'auto', dirty: false, saving: false, message: '', requestId: ''}});
   }}
   const state = vpsHostDrafts.get(router.id);
+  const job = router.vps_host_update || {{}};
+  if (job.id === state.requestId) state.message = '';
+  if (job.id === state.requestId && job.status === 'succeeded') state.dirty = false;
   if (!state.dirty && !state.saving) {{
-    state.host = (router.status || {{}}).vps_host || router.vps_host || '';
-    state.auto = (router.status || {{}}).vps_host_mode === 'auto';
+    const pending = ['queued','delivered','running'].includes(job.status);
+    state.host = (pending ? job.vps_host : (router.status || {{}}).vps_host) || router.vps_host || '';
+    state.auto = (pending ? job.vps_host_mode : (router.status || {{}}).vps_host_mode) === 'auto';
   }}
   return state;
 }}
@@ -9442,17 +9532,25 @@ function renderVpsHostSettings(router) {{
   if (!(router.permissions || {{}}).owner) return '';
   const state = getVpsHostDraft(router);
   const key = escapeAttr(router.id);
-  return `<div class="wolPanel" style="margin-top:10px">
-    <button class="btn" type="button" data-vps-toggle="${{key}}" aria-expanded="${{state.open ? 'true' : 'false'}}">${{state.open ? 'Скрыть VPS host' : 'Настроить VPS host'}}</button>
-    ${{state.open ? `<div style="display:grid;gap:10px;margin-top:10px;min-width:0">
-      <label style="display:grid;gap:5px;min-width:0">VPS host<input style="width:100%;min-width:0" data-vps-field="host" data-vps-router="${{key}}" value="${{escapeAttr(state.host)}}" placeholder="IP или домен VPS"></label>
-      <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" data-vps-field="auto" data-vps-router="${{key}}"${{state.auto ? ' checked' : ''}}> Автоматически обновлять VPS host</label>
-      <label style="display:grid;gap:5px;min-width:0">Пароль SSH роутера<input style="width:100%;min-width:0" type="password" autocomplete="off" data-vps-field="password" data-vps-router="${{key}}" value="${{escapeAttr(state.password)}}" placeholder="Пусто, если доступ по ключу"></label>
-      <span>Выключено: heartbeat сохраняет указанный адрес. Сохранение применяется на роутере через SSH.</span>
-      <button class="btn" type="button" data-vps-save="${{key}}"${{state.saving || !router.online ? ' disabled' : ''}}>${{state.saving ? 'Сохраняю...' : 'Сохранить VPS host'}}</button>
-      <span>${{escapeHtml(state.message)}}</span>
-    </div>` : ''}}
-  </div>`;
+  const job = router.vps_host_update || {{}};
+  const pending = ['queued','delivered','running'].includes(job.status);
+  const supported = (router.status || {{}}).vps_host_control === 1;
+  const labels = {{queued:'Ожидает Heartbeat роутера',delivered:'Команда доставлена агенту',running:'Адрес применяется, Xray перезапускается',succeeded:'Адрес подтверждён агентом. Xray запущен.',failed:'Ошибка применения',interrupted:'Обработчик прерван',expired:'Агент не вышел на связь за 3 минуты. Команда отменена.',unconfirmed:'Агент пока не подтвердил результат. Проверь связь и статус Xray.'}};
+  const sameHost = (router.status || {{}}).vps_host === job.vps_host && (router.status || {{}}).vps_host_mode === job.vps_host_mode;
+  const confirmed = !supported ? '' : !sameHost ? 'Последнее применение: ' + (job.vps_host || '') + '. Сейчас агент сообщает другой адрес или режим.'
+    : (router.status || {{}}).xray === 'running' ? labels.succeeded : 'VPS host подтверждён. Сейчас Xray остановлен.';
+  const progress = state.dirty && !state.requestId ? '' : job.status === 'succeeded' ? confirmed : labels[job.status] || '';
+  const disabled = state.saving || pending;
+  return `<button class="btn vpsHostToggle" type="button" data-vps-toggle="${{key}}" title="${{state.open ? 'Скрыть VPS host' : 'Настроить VPS host'}}" aria-label="${{state.open ? 'Скрыть VPS host' : 'Настроить VPS host'}}" aria-controls="vps-host-${{key}}" aria-expanded="${{state.open ? 'true' : 'false'}}">${{state.open ? 'Скрыть VPS host' : 'VPS host'}}</button>
+    ${{state.open ? `<div class="wolPanel vpsHostSettings" id="vps-host-${{key}}" role="region" aria-label="Настройки VPS host" style="display:grid;gap:10px">
+      <label style="display:grid;gap:5px;min-width:0">VPS host<input style="width:100%;min-width:0" data-vps-field="host" data-vps-router="${{key}}" value="${{escapeAttr(state.host)}}" placeholder="IP или домен VPS"${{disabled ? ' disabled' : ''}}></label>
+      <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" data-vps-field="auto" data-vps-router="${{key}}"${{state.auto ? ' checked' : ''}}${{disabled ? ' disabled' : ''}}> Автоматически обновлять VPS host</label>
+      <span>Адрес применяется агентом через Heartbeat. Xray будет перезапущен; SSH не требуется. При выключенном автообновлении указанный адрес сохраняется. Hub URL не меняется.</span>
+      ${{!supported ? '<span>Обнови агент на этом роутере для смены VPS host через Heartbeat.</span>' : ''}}
+      <button class="btn" type="button" data-vps-save="${{key}}"${{disabled || !supported ? ' disabled' : ''}}>${{state.saving ? 'Отправляю...' : pending ? 'Ожидаю ответ агента...' : 'Сохранить и перезапустить Xray'}}</button>
+      <span role="status" style="overflow-wrap:anywhere">${{escapeHtml(state.message || progress)}}${{pending ? '. Доставка и подтверждение — до 3 минут.' : ''}}</span>
+      ${{!pending && ['failed','interrupted'].includes(job.status) && job.result ? `<span style="overflow-wrap:anywhere">${{escapeHtml(job.result)}}</span>` : ''}}
+    </div>` : ''}}`;
 }}
 
 function renderRouterNotesPanel(router) {{
@@ -9546,7 +9644,7 @@ render = function(list) {{
     cards.innerHTML = '<div class="empty">Пока нет роутеров. Добавь первый, например <b>main</b>.</div>';
     return;
   }}
-  const groupedList = list.slice().sort((a, b) => groupName(a.group_id).localeCompare(groupName(b.group_id), 'ru') || String(a.name || a.id).localeCompare(String(b.name || b.id), 'ru'));
+  const groupedList = list.slice().sort((a, b) => (routerStatusFilterValue === 'all' ? groupName(a.group_id).localeCompare(groupName(b.group_id), 'ru') : 0) || String(a.name || a.id).localeCompare(String(b.name || b.id), 'ru'));
   cards.innerHTML = groupedList.map((r, idx) => {{
     const permissions = r.permissions && typeof r.permissions === 'object' ? r.permissions : {{}};
     const role = String(r.role || 'node');
@@ -9578,13 +9676,10 @@ render = function(list) {{
     const wolButton = wolReady
       ? `<button class="btn" data-wol-toggle="${{escapeAttr(r.id)}}" type="button">${{wolState.open ? 'Скрыть Wake-on-LAN' : 'Wake-on-LAN'}}</button>`
       : `<span class="btn disabled">Wake-on-LAN</span>`;
-    const notesPreview = String(r.notes_preview || routerNotesPreview(r.notes || ''));
+    const notesPreview = String(r.notes_preview || routerNotesPreview(r.notes || '') || (r.has_notes ? 'Заметка с изображением' : ''));
     const notesButton = !!permissions.notes
       ? `<a class="btn" href="${{escapeAttr(r.notes_url || ('/router/' + encodeURIComponent(r.id) + '/notes'))}}" target="_blank" rel="noopener noreferrer">Заметки</a>`
       : `<span class="btn disabled">Заметки</span>`;
-    const logsButton = !!permissions.logs
-      ? `<a class="btn routerLogsAction" data-global-logs-link="true" href="${{escapeAttr(r.logs_url || ('/router/' + encodeURIComponent(r.id) + '/logs'))}}" target="_blank" rel="noopener noreferrer">Глобал логи</a>`
-      : `<span class="btn disabled routerLogsAction">Глобал логи</span>`;
     const renameLabel = 'Переименовать ' + (r.name || r.id || 'роутер');
     const renameButton = !!permissions.manage
       ? `<button class="nameEditBtn" type="button" data-rename="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr(renameLabel)}}" title="${{escapeAttr(renameLabel)}}"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill="currentColor" d="M3 17.25V21h3.75l11-11.03-3.75-3.75zm17.71-10.04a1.003 1.003 0 0 0 0-1.42l-2.5-2.5a1.003 1.003 0 0 0-1.42 0l-1.96 1.96 3.75 3.75z"/></svg></button>`
@@ -9605,10 +9700,10 @@ render = function(list) {{
     const groupHeading = idx === 0 || groupName(groupedList[idx - 1].group_id) !== groupName(r.group_id)
       ? `<div class="routerGroupHeading"><span>${{escapeHtml(groupName(r.group_id))}} <em>${{groupCount}} роутера</em></span><button class="btn routerGroupToggle" type="button" data-router-group-toggle="${{escapeAttr(groupKey)}}" aria-expanded="${{groupOpen ? 'true' : 'false'}}">${{groupOpen ? 'Скрыть группу' : 'Открыть группу'}}</button></div>`
       : '';
-    const groupStart = idx === 0 || groupName(groupedList[idx - 1].group_id) !== groupName(r.group_id)
+    const groupStart = routerStatusFilterValue === 'all' && (idx === 0 || groupName(groupedList[idx - 1].group_id) !== groupName(r.group_id))
       ? `<section class="routerGroupSection" data-router-group-section="${{escapeAttr(groupKey)}}">${{groupHeading}}<div class="routerGroupCards"${{groupOpen ? '' : ' hidden'}}>`
       : '';
-    const groupEnd = idx === groupedList.length - 1 || groupName(groupedList[idx + 1].group_id) !== groupName(r.group_id)
+    const groupEnd = routerStatusFilterValue === 'all' && (idx === groupedList.length - 1 || groupName(groupedList[idx + 1].group_id) !== groupName(r.group_id))
       ? '</div></section>'
       : '';
     const metricsHtml = [
@@ -9623,15 +9718,15 @@ render = function(list) {{
       metricHtml('Температура', formatTemperatureHtml(temperature), tempClass(temperature)),
       metric('Нагрузка', load, 'span2')
     ].join('');
-    return `${{groupStart}}<div class="routerCardSlot"><article class="card ${{isMain ? 'main' : ''}} ${{online ? 'online' : 'off'}}">
+    return `${{groupStart}}<div class="routerCardSlot"><article class="card ${{isMain ? 'main' : ''}} ${{online ? 'online' : 'off'}}" data-router-id="${{escapeAttr(r.id)}}" aria-label="${{escapeAttr('Роутер ' + (r.name || r.id) + ', ID ' + r.id)}}">
       <div class="cardTop">
         <div class="status ${{stateClass}}"><i></i>${{stateText}}</div>
       </div>
-      <div class="nameRow"><div class="name">${{escapeHtml(r.name)}}</div>${{renameButton}}</div>
+      <div class="nameRow"><div class="name">${{escapeHtml(r.name || r.id)}}</div>${{renameButton}}</div>
+      ${{notesPreview ? `<div class="notesPreview cardNotesPreview"><strong>Заметки:</strong> <span>${{escapeHtml(notesPreview)}}</span></div>` : ''}}
       ${{groupSelectHtml}}
       <button class="mobileToggle cardDetailsToggle" type="button" data-card-toggle="${{escapeAttr(detailsId)}}" aria-controls="${{escapeAttr(detailsId)}}" aria-expanded="${{collapseCards ? 'false' : 'true'}}">${{collapseCards ? 'Открыть данные' : 'Скрыть данные'}}</button>
       <div class="cardBody" id="${{escapeAttr(detailsId)}}" role="region" aria-label="${{escapeAttr('Данные роутера ' + (r.name || r.id))}}"${{collapseCards ? ' hidden' : ''}}>
-      ${{notesPreview ? `<div class="notesPreview"><strong>Заметки:</strong> <span>${{escapeHtml(notesPreview)}}</span></div>` : ''}}
       <div class="metrics">
         ${{metricsHtml}}
       </div>
@@ -9642,10 +9737,10 @@ render = function(list) {{
         ${{sshButton}}
         ${{wolButton}}
         ${{notesButton}}
-        ${{logsButton}}
-        ${{permissions.manage ? `<a class="btn" href="/router/${{encodeURIComponent(r.id)}}/xray-control" target="_blank" rel="noopener noreferrer">Remote управление Xray</a>` : ''}}
+        ${{permissions.manage ? `<a class="btn" href="/router/${{encodeURIComponent(r.id)}}/xray-control" target="_blank" rel="noopener noreferrer">Настройки Xray</a>` : ''}}
         ${{permissions.config ? `<a class="btn" href="${{escapeAttr(r.config_url)}}">OpenWrt config</a>` : '<span class="btn disabled">OpenWrt config</span>'}}
-        ${{permissions.delete ? `<button class="btn" data-delete="${{escapeAttr(r.id)}}">Удалить</button>` : '<span class="btn disabled">Удалить</span>'}}
+        ${{renderVpsHostSettings(r)}}
+        ${{permissions.delete ? `<button class="btn deleteRouterButton" data-delete="${{escapeAttr(r.id)}}">Удалить</button>` : '<span class="btn disabled deleteRouterButton">Удалить</span>'}}
       </div>
       ${{wolReady ? renderWolPanelResponsive(r) : ''}}
       </div>
@@ -9671,12 +9766,16 @@ function renderRouterView() {{
   renderRouterStats(allRouters);
   updateRouterSearchMeta(allRouters.length, visibleRouters.length);
   if (!visibleRouters.length) {{
+    routerCardTooltip.hide();
     cards.innerHTML = routerSearchQuery.trim()
       ? '<div class="empty">По этому запросу роутеры не найдены. Попробуй имя, router id или часть модели.</div>'
-      : '<div class="empty">Пока нет роутеров. Добавь первый, например <b>main</b>.</div>';
+      : (routerStatusFilterValue !== 'all' || routerGroupFilterValue)
+        ? '<div class="empty">Нет роутеров, соответствующих выбранному фильтру.</div>'
+        : '<div class="empty">Пока нет роутеров. Добавь первый, например <b>main</b>.</div>';
     return;
   }}
   render(visibleRouters);
+  routerCardTooltip.sync();
   cardDetailsScrollTops.forEach((scrollTop, id) => {{
     const body = document.getElementById(id);
     if (body) body.scrollTop = scrollTop;
@@ -10227,11 +10326,13 @@ async function loadRouters(options = {{}}) {{
   }}
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
+  const pollVersion = ++routerPollVersion;
   try {{
     const historyDue = !window.HUB_AVAILABILITY || Date.now() - window.HUB_AVAILABILITY_RECEIVED_AT >= 60000;
     const res = await fetch('/api/routers' + (historyDue ? '?availability=1' : ''), {{cache: 'no-store', signal: controller.signal}});
     if (res.ok) {{
       const data = await res.json();
+      if (pollVersion !== routerPollVersion) return;
       if (automatic && (document.hidden || hasOpenWolPanel())) return;
       if (data.availability) {{
         window.HUB_AVAILABILITY = data.availability;
@@ -10340,6 +10441,8 @@ cards.addEventListener('input', (ev) => {{
   const state = getVpsHostDraft(router);
   state[field.dataset.vpsField] = field.type === 'checkbox' ? field.checked : field.value;
   state.dirty = true;
+  state.requestId = '';
+  state.message = '';
 }});
 cards.addEventListener('click', async (ev) => {{
   const toggle = ev.target.closest('[data-vps-toggle]');
@@ -10357,19 +10460,21 @@ cards.addEventListener('click', async (ev) => {{
   const router = selectedRouter(key);
   if (!router) return;
   const state = getVpsHostDraft(router);
-  if (state.saving) return;
+  if (state.saving || ['queued','delivered','running'].includes((router.vps_host_update || {{}}).status)) return;
+  if ((router.vps_host_update || {{}}).id === state.requestId) state.requestId = '';
+  if (!state.requestId) state.requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), value => value.toString(16).padStart(2,'0')).join('');
   state.saving = true;
   state.message = '';
   requestRouterRender();
+  const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 15000);
   try {{
-    const res = await fetch('/api/router/' + encodeURIComponent(key) + '/vps-host', {{method: 'POST', headers: {{'Content-Type': 'application/json'}}, body: JSON.stringify({{vps_host: state.host, vps_host_mode: state.auto ? 'auto' : 'manual', ssh_password: state.password}})}});
+    const res = await fetch('/api/router/' + encodeURIComponent(key) + '/vps-host', {{method: 'POST', signal:controller.signal, headers: {{'Content-Type': 'application/json', 'X-VPS-Host-Request':'1'}}, body: JSON.stringify({{vps_host: state.host, vps_host_mode: state.auto ? 'auto' : 'manual', request_id:state.requestId}})}});
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Не удалось сохранить VPS host');
     replaceRouterInList(data.router);
-    state.dirty = false;
-    state.message = 'Настройки сохранены на роутере.';
-  }} catch (error) {{ state.message = error.message; }}
-  finally {{ state.saving = false; state.password = ''; requestRouterRender(); }}
+    state.message = '';
+  }} catch (error) {{ state.message = error.name === 'AbortError' ? 'Не получен ответ Hub. Проверь статус команды перед повтором.' : error.message; }}
+  finally {{ clearTimeout(timeout); state.saving = false; requestRouterRender(); }}
 }});
 
 cards.addEventListener('click', async (ev) => {{
@@ -13346,7 +13451,7 @@ function initHubUpdate() {{
       button.disabled = busy || state.checking;
       button.dataset.available = state.available ? 'true' : 'false';
       button.dataset.updateState = busy ? 'busy' : state.checking ? 'checking' : state.error ? 'error' : state.source_incompatible ? 'unavailable' : state.available ? 'available' : state.checked ? 'current' : 'checking';
-      button.textContent = busy ? 'Обновляется…' : state.checking ? 'Проверка…' : state.source_incompatible ? 'Проверить обновление' : state.available ? 'Доступно обновление' : state.checked && !state.error ? 'Обновление не требуется' : 'Проверить обновление панели';
+      button.textContent = busy ? 'Обновляется…' : state.checking ? 'Проверка…' : state.source_incompatible ? 'Проверить обновление' : state.available ? 'Доступно обновление' : state.checked && !state.error ? 'Установлена последняя версия' : 'Проверить обновление панели';
       button.title = state.available ? 'Доступна сборка ' + state.remote_version + ' · ' + state.remote_revision.slice(0, 8) : state.error || state.notice || (state.source_older ? 'Установлена ' + state.current_version + '; в источнике ' + state.remote_version + '. Более старая версия не устанавливается.' : 'Проверить обновление панели');
     }});
     if (busy) {{
@@ -14077,7 +14182,7 @@ def router_xray_control_html(router, csrf):
     title = html.escape(str(router.get('name') or router['id']))
     endpoint = json.dumps('/api/router/' + urllib.parse.quote(router['id'], safe='') + '/xray-control')
     return r'''<!doctype html><html lang="ru"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Remote управление Xray — __TITLE__</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Настройки Xray — __TITLE__</title>
 <style>
 :root{color-scheme:dark;--bg:#07040f;--panel:#191226;--panel2:#30243e;--text:#f5f3ff;--muted:#c4b5d9;--line:#574267}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at top,#3d205b,transparent 70%),var(--bg);color:var(--text);font:14px/1.5 system-ui,sans-serif}
@@ -14091,7 +14196,7 @@ def router_xray_control_html(router, csrf):
 .history{display:grid;gap:10px;margin-top:14px}.entry{border:1px solid var(--line);border-radius:10px;padding:12px;overflow-wrap:anywhere}.entry p{margin:6px 0 0;white-space:pre-wrap}.entry small{color:var(--muted)}
 @media(max-width:600px){.wrap{padding:12px}.panel{padding:14px}.actions{display:grid;grid-template-columns:1fr}.head .btn,.journalHead .btn{width:100%}h1{font-size:20px}}
 </style></head><body><main class="wrap"><section class="panel">
-<div class="head"><h1>Remote управление Xray</h1><a href="/" class="btn">Вернуться в Hub</a></div><h2 id="routerName">__TITLE__</h2>
+<div class="head"><h1>Настройки Xray</h1><a href="/" class="btn">Вернуться в Hub</a></div><h2 id="routerName">__TITLE__</h2>
 <p class="muted">Управление Xray выбранного роутера через агент Hub. Команда доставляется при следующем Heartbeat. Остановка Xray сохраняет связь агента с Hub.</p>
 <div class="info" role="status"><strong id="xrayStatus">Получаю статус…</strong><div id="agentStatus" class="muted"></div></div>
 <div class="actions"><button class="btn start" data-action="start">Запустить Xray</button><button class="btn stop" data-action="stop">Остановить Xray</button><button class="btn restart" data-action="restart">Перезапустить Xray</button></div>
@@ -14101,7 +14206,7 @@ def router_xray_control_html(router, csrf):
 (()=>{
  const endpoint=__ENDPOINT__,csrf=__CSRF__,buttons=[...document.querySelectorAll('[data-action]')],result=document.getElementById('result'),history=document.getElementById('history');
  const resultTitle=document.getElementById('resultTitle'),resultOutput=document.getElementById('resultOutput'),operationTimer=document.getElementById('operationTimer'),clearHistory=document.getElementById('clearHistory');
- const labels={start:'Запустить Xray',stop:'Остановить Xray',restart:'Перезапустить Xray'}, states={queued:'Ожидает Heartbeat',delivered:'Доставлена агенту',running:'Выполняется на роутере',succeeded:'Успешно',failed:'Ошибка',interrupted:'Выполнение прервано',expired:'Не доставлена',unconfirmed:'Результат не подтверждён'};
+ const labels={start:'Запустить Xray',stop:'Остановить Xray',restart:'Перезапустить Xray','set-host':'Изменить VPS host'}, states={queued:'Ожидает Heartbeat',delivered:'Доставлена агенту',running:'Выполняется на роутере',succeeded:'Успешно',failed:'Ошибка',interrupted:'Выполнение прервано',expired:'Не доставлена',unconfirmed:'Результат не подтверждён'};
  let timer=null,clockTimer=null,request=null,stopped=false,busy=false,snapshot=null,posting=false,serverBase=0,clockBase=0;
  const stamp=value=>value?new Date(value*1000).toLocaleString('ru-RU'):'нет данных';
  const active=state=>['queued','delivered','running'].includes(state),tone=state=>state==='succeeded'?'ok':['failed','interrupted'].includes(state)?'error':'warn';
@@ -14175,74 +14280,6 @@ def router_xray_control_html(router, csrf):
 </script></body></html>'''.replace('__TITLE__', title).replace('__ENDPOINT__', endpoint).replace('__CSRF__', json.dumps(csrf))
 
 
-def router_logs_html(router):
-    title = html.escape(str(router.get('name') or router['id']))
-    endpoint = json.dumps('/api/router/' + urllib.parse.quote(router['id'], safe='') + '/logs')
-    download = html.escape('/api/router/' + urllib.parse.quote(router['id'], safe='') + '/logs/download', quote=True)
-    return '''<!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Глобал логи — __TITLE__</title><style>
-:root{color-scheme:dark;--bg:#07040f;--grid:rgba(168,85,247,.13)}
-*{box-sizing:border-box}body{min-height:100vh;margin:0;overflow-x:hidden;background-color:var(--bg);background-image:radial-gradient(circle at 16% 10%,rgba(168,85,247,.45),transparent 30%),radial-gradient(circle at 88% 16%,rgba(59,130,246,.28),transparent 32%),linear-gradient(145deg,#07040f,#120a24 48%,#05030a),repeating-linear-gradient(0deg,transparent 0 30px,var(--grid) 31px),repeating-linear-gradient(90deg,transparent 0 30px,var(--grid) 31px);background-attachment:fixed;color:#f5f3ff;font:14px/1.5 system-ui,sans-serif}
-.wrap{max-width:1150px;margin:auto;padding:20px}.panel{padding:18px;border:1px solid #574267;border-radius:12px;background:#191226}
-.head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}h1{font-size:22px;margin:0}h2{margin:4px 0 12px;font-size:16px;overflow-wrap:anywhere}
-.note{margin:12px 0;padding:10px 12px;background:#f59e0b1a;border:1px solid #f59e0b59;border-left:3px solid #f59e0b;border-radius:8px;color:#fde68a;font-size:12px}
-.actions,.legend{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.btn{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:9px 14px;color:#f5f3ff;background:#393044;border:1px solid #655574;border-radius:8px;font:700 13px system-ui;cursor:pointer;text-decoration:none}.btn:disabled{opacity:.5;cursor:wait}.bad{border-color:#ef444470}
-.legend{font-size:12px;font-weight:700;gap:14px}.ok{color:#86efac}.warn{color:#fde68a}.error{color:#f87171}
-#logsDiagnosis{margin:12px 0;padding:10px 12px;border:1px solid currentColor;border-radius:8px;overflow-wrap:anywhere}
-#logsText{margin:12px 0 0;min-height:200px;max-height:65vh;overflow:auto;padding:12px;background:#0d0917;border:1px solid #514065;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:12px/1.5 ui-monospace,Consolas,monospace}.line{display:block}#logsStatus{color:#d2c3e0;font-size:12px;overflow-wrap:anywhere}
-@media(max-width:600px){.wrap{padding:12px}.panel{padding:12px}.actions{display:grid;grid-template-columns:1fr}.actions .btn{width:100%}.head .btn{width:100%}h1{font-size:20px}}
-@media(max-width:680px),(pointer:coarse){body{background-attachment:scroll;background-image:linear-gradient(145deg,#07040f,#120a24 54%,#05030a)}.legend{justify-content:center;text-align:center;row-gap:8px}}
-</style></head><body><main class="wrap"><section class="panel">
-<div class="head"><h1>Глобал логи</h1><a class="btn" href="/">Вернуться в Hub</a></div><h2>__TITLE__</h2>
-<blockquote class="note">Действия панели, Heartbeat, WAN, предупреждения и ошибки Xray этого роутера. Доставка проверяется каждые 3 секунды; новые записи обычно появляются после пакетной записи на Flash, до 60 секунд. На обновлённом роутере журнал сохраняется на проверенной Flash, временный буфер ограничен 16 КиБ. Если роутер оффлайн, доступны последние доставленные записи. Архив VPS хранится в SQLite на диске: до 2 МиБ на роутер. Ключи и пароли скрываются.</blockquote>
-<div class="legend" aria-label="Цвета журнала"><span class="ok">● Успешно</span><span class="warn">● Предупреждение</span><span class="error">● Ошибка</span></div>
-<div class="actions"><a class="btn" href="__DOWNLOAD__">Скачать логи</a><button class="btn" id="logsLive" type="button">Запустить в реальном времени</button><button class="btn bad" id="logsClear" type="button">Очистить логи</button></div>
-<div id="logsDiagnosis" class="warn" role="status">Получаю состояние роутера…</div><div id="logsStorage" role="status"></div><div id="logsStatus" role="status">Загружаю сохранённые записи с VPS…</div><pre id="logsText" tabindex="0">Загрузка записей журнала…</pre>
-</section></main><script>
-(function(){
-  const endpoint=__ENDPOINT__, output=document.getElementById('logsText'), status=document.getElementById('logsStatus'), diagnosis=document.getElementById('logsDiagnosis'), live=document.getElementById('logsLive'), clear=document.getElementById('logsClear');
-  let running=false, timer=null, controller=null, generation=0, lastText=null;
-  function tone(line){if(/^\\[ERROR\\]/.test(line))return 'error';if(/^\\[WARN\\]/.test(line))return 'warn';return 'ok';}
-  function render(text){
-    if(lastText===text && output.querySelector('.line'))return;
-    const bottom=output.scrollHeight-output.clientHeight-output.scrollTop<24, top=output.scrollTop, fragment=document.createDocumentFragment();
-    const lines=text ? text.replace(/\\r\\n/g,'\\n').replace(/\\n$/,'').split('\\n') : ['Журнал пока пуст. Записи появятся после установки фикса на роутер и первой доставки на VPS.'];
-    lines.forEach(line=>{const span=document.createElement('span');span.className='line '+tone(line);span.textContent=line||' ';fragment.appendChild(span);});
-    output.replaceChildren(fragment);lastText=text;output.scrollTop=bottom?output.scrollHeight:top;
-  }
-  function stamp(value){return value ? new Date(value*1000).toLocaleString() : 'ещё не доставлялись';}
-  function showDiagnosis(data){const value=data.diagnosis||{};diagnosis.className=['ok','warn','error'].includes(value.level)?value.level:'warn';diagnosis.textContent=(value.text||'Сведения о причине пока не получены.')+(value.at?' · Подтверждено: '+stamp(value.at):'');}
-  function stop(){running=false;generation++;if(timer!==null)clearTimeout(timer);timer=null;if(controller)controller.abort();controller=null;live.textContent='Запустить в реальном времени';live.setAttribute('aria-pressed','false');}
-  async function refresh(once){
-    if(document.hidden || (!running&&!once))return;
-    const current=generation, request=new AbortController();controller=request;const timeout=setTimeout(()=>request.abort(),10000);
-    try{
-      const response=await fetch(endpoint,{cache:'no-store',signal:request.signal});
-      if(!response.ok)throw new Error('HTTP '+response.status);
-      const data=await response.json();if(current!==generation)return;
-      render(data.text||'');
-      showDiagnosis(data);
-      const storage=data.storage, storageLabel=document.getElementById('logsStorage');
-      if(storage){storageLabel.className=storage.persistent===false?'error':storage.persistent===true?'ok':'warn';storageLabel.textContent=(storage.persistent===false?'Внимание: архив VPS находится в RAM и исчезнет после перезагрузки.':storage.persistent===true?'Архив VPS: постоянный диск.':'Архив VPS: тип хранилища не подтверждён.')+' '+storage.path+' · '+storage.filesystem+' · Лимит: 2 МиБ на роутер.';}
-      status.textContent=(data.online?'Роутер онлайн':'Роутер оффлайн — показан архив VPS')+' · Последняя доставка: '+stamp(data.last_sync)+' · Объём архива: '+Math.ceil(data.bytes/1024)+' КБ'+(data.bytes>65536?' · На экране последние 64 КБ; полный журнал доступен через «Скачать логи».':'')+(data.pending_clear?' · Очистка журнала роутера ожидает связи.':'');
-    }catch(error){if(current===generation)status.textContent='Не удалось получить логи: '+error.message+(running?'. Повтор через 3 секунды.':'');}
-    finally{clearTimeout(timeout);if(controller===request)controller=null;if(current===generation&&running&&!document.hidden)timer=setTimeout(refresh,3000);}
-  }
-  live.addEventListener('click',()=>{if(running){stop();return;}stop();running=true;live.textContent='Остановить просмотр';live.setAttribute('aria-pressed','true');refresh();});
-  clear.addEventListener('click',async()=>{
-    const resume=running;stop();clear.disabled=true;live.disabled=true;const request=new AbortController(), timeout=setTimeout(()=>request.abort(),10000);
-    try{
-      const response=await fetch(endpoint+'/clear',{method:'POST',cache:'no-store',signal:request.signal});
-      if(!response.ok)throw new Error('HTTP '+response.status);
-      const data=await response.json();render('');showDiagnosis(data);status.textContent=data.message;
-    }catch(error){status.textContent='Не удалось очистить логи: '+error.message;}
-    finally{clearTimeout(timeout);clear.disabled=false;live.disabled=false;if(resume){running=true;live.textContent='Остановить просмотр';live.setAttribute('aria-pressed','true');refresh();}}
-  });
-  document.addEventListener('visibilitychange',()=>{generation++;if(timer!==null)clearTimeout(timer);timer=null;if(controller)controller.abort();if(running&&!document.hidden)refresh();});
-  window.addEventListener('pagehide',stop);refresh(true);
-})();
-</script></body></html>'''.replace('__TITLE__', title).replace('__DOWNLOAD__', download).replace('__ENDPOINT__', endpoint)
 
 
 def router_notes_html(router, username="", saved="", error="", draft=None, edit_note_id=""):
@@ -14483,7 +14520,7 @@ textarea:focus{{box-shadow:0 0 0 3px rgba(34,211,238,.10),inset 0 1px 0 rgba(255
 }}
 </style>
 </head>
-<body>
+<body class="hubNotesPage">
 <main class="wrap">
   <div class="top">
     <div class="backRow">
@@ -14810,7 +14847,7 @@ button:hover{{filter:brightness(1.06)}}
       <form class="login" method="post" action="/login">
     {error_html}
     <span class="brand">
-      <h1 class="appBanner"><span>OWRT Hub <span class="appBannerVersion">v123</span></span></h1>
+      <h1 class="appBanner"><span>OWRT Hub <span class="appBannerVersion">v124</span></span></h1>
     </span>
     <label for="hubUsername">Логин</label>
     <input id="hubUsername" name="username" autocomplete="off" autofocus required>
@@ -15168,8 +15205,8 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .authTabPanel{{display:none;gap:10px}}
 .authTabPanel.is-active{{display:grid}}
 .authTabPanel[hidden]{{display:none !important}}
-.err{{width:min(100%,430px);justify-self:center;padding:10px 12px;border:1px solid rgba(251,113,133,.38);border-radius:14px;background:rgba(127,29,29,.2);color:#fecdd3;font-size:12px;font-weight:700}}
-.loginStatus{{width:min(100%,430px);justify-self:center;padding:10px 12px;border:1px solid rgba(34,211,238,.30);border-radius:14px;background:rgba(17,24,39,.44);color:#dbeafe;font-size:12px;font-weight:700;line-height:1.45}}
+.err{{width:min(100%,430px);justify-self:center;padding:10px 12px;border:1px solid rgba(251,113,133,.38);border-radius:14px;background:rgba(127,29,29,.2);color:#fecdd3;font-size:12px;font-weight:700;text-align:center}}
+.loginStatus{{width:min(100%,430px);justify-self:center;padding:10px 12px;border:1px solid rgba(34,211,238,.30);border-radius:14px;background:rgba(17,24,39,.44);color:#dbeafe;font-size:12px;font-weight:700;line-height:1.45;text-align:center}}
 .loginStatus[hidden]{{display:none!important}}
 .loginStatus.bad{{border-color:rgba(251,113,133,.38);background:rgba(127,29,29,.2);color:#fecdd3}}
 .loginStatus.ok{{border-color:rgba(34,197,94,.34);background:rgba(20,83,45,.22);color:#bbf7d0}}
@@ -15256,8 +15293,8 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
 .methodStatus.bad{{border-color:rgba(251,113,133,.38);background:rgba(127,29,29,.22);color:#fecdd3}}
 .authFooter{{display:grid;gap:6px;padding-top:1px}}
 .altAuthSummary{{padding:8px 9px;border:1px solid rgba(169,126,255,.14);border-radius:10px;background:rgba(17,15,30,.58);color:#c4b5fd;font-size:var(--login-copy-size);line-height:1.35}}
-.securityNote{{display:flex;align-items:center;justify-content:center;gap:8px;color:#b9adc9;font-size:var(--login-copy-size)}}
-.securityNote svg{{width:14px;height:14px;stroke:#b9adc9;flex:0 0 auto}}
+.securityNote{{display:flex;align-items:center;justify-content:center;gap:8px;color:var(--green,#46c58b);font-size:var(--login-copy-size)}}
+.securityNote svg{{width:14px;height:14px;stroke:currentColor;flex:0 0 auto}}
 @media(max-width:760px){{body{{padding:10px;background-attachment:scroll;background-size:auto,auto,auto,100% 100%,31px 31px,31px 31px}}.loginShell{{width:min(100%,calc(100vw - 20px))}}.loginFrame{{border-radius:20px}}.brandPanel{{padding:20px 14px 12px}}.brandPanel::after{{left:14px;right:14px}}.brandSeal{{width:64px;height:64px}}.brandSeal::before{{inset:10px}}.brandSeal svg{{width:30px;height:30px}}.brandTitle{{font-size:clamp(18px,6vw,22px);gap:8px;line-height:1.08;flex-wrap:nowrap}}.brandVersion{{font-size:12px}}.authPanel{{padding:0 14px 14px}}.authTabs{{grid-template-columns:1fr;width:100%}}.authTabBtn{{min-height:44px;font-size:12px;justify-content:center;text-align:center;flex-direction:column;gap:5px;padding:8px 12px}}.authTabBtn svg{{width:16px;height:16px}}.fieldGroup{{justify-items:stretch}}.compactField,.otpCard,.hint,.captchaSection,.primaryBtn,.err{{width:100%;justify-self:stretch}}.inputShell{{grid-template-columns:40px minmax(0,1fr) 40px;min-height:44px}}.fieldIcon svg{{width:16px;height:16px}}.inputShell input{{font-size:13px}}.inputAction{{width:40px}}.captchaSection{{width:min(100%,236px);justify-self:center;padding:8px 7px 7px;gap:6px}}.captchaSectionRecaptcha{{width:min(100%,336px);padding:10px 8px 8px}}.captchaTopRow{{min-height:36px}}.captchaRefresh{{width:26px;height:26px}}.captchaRefresh svg{{width:18px;height:18px}}.captcha{{min-height:36px}}.captcha b{{min-height:36px;font-size:21px}}.captchaAnswerShell{{grid-template-columns:36px minmax(0,1fr) 36px;min-height:36px}}.primaryBtn{{min-height:46px;font-size:13px}}.methodGrid,.socialMethodGrid{{grid-template-columns:1fr}}.methodBtnRow{{grid-template-columns:1fr}}.sshMethodCard{{display:none!important}}.authFooter{{display:none}}}}
 </style>
 </head>
@@ -15281,7 +15318,7 @@ body::after{{content:"";position:fixed;inset:0;pointer-events:none;background:li
                 <circle cx="65" cy="59" r="3" fill="#E5F2FF"/>
               </svg>
             </div>
-            <h2 class="brandTitle">OWRT Hub <span class="brandVersion">v123</span></h2>
+            <h2 class="brandTitle">OWRT Hub <span class="brandVersion">v124</span></h2>
           </div>
         </div>
         <div class="brandBottom">
@@ -16767,7 +16804,7 @@ class RouterUpdateManager:
         text = str(text or '')
         if password:
             text = text.replace(password, '[пароль скрыт]')
-        text = redact_router_log_bytes(text.encode('utf-8', 'replace')).decode('utf-8', 'replace')
+        text = redact_command_result_bytes(text.encode('utf-8', 'replace')).decode('utf-8', 'replace')
         return re.sub(r'[\x00-\x08\x0b-\x1f\x7f]', '', text)[-8192:]
 
     @classmethod
@@ -17056,7 +17093,7 @@ HUB_UPDATE_ACTIVE = {'starting', 'installing', 'restarting', 'rollback'}
 HUB_LOG_MAINTENANCE_RESULT = Path('/var/lib/owrt-remote-log-maintenance/result.json')
 
 # BEGIN EMBEDDED LOG MAINTENANCE
-HUB_LOG_MAINTENANCE_SHA256 = '03c6a6843ed2e0b287502f165f716cb56305acc8f8798afd51f57d394862455d'
+HUB_LOG_MAINTENANCE_SHA256 = '8da7e8245bcd43b4e30b9f9b262cea714c3f50b3d623eb028337ba37e6ab5e4a'
 HUB_LOG_MAINTENANCE_BUNDLE = (
     'eNq1PGt32zaW3/UrsEx3SzYSJbtJmpFX0+OkbpttYufYznTnOK6GJiGLY4rU8mFbcby/fe8DIMGX7KQ7nTOxCAIXwMV93ws++bdx'
     'kaXjizAey/harDf5Mom/H1iW9Sop4kAG4m/vT0SUXIqVF8a5jL3Yl644lNcyFclaxpnIl1L8WlyIwMu9Cy+TIklFmhQ5dPBSfxle'
@@ -17071,95 +17108,95 @@ HUB_LOG_MAINTENANCE_BUNDLE = (
     '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'
-    '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'
-    'SZ3wc5+giWdw7i5/I9ZY4wbv7oU5Kvb/A/M9qWg='
+    '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'
+    'Z3DuLn8j1ljjBu/uhTkq9v8Dqj2dRQ=='
 )
 # END EMBEDDED LOG MAINTENANCE
 
@@ -17939,8 +17976,6 @@ class App:
             if not new:
                 continue
             if bool(old.get("online")) and not bool(new.get("online")):
-                with self.conn() as conn:
-                    record_router_connection_log(conn, router_id, False)
                 notify_router_offline(new.get("router") or {})
 
     def router_state_monitor_loop(self):
@@ -17990,7 +18025,7 @@ class Handler(BaseHTTPRequestHandler):
                 status = 0
         quiet = (
             path == "/api/notifications/wait"
-            or path in ("/api/heartbeat", "/api/router-logs")
+            or path in ("/api/heartbeat",)
             or re.fullmatch(r"/api/ssh-session/[^/]+/read", path or "")
         )
         debug = os.environ.get("OWRT_REMOTE_HTTP_DEBUG", "").lower() in ("1", "true", "yes")
@@ -18358,7 +18393,7 @@ class Handler(BaseHTTPRequestHandler):
         captcha_answer = (payload or {}).get("captcha_answer", "")
         if verify_captcha(captcha_token, captcha_answer):
             return True, ""
-        return False, "РќРµРІРµСЂРЅР°СЏ РєР°РїС‡Р°"
+        return False, "Неверная капча"
 
     def create_login_session(self, username="", auth_method="password"):
         session_username = str(username or current_username()).strip()
@@ -18676,14 +18711,14 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
         otp = payload.get("otp", "")
         captcha_ok, captcha_error = self.verify_login_captcha(payload)
         if not captcha_ok:
-            self.send_bytes(401, login_html(captcha_error or "РќРµРІРµСЂРЅР°СЏ РєР°РїС‡Р°").encode("utf-8"), "text/html; charset=utf-8")
+            self.send_bytes(401, login_html(captcha_error or "Неверная капча").encode("utf-8"), "text/html; charset=utf-8")
             return
         ok, error_text, auth, auth_method = verify_password_login(username, password, otp)
         if ok:
             token, _ = self.create_login_session((auth or {}).get("username", username), auth_method)
             self.redirect("/", [("Set-Cookie", self.session_cookie(token))])
             return
-        self.send_bytes(401, login_html(error_text or "РќРµРІРµСЂРЅС‹Р№ Р»РѕРіРёРЅ РёР»Рё РїР°СЂРѕР»СЊ").encode("utf-8"), "text/html; charset=utf-8")
+        self.send_bytes(401, login_html(error_text or "Неверный логин или пароль").encode("utf-8"), "text/html; charset=utf-8")
 
     def update_auth(self):
         payload = self.read_payload(keep_blank_values=True)
@@ -19442,16 +19477,6 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
             [("Set-Cookie", current_router_cookie(router_id))],
         )
 
-    def router_logs_page(self, router_id):
-        if not self.require_router_access(router_id, 'G'):
-            return
-        with self.app.conn() as conn:
-            row = get_active_router(conn, router_id)
-        if not row:
-            self.send_text(404, 'router not found')
-            return
-        self.send_bytes(200, router_logs_html(row_to_router(row)).encode('utf-8'), 'text/html; charset=utf-8',
-                        [('Cache-Control', 'no-store')])
 
     def router_xray_control_page(self, router_id):
         if not self.require_router_access(router_id, 'G'):
@@ -19486,53 +19511,15 @@ a{{display:inline-flex;margin-top:18px;color:#93c5fd}}
                     if payload.get('action') == 'clear_history':
                         xray_control_clear_history(conn, router_id)
                     else:
+                        if payload.get('action') not in {'start', 'stop', 'restart'}:
+                            raise ValueError('Недопустимая команда Xray.')
                         xray_control_enqueue(conn, router_id, payload.get('action'), payload.get('request_id'))
                 snapshot = xray_control_snapshot(conn, router_id)
             self.send_json(200, snapshot)
         except ValueError as exc:
             self.send_json(400, {'ok': False, 'error': str(exc)})
 
-    def router_logs_api(self, router_id, mode='live'):
-        if not self.require_router_access(router_id, 'G', json_mode=True):
-            return
-        with self.app.conn() as conn:
-            row = get_active_router(conn, router_id)
-            if not row:
-                self.send_json(404, {'ok': False, 'error': 'router not found'})
-                return
-            if mode == 'clear':
-                clear_router_log_archive(conn, router_id)
-                snapshot, raw = router_log_snapshot(conn, router_id)
-            else:
-                snapshot, raw = router_log_snapshot(conn, router_id)
-            router = row_to_router(row)
-        if mode == 'download':
-            name = clean_router_id(router_id)
-            filename = f'owrt-remote-global-{name}-{dt.datetime.now().strftime("%Y%m%d-%H%M%S")}.log'
-            self.send_bytes(200, raw, 'text/plain; charset=utf-8',
-                            [('Cache-Control', 'no-store'), ('Content-Disposition', f'attachment; filename="{filename}"')])
-        else:
-            payload = {'ok': True, 'router_id': router_id, 'online': router['online'],
-                       'storage': router_log_storage(self.app.db_path), **snapshot}
-            if mode == 'clear':
-                payload['message'] = 'Архив VPS очищен. Журнал роутера будет очищен при следующем соединении.'
-            self.send_json(200, payload)
 
-    def receive_router_logs_api(self):
-        if not self.agent_ok():
-            self.send_json(401, {'ok': False, 'error': 'bad agent token'})
-            return
-        try:
-            if self.headers.get('Transfer-Encoding') or not 0 < int(self.headers.get('Content-Length', '0')) <= 100000:
-                self.close_connection = True
-                self.send_json(413, {'ok': False, 'error': 'log request is too large or has no length'})
-                return
-            payload = self.read_payload()
-            with self.app.conn() as conn:
-                reply = receive_router_logs(conn, payload.get('id'), payload.get('batch'), payload.get('state'))
-            self.send_json(200, {'ok': True, **reply})
-        except Exception as exc:
-            self.send_json(400, {'ok': False, 'error': str(exc)})
 
     def router_notes_page(self, router_id, error="", draft=None, status=200, edit_note_id=""):
         if not self.require_router_access(router_id, "A"):
@@ -21345,10 +21332,6 @@ exit 127
         if control_match:
             self.router_xray_control_api(urllib.parse.unquote(control_match[1]))
             return
-        log_match = re.fullmatch(r'/api/router/([^/]+)/logs(?:/(download))?', path)
-        if log_match:
-            self.router_logs_api(urllib.parse.unquote(log_match[1]), log_match[2] or 'live')
-            return
         if path.startswith("/api/router/") and path.endswith("/wol/devices"):
             parts = path.strip("/").split("/")
             if len(parts) != 5 or parts[0] != "api" or parts[1] != "router" or parts[3] != "wol" or parts[4] != "devices":
@@ -21371,9 +21354,6 @@ exit 127
         if path.startswith("/router/"):
             if path.endswith('/xray-control'):
                 self.router_xray_control_page(self.router_id_from_path('/router/'))
-                return
-            if path.endswith('/logs'):
-                self.router_logs_page(self.router_id_from_path('/router/'))
                 return
             if "/notes-media/" in path:
                 self.router_note_media_page(path)
@@ -21423,9 +21403,6 @@ exit 127
         if path.startswith("/api/ssh-session/"):
             self.ssh_session_action(path)
             return
-        if path == '/api/router-logs':
-            self.receive_router_logs_api()
-            return
         if path == "/api/heartbeat":
             if not self.agent_ok():
                 self.send_json(401, {"ok": False, "error": "bad agent token"})
@@ -21434,9 +21411,9 @@ exit 127
                 payload = self.read_payload()
                 with self.app.conn() as conn:
                     router = heartbeat(conn, payload)
-                    xray_command = xray_control_exchange(conn, router['id'], payload)
-                    if router and router.get('_became_online'):
-                        record_router_connection_log(conn, router['id'], True)
+                    heartbeat_ignored = router.pop('_heartbeat_ignored', False)
+                    xray_command = None if heartbeat_ignored else xray_control_exchange(conn, router['id'], payload)
+                    router.update(row_to_router(get_router(conn, router['id'])))
                 if router and router.pop("_became_online", False):
                     notify_router_online(router)
                 xray_reload = None
@@ -21447,7 +21424,7 @@ exit 127
                         self.log_message("heartbeat xray reload error: %s", exc)
                         xray_reload = {"error": str(exc)}
                 xray_restart = None
-                if payload.get("event") == "wan-reconnect":
+                if not heartbeat_ignored and payload.get("event") == "wan-reconnect":
                     try:
                         xray_restart = maybe_restart_vps_xray_after_wan_reconnect(router["id"])
                     except Exception as exc:
@@ -21458,7 +21435,8 @@ exit 127
                     {
                         "ok": True,
                         "router": router,
-                        "hub_update": canonical_router_hub_update(router, self.app.public_url, self.request_origin()),
+                        "hub_update": {} if heartbeat_ignored else canonical_router_hub_update(router, self.app.public_url, self.request_origin()),
+                        "heartbeat_ignored": heartbeat_ignored,
                         "xray_command": xray_command,
                         "xray_reload": xray_reload,
                         "xray_restart": xray_restart,
@@ -21477,10 +21455,6 @@ exit 127
         if self.maybe_proxy_luci_absolute(path):
             return
         if not self.require_admin():
-            return
-        log_match = re.fullmatch(r'/api/router/([^/]+)/logs/clear', path)
-        if log_match:
-            self.router_logs_api(urllib.parse.unquote(log_match[1]), 'clear')
             return
         if path == "/api/auth":
             if not self.require_owner():
@@ -21823,7 +21797,16 @@ exit 127
         if path.startswith("/api/router/") and path.endswith("/vps-host"):
             if not self.require_owner(json_mode=True):
                 return
+            # Custom same-origin header plus JSON prevents cross-site form submissions.
+            if (self.headers.get('X-VPS-Host-Request') != '1'
+                    or self.headers.get('Origin') and self.headers['Origin'] != self.request_origin()):
+                self.send_json(403, {'ok': False, 'error': 'Обнови страницу Hub и повтори сохранение.'})
+                return
             try:
+                length = self.headers.get('Content-Length', '')
+                if (self.headers.get('Transfer-Encoding') or not length.isdigit() or not 0 < int(length) <= 1024
+                        or 'application/json' not in self.headers.get('Content-Type', '')):
+                    raise ValueError('Ожидается небольшой запрос JSON.')
                 parts = path.strip("/").split("/")
                 if len(parts) != 4:
                     raise ValueError("Некорректный путь")
@@ -21831,22 +21814,11 @@ exit 127
                 payload = self.read_payload()
                 host = validate_router_vps_host(payload.get("vps_host"))
                 mode = str(payload.get("vps_host_mode") or "manual")
-                script = make_router_vps_host_script(host, mode)
                 with self.app.conn() as conn:
-                    row = get_active_router(conn, router_id)
-                if not row:
-                    raise ValueError("Роутер не найден")
-                output = self.run_router_ssh_script(row, script, timeout=35, ssh_password=payload.get("ssh_password", ""))
-                if "VPS_HOST_APPLIED" not in output:
-                    raise ValueError("Роутер не подтвердил применение настройки")
-                with self.app.conn() as conn:
-                    fresh = get_active_router(conn, router_id)
-                    status = row_to_router(fresh).get("status", {})
-                    status.update({"vps_host": host, "vps_host_mode": mode})
-                    conn.execute("update routers set vps_host = ?, status_json = ?, updated_at = ? where id = ?", (host, json.dumps(status, ensure_ascii=False), now_ts(), router_id))
-                    conn.commit()
+                    xray_control_enqueue(conn, router_id, 'set-host', payload.get('request_id'),
+                                         {'vps_host': host, 'vps_host_mode': mode})
                     router = row_to_router(get_router(conn, router_id))
-                self.send_json(200, {"ok": True, "router": router})
+                self.send_json(202, {"ok": True, "router": router})
             except Exception as exc:
                 self.send_json(400, {"ok": False, "error": str(exc)})
             return
@@ -22036,7 +22008,6 @@ exit 127
                         "update routers set deleted_at = ?, updated_at = ? where id = ?",
                         (ts, ts, router_id),
                     )
-                    conn.execute('delete from router_logs where router_id = ?', (router_id,))
                     conn.commit()
                     deleted = True
             if deleted:

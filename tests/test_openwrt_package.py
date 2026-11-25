@@ -116,7 +116,7 @@ class PackageTests(unittest.TestCase):
     def target_setup(self, existing=False, rpcd_fails=False):
         target = self.root / "target"
         target.mkdir()
-        for folder in ("etc/config", "etc/owrt-remote", "etc/init.d", "tmp/luci-modulecache"):
+        for folder in ("etc/config", "etc/owrt-remote", "etc/init.d", "tmp/luci-modulecache", "usr/lib/owrt-remote"):
             (target / folder).mkdir(parents=True, exist_ok=True)
         config = target / "etc/config/owrtremote"
         config.write_text("config remote 'main'\n option router_name 'Keep name'\n option hub_token 'test-secret'\n")
@@ -126,13 +126,14 @@ class PackageTests(unittest.TestCase):
         rpcd = target / "etc/init.d/rpcd"
         rpcd.write_text("#!/bin/sh\nexit " + ("9" if rpcd_fails else "0") + "\n", newline="\n")
         rpcd.chmod(0o755)
+        (target / "usr/lib/owrt-remote/retire-logs.sh").write_bytes((p.ROOT / "files/usr/lib/owrt-remote/retire-logs.sh").read_bytes())
         helper = (p.RECIPE / "root/usr/lib/owrt-remote/package.sh").read_text()
         # Redirect target paths in the harness. The production hook never
         # honors arbitrary ROOT/host variables supplied to a package manager.
         # One pass is essential on Linux: a temporary target itself starts
         # with /tmp/, so sequential replacements would rewrite inserted paths.
-        helper = re.sub(r"/(?:etc|tmp)/", lambda match: target.as_posix() + match.group(0), helper)
-        result = subprocess.run([SH, "-s", "--", "configure"], input=helper, capture_output=True, text=True, env=self.env)
+        helper = re.sub(r"/(?:etc|tmp|usr)/", lambda match: target.as_posix() + match.group(0), helper)
+        result = subprocess.run([SH, "-s", "--", "configure"], input=helper, capture_output=True, text=True, env={**self.env,"OWRT_REMOTE_RETIRE_ROOT":("/"+target.drive[0].lower()+target.as_posix()[2:] if os.name=="nt" else target.as_posix())})
         return result, key, config
 
     def test_target_setup_creates_private_key_and_preserves_uci(self):

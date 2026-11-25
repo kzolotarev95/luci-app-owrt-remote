@@ -7,7 +7,7 @@
 ## Причина
 
 `Handler.log_message()` фильтровал успешные long-poll и чтение SSH-терминала,
-но записывал каждый успешный heartbeat и пакет `/api/router-logs`.
+но записывал каждый успешный heartbeat.
 При большом количестве роутеров эти записи попадали в journald/syslog и Nginx.
 Старая настройка Nginx могла добавлять второй `access_log`, сохраняя первый
 без фильтра. Установщик также создавал правило `/etc/logrotate.d/owrt-remote`
@@ -19,7 +19,7 @@
 ## Что установлено
 
 - Hub и стандартный `/var/log/nginx/access.log` пропускают успешные 2xx/3xx
-  для `/api/heartbeat`, `/api/router-logs`, `/api/notifications/wait` и
+  для `/api/heartbeat`, `/api/notifications/wait` и
   `/api/ssh-session/*/read`. HTTP 4xx/5xx, исключения и остальные действия
   продолжают записываться. Содержимое доставленных журналов не фильтруется.
 - Единственный планировщик — штатный `logrotate.timer`, ежедневно в **03:20

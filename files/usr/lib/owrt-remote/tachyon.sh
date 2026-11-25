@@ -4,12 +4,12 @@ TACHYON_RUNTIME="${OWRT_REMOTE_TACHYON_RUNTIME:-${TMPDIR:-/tmp}/owrt-remote-tach
 
 tachyon_inventory_failed() {
     if [ -s "$TACHYON_RUNTIME/status" ]; then
-        sed 's/"checked":true/"checked":false/;s/"available":true/"available":false/' "$TACHYON_RUNTIME/status"
+        sed 's/"checked":true/"checked":false/' "$TACHYON_RUNTIME/status"
     else printf '{"checked":false}'; fi
 }
 
 tachyon_json() (
-    local dir package version package_version mode port service available api code pkg rc now last admin_port candidate_port probe
+    local dir package version package_version mode port service available api code pkg rc now last admin_port candidate_port probe checked attempt failures
     umask 077
     ulimit -f 64
     mkdir -p "$TACHYON_RUNTIME" || { printf '{"checked":false}'; return; }
@@ -56,6 +56,12 @@ tachyon_json() (
     if [ -z "$package" ]; then
         printf '{"checked":true,"installed":false}\n' >"$dir/json"
     else
+        # A transient package-version lookup failure must not turn a known v2
+        # standalone panel back into LuCI when rc.2's health API returns 401.
+        if [ -z "$version" ] && [ "$(jsonfilter -i "$TACHYON_RUNTIME/status" -e '@.mode' 2>/dev/null)" = standalone ]; then
+            rc="$(jsonfilter -i "$TACHYON_RUNTIME/status" -e '@.package_version' 2>/dev/null)"
+            case "$rc" in ''|*[!0-9a-zA-Z.+~_-]*) ;; *) [ "${#rc}" -gt 80 ] || version="$rc" ;; esac
+        fi
         package_version="$version"
         port=0; mode=luci; api=''
         candidate_port="$(uci -q get tachyon.settings.listen_port 2>/dev/null)"
@@ -84,10 +90,13 @@ tachyon_json() (
             if printf '%s\n' "$rc" | grep -qx true; then service=running; break; fi
             [ -z "$rc" ] || service=stopped
         done
-        available=false
+        available=false; checked=true
         if [ "$mode" = standalone ]; then
-            code="$(curl -q -s --noproxy '*' --connect-timeout 1 --max-time 2 -o /dev/null \
-                -w '%{http_code}' "http://127.0.0.1:$port/" 2>/dev/null)"
+            for attempt in 1 2; do
+                code="$(curl -q -s --noproxy '*' --connect-timeout 1 --max-time 3 -o /dev/null \
+                    -w '%{http_code}' "http://127.0.0.1:$port/" 2>/dev/null)"
+                case "$code" in 2??|3??|401|403) break ;; esac
+            done
         else
             port=0
             admin_port="$(uci_get admin_port 80)"
@@ -96,8 +105,23 @@ tachyon_json() (
             code="$(curl -q -s --noproxy '*' --connect-timeout 1 --max-time 2 -o /dev/null \
                 -w '%{http_code}' "http://127.0.0.1:$admin_port/cgi-bin/luci/admin/services/tachyon" 2>/dev/null)"
         fi
-        case "$code" in 2??|3??|401|403) [ "$service" = stopped ] || available=true ;; esac
+        # This badge describes the web UI, independently of Tachyon's core.
+        # rc.2 protects its agent API with authentication; a reachable web UI
+        # is still available when an optional/core procd instance is stopped.
+        case "$code" in 2??|3??|401|403) available=true ;; esac
         [ -n "$version" ] || [ "$mode" = standalone ] || available=false
+        if [ "$available" = true ]; then
+            rm -f "$TACHYON_RUNTIME/web-failures"
+        elif [ "$(jsonfilter -i "$TACHYON_RUNTIME/status" -e '@.available' 2>/dev/null)" = true ]; then
+            failures="$(cat "$TACHYON_RUNTIME/web-failures" 2>/dev/null)"
+            case "$failures" in ''|*[!0-9]*) failures=0 ;; esac
+            [ "$failures" = 0 ] || failures=1
+            failures=$((failures+1))
+            printf '%s\n' "$failures" >"$TACHYON_RUNTIME/web-failures"
+            # One failed observation is unknown, rather than an invented outage.
+            # The Hub bounds retention of the previous confirmation to 120s.
+            [ "$failures" -ge 2 ] || checked=false
+        fi
         if [ "$mode" = standalone ] && [ "$available" = true ] && [ "$api" = /api/agent/v1 ]; then
             rc="$(curl -q -fsS --noproxy '*' --connect-timeout 1 --max-time 1 --max-filesize 65536 \
                 "http://127.0.0.1:$port/api/agent/v1/openapi.json" 2>/dev/null | jsonfilter -e '@.info.version' 2>/dev/null)"
@@ -111,8 +135,8 @@ tachyon_json() (
                 jsonfilter -e '@.success' 2>/dev/null)"
             [ "$rc" != true ] || { api="/cgi-bin/$pkg"; break; }
         done
-        printf '{"checked":true,"installed":true,"version":%s,"package_version":%s,"mode":"%s","port":%s,"service":"%s","available":%s,"api":%s}\n' \
-            "$(json_string "$(printf '%s' "$version" | head -c 80)")" "$(json_string "$(printf '%s' "$package_version" | head -c 80)")" \
+        printf '{"checked":%s,"installed":true,"version":%s,"package_version":%s,"mode":"%s","port":%s,"service":"%s","available":%s,"api":%s}\n' \
+            "$checked" "$(json_string "$(printf '%s' "$version" | head -c 80)")" "$(json_string "$(printf '%s' "$package_version" | head -c 80)")" \
             "$mode" "$port" "$service" "$available" "$(json_string "$api")" >"$dir/json"
     fi
     cat "$dir/json"

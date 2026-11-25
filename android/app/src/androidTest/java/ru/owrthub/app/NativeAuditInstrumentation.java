@@ -341,7 +341,7 @@ public final class NativeAuditInstrumentation extends NativeSmokeInstrumentation
         fill("hub_user","fixture-viewer");require(!shown("hub_otp"),"Viewer login does not request owner OTP");
         fill("hub_password",PASSWORD);fill("hub_captcha","2468");clickId("hub_login");waitForNativeHome();
         clickText("Роутеры");waitFor("viewer assigned router",10000,()->hasText("Домашний роутер"));require(!hasText("Дача"),"Viewer does not receive unrelated routers");
-        clickText("Домашний роутер");require(!hasText("Remote управление Xray")&&!hasText("SSH-терминал"),"Viewer does not see management actions");
+        clickText("Домашний роутер");require(!hasText("Настройки Xray")&&!hasText("SSH-терминал"),"Viewer does not see management actions");
         checks.add("limited_account_native_login_has_no_owner_otp_or_management_actions");
     }
     private void checkBrowserFiles()throws Exception{

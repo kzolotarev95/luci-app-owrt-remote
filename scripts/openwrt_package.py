@@ -28,7 +28,7 @@ RECIPE = ROOT / "package" / PACKAGE
 DOWNLOADS = "https://downloads.openwrt.org/releases/"
 EXECUTABLES = {
     "usr/sbin/owrt-remote", "www/cgi-bin/owrt-remote",
-    "etc/init.d/owrt-remote", "etc/init.d/owrt-remote-logs",
+    "etc/init.d/owrt-remote",
     "etc/hotplug.d/iface/99-owrt-remote",
 }
 

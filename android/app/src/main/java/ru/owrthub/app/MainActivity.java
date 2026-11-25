@@ -1101,7 +1101,7 @@ public final class MainActivity extends Activity {
     if (p.optBoolean("manage"))
       action(
           "play",
-          "Remote управление Xray",
+          "Настройки Xray",
           "Запуск, остановка и журнал через Heartbeat",
           () -> tool("xray", selected()));
     if (p.optBoolean("admin"))
@@ -1120,8 +1120,6 @@ public final class MainActivity extends Activity {
     if (p.optBoolean("ssh"))
       action(
           "terminal", "SSH-терминал", "Консоль выбранного роутера", () -> tool("ssh", selected()));
-    if (p.optBoolean("logs"))
-      action("grid", "Глобальные логи", "Состояние агента и Xray", () -> tool("logs", selected()));
     if (p.optBoolean("notes"))
       action(
           "grid",

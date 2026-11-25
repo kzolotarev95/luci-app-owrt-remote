@@ -87,6 +87,32 @@ xray_control_result_json
         self.assertNotIn('"instance":"heartbeat"', calls)
         self.assertNotIn('wan-recovery', calls)
 
+    def test_heartbeat_tags_snapshot_before_collecting_metrics(self):
+        self.prepare()
+        result = self.shell(r'''
+remote_clock_ms() { printf 123456789; }
+cat() {
+  if [ "$1" = /proc/sys/kernel/random/boot_id ]; then printf '11111111-1111-4111-8111-111111111111'; else command cat "$@"; fi
+}
+host_model() { printf 'Test router'; }
+board_name() { printf test; }
+release_text() { printf 'OpenWrt'; }
+hostname() { printf test; }
+service_enabled() { return 0; }
+ssh_running() { return 0; }
+load_text() { printf 0; }
+memory_text() { printf unknown; }
+flash_text() { printf unknown; }
+temperature_text() { printf unknown; }
+tachyon_json() { printf '{"checked":false}'; }
+heartbeat_json
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload['agent_boot_id'], '11111111-1111-4111-8111-111111111111')
+        self.assertEqual(payload['sample_uptime_ms'], 123456789)
+        self.assertEqual(payload['vps_host_control'], 1)
+
     def test_start_when_tunnel_and_ssh_are_down(self):
         self.prepare('start')
         result = self.shell(r'''
@@ -145,6 +171,90 @@ xray_control_dispatch "$TEST_ROOT/response" || exit
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)['status'], 'interrupted')
         self.assertEqual(self.directory.joinpath('ubus-calls').read_text().count('xray-control-worker'), 1)
+
+    def prepare_host(self):
+        self.prepare('set-host')
+        self.config(enabled='1', vps_host='old.example', vps_host_mode='manual',
+                    hub_url='https://heartbeat.example', xray_config=(self.directory/'config.json').as_posix())
+        self.directory.joinpath('config.json').write_text('old-working-json\n')
+        self.directory.joinpath('response').write_text(json.dumps({'xray_command': {'id': 'a'*32,
+            'action': 'set-host', 'parameters': {'vps_host': 'new.example', 'vps_host_mode': 'auto'}}}))
+
+    def test_host_change_uses_heartbeat_when_xray_is_stopped_and_survives_redelivery(self):
+        self.prepare_host()
+        result = self.shell(r'''
+mkdir -p "$CONTROL_STATE"; touch "$CONTROL_STATE/stopped"
+render_client_config() { printf '%s\n' "$(uci_get vps_host '')" >"$TEST_ROOT/config.json"; }
+xray_control_dispatch "$TEST_ROOT/response" || exit
+xray_control_worker aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa set-host || exit
+xray_control_dispatch "$TEST_ROOT/response" || exit
+xray_control_result_json
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = json.loads(result.stdout)
+        self.assertEqual((value['status'], value['vps_host'], value['vps_host_mode'], value['xray']),
+                         ('succeeded', 'new.example', 'auto', 'running'))
+        self.assertIn('owrtremote.main.hub_url=https://heartbeat.example', self.directory.joinpath('uci').read_text())
+        self.assertEqual(self.directory.joinpath('state/host-backup-'+'a'*32+'/config.json').read_text(), 'old-working-json\n')
+        self.assertEqual(self.directory.joinpath('ubus-calls').read_text().count('xray-control-worker'), 1)
+
+    def test_host_invalid_candidate_rolls_back_without_stopping_working_xray(self):
+        self.prepare_host()
+        result = self.shell(r'''
+touch "$TEST_ROOT/xray-running"
+render_client_config() { printf 'Candidate rejected\n' >&2; return 23; }
+xray_control_dispatch "$TEST_ROOT/response" || exit
+xray_control_worker aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa set-host || exit
+xray_control_result_json
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = json.loads(result.stdout)
+        self.assertEqual((value['status'], value['rc'], value['vps_host']), ('failed', 23, 'old.example'))
+        self.assertEqual(self.directory.joinpath('config.json').read_text(), 'old-working-json\n')
+        self.assertTrue(self.directory.joinpath('xray-running').exists())
+        self.assertNotIn('service delete', self.directory.joinpath('ubus-calls').read_text())
+
+    def test_host_restart_failure_restores_previous_endpoint_and_running_process(self):
+        self.prepare_host()
+        result = self.shell(r'''
+touch "$TEST_ROOT/xray-running"
+render_client_config() { printf '%s\n' "$(uci_get vps_host '')" >"$TEST_ROOT/config.json"; }
+ubus() {
+  printf '%s\n' "$*" >>"$TEST_ROOT/ubus-calls"
+  case "$3" in
+    list) printf '{"owrt-remote":{"instances":{"xray":{"running":true}}}}' ;;
+    delete) rm -f "$TEST_ROOT/xray-running" ;;
+    add) case "$4" in *xray-control-worker*) return 0 ;; esac
+         [ "$(uci_get vps_host '')" != new.example ] || return 9
+         touch "$TEST_ROOT/xray-running" ;;
+  esac
+}
+xray_control_dispatch "$TEST_ROOT/response" || exit
+xray_control_worker aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa set-host || exit
+xray_control_result_json
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        value = json.loads(result.stdout)
+        self.assertEqual((value['status'], value['rc'], value['vps_host'], value['xray']), ('failed', 1, 'old.example', 'running'))
+        self.assertTrue(self.directory.joinpath('xray-running').exists())
+        self.assertIn('восстановлены', value['message'])
+
+    def test_host_failure_restores_absent_config_and_initial_stopped_state(self):
+        self.prepare_host()
+        self.directory.joinpath('config.json').unlink()
+        result = self.shell(r'''
+render_client_config() {
+  printf '%s\n' "$(uci_get vps_host '')" >"$TEST_ROOT/config.json"
+  return 23
+}
+xray_control_dispatch "$TEST_ROOT/response" || exit
+xray_control_worker aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa set-host || exit
+xray_control_result_json
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['status'], 'failed')
+        self.assertFalse(self.directory.joinpath('config.json').exists())
+        self.assertFalse(self.directory.joinpath('xray-running').exists())
 
     def test_shell_timeout_without_optional_applet_returns_result_and_reaps_child(self):
         helper = (ROOT / 'files/usr/lib/owrt-remote/control.sh').read_text(encoding='utf-8')

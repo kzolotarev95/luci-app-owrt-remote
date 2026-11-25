@@ -2,8 +2,7 @@
 
 KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
 AGENT="${AGENT:-/usr/sbin/owrt-remote}"
-LOG_HELPER="${OWRT_REMOTE_LOG_HELPER:-/usr/lib/owrt-remote/logs.sh}"
-OWRT_REMOTE_UI_VERSION="2026-11-22-v123-branding"
+OWRT_REMOTE_UI_VERSION="2026-11-25-v124-streams"
 PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
 RESULT_TITLE=""
 RESULT_BODY=""
@@ -132,44 +131,6 @@ set_result() {
 	RESULT_TITLE="$1"
 	RESULT_BODY="$2"
 	RESULT_KIND="${3:-info}"
-	if [ -r "$LOG_HELPER" ]; then
-		printf '%s\n' "$RESULT_BODY" | sh "$LOG_HELPER" event "Панель: $RESULT_TITLE; результат=$RESULT_KIND" "$RESULT_KIND" >/dev/null 2>&1 || true
-	fi
-}
-
-logs_response() {
-	local mode
-	mode="$1"
-	if [ ! -r "$LOG_HELPER" ]; then
-		printf 'Status: 503 Service Unavailable\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\n\r\n'
-		printf 'Сборщик логов не установлен. Установи локальный фикс целиком.\n'
-		return
-	fi
-	if ! sh "$LOG_HELPER" check >/dev/null 2>&1; then
-		printf 'Status: 503 Service Unavailable\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\n\r\n'
-		printf 'Журнал временно недоступен: не удалось подготовить хранилище или получить блокировку. Настройки роутера не изменены.\n'
-		return
-	fi
-	if [ "$mode" = clear ]; then
-		if [ "${REQUEST_METHOD:-GET}" != POST ]; then
-			printf 'Status: 405 Method Not Allowed\r\nAllow: POST\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n'
-			return
-		fi
-		if sh "$LOG_HELPER" clear; then
-			printf 'Content-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\n\r\n'
-			printf 'Логи Remote очищены.\n'
-		else
-			printf 'Status: 503 Service Unavailable\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n'
-			printf 'Не удалось очистить логи. Повтори через несколько секунд.\n'
-		fi
-		return
-	fi
-	printf 'Content-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\n'
-	if [ "$mode" = download ]; then
-		printf 'Content-Disposition: attachment; filename="owrt-remote-global-%s.log"\r\n' "$(date '+%Y%m%d-%H%M%S')"
-	fi
-	printf '\r\n'
-	sh "$LOG_HELPER" read "$mode"
 }
 
 save_config() {
@@ -200,9 +161,6 @@ save_config() {
 	uci_set wan_interface "$wan_interfaces"
 	uci_set wan_dns "$(param wan_dns)"
 	uci commit owrtremote
-	if [ -r "$LOG_HELPER" ]; then
-		printf '' | sh "$LOG_HELPER" event "Панель: сохранены настройки; enabled=$enabled; Hub=$(uci_get hub_url ''); VPS=$(uci_get vps_host ''):$(uci_get vps_port 8443); WAN_direct=$(uci_get wan_direct 0); WAN_selected=$wan_interfaces" >/dev/null 2>&1 || true
-	fi
 	set_result "Настройки сохранены" "Если менял Xray или VPS-поля, перезапусти сервис." "ok"
 }
 
@@ -396,10 +354,6 @@ run_action() {
 	if [ "$rc" != "0" ] && [ "$RESULT_KIND" != bad ]; then
 		set_result "$RESULT_TITLE" "$(cat "$output")" "bad"
 	fi
-	# Deliver the completed stop result without keeping a mobile HTTP request open.
-	if [ "$action" = stop ]; then
-		( "$AGENT" logs-sync ) </dev/null >/dev/null 2>&1 &
-	fi
 	rm -f "$output"
 }
 
@@ -486,7 +440,7 @@ render_donate_page() {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta name="owrt-remote-ui-version" content="$OWRT_REMOTE_UI_VERSION">
-<title>Поддержать разработку — OWRT Hub v123</title>
+<title>Поддержать разработку — OWRT Hub v124</title>
 <script>
 try {
   const design = localStorage.getItem('owrtRemote:hubDesign');
@@ -594,7 +548,7 @@ render_page() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="owrt-remote-ui-version" content="$OWRT_REMOTE_UI_VERSION">
-<title>OWRT Hub v123</title>
+<title>OWRT Hub v124</title>
 <script>
 try {
   const design = localStorage.getItem('owrtRemote:hubDesign');
@@ -621,28 +575,28 @@ form{margin:0}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr
 .helperText{margin:0 0 12px;color:var(--muted)}.xrayApply{margin-top:14px;padding:16px;border:1px solid rgba(34,211,238,.42);border-radius:8px;background:linear-gradient(135deg,rgba(34,211,238,.16),rgba(124,58,237,.20),rgba(236,72,153,.11));box-shadow:0 18px 42px rgba(34,211,238,.10)}.xrayApply h3{margin:0 0 8px;font-size:16px;color:#a5f3fc}.scriptBox{width:100%;min-height:260px;resize:vertical;border:1px solid rgba(34,211,238,.28);border-radius:8px;background:rgba(255,255,255,.07);padding:12px;color:var(--text);font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre;overflow:auto}
 .brandPanel{display:grid;grid-template-columns:repeat(2,minmax(0,132px));gap:8px}.brandPanel .titleRow,.brandPanel .links{grid-column:1/-1}.brandPanel .appBanner{width:100%;min-width:0}.brandPanel .links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:0}.brandPanel .links a{width:100%;min-width:0}
 .wanPicker{border:1px solid var(--line);border-radius:8px;background:rgba(8,5,18,.72)}.wanPicker summary{display:flex;align-items:center;justify-content:center;gap:5px;min-height:40px;padding:10px 11px;cursor:pointer;list-style:none;font-weight:700}.wanPicker summary::-webkit-details-marker{display:none}.wanPicker summary::after{content:"▾";margin-left:auto;color:var(--muted)}.wanPicker[open] summary::after{content:"▴"}.wanPickerList{display:flex;flex-direction:column;gap:4px;max-height:240px;overflow:auto;padding:6px;border-top:1px solid var(--line)}.wanChoice{display:flex;align-items:center;gap:10px;min-height:40px;padding:8px;border-radius:6px;cursor:pointer;overflow-wrap:anywhere}.wanChoice:hover{background:rgba(255,255,255,.08)}.wanChoice input{width:18px;height:18px;min-width:18px;padding:0;margin:0;accent-color:var(--blue)}.wanPicked{margin-top:6px;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
-.seasonPanel[hidden],.globalLogsPanel[hidden]{display:none!important}.routerEffectsDock{position:relative;display:block;width:132px;min-width:132px}.routerEffectsToggle{cursor:pointer;font-family:inherit}.routerEffectsToggle[aria-expanded="true"]{border-color:var(--line);background:rgba(255,255,255,.11);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}.seasonPanel{position:absolute;top:calc(100% + 10px);left:0;z-index:56;width:min(320px,calc(100vw - 24px))}.seasonCard{display:grid;gap:8px;width:100%;padding:12px;border:1px solid rgba(251,191,36,.18);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035)),rgba(19,14,32,.95);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(12px)}.seasonLabel{display:flex;align-items:center;justify-content:center;text-align:center;gap:8px;color:#fde68a;font-size:11px;font-weight:900;line-height:1.1;text-transform:uppercase;letter-spacing:.04em}.seasonCard .seasonSwitch{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.seasonCard .hubDesignSection{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}.seasonCard .hubDesignChoices{display:grid;grid-template-columns:1fr;gap:7px;margin-top:8px}.seasonCard .hubDesignChoice{display:flex;align-items:center;gap:10px;width:100%;min-width:0;min-height:0;padding:9px;text-align:left;border:1px solid var(--line);border-radius:10px;background:var(--panel2);color:var(--text);font:inherit;white-space:normal}.seasonCard .hubDesignChoice>span:last-child{min-width:0;flex:1}.seasonCard .hubDesignChoice strong,.seasonCard .hubDesignChoice small{display:block;line-height:1.4;overflow-wrap:anywhere}.seasonCard .hubDesignChoice strong{font-size:12px}.seasonCard .hubDesignChoice small{margin-top:2px;font-size:10px;font-weight:500;color:var(--muted)}.seasonCard .hubDesignChoice[aria-pressed="true"]{border-color:var(--cyan);background:color-mix(in srgb,var(--cyan) 12%,var(--panel))}.seasonCard .hubDesignSwatch{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;border:1px solid var(--line);border-radius:8px;font-size:22px}.seasonCard .hubDesignHint{margin:10px 0 0;color:var(--muted);font-size:10px;line-height:1.6;overflow-wrap:anywhere}.globalLogsPanel{margin-top:16px}.globalLogsPanel .actions{justify-content:flex-start;margin:0 0 12px}.globalLogsText{margin:12px 0 0;max-height:55vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:rgba(8,5,18,.72);border:1px solid var(--line);border-radius:8px;padding:12px;min-height:150px}.globalLogsStatus{color:var(--muted);overflow-wrap:anywhere}.globalLogsToggle{cursor:pointer;font-family:inherit;border-color:rgba(34,197,94,.65);background:var(--green);color:#07120a;box-shadow:0 10px 22px rgba(34,197,94,.22)}
-.globalLogsNote{margin:0 0 12px;padding:10px 12px;border:1px solid rgba(245,158,11,.35);border-left:3px solid var(--amber);border-radius:8px;background:rgba(245,158,11,.10);color:#fde68a;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
-.globalLogsLegend{display:flex;gap:8px 14px;flex-wrap:wrap;margin:0 0 12px;font-size:12px;font-weight:700}.globalLogLine{display:block}.globalLogOk{color:#86efac}.globalLogWarn{color:#fde68a}.globalLogError{color:#f87171}
+.seasonPanel[hidden]{display:none!important}.routerEffectsDock{position:relative;display:block;width:132px;min-width:132px}.routerEffectsToggle{cursor:pointer;font-family:inherit}.routerEffectsToggle[aria-expanded="true"]{border-color:var(--line);background:rgba(255,255,255,.11);box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}.seasonPanel{position:absolute;top:calc(100% + 10px);left:0;z-index:56;width:min(320px,calc(100vw - 24px))}.seasonCard{display:grid;gap:8px;width:100%;padding:12px;border:1px solid rgba(251,191,36,.18);border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.08),rgba(255,255,255,.035)),rgba(19,14,32,.95);box-shadow:0 18px 42px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(12px)}.seasonLabel{display:flex;align-items:center;justify-content:center;text-align:center;gap:8px;color:#fde68a;font-size:11px;font-weight:900;line-height:1.1;text-transform:uppercase;letter-spacing:.04em}.seasonCard .seasonSwitch{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.seasonCard .hubDesignSection{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}.seasonCard .hubDesignChoices{display:grid;grid-template-columns:1fr;gap:7px;margin-top:8px}.seasonCard .hubDesignChoice{display:flex;align-items:center;gap:10px;width:100%;min-width:0;min-height:0;padding:9px;text-align:left;border:1px solid var(--line);border-radius:10px;background:var(--panel2);color:var(--text);font:inherit;white-space:normal}.seasonCard .hubDesignChoice>span:last-child{min-width:0;flex:1}.seasonCard .hubDesignChoice strong,.seasonCard .hubDesignChoice small{display:block;line-height:1.4;overflow-wrap:anywhere}.seasonCard .hubDesignChoice strong{font-size:12px}.seasonCard .hubDesignChoice small{margin-top:2px;font-size:10px;font-weight:500;color:var(--muted)}.seasonCard .hubDesignChoice[aria-pressed="true"]{border-color:var(--cyan);background:color-mix(in srgb,var(--cyan) 12%,var(--panel))}.seasonCard .hubDesignSwatch{display:grid;place-items:center;flex:0 0 32px;width:32px;height:32px;border:1px solid var(--line);border-radius:8px;font-size:22px}.seasonCard .hubDesignHint{margin:10px 0 0;color:var(--muted);font-size:10px;line-height:1.6;overflow-wrap:anywhere}
+
+
 @media(max-width:820px){.grid,.formgrid,.metrics{grid-template-columns:1fr}.linkMetric{grid-column:span 1}.metricLine{align-items:center;justify-content:center}.miniGo{width:auto;justify-content:center;display:inline-flex}.hero{align-items:flex-start;flex-direction:column}.topActions{justify-content:flex-start;padding-top:0}.wrap{padding:14px}h1{font-size:24px}.appBanner{width:auto;max-width:100%;justify-content:center;min-height:36px;padding:8px 12px}.panelHead{align-items:stretch;flex-direction:column}.headActionForm .btn{width:100%}.actions .btn,.actions button{width:100%}}
 @media(max-width:820px){.brandPanel{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.brandPanel .appBanner{width:100%}}
-@media(max-width:820px){.hero{gap:10px}.hero .brand{width:100%;min-width:0}.hero .uiPill,.hero .appBanner{width:100%;min-width:0;min-height:44px}.hero .appBanner{line-height:1.2}.topActions{display:grid;grid-template-columns:minmax(0,1fr);width:100%;gap:8px}.topActions .vpnCard,.topActions .routerEffectsDock,.topActions .globalLogsToggle,.topActions .returnCard{grid-column:1;width:100%;min-width:0}.topActions .uiPill{width:100%;min-width:0}.backBtn{white-space:normal;text-align:center}}
+@media(max-width:820px){.hero{gap:10px}.hero .brand{width:100%;min-width:0}.hero .uiPill,.hero .appBanner{width:100%;min-width:0;min-height:44px}.hero .appBanner{line-height:1.2}.topActions{display:grid;grid-template-columns:minmax(0,1fr);width:100%;gap:8px}.topActions .vpnCard,.topActions .routerEffectsDock,.topActions .topActions .uiPill{width:100%;min-width:0}.backBtn{white-space:normal;text-align:center}}
 
 .seasonalFx{position:fixed;inset:0;display:block;width:100vw;height:100vh;z-index:1;pointer-events:none;opacity:.9;mix-blend-mode:screen}.seasonalFx[hidden]{display:none!important}
 html[data-hub-shared-effects="1"] body::before,html[data-hub-shared-effects="1"] body::after{display:none!important}html[data-hub-shared-effects="1"] body>*:not(.seasonalFx){position:relative;z-index:2}
 .hubAppearancePanel{margin-top:16px}.hubAppearancePanel h2{margin-bottom:8px}.appearanceHint{margin:10px 0 0;color:var(--muted);font-size:12px;line-height:1.5}.appearanceBlock{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}.appearanceBlock:first-of-type{margin-top:0;padding-top:0;border-top:0}.appearanceTitle{display:block;margin-bottom:8px;color:var(--muted);font-size:12px;font-weight:800;text-align:center}.seasonSwitch{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.seasonBtn,.hubDesignChoice{min-width:0;min-height:34px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.06);color:var(--text);font:700 11px/1.2 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}.seasonBtn[data-active="true"],.hubDesignChoice[aria-pressed="true"]{border-color:var(--cyan);background:rgba(34,211,238,.15);color:#ecfeff}.seasonBtn:disabled{opacity:.42;cursor:default}.hubDesignChoices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.hubDesignChoice{display:grid;gap:4px;min-height:58px;text-align:left}.hubDesignChoice strong,.hubDesignChoice small{display:block;overflow-wrap:anywhere}.hubDesignChoice strong{font-size:11px}.hubDesignChoice small{color:var(--muted);font-size:9px;font-weight:500}.hubDesignSwatch{display:inline-grid;place-items:center;width:24px;height:24px;border:1px solid var(--line);border-radius:6px;font-size:16px}.hubDesignSwatch.default{background:linear-gradient(135deg,#4c1d95,#1e1b4b)}.hubDesignSwatch.winter{color:#e0faff;background:linear-gradient(135deg,#0e7490,#172554)}.hubDesignSwatch.lite{color:#cbd5e1;background:#1e293b}
-:root[data-hub-design="winter"]{--bg:#061426;--panel:#0c2238;--panel2:#16324b;--text:#ecf9ff;--muted:#a9c9dd;--line:rgba(139,211,236,.3);--blue:#036b99;--cyan:#7dd3fc;--teal:#38bdf8;--grid:rgba(125,211,252,.07)}html[data-hub-design="winter"] body{background-color:var(--bg);background-image:radial-gradient(ellipse at 10% 0%,#164d6e 0,transparent 45%),radial-gradient(ellipse at 100% 100%,#123c54 0,transparent 50%),linear-gradient(160deg,#061426,#0b2238 60%,#071524);background-size:100% 100%;animation:none}html[data-hub-design="winter"] body::before{inset:0;opacity:.55;filter:none;animation:none;background-image:radial-gradient(circle at 16px 22px,#c9f3ff 1px,transparent 2px),radial-gradient(circle at 80px 100px,#b2e7f7 1px,transparent 2px);background-size:180px 180px,260px 260px}html[data-hub-design="winter"] .panel{background:linear-gradient(160deg,rgba(180,231,250,.09),transparent 55%),var(--panel);backdrop-filter:none;box-shadow:0 8px 24px #0003}html[data-hub-design="winter"] :is(.metric,.code,.notice,.wanPicker,.globalLogsText,.seasonCard){background:var(--panel);border-color:var(--line)}
-:root[data-hub-design="lite"]{--bg:#0f172a;--panel:#182235;--panel2:#253247;--text:#f1f5f9;--muted:#bac7d8;--line:#42516a;--blue:#315b9b;--cyan:#93c5fd}html[data-hub-design="lite"] body{background:var(--bg)!important;background-image:none!important}html[data-hub-design="lite"] *,html[data-hub-design="lite"] *::before,html[data-hub-design="lite"] *::after{animation:none!important;transition:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;filter:none!important;box-shadow:none!important;text-shadow:none!important}html[data-hub-design="lite"] body::before,html[data-hub-design="lite"] body::after,html[data-hub-design="lite"] .seasonalFx{display:none!important}html[data-hub-design="lite"] :is(.panel,.metric,.code,.notice,.wanPicker,.globalLogsText,.seasonCard){background:var(--panel)!important;border-color:var(--line)!important}html[data-hub-design="lite"] :is(.btn,.seasonBtn,.hubDesignChoice){background:rgba(255,255,255,.07)!important;color:var(--text)!important;border-color:var(--line)!important}
+:root[data-hub-design="winter"]{--bg:#061426;--panel:#0c2238;--panel2:#16324b;--text:#ecf9ff;--muted:#a9c9dd;--line:rgba(139,211,236,.3);--blue:#036b99;--cyan:#7dd3fc;--teal:#38bdf8;--grid:rgba(125,211,252,.07)}html[data-hub-design="winter"] body{background-color:var(--bg);background-image:radial-gradient(ellipse at 10% 0%,#164d6e 0,transparent 45%),radial-gradient(ellipse at 100% 100%,#123c54 0,transparent 50%),linear-gradient(160deg,#061426,#0b2238 60%,#071524);background-size:100% 100%;animation:none}html[data-hub-design="winter"] body::before{inset:0;opacity:.55;filter:none;animation:none;background-image:radial-gradient(circle at 16px 22px,#c9f3ff 1px,transparent 2px),radial-gradient(circle at 80px 100px,#b2e7f7 1px,transparent 2px);background-size:180px 180px,260px 260px}html[data-hub-design="winter"] .panel{background:linear-gradient(160deg,rgba(180,231,250,.09),transparent 55%),var(--panel);backdrop-filter:none;box-shadow:0 8px 24px #0003}html[data-hub-design="winter"] :is(.metric,.code,.notice,.wanPicker,.seasonCard){background:var(--panel);border-color:var(--line)}
+:root[data-hub-design="lite"]{--bg:#0f172a;--panel:#182235;--panel2:#253247;--text:#f1f5f9;--muted:#bac7d8;--line:#42516a;--blue:#315b9b;--cyan:#93c5fd}html[data-hub-design="lite"] body{background:var(--bg)!important;background-image:none!important}html[data-hub-design="lite"] *,html[data-hub-design="lite"] *::before,html[data-hub-design="lite"] *::after{animation:none!important;transition:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;filter:none!important;box-shadow:none!important;text-shadow:none!important}html[data-hub-design="lite"] body::before,html[data-hub-design="lite"] body::after,html[data-hub-design="lite"] .seasonalFx{display:none!important}html[data-hub-design="lite"] :is(.panel,.metric,.code,.notice,.wanPicker,.seasonCard){background:var(--panel)!important;border-color:var(--line)!important}html[data-hub-design="lite"] :is(.btn,.seasonBtn,.hubDesignChoice){background:rgba(255,255,255,.07)!important;color:var(--text)!important;border-color:var(--line)!important}
 @media(max-width:820px){.routerEffectsDock{grid-column:1/-1;width:100%;min-width:0}.routerEffectsToggle{width:100%;min-width:0}.seasonPanel{position:static;width:100%;max-width:320px;margin:8px auto 0}.seasonCard{width:100%;min-height:0;padding:10px 11px;border-radius:16px}.seasonCard .seasonSwitch{grid-template-columns:repeat(3,minmax(0,1fr))}.seasonCard .hubDesignChoice{min-height:54px}.seasonCard .hubDesignChoice strong{font-size:12px}.seasonCard .hubDesignChoice small{font-size:10px}}
 
 /* Router workspace uses the same shell and palette as the VPS dashboard. */
 :root{--bg:#0b0b0c;--panel:#111113;--panel2:#19191d;--text:#f5f5f7;--muted:#9999a6;--line:#2b2b32;--blue:#165895;--cyan:#5eaeff;--green:#45c294;--red:#ed8796;--amber:#e4ba62;--grid:#2b2b32}
 :root[data-hub-design="winter"]{--bg:#061426;--panel:#0c2238;--panel2:#16324b;--text:#ecf9ff;--muted:#a9c9dd;--line:#31516a;--blue:#036b99;--cyan:#7dd3fc}
 :root[data-hub-design="lite"]{--bg:#0f172a;--panel:#182235;--panel2:#253247;--text:#f1f5f9;--muted:#bac7d8;--line:#42516a;--blue:#315b9b;--cyan:#93c5fd}
-body.routerShell{background:var(--bg);background-image:none;animation:none;overflow-y:scroll;font:550 12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:0}
+body.routerShell{--router-layout-max:1360px;background:var(--bg);background-image:none;animation:none;overflow-y:scroll;font:550 12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:0}
 .routerShell :is(h1,h2,h3,h4,p,span,small,strong,label,input,select,button,a,summary,b){font-family:inherit;font-size:12px;font-weight:550;letter-spacing:0}
-.routerShell :is(pre,code,.code,.scriptBox,.notice,.globalLogsText,.globalLogLine){font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
-.routerShell .wrap{width:auto;max-width:none;margin:0 0 0 224px;padding:16px 24px 24px 16px;min-width:0}
+.routerShell :is(pre,code,.code,.scriptBox,.notice){font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+.routerShell .wrap{width:100%;max-width:var(--router-layout-max);margin:0 auto;padding:16px 16px 24px 240px;min-width:0}
 .routerShell .panel{background:var(--panel);border:1px solid var(--line);border-radius:11px;box-shadow:none;backdrop-filter:none;padding:16px}
 .routerShell .grid{margin:0;gap:14px;display:block}
 .routerShell .panel h2{margin:0 0 12px;color:var(--text)}
@@ -662,16 +616,16 @@ body.routerShell{background:var(--bg);background-image:none;animation:none;overf
 .routerShell .field span::after{background:var(--panel2);border-color:var(--line);color:var(--muted);font-size:10px;width:16px;height:16px}
 .routerShell .field small{background:var(--panel2);color:var(--text);border-color:var(--line);box-shadow:0 12px 28px #0005;line-height:1.5}
 .routerShell .field select option{background:var(--panel2);color:var(--text)}
-.routerShell :is(.hint,.helperText,.globalLogsStatus){color:var(--muted)}
-.routerShell :is(.wanPicker,.code,.globalLogsText,.xrayApply,.notice){background:var(--panel2);border-color:var(--line);box-shadow:none;color:var(--text)}
+.routerShell :is(.hint,.helperText){color:var(--muted)}
+.routerShell :is(.wanPicker,.code,.xrayApply,.notice){background:var(--panel2);border-color:var(--line);box-shadow:none;color:var(--text)}
 .routerShell .wanPicker summary{color:var(--text)}.routerShell .wanPicked{color:var(--muted)}
 .routerShell .wanPicker .wanChoice{background:var(--panel);border-color:var(--line);color:var(--text)}
-.routerShell .globalLogsNote{background:color-mix(in srgb,var(--amber) 8%,var(--panel));border-color:color-mix(in srgb,var(--amber) 35%,var(--line));color:var(--amber)}
+
 .routerShell .notice.ok{border-color:var(--green)}.routerShell .notice.bad{border-color:var(--red)}.routerShell .notice.warn{border-color:var(--amber)}
 .routerShell .xrayApply h3{color:var(--text)}
 .routerShell .actions{gap:8px;margin-top:14px}.routerShell .check{gap:9px;align-items:center}
-.routerShell :is(#routerStatus,#routerSettings,#globalLogsPanel){scroll-margin-top:16px}
-.routerShell #routerSidebar{position:fixed;inset:16px auto auto 16px;width:208px;max-height:calc(100dvh - 32px);z-index:65;display:flex;flex-direction:column;min-height:0;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden}
+.routerShell :is(#routerStatus,#routerSettings){scroll-margin-top:16px}
+.routerShell #routerSidebar{position:fixed;inset:16px auto auto max(16px,calc((100% - var(--router-layout-max))/2 + 16px));width:208px;max-height:calc(100dvh - 32px);z-index:65;display:flex;flex-direction:column;min-height:0;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel);overflow:hidden}
 .routerBrand{display:flex;align-items:center;gap:10px;flex-shrink:0;padding:4px 6px 10px;border-bottom:1px solid var(--line);color:var(--text);text-decoration:none}
 .routerBrand b,.routerMobileBrand b{color:var(--cyan)}.routerBrandMark{display:grid;place-items:center;width:32px;height:36px;flex:none;border:1px solid color-mix(in srgb,var(--cyan) 30%,var(--line));border-radius:9px;background:color-mix(in srgb,var(--cyan) 10%,transparent);color:var(--cyan)}
 .routerIcon{display:block;width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.routerBrandMark .routerIcon{width:23px;height:23px}
@@ -691,7 +645,7 @@ body.routerShell{background:var(--bg);background-image:none;animation:none;overf
 .routerPageHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 0 14px;color:var(--muted)}.routerPageHead h1{margin:0;color:var(--text);overflow-wrap:anywhere}.routerPageHead>span{white-space:nowrap}
 .routerShell #routerSidebarBackdrop{display:none}.routerSidebarClose,.routerSidebarMenu,.routerMobileBrand{display:none}
 .routerShell #routerEffectsDock{display:contents}
-.routerShell .seasonPanel{position:fixed;z-index:120;top:84px;left:240px;right:auto;width:min(310px,calc(100vw - 32px));margin:0;max-width:none;max-height:calc(100dvh - 105px);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.routerShell .seasonPanel{position:fixed;z-index:120;top:84px;left:max(240px,calc((100% - var(--router-layout-max))/2 + 240px));right:auto;width:min(310px,calc(100vw - 32px));margin:0;max-width:none;max-height:calc(100dvh - 105px);overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
 .routerShell .seasonCard{width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 16px 40px #0006;backdrop-filter:none}
 .routerShell .seasonLabel{color:var(--muted);margin:0 0 8px;line-height:1.5;text-align:center}.routerShell .hubDesignSection{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
 .routerShell :is(.seasonBtn,.hubDesignChoice){background:var(--panel2);border-color:var(--line);color:var(--text)}
@@ -700,7 +654,7 @@ body.routerShell{background:var(--bg);background-image:none;animation:none;overf
 .routerShell #routerEffectsPanel .seasonSwitch{grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}.routerShell .seasonCard .hubDesignChoices{display:grid;grid-template-columns:1fr;gap:7px}
 .routerShell .hubDesignChoice{display:flex;align-items:center;gap:9px;padding:8px;min-height:48px}.routerShell .hubDesignSwatch{flex:none}.routerShell .hubDesignChoice>span:last-child{flex:1;min-width:0}.routerShell .hubDesignChoice small{color:var(--muted);line-height:1.4}
 .routerEffectsHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.routerEffectsHead .seasonLabel{margin:0}.routerShell .routerSmallClose{min-height:28px;height:28px;padding:4px 9px;border-radius:999px;white-space:nowrap}
-@media(min-width:681px) and (max-width:1180px){.routerShell .wrap{margin-left:206px;padding-right:16px}.routerShell #routerSidebar{width:190px}.routerDesktopPath{display:none}.routerShell .seasonPanel{left:222px}}
+@media(min-width:681px) and (max-width:1180px){.routerShell .wrap{padding-left:222px}.routerShell #routerSidebar{width:190px}.routerDesktopPath{display:none}.routerShell .seasonPanel{left:222px}}
 @media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){
  .routerShell .wrap{width:100%;max-width:none;margin:0;padding:10px 12px 22px}
  .routerShell #routerSidebar{inset:12px auto auto 12px;width:min(264px,calc(100vw - 32px));max-height:calc(100dvh - 24px);z-index:110;visibility:hidden;transform:translateX(calc(-100% - 16px));transition:transform .2s ease,visibility .2s}
@@ -714,10 +668,13 @@ body.routerShell{background:var(--bg);background-image:none;animation:none;overf
  .routerShell .formgrid{grid-template-columns:1fr}.routerShell .metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.routerShell .linkMetric{grid-column:1/-1}
  .routerShell .panel{padding:12px}.routerShell .panelHead{align-items:center;flex-wrap:wrap;gap:8px}.routerShell .panelHead .btn{width:auto}
  .routerShell .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.routerShell .actions .btn{width:100%;min-width:0}.routerShell .saveActions{grid-template-columns:1fr}
- .routerShell .field :is(input,select),.routerShell .scriptBox{font-size:16px}.routerShell .field small{max-width:100%;font-size:12px}.routerShell .globalLogsText{height:42vh;min-height:180px}
+ .routerShell .field :is(input,select),.routerShell .scriptBox{font-size:16px}.routerShell .field small{max-width:100%;font-size:12px}
  .routerShell .seasonPanel{top:72px;left:12px;right:12px;width:auto;max-height:calc(100dvh - 90px)}
 }
 @media(prefers-reduced-motion:reduce){.routerNavSection>summary::after,.routerShell #routerSidebar{transition:none}}
+.routerShell #routerEffectsPanel{position:fixed;top:50%;left:50%;right:auto;transform:translate(-50%,-50%);width:min(360px,calc(100vw - 24px));max-height:calc(100dvh - 24px);margin:0;overflow:auto}
+.routerShell #routerEffectsPanel [data-season-mode="streams"]{grid-column:1/-1}
+
 
 </style>
 </head>
@@ -725,15 +682,14 @@ body.routerShell{background:var(--bg);background-image:none;animation:none;overf
 <canvas class="seasonalFx" id="seasonalFx" aria-hidden="true" hidden></canvas>
 <button class="routerSidebarBackdrop" id="routerSidebarBackdrop" type="button" aria-label="Закрыть меню" hidden></button>
 <aside class="routerSidebar" id="routerSidebar" aria-label="Главное меню роутера" tabindex="-1">
-  <a class="routerBrand" href="?key=$(h "$key")"><span class="routerBrandMark" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="m13 3-5 10h4l-1 8 6-11h-5z"/></svg></span><strong>OWRT Hub <b>v123</b></strong></a>
+  <a class="routerBrand" href="?key=$(h "$key")"><span class="routerBrandMark" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="m13 3-5 10h4l-1 8 6-11h-5z"/></svg></span><strong>OWRT Hub <b>v124</b></strong></a>
   <button class="routerSidebarClose" id="routerSidebarClose" type="button" aria-label="Закрыть меню"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m6 6 12 12M18 6 6 18"/></svg></button>
   <nav class="routerSidebarNav" aria-label="Разделы панели">
-    <details class="routerNavSection"><summary>Рабочее пространство</summary><div>
+    <details class="routerNavSection" data-nav-section="workspace"><summary>Рабочее пространство</summary><div>
       <a class="routerNavItem is-active" href="#routerStatus" data-router-section="routerStatus"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></span><span>Состояние</span></a>
       <a class="routerNavItem" href="#routerSettings" data-router-section="routerSettings"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3h6l1 4 4 1v8l-4 1-1 4H9l-1-4-4-1V8l4-1z"/><circle cx="12" cy="12" r="3"/></svg></span><span>Настройки роутера</span></a>
-      <button class="routerNavItem" id="globalLogsToggle" type="button" aria-expanded="false" aria-controls="globalLogsPanel"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 6h13M8 12h13M8 18h13M3 6h1M3 12h1M3 18h1"/></svg></span><span>Глобальные логи</span></button>
     </div></details>
-    <details class="routerNavSection"><summary>Управление</summary><div>
+    <details class="routerNavSection" data-nav-section="management"><summary>Управление</summary><div>
       <form method="post" id="routerControlForm">
         <input type="hidden" name="key" value="$(h "$key")">
         <button class="routerNavItem" name="action" value="start"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m8 4 12 8-12 8z"/></svg></span><span>Запустить Remote</span></button>
@@ -746,13 +702,13 @@ body.routerShell{background:var(--bg);background-image:none;animation:none;overf
         <button class="routerNavItem" name="action" value="show_xray_settings"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3 3 7v6c0 5 9 8 9 8s9-3 9-8V7z"/><path d="m9 12 2 2 4-4"/></svg></span><span>Xray настройки</span></button>
       </form>
     </div></details>
-    <details class="routerNavSection"><summary>Настройки</summary><div>
+    <details class="routerNavSection" data-nav-section="settings"><summary>Настройки</summary><div>
       <a class="routerNavItem" href="#routerSettings" data-router-section="routerSettings"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 3h6l1 4 4 1v8l-4 1-1 4H9l-1-4-4-1V8l4-1z"/><circle cx="12" cy="12" r="3"/></svg></span><span>Конфигурация</span></a>
       <button class="routerNavItem routerEffectsToggle" id="routerEffectsToggle" type="button" aria-expanded="false" aria-controls="routerEffectsPanel" data-open="false"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3a9 9 0 1 0 0 18h2a2 2 0 0 0 0-4h-1a2 2 0 0 1 0-4h3a5 5 0 0 0 0-10z"/><path d="M6 10h.01M9 6h.01M14 6h.01"/></svg></span><span>Дизайн и эффекты</span></button>
       <a class="routerNavItem" href="/cgi-bin/luci/admin/services"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M14 3h7v7m0-7L10 14M10 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-6"/></svg></span><span>Службы OpenWrt</span></a>
     </div></details>
     <div class="routerNavCaption">Сообщество</div>
-    <a class="routerNavItem" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 11a8 8 0 0 1-8 8H7l-5 3V10a8 8 0 0 1 8-8h3a8 8 0 0 1 8 9z"/></svg></span><span>NetHaven VPN · чат</span></a>
+    <a class="routerNavItem" href="https://t.me/+LZDsQJhUfcNhYWEy" target="_blank" rel="noopener noreferrer"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 11a8 8 0 0 1-8 8H7l-5 3V10a8 8 0 0 1 8-8h3a8 8 0 0 1 8 9z"/></svg></span><span>NetHaven · чат</span></a>
     <a class="routerNavItem routerDonate" href="?key=$(h "$key")&amp;action=donate" target="_blank" rel="noopener noreferrer"><span class="routerNavIcon" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></svg></span><span>Поддержать разработку</span></a>
   </nav>
   <div class="routerSidebarFooter"><span class="routerAgentState"><i class="dot $service_tone"></i>$(h "$status_text")</span><strong>$(h "$router_name")</strong><small>Router ID: $(h "$router_id")</small></div>
@@ -771,6 +727,7 @@ body.routerShell{background:var(--bg);background-image:none;animation:none;overf
               <button class="seasonBtn" type="button" data-season-mode="prism" data-active="false" aria-pressed="false">Призма</button>
               <button class="seasonBtn" type="button" data-season-mode="pulse" data-active="false" aria-pressed="false">Пульс</button>
               <button class="seasonBtn" type="button" data-season-mode="laser" data-active="false" aria-pressed="false">Лучи</button>
+              <button class="seasonBtn" type="button" data-season-mode="streams" data-active="false" aria-pressed="false">Потоки</button>
             </div>
             <div class="hubDesignSection">
               <div class="seasonLabel">Дизайн</div>
@@ -787,23 +744,11 @@ body.routerShell{background:var(--bg);background-image:none;animation:none;overf
 <main class="wrap" id="routerWorkspace">
   <header class="routerTopbar">
     <button class="routerSidebarMenu" id="routerSidebarMenu" type="button" aria-label="Открыть меню" aria-controls="routerSidebar" aria-expanded="false"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-    <div class="routerBreadcrumb"><span class="routerDesktopPath">Рабочее пространство / </span><strong>Роутер</strong><span class="routerMobileBrand">OWRT Hub <b>v123</b></span></div>
+    <div class="routerBreadcrumb"><span class="routerDesktopPath">Рабочее пространство / </span><strong>Роутер</strong><span class="routerMobileBrand">OWRT Hub <b>v124</b></span></div>
     <div class="routerTopActions"><a class="btn" href="?key=$(h "$key")">Обновить</a><a class="btn" href="/cgi-bin/luci/">Открыть LuCI</a></div>
   </header>
   <div class="routerPageHead"><h1>$(h "$router_name")</h1><span>Router ID: $(h "$router_id")</span></div>
 
-  <section class="panel globalLogsPanel" id="globalLogsPanel" hidden>
-    <div class="panelHead"><h2>Глобал логи</h2><button class="btn routerSmallClose" id="globalLogsClose" type="button">Закрыть</button></div>
-    <blockquote class="globalLogsNote">Действия панели, Heartbeat, WAN и ошибки Xray. Журнал сохраняется на проверенном Flash-хранилище: до 2 МиБ, до 256 фрагментов; доставленные записи хранятся до 24 часов. Запись пакетами раз в минуту; последние 16 КиБ буфера могут потеряться при внезапном отключении питания. При недоступной Flash — ограниченный журнал в ОЗУ с предупреждением. Переполнение не удаляет неподтверждённые записи: новые события сверх лимита пропускаются. Ключи и пароли скрываются.</blockquote>
-    <div class="globalLogsLegend" aria-label="Цвета журнала"><span class="globalLogOk">● Успешно</span><span class="globalLogWarn">● Предупреждение</span><span class="globalLogError">● Ошибка</span></div>
-    <div class="actions">
-      <a class="btn" href="?key=$(h "$key")&amp;action=logs_download">Скачать логи</a>
-      <button class="btn" id="globalLogsLive" type="button">Запустить в реальном времени</button>
-      <button class="btn bad" id="globalLogsClear" type="button">Очистить логи</button>
-    </div>
-    <div class="globalLogsStatus" id="globalLogsStatus" role="status">Сохранённые записи показаны ниже. Нажми «Запустить в реальном времени», чтобы обновлять их каждые 3 секунды.</div>
-    <pre class="globalLogsText" id="globalLogsText" tabindex="0">Загрузка записей журнала…</pre>
-  </section>
 
   <section class="grid" id="routerStatus">
     <div class="panel">
@@ -909,15 +854,6 @@ EOF
 (function() {
   var effectsPanel = document.getElementById('routerEffectsPanel');
   var effectsToggle = document.getElementById('routerEffectsToggle');
-  var panel = document.getElementById('globalLogsPanel');
-  var toggle = document.getElementById('globalLogsToggle');
-  var close = document.getElementById('globalLogsClose');
-  var live = document.getElementById('globalLogsLive');
-  var clear = document.getElementById('globalLogsClear');
-  var output = document.getElementById('globalLogsText');
-  var status = document.getElementById('globalLogsStatus');
-  var timer = null, controller = null, generation = 0, running = false;
-  var renderedText = null;
   function setEffectsOpen(open) {
     if (!effectsPanel || !effectsToggle) return;
     effectsPanel.hidden = !open;
@@ -940,133 +876,29 @@ EOF
       (window.matchMedia('(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse)').matches ? document.getElementById('routerSidebarMenu') : effectsToggle).focus();
     }
   });
-  function lineTone(line) {
-    if (/^\[ERROR\]/.test(line)) return 'globalLogError';
-    if (/^\[WARN\]/.test(line)) return 'globalLogWarn';
-    if (/^\[OK\]/.test(line)) return 'globalLogOk';
-    var message = line.replace(/^.*?owrt-remote(?:\[\d+\])?:\s*/, '');
-    if (/core: Xray .* started/i.test(message)) return 'globalLogOk';
-    if (/\[error\]|ошибка|не удалось|результат=bad|failed|cannot |could not |error:|syntax error|permission denied|network is unreachable|connection (refused|reset)|timed out|not permitted|no selected wan|wan has no|wan direct requires|already used by another rule|does not belong to remote|не применилось|dns failed|crash loop/i.test(message)) return 'globalLogError';
-    if (/\[warn(?:ing)?\]|предупреждение|результат=warn|retry|not ready|missing|не найден|postponed|dns unavailable|fallback|reconnecting|restarting|failover/i.test(message)) return 'globalLogWarn';
-    return 'globalLogOk';
-  }
-  function renderLogs(text, empty) {
-    if (renderedText === text && output.querySelector('.globalLogLine')) return;
-    var atBottom = output.scrollHeight - output.clientHeight - output.scrollTop < 24;
-    var previousTop = output.scrollTop;
-    var fragment = document.createDocumentFragment();
-    var lines = text ? text.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n') : [empty];
-    lines.forEach(function(line) {
-      var row = document.createElement('span');
-      row.className = 'globalLogLine ' + lineTone(line);
-      row.textContent = line || ' ';
-      fragment.appendChild(row);
-    });
-    output.textContent = '';
-    output.appendChild(fragment);
-    renderedText = text;
-    output.scrollTop = atBottom ? output.scrollHeight : previousTop;
-  }
-  function endpoint(action) {
-    var url = new URL(window.location.href);
-    url.searchParams.set('action', action);
-    url.searchParams.delete('_');
-    return url;
-  }
-  function stop() {
-    running = false;
-    generation++;
-    if (timer !== null) window.clearTimeout(timer);
-    timer = null;
-    if (controller) controller.abort();
-    controller = null;
-    live.textContent = 'Запустить в реальном времени';
-    live.setAttribute('aria-pressed', 'false');
-  }
-  async function refresh(once) {
-    if ((!running && !once) || panel.hidden || document.hidden) return;
-    var current = generation;
-    var request = new AbortController();
-    controller = request;
-    var timeout = window.setTimeout(function() { request.abort(); }, 10000);
-    try {
-      var response = await fetch(endpoint('logs_live'), {cache: 'no-store', signal: request.signal});
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      var text = await response.text();
-      if (current !== generation || (!running && !once)) return;
-      if ((response.headers.get('Content-Type') || '').indexOf('text/plain') !== 0) throw new Error('Доступ к журналу завершён. Открой панель заново.');
-      renderLogs(text, once ? 'Журнал пока пуст. Новые записи появятся после действий в панели или событий Remote. Нажми «Запустить в реальном времени», чтобы увидеть их.' : 'Журнал пуст. Новые события появятся автоматически.');
-      status.textContent = (once ? 'Сохранённые записи' : 'Просмотр в реальном времени') + ' · обновлено ' + new Date().toLocaleTimeString() + ' · последние 64 КБ журнала' + (once ? '. Для автообновления нажми «Запустить в реальном времени».' : '');
-    } catch (error) {
-      if (current === generation && (running || once)) {
-        status.textContent = 'Не удалось получить логи: ' + error.message + (once ? '. Для повторной загрузки нажми «Запустить в реальном времени».' : '. Повтор через 3 секунды.');
-        if (once) output.textContent = 'Записи журнала не загружены. Ошибка указана выше.';
-      }
-    } finally {
-      window.clearTimeout(timeout);
-      if (controller === request) controller = null;
-      if (!once && current === generation && running && !panel.hidden && !document.hidden) timer = window.setTimeout(refresh, 3000);
-    }
-  }
-  toggle.addEventListener('click', function() {
-    panel.hidden = !panel.hidden;
-    toggle.setAttribute('aria-expanded', String(!panel.hidden));
-    if (panel.hidden) { stop(); status.textContent = 'Просмотр остановлен.'; }
-    else {
-      stop();
-      output.textContent = 'Загрузка записей журнала…';
-      status.textContent = 'Загружаю сохранённые записи с роутера…';
-      refresh(true);
-    }
-  });
-  close.addEventListener('click', function() {
-    panel.hidden = true;
-    toggle.setAttribute('aria-expanded', 'false');
-    stop();
-    status.textContent = 'Просмотр остановлен.';
-  });
-  live.addEventListener('click', function() {
-    if (running) { stop(); status.textContent = 'Просмотр остановлен.'; return; }
-    stop();
-    running = true;
-    generation++;
-    live.textContent = 'Остановить просмотр';
-    live.setAttribute('aria-pressed', 'true');
-    refresh();
-  });
-  clear.addEventListener('click', async function() {
-    var resume = running;
-    stop();
-    clear.disabled = true;
-    live.disabled = true;
-    var request = new AbortController();
-    var timeout = window.setTimeout(function() { request.abort(); }, 10000);
-    try {
-      var response = await fetch(endpoint('logs_clear'), {method: 'POST', cache: 'no-store', signal: request.signal});
-      var text = await response.text();
-      if (!response.ok || (response.headers.get('Content-Type') || '').indexOf('text/plain') !== 0) throw new Error('HTTP ' + response.status);
-      output.textContent = 'Журнал очищен.';
-      status.textContent = text.trim();
-    } catch (error) { status.textContent = 'Не удалось очистить логи: ' + error.message; }
-    finally {
-      window.clearTimeout(timeout);
-      clear.disabled = false;
-      live.disabled = false;
-      if (resume && !panel.hidden) { running = true; generation++; live.textContent = 'Остановить просмотр'; live.setAttribute('aria-pressed', 'true'); refresh(); }
-    }
-  });
-  document.addEventListener('visibilitychange', function() {
-    if (!running) return;
-    generation++;
-    if (timer !== null) window.clearTimeout(timer);
-    timer = null;
-    if (controller) controller.abort();
-    if (!document.hidden) refresh();
-  });
-  window.addEventListener('pagehide', stop);
 })();
 (function initRouterSidebar() {
   var sidebar = document.getElementById('routerSidebar');
+  var sectionKey = 'owrtRemote:routerNavSections:v1:' + location.pathname;
+  var sections = Array.from(sidebar.querySelectorAll('.routerNavSection'));
+  function restoreSections() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(sectionKey) || '{}');
+      if (!saved || typeof saved !== 'object') return;
+      sections.forEach(function(section) { if (typeof saved[section.dataset.navSection] === 'boolean') section.open = saved[section.dataset.navSection]; });
+    } catch (error) {}
+  }
+  function saveSections() {
+    try {
+      var state = {};
+      sections.forEach(function(section) { state[section.dataset.navSection] = section.open; });
+      localStorage.setItem(sectionKey, JSON.stringify(state));
+    } catch (error) {}
+  }
+  restoreSections();
+  sections.forEach(function(section) { section.addEventListener('toggle', saveSections); });
+  window.addEventListener('pagehide', saveSections);
+  window.addEventListener('pageshow', restoreSections);
   var menu = document.getElementById('routerSidebarMenu');
   var backdrop = document.getElementById('routerSidebarBackdrop');
   var workspace = document.getElementById('routerWorkspace');
@@ -1096,11 +928,6 @@ EOF
       var heading=target.querySelector('h2');
       if (heading) { heading.tabIndex=-1; heading.focus({preventScroll:true}); }
     });
-  });
-  document.getElementById('globalLogsToggle').addEventListener('click', function() {
-    setOpen(false);
-    var panel=document.getElementById('globalLogsPanel');
-    if (!panel.hidden) { panel.scrollIntoView({block:'start'}); var heading=panel.querySelector('h2'); heading.tabIndex=-1; heading.focus({preventScroll:true}); }
   });
   document.getElementById('routerEffectsToggle').addEventListener('click', function() {
     setOpen(false);
@@ -1146,16 +973,8 @@ action="$(param action)"
 
 case "$action" in
 	donate) render_donate_page; exit 0 ;;
-	logs_download) logs_response download; exit 0 ;;
-	logs_live) logs_response live; exit 0 ;;
-	logs_clear) logs_response clear; exit 0 ;;
 esac
 
-if [ "${REQUEST_METHOD:-GET}" = POST ] && [ -n "$action" ] && [ -r "$LOG_HELPER" ]; then
-	printf '' | sh "$LOG_HELPER" event "Панель: действие=$action; начало" >/dev/null 2>&1 || true
-elif [ "${REQUEST_METHOD:-GET}" = GET ] && [ -z "$action" ] && [ -r "$LOG_HELPER" ]; then
-	printf '' | sh "$LOG_HELPER" event 'Панель: открыта' >/dev/null 2>&1 || true
-fi
 
 if [ "$action" = "download_config" ]; then
 	http_json

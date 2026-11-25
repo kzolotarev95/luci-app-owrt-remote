@@ -64,7 +64,6 @@ map "$uri:$status" $owrt_remote_access_log {
     ~^/api/notifications/wait:[23][0-9][0-9]$ 0;
     ~^/api/ssh-session/[^/]+/read:[23][0-9][0-9]$ 0;
     ~^/api/heartbeat:[23][0-9][0-9]$ 0;
-    ~^/api/router-logs:[23][0-9][0-9]$ 0;
 }
 """,
 }

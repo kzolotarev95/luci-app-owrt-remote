@@ -24,10 +24,11 @@ with tempfile.TemporaryDirectory(prefix='sidebar-ui-preview-') as state:
     routers = [{
         'id':'node-'+str(i), 'name':('Советская 30' if i==1 else 'Router '+str(i)),
         'role':'node', 'group_id':'', 'online':i not in (3,4), 'last_seen':1795320000,
+        'notes_preview':'Проверить WAN <Дом> & SSH' if i == 1 else '', 'has_notes':i == 1,
         'last_seen_iso':'2026-11-22T00:00:00Z', 'ssh_entry_port':19180+i,
         'access_url':'/access/node-'+str(i)+'/', 'ssh_url':'/ssh/node-'+str(i)+'/',
-        'logs_url':'/router/node-'+str(i)+'/logs', 'config_url':'/config/node-'+str(i),
-        'permissions':{p:True for p in ('owner','admin','ssh','manage','notes','notes_edit','config','delete','logs','wol')},
+        'config_url':'/config/node-'+str(i),
+        'permissions':{p:True for p in ('owner','admin','ssh','manage','notes','notes_edit','config','delete','wol')},
         'status':{'model':'Xiaomi Mi Router AX3000T (OpenWrt U-Boot layout)',
                   'release':'OpenWrt 25.12.5', 'xray':'running' if i!=4 else 'stopped',
                   'ssh':'running', 'memory':'64 MB free / 234 MB', 'flash':'30 MB free / 60 MB',
@@ -43,8 +44,7 @@ with tempfile.TemporaryDirectory(prefix='sidebar-ui-preview-') as state:
             for minute in range(1440) if not 700 <= minute <= 710]}
     with mock.patch.object(hub, 'load_auth', return_value={'username':'owner','captcha':{'mode':'digits'}}), mock.patch.object(hub, 'web_push_backend_status', return_value={'ready':False}):
         out.joinpath('owner.html').write_text(hub.dashboard_html(routers,'owner',auth_bootstrap=auth,vps_resources=resources,availability=availability(routers)),encoding='utf-8')
-        delegated = [{**r,'permissions':{**r['permissions'],'owner':False,'delete':False,'manage':False,'config':False,'logs':False,'wol':False}} for r in routers[:2]]
-        delegated[0]['permissions']['logs'] = True
+        delegated = [{**r,'permissions':{**r['permissions'],'owner':False,'delete':False,'manage':False,'config':False,'wol':False}} for r in routers[:2]]
         viewer = {**auth,'username':'viewer','is_owner':False,'can_add_router':False,'assigned_routers':[{'id':r['id'],'name':r['name'],'flags':['A','B']} for r in delegated]}
         out.joinpath('delegated.html').write_text(hub.dashboard_html(delegated,'viewer',auth_bootstrap=viewer,vps_resources=resources,availability=availability(delegated)),encoding='utf-8')
         manager = {**viewer,'username':'manager','can_add_router':True}
@@ -92,7 +92,7 @@ const settled = page => page.waitForFunction(() => cardDetailsAnimations.size ==
           if (u.pathname==='/api/router-groups') return route.fulfill({json:{groups:[{id:'home',name:'Дом',router_count:2}]}});
           if (u.pathname==='/api/auth/meta') return route.fulfill({json:{ok:true,auth}});
           if (u.pathname==='/api/vps/resources') return route.fulfill({json:fixtures.resources});
-          if (u.pathname==='/api/hub-update') return route.fulfill({json:owner?{ok:true,checked:true,available:false,current_version:'v123',remote_version:'v123',current_revision:'fixture',remote_revision:'fixture'}:{ok:false,error:'owner required'},status:owner?200:403});
+          if (u.pathname==='/api/hub-update') return route.fulfill({json:owner?{ok:true,checked:true,available:false,current_version:'v124',remote_version:'v124',current_revision:'fixture',remote_revision:'fixture'}:{ok:false,error:'owner required'},status:owner?200:403});
           if (u.pathname==='/api/notifications/wait') return route.fulfill({status:429,headers:{'Retry-After':'5'},json:{busy:true}});
           if (u.pathname.startsWith('/api/')) return route.fulfill({json:{ok:true,notifications:[],sessions:[],auth,groups:[]}});
           return route.fulfill({contentType:'text/plain',body:'Fixture target '+u.pathname});
@@ -101,6 +101,34 @@ const settled = page => page.waitForFunction(() => cardDetailsAnimations.size ==
         const errors=[];page.on('pageerror',error=>errors.push(error.message));
         await page.goto('http://hub.test/',{waitUntil:'domcontentloaded'});
         await page.locator('.routerCardSlot').nth(routers.length-1).waitFor();
+        const notedCard=page.locator('.card[data-router-id="node-1"]');
+        assert.equal(await notedCard.getAttribute('title'),null,'no delayed native title tooltip');
+        for(const selector of ['.cardTop>.status','.nameRow>.name','.cardDetailsToggle',...(owner?['.routerGroupPickerToggle']:[])]){
+          await notedCard.locator(selector).hover();
+          assert.equal(await page.locator('#routerCardTooltip').innerText(),'node-1','header control hover shows only router ID');
+          assert.equal(await page.locator('#routerCardTooltip').isVisible(),true);
+        }
+        await notedCard.locator('.cardNotesPreview').hover();
+        assert.equal(await page.locator('#routerCardTooltip').isVisible(),false,'notes do not trigger router ID');
+        await notedCard.locator('.cardDetailsToggle').click();
+        await notedCard.locator('.cardBody .metric').first().hover();
+        assert.equal(await page.locator('#routerCardTooltip').isVisible(),false,'expanded metrics do not trigger router ID');
+        await notedCard.locator('.nameRow>.name').hover();
+        assert.equal(await page.locator('#routerCardTooltip').isVisible(),true,'header still shows ID with details expanded');
+        await notedCard.locator('.cardBody .metric').first().hover();
+        assert.equal(await page.locator('#routerCardTooltip').isVisible(),false,'moving within the expanded card hides ID');
+        await notedCard.locator('.cardDetailsToggle').click();
+        assert.equal(await notedCard.evaluate(el=>getComputedStyle(el).outlineStyle),'none','hover does not highlight card');
+        await page.mouse.move(0,0);
+        assert.equal(await page.locator('#routerCardTooltip').isVisible(),false,'tooltip disappears after leaving card');
+        assert(await notedCard.locator(':scope>.cardNotesPreview').isVisible(),'notes visible with details collapsed');
+        assert.equal(await notedCard.locator('.cardNotesPreview').innerText(),'Заметки: Проверить WAN <Дом> & SSH');
+        assert.equal(await notedCard.locator('.cardBody .notesPreview').count(),0,'notes are outside hidden details');
+        if(owner){
+          const noteBox=await notedCard.locator('.cardNotesPreview').boundingBox();
+          const groupBox=await notedCard.locator('.routerCardGroup').boundingBox();
+          assert(noteBox.y+noteBox.height<=groupBox.y+1,'notes sit above group controls');
+        }
         const sidebar=page.locator('#hubSidebar');
         const menu=page.locator('#hubSidebarMenuButton');
         const dialog=page.locator('#hubShellDialog');
@@ -125,14 +153,15 @@ const settled = page => page.waitForFunction(() => cardDetailsAnimations.size ==
         assert.equal(await menu.isVisible(),!!scenario.mobile,scenario.name+' menu breakpoint');
         assert.equal(await page.locator('#hubAddRouter').evaluate(el=>!el.hidden),canAdd,'add permission follows can_add_router');
         assert.equal(await page.locator('#hubSidebar .hubNavSection[open]').count(),0,'all three sections start collapsed');
-        assert.equal(await page.locator('#hubManagementSection #hubAddRouter,#hubManagementSection #hubRefreshRouters').count(),2,'router controls live in Management');
+        assert.equal(await page.locator('#hubManagementSection #hubAddRouter').count(),1,'add router lives in Management');
+        assert.equal(await page.locator('#hubRefreshRouters,.hubServiceStrip,#hubHeartbeatSummary').count(),0,'removed Refresh and network strip stay absent');
         assert.equal(await page.locator('.hubPageHeading').count(),0,'introductory block removed');
         assert(!(await sidebar.innerText()).includes('Агент · Heartbeat · удалённый доступ'));
         assert(await page.locator('.hubAvailabilityPanel').isVisible(),'availability chart is present on every screen');
-        assert.equal(await page.locator('.hubSidebarBrand').getAttribute('aria-label'),'OWRT Hub v123');
+        assert.equal(await page.locator('.hubSidebarBrand').getAttribute('aria-label'),'OWRT Hub v124');
         assert.equal(await page.title(),'OWRT Hub');
         assert((await page.locator('#hubSidebarConnection').textContent()).includes('Система работает'),'healthy connection label');
-        assert.equal(await page.locator('.hubPhoneBrand').innerText(),'OWRT Hub v123');
+        assert.equal(await page.locator('.hubPhoneBrand').innerText(),'OWRT Hub v124');
         assert.equal(await page.locator('.hubChartPeriod').textContent(),'24 ч');
         assert.equal(await page.locator('#hubAvailabilityOnline').textContent(),String(routers.filter(router=>router.online).length));
         const plot=page.locator('#hubAvailabilityPlot');
@@ -159,13 +188,19 @@ const settled = page => page.waitForFunction(() => cardDetailsAnimations.size ==
         await noOverflow(page,scenario.name+' initial');
         if (scenario.mobile) {
           const brand=await page.locator('.hubPhoneBrand').boundingBox();
-          assert(brand.width>=145 && brand.height<=46,'mobile title needs readable width and at most two lines: '+JSON.stringify(brand));
-          const tools=await Promise.all(['#mobileRouterSearchToggle','#hubShellUpdateHost [data-hub-update]']
-            .map(selector=>page.locator(selector).boundingBox()));
-          const visibleTools=tools.filter(Boolean);
-          assert(visibleTools.length>=1,'mobile search remains available');
-          assert(visibleTools.every(box=>Math.abs(box.y-visibleTools[0].y)<2),'mobile tools share one row');
-          assert(visibleTools.every(box=>box.y>=brand.y+brand.height+3),'mobile tools follow the title row');
+          assert(brand.width>=80 && brand.height<=32,'mobile title remains readable next to update: '+JSON.stringify(brand));
+          const update=await page.locator('#hubShellUpdateHost [data-hub-update]').boundingBox();
+          if(update)assert(update.x>=brand.x+brand.width&&Math.abs(update.y+update.height/2-brand.y-brand.height/2)<2,'mobile update shares the title row');
+        }
+        assert.equal(await page.locator('#hubShellTopbar #hubShellSearchHost').count(),0,'search belongs to the router list');
+        const listControls=await page.locator('.hubRouterFilters').evaluate(node=>Array.from(node.children).filter(child=>getComputedStyle(child).display!=='none').map(child=>child.id||child.className));
+        assert.deepEqual(listControls,owner?['hubStatusControl','hubShellSearchHost','hubGroupFilterHost']:['hubStatusControl','hubShellSearchHost'],'router list controls retain their order for each account');
+        const statusBox=await page.locator('#routerStatusFilter').boundingBox();
+        const searchBox=await page.locator(scenario.mobile?'#mobileRouterSearchToggle':'#routerSearchToggle').boundingBox();
+        assert(searchBox.x>=statusBox.x+statusBox.width-1&&Math.abs(searchBox.y-statusBox.y)<2,'search follows status on the same row');
+        if(owner){
+          const groupBox=await page.locator('#hubGroupFilterHost select').boundingBox();
+          assert(groupBox.x>=searchBox.x+searchBox.width-1&&Math.abs(groupBox.y-searchBox.y)<2,'groups follow search on the same row');
         }
         if (scenario.mobile) {
           await openMenu();assert(await page.locator('#hubSidebarBackdrop').isVisible());
@@ -188,7 +223,7 @@ const settled = page => page.waitForFunction(() => cardDetailsAnimations.size ==
         await workspaceSection.locator('summary').focus();await page.keyboard.press('Enter');
         assert(await workspaceSection.evaluate(el=>el.open),'section opens with keyboard');
         for(const id of ['hubManagementSection','hubSettingsSection'])await page.locator('#'+id+'>summary').click();
-        assert(await page.locator('#hubRefreshRouters>span').isVisible(),'refresh keeps its label after moving to the sidebar');
+        assert.equal(await page.locator('#routerStatusFilter').count(),1,'status filter available to all accounts');
         assert.equal(await page.locator('#hubAddRouter>span').isVisible(),canAdd,'add keeps its label and permission in Management');
         for (const action of ['groups','vps-xray','update']) assert.equal(await nav(action).isVisible(),owner,'owner-only nav '+action);
         for (const href of ['/vps-terminal/','/router-updates/']) {
@@ -246,18 +281,21 @@ const settled = page => page.waitForFunction(() => cardDetailsAnimations.size ==
           await closeDialog();
         }
 
-        await useNav('logs');
-        assert(await dialog.isVisible(),'logs opens a router selection');
-        const logLinks=await dialog.locator('a').evaluateAll(items=>items.map(el=>({href:el.getAttribute('href'),target:el.getAttribute('target'),text:el.textContent})));
-        assert.equal(logLinks.length,owner?routers.length:1,'log picker respects per-router logs permission');
-        assert(logLinks.every(link=>link.href.startsWith('/router/')&&link.href.endsWith('/logs')&&link.target==='_blank'));
-        assert(logLinks.some(link=>link.href==='/router/node-1/logs'&&link.text.includes('Советская')));
-        await closeDialog();
+        assert.equal(await page.locator('[data-hub-action="logs"],[data-global-logs-link]').count(),0,'retired journal has no UI controls');
         if(owner){
           await useNav('groups');
           assert(await page.locator('#routerGroupsPanel').isVisible(),'group management is reachable');
           await page.locator('#hubGroupFilterHost select').selectOption('');
         }
+        for(const state of ['online','offline']){
+          await page.locator('#routerStatusFilter').selectOption(state);
+          const expected=routers.filter(router=>Boolean(router.online)===(state==='online')).length;
+          assert.equal(await page.locator('.routerCardSlot').count(),expected,'complete status list independent of groups');
+          assert.equal(await page.locator('.routerGroupSection').count(),0,'status list has no collapsed group sections');
+          assert.equal(await page.locator('#hubVisibleCount').textContent(),expected+' из '+routers.length);
+          if(!expected)assert((await page.locator('.empty').innerText()).includes('фильтру'),'empty filter does not ask to add a first router');
+        }
+        await page.locator('#routerStatusFilter').selectOption('all');
         if(canAdd){
           await useNav('add');
           assert(await page.locator('#routerFormWrap').isVisible(),'add form opened');
@@ -274,9 +312,8 @@ const settled = page => page.waitForFunction(() => cardDetailsAnimations.size ==
           await loadRouters();
         });
         assert.equal(apiCalls.filter(call=>call.query==='?availability=1').length,1,'history rides one existing router poll per minute');
-        await useNav('refresh');
-        await page.waitForFunction(()=>!document.getElementById('hubRefreshRouters').disabled);
-        assert(apiCalls.filter(call=>call.path==='/api/routers').length>beforeRefresh,'explicit refresh fetches routers');
+        await page.evaluate(()=>loadRouters());
+        assert(apiCalls.filter(call=>call.path==='/api/routers').length>beforeRefresh,'existing background refresh fetches routers');
         if(!owner)assert.equal(apiCalls.filter(call=>call.path==='/api/hub-update').length,0,'delegated does not poll owner updater');
         assert.equal(apiCalls.filter(call=>call.path==='/api/xray/reload'||call.path==='/api/xray/restart').length,0,'navigation does not send service commands');
         assert.deepEqual(errors,[],scenario.name+' console errors');
@@ -296,6 +333,12 @@ const settled = page => page.waitForFunction(() => cardDetailsAnimations.size ==
           }
           await noOverflow(page,scenario.name+' resized');
         }
+        await page.locator('#hubWorkspaceSection>summary').evaluate(el=>el.parentElement.open=true);
+        await page.locator('#hubSettingsSection>summary').evaluate(el=>el.parentElement.open=true);
+        await page.waitForFunction(()=>{const s=JSON.parse(localStorage.getItem('owrtRemote:hubNavSections:v1:'+encodeURIComponent(authMeta.username))||'{}');return s.hubWorkspaceSection===true&&s.hubSettingsSection===true;});
+        await page.reload({waitUntil:'domcontentloaded'});
+        assert(await page.locator('#hubWorkspaceSection').evaluate(el=>el.open),'workspace remembered after reload');
+        assert(await page.locator('#hubSettingsSection').evaluate(el=>el.open),'settings remembered after reload');
         count++;console.log('HUB_SIDEBAR_UI_OK',scenario.name);
       } catch(error) {
         if(page)await page.screenshot({path:path.join(output,scenario.name+'-failure.png'),fullPage:true}).catch(()=>{});

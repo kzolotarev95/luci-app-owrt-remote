@@ -11,7 +11,7 @@ const preview = path.join(output, 'shared-pages.json');
 execFileSync(process.env.TEST_PYTHON || 'python', ['tests/test_hub_design_global.py','--export-preview',preview],
   {env:{...process.env,PYTHONIOENCODING:'utf-8'}});
 const pages = JSON.parse(fs.readFileSync(preview, 'utf8'));
-const modes = ['snow','rain','cosmos','embers','orbit','prism','pulse','laser'];
+const modes = ['snow','rain','cosmos','embers','orbit','prism','pulse','laser','streams'];
 
 async function renderSample(page, mode, usePointer) {
   return page.evaluate(({mode,usePointer}) => {
@@ -76,7 +76,8 @@ async function renderSample(page, mode, usePointer) {
         assert.equal(pointed.pointer.active,true);
         assert.equal(pointed.pending,1,'one animation loop');
         assert(pointed.visible>0,route+' '+mode+' actually draws pixels');
-        assert.notEqual(pointed.digest,neutral.digest,route+' '+mode+' responds to pointer');
+        if(mode!=='streams')assert.notEqual(pointed.digest,neutral.digest,route+' '+mode+' responds to pointer');
+        if(mode==='streams')assert.equal(pointed.count,7,'seven fixed tracks, independent of screen area');
         if(route==='/')baseline[mode]=pointed;
         else assert.deepEqual(pointed,baseline[mode],route+' '+mode+' matches dashboard pixels and physics');
       }
@@ -99,7 +100,7 @@ async function renderSample(page, mode, usePointer) {
     await main.evaluate(()=>setHubDesign('winter'));
     for(const page of all){
       await page.waitForFunction(()=>hubDesignMode==='winter'&&seasonalFxFrame>0,null,{polling:50,timeout:10000});
-      assert.equal(await page.evaluate(()=>seasonEffectMode),'laser');
+      assert.equal(await page.evaluate(()=>seasonEffectMode),'streams');
       await page.evaluate(()=>{window.dispatchEvent(new PointerEvent('pointermove',{clientX:280,clientY:210}));});
       assert.deepEqual(await page.evaluate(()=>[seasonalFxPointer.x,seasonalFxPointer.y,seasonalFxPointer.active]),[280,210,true]);
       await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
@@ -107,6 +108,6 @@ async function renderSample(page, mode, usePointer) {
     }
     assert.deepEqual(errors,[]);
     await context.close();
-    console.log('HUB_SHARED_EFFECTS_OK: 8 effects, 7 pages, identical canvas pixels and cursor physics, single loop, cross-tab design/effect sync, lite pause/restore');
+    console.log('HUB_SHARED_EFFECTS_OK: 9 effects, 7 pages, identical canvas pixels and shared cursor physics, single loop, cross-tab design/effect sync, lite pause/restore');
   } finally {await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

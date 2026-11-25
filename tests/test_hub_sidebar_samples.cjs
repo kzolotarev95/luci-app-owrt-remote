@@ -18,7 +18,6 @@ vm.runInContext(source.slice(start, end), context);
 const routers = [{id:'a',online:true},{id:'b',online:false}];
 context.updateHubSidebarSummary(routers);
 assert.equal(node('hubNavCount').textContent, '2');
-assert(node('hubHeartbeatSummary').textContent.includes('1 из 2'));
 assert.equal(context.renderHubAvailability.points.length,1,'first live observation is a dot, not a fabricated day');
 assert(!node('hubAvailabilityLine').attributes.d.includes('H'),'a point does not become a full-width line');
 const to=now/1000;

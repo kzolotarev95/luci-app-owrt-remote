@@ -189,7 +189,7 @@ public final class BrowserActivity extends Activity {
     labels.setOrientation(LinearLayout.VERTICAL);
     title = label("OWRT Hub", 17, TEXT, true);
     title.setSingleLine(true);
-    subtitle = label("Android · v123", 10, MUTED, false);
+    subtitle = label("Android · " + BuildConfig.VERSION_NAME, 10, MUTED, false);
     subtitle.setSingleLine(true);
     labels.addView(title);
     labels.addView(subtitle);
@@ -230,7 +230,7 @@ public final class BrowserActivity extends Activity {
     TextView heading = label("Ваш Hub.\nНа вашем сервере.", 22, TEXT, true);
     heading.setGravity(Gravity.CENTER);
     form.addView(heading);
-    addText(form, "Подключение к панели OWRT Hub v123", 11, MUTED, 5, 17)
+    addText(form, "Подключение к панели OWRT Hub", 11, MUTED, 5, 17)
         .setGravity(Gravity.CENTER);
     hostField =
         field(
@@ -280,7 +280,7 @@ public final class BrowserActivity extends Activity {
             0);
     body.addView(connection, new FrameLayout.LayoutParams(-1, -1));
     title.setText("OWRT Hub");
-    subtitle.setText("Подключение · 0.1.0 / v123");
+    subtitle.setText("Подключение · " + BuildConfig.VERSION_NAME);
     back.setVisibility(tabs.isEmpty() ? View.INVISIBLE : View.VISIBLE);
   }
 
@@ -451,7 +451,7 @@ public final class BrowserActivity extends Activity {
             : "OWRT Hub");
     subtitle.setText(
         (hub == null ? "" : hub.getAuthority())
-            + (tabs.size() > 1 ? " · экран " + tabs.size() : " · v123"));
+            + (tabs.size() > 1 ? " · экран " + tabs.size() : " · " + BuildConfig.VERSION_NAME));
     back.setVisibility(View.VISIBLE);
   }
 

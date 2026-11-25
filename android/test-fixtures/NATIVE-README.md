@@ -34,7 +34,7 @@ mobile CSRF, and the permission-filtered operation CSRF maps. The viewer sees
 only the main router with read access and receives 403 on management writes.
 
 Existing Hub-shaped endpoints include routers and availability, router groups,
-VPS CPU/memory/disk resources, sessions, notes, logs, WoL device lists, and
+VPS CPU/memory/disk resources, sessions, notes, WoL device lists, and
 `/api/router/main/xray-control`. Xray writes require `X-Xray-Control-CSRF` from
 the session response and a 32-character lowercase hexadecimal `request_id`.
 The POST returns `queued`; the first GET returns `running`; the second GET

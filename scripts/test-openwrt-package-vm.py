@@ -141,7 +141,7 @@ def main():
                    "test -x /usr/sbin/owrt-remote; test -x /www/cgi-bin/owrt-remote; "
                    "test -f /usr/share/luci/menu.d/luci-app-owrt-remote.json; "
                    "test $(uci -q get owrtremote.main.enabled) = 0; "
-                   "/etc/init.d/owrt-remote-logs running; "
+                   "test ! -e /etc/init.d/owrt-remote-logs; "
                    "for script in /usr/sbin/owrt-remote /usr/lib/owrt-remote/*.sh /etc/init.d/owrt-remote* /www/cgi-bin/owrt-remote; do /bin/ash -n $script; done; "
                    "curl -fsS \"http://127.0.0.1/cgi-bin/owrt-remote?key=$(cat /etc/owrt-remote/web.key)\" | grep -q 'OWRT Hub'")
             remote("set -e; uci set owrtremote.main.router_name='Package upgrade test'; uci set owrtremote.main.hub_token='local-test-only'; uci commit owrtremote; "
@@ -150,7 +150,7 @@ def main():
                    "sha256sum /etc/config/owrtremote /etc/owrt-remote/web.key /etc/xray/owrt-remote-client.json /tmp/owrt-xray/xray >/tmp/remote-before.sha256")
             print("Testing a genuine package version upgrade", flush=True)
             remote(install + " /tmp/remote-upgrade" + candidate.suffix, timeout=300)
-            remote("set -e; sha256sum -c /tmp/remote-before.sha256; /etc/init.d/owrt-remote-logs running")
+            remote("set -e; sha256sum -c /tmp/remote-before.sha256; test ! -e /etc/init.d/owrt-remote-logs")
             print("Testing remove, preserved state, and migration from unowned overlay files", flush=True)
             remote(remove + " " + package.PACKAGE, timeout=180)
             remote("set -e; test ! -e /usr/sbin/owrt-remote; test ! -e /www/cgi-bin/owrt-remote; test ! -e /etc/init.d/owrt-remote; sha256sum -c /tmp/remote-before.sha256")

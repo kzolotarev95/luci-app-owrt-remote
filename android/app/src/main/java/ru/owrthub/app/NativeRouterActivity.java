@@ -71,10 +71,10 @@ public final class NativeRouterActivity extends Activity {
   private TextView error, status, detail, result, timer, output;
   private ProgressBar progress;
   private EditText notes, mac, iface, password, command;
-  private Button clearButton, liveButton, sshConnect, sshSend, sshInterrupt;
+  private Button clearButton, sshConnect, sshSend, sshInterrupt;
   private volatile boolean visible;
   private volatile int generation;
-  private boolean busy, sessionReady, live = true, snapshotFresh, notesLoaded, vpsOwner;
+  private boolean busy, sessionReady, snapshotFresh, notesLoaded, vpsOwner;
   private Boolean notesCanAppend;
   private boolean notesCanDelete;
   private final List<Button> noteDeleteButtons = new ArrayList<>();
@@ -119,7 +119,7 @@ public final class NativeRouterActivity extends Activity {
       routerId = router.optString("id", "");
       if (routerId.isEmpty() || routerId.length() > 64 || !routerId.matches("[\\p{L}\\p{N}._-]+"))
         throw new IOException("Не выбран роутер");
-      if (!Arrays.asList("xray", "logs", "notes", "wol", "ssh", "vps", "config").contains(tool))
+      if (!Arrays.asList("xray", "notes", "wol", "ssh", "vps", "config").contains(tool))
         throw new IOException("Неизвестный инструмент");
       URI hub =
           HubUrlPolicy.normalizeHub(
@@ -229,9 +229,6 @@ public final class NativeRouterActivity extends Activity {
       case "xray":
         buildXray();
         break;
-      case "logs":
-        buildLogs();
-        break;
       case "notes":
         buildNotes();
         break;
@@ -254,9 +251,7 @@ public final class NativeRouterActivity extends Activity {
   private String toolTitle() {
     switch (tool) {
       case "xray":
-        return "Управление Xray";
-      case "logs":
-        return "Журнал роутера";
+        return "Настройки Xray";
       case "notes":
         return "Заметки";
       case "wol":
@@ -319,50 +314,6 @@ public final class NativeRouterActivity extends Activity {
     add(clearButton);
     history = ui.column();
     content.addView(history);
-  }
-
-  private void buildLogs() {
-    intro(
-        "Журнал Heartbeat, WAN и Xray выбранного роутера. Для роутера оффлайн доступен последний"
-            + " архив Hub.");
-    LinearLayout card = ui.card();
-    status = ui.text("Получаю журнал…", 16, true);
-    detail = ui.body("");
-    card.addView(status);
-    card.addView(ui.spacer(8));
-    card.addView(detail);
-    add(card);
-    liveButton =
-        ui.button(
-            "Приостановить обновление",
-            false,
-            () -> {
-              live = !live;
-              liveButton.setText(live ? "Приостановить обновление" : "Включить живой журнал");
-              handler.removeCallbacks(poll);
-              if (live && !busy) refresh();
-            });
-    add(liveButton);
-    clearButton =
-        ui.button(
-            "Очистить журнал",
-            NativeUi.Style.DANGER,
-            () ->
-                confirm(
-                    "Очистить журнал роутера?",
-                    "Архив Hub будет удалён. Очистка журнала роутера произойдёт при следующем"
-                        + " соединении.",
-                    () ->
-                        request(
-                            () -> api.post(base + "/logs/clear", new JSONObject()),
-                            this::renderLogs,
-                            true)));
-    add(clearButton);
-    output = monospace("Загрузка…");
-    output.setMinHeight(ui.dp(280));
-    output.setBackground(ui.shape(NativeUi.color("#090e13"), ui.LINE, 12));
-    output.setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14));
-    add(output);
   }
 
   private void buildNotes() {
@@ -774,7 +725,6 @@ public final class NativeRouterActivity extends Activity {
                       .put("manage", manage)
                       .put("notes", admin)
                       .put("notes_edit", manage)
-                      .put("logs", manage)
                       .put("config", manage)
                       .put("wol", manage));
             } catch (org.json.JSONException invalid) {
@@ -801,7 +751,6 @@ public final class NativeRouterActivity extends Activity {
   private void refresh() {
     if (!visible || busy || api == null || !sessionReady) return;
     if (tool.equals("xray")) request(() -> api.get(base + "/xray-control"), this::renderXray, true);
-    else if (tool.equals("logs")) request(() -> api.get(base + "/logs"), this::renderLogs, true);
     else if (tool.equals("notes")) request(() -> api.get(notesPath()), this::renderNotes, false);
     else if (tool.equals("config"))
       request(
@@ -918,7 +867,7 @@ public final class NativeRouterActivity extends Activity {
   private void schedulePoll() {
     handler.removeCallbacks(poll);
     if (!visible) return;
-    if (tool.equals("xray") || tool.equals("logs") && live) handler.postDelayed(poll, 3000);
+    if (tool.equals("xray")) handler.postDelayed(poll, 3000);
     else if (isTerminal() && !sshSession.isEmpty()) handler.postDelayed(poll, 650);
   }
 
@@ -1041,24 +990,6 @@ public final class NativeRouterActivity extends Activity {
         true);
   }
 
-  private void renderLogs(JSONObject data) {
-    requireRouter(data);
-    snapshotFresh = true;
-    status.setText(data.optBoolean("online") ? "Роутер онлайн" : "Роутер оффлайн · архив Hub");
-    status.setTextColor(data.optBoolean("online") ? ui.GREEN : ui.AMBER);
-    JSONObject diagnosis = data.optJSONObject("diagnosis");
-    detail.setText(
-        (diagnosis == null ? "" : diagnosis.optString("text", "") + "\n")
-            + "Последняя доставка: "
-            + stamp(data.optLong("last_sync"))
-            + (data.optBoolean("pending_clear") ? "\nОчистка роутера ожидает связи." : ""));
-    String text = data.optString("text", "");
-    output.setText(
-        text.isEmpty()
-            ? "В журнале пока нет записей."
-            : text.substring(Math.max(0, text.length() - 65536)));
-  }
-
   private void updateControls() {
     if (progress == null) return;
     progress.setVisibility(busy && !isTerminal() ? View.VISIBLE : View.INVISIBLE);
@@ -1080,7 +1011,6 @@ public final class NativeRouterActivity extends Activity {
     if (clearButton != null)
       clearButton.setEnabled(
           ready && snapshotFresh && (!tool.equals("xray") || hasCompletedCommand()));
-    if (liveButton != null) liveButton.setEnabled(sessionReady);
     if (sshConnect != null) sshConnect.setEnabled(ready && sshSession.isEmpty());
     if (sshSend != null)
       sshSend.setEnabled(sessionReady && permitted() && !sshSession.isEmpty() && writes.size() < 8);
@@ -1593,7 +1523,9 @@ public final class NativeRouterActivity extends Activity {
   }
 
   private String actionLabel(String action) {
-    return action.equals("start") ? "Запуск" : action.equals("stop") ? "Остановка" : "Перезапуск";
+    return action.equals("start") ? "Запуск"
+        : action.equals("stop") ? "Остановка"
+        : action.equals("set-host") ? "Изменение VPS host" : "Перезапуск";
   }
 
   private int stateColor(String state) {

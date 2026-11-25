@@ -25,7 +25,6 @@ def preview_pages():
             "/login": hub.login_html(),
             "/vps-terminal/": hub.ssh_terminal_html_v2(hub.vps_terminal_row(), "test"),
             "/router-updates/": hub.router_updates_html("test"),
-            "/router/main/logs": hub.router_logs_html(router),
             "/router/main/notes": hub.router_notes_html(router),
             "/ssh/main/": hub.ssh_terminal_html_v2(hub.vps_terminal_row(), "test"),
         }
@@ -55,7 +54,7 @@ class GlobalHubDesignTests(unittest.TestCase):
             text = result.decode("utf-8")
             self.assertEqual(text.count("owrt-hub-design-head"), 1, path)
             self.assertIn("DESIGN_KEY", text, path)
-            for mode in ("snow", "rain", "cosmos", "embers", "orbit", "prism", "pulse", "laser"):
+            for mode in ("snow", "rain", "cosmos", "embers", "orbit", "prism", "pulse", "laser", "streams"):
                 self.assertIn("'" + mode + "'", text, path)
             self.assertIn("#routerSearchToggle", text, path)
 
