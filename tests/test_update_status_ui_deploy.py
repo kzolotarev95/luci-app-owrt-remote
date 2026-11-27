@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -133,6 +134,14 @@ class VersionDeployTests(UpdateStatusDeployTests):
     deploy_file = 'deploy-version-v123.ps1'
     backup_name = 'hub.py.bak-before-v123'
     success_marker = 'HUB_V123_Install_OK'
+
+    def deploy(self, action, candidate=None):
+        # This archived installer intentionally requires its original UI version.
+        # Use a versioned fixture instead of passing today's live release to it.
+        if action == 'Install' and candidate is None:
+            candidate = re.sub(rb'(appBannerVersion[^>]*>)v[0-9]+', rb'\g<1>v123',
+                               (ROOT / 'vps/owrt-remote-hub.py').read_bytes(), count=1)
+        return super().deploy(action, candidate)
 
 
 if __name__ == '__main__':

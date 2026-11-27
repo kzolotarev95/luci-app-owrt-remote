@@ -105,6 +105,7 @@ class WanFailoverTests(unittest.TestCase):
         result = self.shell('wan_prepare || exit; touch "$TEST_ROOT/wan-down"; render_client_config --stdout')
         self.assertEqual(result.returncode, 0, result.stderr)
         config = json.loads(result.stdout)
+        diagnostics = result.stderr
         for outbound in config["outbounds"]:
             if outbound["tag"].startswith("vps-"):
                 self.assertEqual(outbound["streamSettings"]["sockopt"]["interface"], "wlan1")
@@ -113,7 +114,8 @@ class WanFailoverTests(unittest.TestCase):
         result = self.shell('wan_post_json https://hub.example/api/heartbeat test-token "$TEST_ROOT/payload"')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("<wlan1>", self.directory.joinpath("curl").read_text())
-        self.assertIn("WAN failover: wan -> wwan", self.directory.joinpath("log").read_text())
+        self.assertIn("WAN failover: wan -> wwan", diagnostics + result.stderr)
+        self.assertFalse(self.directory.joinpath("log").exists(), "CLI diagnostics are not archived")
 
     def test_only_selected_real_uplinks_are_used_and_all_down_fails(self):
         self.prepare("proxy wan")

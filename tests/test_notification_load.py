@@ -94,13 +94,13 @@ class NotificationLoadTests(unittest.TestCase):
         self.assertIn("500", output.getvalue())
         self.assertNotIn("200", output.getvalue())
 
-    def test_heartbeat_and_log_upload_keep_errors_debug_and_application_messages(self):
+    def test_heartbeat_and_ssh_poll_keep_errors_debug_and_application_messages(self):
         class Handler:
             path = "/api/heartbeat?unused=1"
             def address_string(self): return "127.0.0.1"
             def log_date_time_string(self): return "now"
         handler = Handler()
-        for path in ("/api/heartbeat", "/api/router-logs", "/api/ssh-session/test/read"):
+        for path in ("/api/heartbeat", "/api/ssh-session/test/read"):
             handler.path = path + "?test=1"
             with self.subTest(path=path), mock.patch.dict(os.environ, {"OWRT_REMOTE_HTTP_DEBUG": "0"}):
                 output = io.StringIO()

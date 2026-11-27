@@ -131,6 +131,7 @@ class RecaptchaTests(unittest.TestCase):
 
     def test_settings_validate_and_preserve_other_auth(self):
         handler = object.__new__(hub.Handler)
+        handler.headers = {}
         handler.send_text = mock.Mock()
         auth = configured_auth("recaptcha")
         payload = {"current_password": "fake-password", "captcha_mode": "recaptcha_v3", "captcha_min_score": "0.7", "captcha_site_key": "new-site", "captcha_secret_key": "new-secret"}
@@ -161,6 +162,7 @@ class RecaptchaTests(unittest.TestCase):
 
     def test_digits_remove_keys_even_if_old_browser_sends_them(self):
         handler = object.__new__(hub.Handler)
+        handler.headers = {}
         handler.send_text = mock.Mock()
         payload = {"current_password": "fake-password", "captcha_mode": "digits", "captcha_site_key": "old-site", "captcha_secret_key": "old-secret"}
         handler.read_payload = lambda **kwargs: payload
