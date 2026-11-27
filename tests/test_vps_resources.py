@@ -111,8 +111,11 @@ class ResourceHttpTests(unittest.TestCase):
                     page = response.read().decode("utf-8")
                 snapshot.assert_called_once_with()
             values = re.findall(r'<strong data-vps-resource-value>([^<]+)</strong>', page)
-            self.assertEqual(values, ["12,5%", "40%", "60%"], "one responsive resource panel has values before the browser fetch")
-            self.assertIn('aria-label="ЦП: 12,5%"', page)
+            self.assertEqual(values, ["12,5%", "40%", "60%"], "CPU/RAM KPIs and disk banner have initial readings")
+            self.assertIn('aria-label="Диск VPS: 60%"', page)
+            banner = re.search(r'<article[^>]*id="hubResourcesPanel".*?</article>', page, re.S).group()
+            self.assertNotIn('data-vps-resource="cpu"', banner)
+            self.assertNotIn('data-vps-resource="memory"', banner)
         finally:
             server.shutdown()
             server.server_close()
@@ -123,6 +126,14 @@ class ResourceHttpTests(unittest.TestCase):
                                                         "memory": {"percent": float("nan")},
                                                         "disk": {"percent": 0}})
         self.assertEqual(re.findall(r'<strong data-vps-resource-value>([^<]+)</strong>', page), ["—", "—", "0%"])
+
+    def test_disk_banner_handles_empty_and_partial_disk_readings(self):
+        missing = hub.hub_disk_banner_html({})
+        self.assertIn('data-disk-level="unknown"', missing)
+        self.assertEqual(missing.count('>—<'), 4)
+        partial = hub.hub_disk_banner_html({'disk': {'percent': 90, 'used_bytes': 3072, 'total_bytes': 4096}})
+        self.assertIn('data-disk-level="critical"', partial)
+        self.assertIn('data-vps-disk-bytes="free">1 КиБ', partial)
 
     def test_metrics_require_hub_login_and_never_open_router_database(self):
         app = hub.App(Path(STATE.name) / "unused.db", "test-session", "test-agent", "")

@@ -37,7 +37,7 @@ ENDPOINTS = {
 
 
 class FixtureState:
-    def __init__(self):
+    def __init__(self, showcase=False):
         self.lock = threading.RLock()
         self.sessions = {}
         self.history = {"main": [], "offline": []}
@@ -60,21 +60,40 @@ class FixtureState:
         self.password_next = False
         self.hub_available=False
         self.hub_update_starts=0
+        self.router_orders = {}
         self.notification_serial = 100
         self.xray_csrf = XRAY_CSRF
+        self.showcase = showcase
+        self.showcase_models = [
+            ("main", "Основа", "Cudy WBR3000UAX v1 (OpenWrt U-Boot layout)"),
+            ("offline", "Дача", "Xiaomi Mi Router AX3000T"),
+            ("node-3", "Кабинет", "GL.iNet Flint 2 (GL-MT6000)"),
+            ("node-4", "Мастерская", "netis N6"),
+            ("node-5", "Гостиная", "ASUS RT-AX53U"),
+            ("node-6", "Запасной", "Cudy WR3000"),
+            ("node-7", "Склад", "Xiaomi Mi Router 4A Gigabit Edition"),
+            ("node-8", "Офис", "OpenWrt One"),
+            ("node-9", "Длинное название резервного роутера", "Unknown model"),
+        ]
+        if showcase:
+            for router_id, name, model in self.showcase_models:
+                self.history.setdefault(router_id, [])
+                self.notes.setdefault(router_id, "")
+                self.note_entries.setdefault(router_id, [])
+                self.xray.setdefault(router_id, "running")
 
     def router(self, router_id, viewer=False):
-        online = router_id == "main"
+        online = router_id == "main" or (self.showcase and router_id not in ("offline", "node-9"))
         permissions = {key: not viewer for key in (
             "owner", "ssh", "manage", "notes_edit", "notes_delete", "config", "wol", "traffic", "delete", "diagnose")}
         permissions.update(admin=True, notes=True)
         now = int(time.time())
         note = self.notes[router_id]
-        return {
+        result = {
             "id": router_id, "name": "Домашний роутер" if online else "Дача",
             "group_id": "home" if online else "remote", "online": online,
             "last_seen": now if online else now - 7200, "last_seen_iso": "2026-11-24T12:00:00Z",
-            "service_enabled": True, "version": "v124", "agent_version": "v124",
+            "service_enabled": True, "version": "v125", "agent_version": "v125",
             "vps_host": "fixture.invalid", "public_ip": "198.51.100.10",
             "access_flags": ["A"] if viewer else ["A", "B", "G"], "permissions": permissions,
             "notes": note, "notes_preview": (self.note_entries[router_id][-1].get("text") or "Фото") if self.note_entries[router_id] else "", "notes_count": len(self.note_entries[router_id]),
@@ -83,11 +102,21 @@ class FixtureState:
             "config_url": f"/router/{router_id}/config", "notes_url": f"/router/{router_id}/notes",
             "status": {
                 "xray": self.xray[router_id], "xray_control": 1, "heartbeat_interval": 30,
-                "version": "v124", "agent_version": "v124", "model": "Fixture OpenWrt Router",
+                "version": "v125", "agent_version": "v125", "model": "Fixture OpenWrt Router",
                 "hostname": "fixture-" + router_id, "ip": "192.168.2.1", "lan_ip": "192.168.2.1",
                 "uptime": 86400, "cpu_percent": 12.5, "memory_percent": 42, "service": "enabled",
             },
         }
+        if self.showcase:
+            for ident, name, model in self.showcase_models:
+                if router_id == ident:
+                    result["name"] = name
+                    if ident == "node-8":
+                        result["group_id"] = "remote"  # Online device after the initial seven rows.
+                    result["status"].update(model=model, memory="288 MB free / 512 MB", flash="47.7 MB free / 91.9 MB", temperature="43.8 C",
+                                            firmware="OpenWrt 25.12.5", tachyon={"installed": True, "available": online,
+                                            "version": "2.0.0-rc.2", "mode": "standalone", "port": 1680})
+        return result
 
     def snapshot(self, router_id, advance=False):
         now = int(time.time())
@@ -112,8 +141,8 @@ class FixtureState:
 class NativeFixtureServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address):
-        self.state = FixtureState()
+    def __init__(self, address, showcase=False):
+        self.state = FixtureState(showcase)
         super().__init__(address, Handler)
 
 
@@ -227,7 +256,7 @@ class Handler(BaseHTTPRequestHandler):
             self.json_response(200, {"ok": True, "fixture": True, "native": True})
             return
         if path == BASE + "/capabilities":
-            self.json_response(200, {"ok": True, "api_version": 1, "hub_version": "v124",
+            self.json_response(200, {"ok": True, "api_version": 1, "hub_version": "v125",
                                     "native_password_login": True, "browser_login_url": "/login", "endpoints": ENDPOINTS})
             return
         if path == ENDPOINTS["challenge"]:
@@ -296,8 +325,11 @@ class Handler(BaseHTTPRequestHandler):
                 items=[] if int(query.get('after_serial',['0'])[0]) >= serial else [{"serial":serial,"title":"Fixture background alert","body":"Native notification delivered"}]
                 self.json_response(200,{"serial":serial,"notifications":items})
             elif path == "/api/routers":
-                ids = ["main"] if viewer else ["main", "offline"]
-                result = {"routers": [self.server.state.router(item, viewer) for item in ids]}
+                ids = ["main"] if viewer else ([row[0] for row in self.server.state.showcase_models]
+                       if self.server.state.showcase else ["main", "offline"])
+                order = self.server.state.router_orders.get(state['username'], [])
+                rows = [dict(self.server.state.router(item, viewer), display_order=order.index(item) if item in order else None) for item in ids]
+                result = {"routers": rows, "router_order": order, "router_order_supported": True}
                 if query.get("availability") == ["1"]:
                     now = int(time.time())
                     result["availability"] = {"from": now - 86400, "to": now, "interval": 30, "gap_after": 90,
@@ -379,9 +411,9 @@ class Handler(BaseHTTPRequestHandler):
                     data = terminal['buffer']; terminal['buffer'] = ''
                     self.json_response(200, {"ok": True, "data": data, "alive": True})
             elif path == "/api/hub-update" and self.server.state.hub_available:
-                self.json_response(200,{"ok":True,"current_version":"v124","remote_version":"v124","checked":True,"available":True,"checking":False,"error":"","remote_revision":"a"*64,"job":{}})
+                self.json_response(200,{"ok":True,"current_version":"v125","remote_version":"v125","checked":True,"available":True,"checking":False,"error":"","remote_revision":"a"*64,"job":{}})
             elif path == "/api/hub-update":
-                self.json_response(200, {"ok": True, "current_version": "v124", "remote_version": "v124", "checked": True,
+                self.json_response(200, {"ok": True, "current_version": "v125", "remote_version": "v125", "checked": True,
                     "source_incompatible": True, "notice": "Опубликованная сборка пока не поддерживает приложение Android.",
                     "available": False, "checking": False, "error": "", "job": {}})
             elif path == "/api/router-updates":
@@ -416,6 +448,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlsplit(self.path).path
+        if self.server.state.showcase and path == ENDPOINTS['login'] and self.headers.get('Origin'):
+            self.error(403, 'origin_forbidden', 'Native showcase expects no synthetic browser Origin')
+            return
         if path == '/api/fixture/upload':
             _, actor = self.require_auth()
             if actor is None or not self.same_origin():
@@ -459,6 +494,22 @@ class Handler(BaseHTTPRequestHandler):
         if state is None:
             return
         with self.server.state.lock:
+            if path == '/api/routers/order':
+                if self.headers.get('X-Router-Order') != '1':
+                    self.error(403, 'origin_forbidden', 'Order header required')
+                    return
+                ids = [row[0] for row in self.server.state.showcase_models] if self.server.state.showcase else ['main', 'offline']
+                current = self.server.state.router_orders.get(state['username'], [])
+                current = list(dict.fromkeys(current + fields.get('base_order', []) + ids))
+                key, target = fields.get('id'), fields.get('target')
+                if key not in ids or target not in ids or key == target:
+                    self.error(400, 'invalid_move', 'Invalid router')
+                    return
+                current.remove(key)
+                current.insert(current.index(target) + (fields.get('placement') == 'after'), key)
+                self.server.state.router_orders[state['username']] = current
+                self.json_response(200, {'ok': True, 'router_order': current})
+                return
             if path in ('/api/xray/reload', '/api/xray/restart'):
                 if state['username'] != TEST_USERNAME:
                     self.error(403, 'forbidden', 'Owner required')
@@ -503,7 +554,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.error(403,'forbidden','Owner CSRF required')
                 else:
                     if path.endswith('/start'): self.server.state.hub_update_starts+=1
-                    self.json_response(200,{"ok":True,"current_version":"v124","remote_version":"v124","checked":True,"available":not path.endswith('/start'),"checking":False,"error":"","remote_revision":"a"*64,"job":{"status":"succeeded","message":"Fixture Hub updated; no services restarted"} if path.endswith('/start') else {}})
+                    self.json_response(200,{"ok":True,"current_version":"v125","remote_version":"v125","checked":True,"available":not path.endswith('/start'),"checking":False,"error":"","remote_revision":"a"*64,"job":{"status":"succeeded","message":"Fixture Hub updated; no services restarted"} if path.endswith('/start') else {}})
                 return
             if path == "/api/router":
                 if state['username'] == TEST_VIEWER: self.error(403,"forbidden","Owner required")
@@ -632,7 +683,10 @@ class Handler(BaseHTTPRequestHandler):
                     "created_at": int(time.time()), "images": []}] if note else [])
                 self.json_response(200, {"ok": True, "router": self.server.state.router(router_id)})
             elif action == "wol/devices":
-                self.json_response(200, {"ok": True, "router_id": router_id, "devices": self.wol_devices()})
+                if fields.get("ssh_password") == "fixture-wrong-secret":
+                    self.error(400, "ssh_failed", "Fixture SSH authentication failed")
+                else:
+                    self.json_response(200, {"ok": True, "router_id": router_id, "devices": self.wol_devices()})
             elif fields.get("mac") != "02:00:00:00:00:01":
                 self.error(400, "invalid_mac", "Use the disposable fixture device")
             else:
@@ -643,12 +697,13 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--showcase", action="store_true", help="Nine disposable routers with real model aliases for native layout checks")
     parser.add_argument("--cert", help="Optional local TLS certificate PEM")
     parser.add_argument("--key", help="Optional local TLS private key PEM")
     args = parser.parse_args()
     if bool(args.cert) != bool(args.key):
         parser.error("--cert and --key must be supplied together")
-    server = NativeFixtureServer(("127.0.0.1", args.port))
+    server = NativeFixtureServer(("127.0.0.1", args.port), showcase=args.showcase)
     scheme = "http"
     if args.cert:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)

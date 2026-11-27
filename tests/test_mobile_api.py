@@ -494,6 +494,18 @@ class MobileApiTests(unittest.TestCase):
                                       headers={"Content-Type": "application/x-www-form-urlencoded"})[0], 400)
         self.assertFalse(self.sessions_file.exists())
 
+    def test_login_accepts_equivalent_origins_and_native_requests_behind_proxy(self):
+        for origin in ('https://hub.example', 'https://hub.example:443', 'https://HUB.EXAMPLE:443/'):
+            with self.subTest(origin=origin):
+                status, data, _ = self.login(headers={'Origin': origin, 'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'hub.example'})
+                self.assertEqual((status, data.get('ok')), (200, True), data)
+        status, data, _ = self.login(headers={'X-Forwarded-Proto': 'http', 'Host': '127.0.0.1:8088'})
+        self.assertEqual((status, data.get('ok')), (200, True), data)
+        for origin in ('null', 'https://other.invalid', 'http://hub.example', 'https://hub.example:8443',
+                       'https://user@hub.example', 'https://hub.example/path', 'https://hub.example?x=1', 'https://hub.example:0'):
+            with self.subTest(origin=origin):
+                self.assertEqual(self.login(headers={'Origin': origin, 'X-Forwarded-Proto': 'https', 'X-Forwarded-Host': 'hub.example'})[0], 403)
+
     def test_methods_and_unknown_paths_are_json_errors_without_touching_other_routes(self):
         self.assertEqual(self.request(mobile_api.ENDPOINTS["login"])[0], 405)
         self.assertEqual(self.request(mobile_api.ENDPOINTS["session"], {})[0], 405)
@@ -660,14 +672,21 @@ sleep() { :; }
         if os.name == "nt":
             self.prologue += "\nchmod() { :; }\n"
 
-    def deploy(self, action="Install", *, bad=False, restart_fail=False, health_fail=False):
+    def deploy(self, action="Install", *, bad=False, restart_fail=False, health_fail=False, mismatched=False, real_bundle=False):
         stage = self.root / "stage"
         stage.mkdir()
         text = ("# import mobile_api\n# mobile_api.dispatch_get(self, path)\n"
                 "# mobile_api.dispatch_post(self, path)\nNEW_HUB = True\n")
-        stage.joinpath("hub.py").write_text(text, encoding="utf-8")
         api = "if invalid syntax\n" if bad else "def dispatch_get(handler, path): pass\ndef dispatch_post(handler, path): pass\n"
-        stage.joinpath("mobile_api.py").write_text(api, encoding="utf-8")
+        api += '# deployment fixture padding\n' * 50
+        embedded = (api + ('# stale module\n' if mismatched else '')).encode('utf-8')
+        text += 'HUB_MOBILE_API_SHA256 = ' + repr(hashlib.sha256(embedded).hexdigest()) + '\n'
+        text += 'HUB_MOBILE_API_BUNDLE = ' + repr(base64.b64encode(zlib.compress(embedded, 9)).decode()) + '\n'
+        if real_bundle:
+            text = (ROOT / 'vps/owrt-remote-hub.py').read_text(encoding='utf-8')
+            api = (ROOT / 'vps/mobile_api.py').read_text(encoding='utf-8')
+        stage.joinpath("hub.py").write_text(text, encoding="utf-8", newline="\n")
+        stage.joinpath("mobile_api.py").write_text(api, encoding="utf-8", newline="\n")
         script = self.script.replace("stage=/tmp/__UPLOAD_NAME__", "stage=" + shlex.quote(stage.as_posix()))
         script = script.replace("__UPLOAD_NAME__", "fixture").replace("__ACTION__", action)
         result = subprocess.run([SH], input=self.prologue + script, text=True, encoding="utf-8", capture_output=True,
@@ -714,6 +733,64 @@ sleep() { :; }
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("Restoring both files", result.stderr)
                 self.assert_original()
+
+    def test_stale_embedded_helper_is_rejected_before_backup_or_replace(self):
+        for previous in (None, b'EXISTING_WORKING_API = True\n'):
+            with self.subTest(previous=previous):
+                if previous is not None:
+                    self.target_api.write_bytes(previous)
+                result = self.deploy(mismatched=True)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('Hub embeds a different mobile_api.py', result.stderr)
+                self.assert_original(previous)
+                self.assertFalse((self.root / 'backup').exists())
+                self.assertFalse((self.root / 'restarted').exists())
+
+    def test_real_hub_startup_keeps_uploaded_api_bytes_and_fixed_origin_policy(self):
+        boot = self.root / 'boot.py'
+        boot.write_text('''import importlib.util, os, sys
+from pathlib import Path
+os.environ['OWRT_REMOTE_STATE_DIR'] = str(Path(sys.argv[1]).parent / 'state')
+spec = importlib.util.spec_from_file_location('deployment_boot_hub', sys.argv[1])
+hub = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = hub
+spec.loader.exec_module(hub)
+hub.hub_prepare_mobile_api(sys.argv[2])
+assert hub.mobile_api._canonical_origin('https://HUB.example:443') == ('https', 'hub.example', 443)
+''', encoding='utf-8')
+        self.env.update({'FIXTURE_BOOT_SCRIPT': boot.as_posix(), 'FIXTURE_HUB': self.target_hub.as_posix(),
+                         'FIXTURE_API': self.target_api.as_posix()})
+        self.prologue += '''
+systemctl() {
+    if [ "$1" = restart ]; then
+        "$FIXTURE_PYTHON" "$FIXTURE_BOOT_SCRIPT" "$FIXTURE_HUB" "$FIXTURE_API" || return
+    fi
+    return 0
+}
+'''
+        result = self.deploy(real_bundle=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        expected = (ROOT / 'vps/mobile_api.py').read_bytes().replace(b'\r\n', b'\n')
+        self.assertEqual(self.target_api.read_bytes(), expected)
+        self.assertIn('NATIVE_MOBILE_API_Install_OK', result.stdout)
+
+    def test_changed_helper_after_restart_reports_file_verification_and_rolls_back(self):
+        self.env['FIXTURE_API'] = self.target_api.as_posix()
+        self.prologue += '''
+systemctl() {
+    if [ "$1" = restart ] && [ ! -e "$FIXTURE_RESTART" ]; then
+        : >"$FIXTURE_RESTART"
+        printf '%s\n' 'CHANGED_AFTER_START = True' >"$FIXTURE_API"
+    fi
+    return 0
+}
+'''
+        result = self.deploy()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Installed file changed after Hub restart: mobile_api.py', result.stderr)
+        self.assertIn('failed during verify-files', result.stderr)
+        self.assert_original()
+
 
     def test_installer_extracts_exact_helper_and_preserves_previous_file_on_bad_checksum(self):
         installer = (ROOT / "vps/install-vps.sh").read_text(encoding="utf-8")

@@ -2,8 +2,8 @@ param(
     [Parameter(Mandatory = $true, ParameterSetName = 'Vps')][string]$Vps,
     [Parameter(Mandatory = $true, ParameterSetName = 'Router')][string]$Router,
     [ValidateSet('Install', 'Rollback')][string]$Action = 'Install',
-    [ValidateSet('tachyon-integration', 'tachyon-layout', 'tachyon-detection', 'router-card-details', 'donate-ui', 'sidebar-ui')][string]$BackupName = 'tachyon-integration',
-    [ValidateSet('v121', 'v122')][string]$BackupVersion = 'v121',
+    [ValidateSet('tachyon-integration', 'tachyon-layout', 'tachyon-detection', 'router-card-details', 'donate-ui', 'sidebar-ui', 'tachyon-node-lifecycle')][string]$BackupName = 'tachyon-integration',
+    [ValidateSet('v121', 'v122', 'v125')][string]$BackupVersion = 'v121',
     [ValidateRange(1, 65535)][int]$Port = 22,
     [string]$JumpHost = '',
     [switch]$DeferRestart,
@@ -216,7 +216,7 @@ fi
 
 try {
     [System.IO.Directory]::CreateDirectory($StageRoot) | Out-Null
-    if ($BackupVersion -eq 'v122') { $RemoteScript = $RemoteScript.Replace('-__BACKUP_NAME__-v121', '-__BACKUP_NAME__-v122') }
+    if ($BackupVersion -ne 'v121') { $RemoteScript = $RemoteScript.Replace('-__BACKUP_NAME__-v121', '-__BACKUP_NAME__-' + $BackupVersion) }
     $RemoteScript = $RemoteScript.Replace('__UPLOAD_NAME__', $UploadName).Replace('__KIND__', $TargetKind).Replace('__ACTION__', $Action).Replace('__BACKUP_NAME__', $BackupName).Replace('__DEFER_RESTART__', $(if ($DeferRestart) { '1' } else { '0' }))
     [System.IO.File]::WriteAllText((Join-Path $StageRoot 'run.sh'), $RemoteScript.Replace("`r`n", "`n") + "`n", $Utf8)
     if ($Action -eq 'Install') {

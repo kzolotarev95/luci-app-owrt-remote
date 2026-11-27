@@ -35,6 +35,16 @@ public final class MainActivity extends Activity {
       hubUpdateStatus = new JSONObject(),
       loginMeta = new JSONObject();
   private JSONArray routers = new JSONArray(), groups = new JSONArray();
+  private boolean routerOrderSupported, routerDragging;
+  private String draggedRouter = "";
+  private int dragScrollDelta;
+  private final Runnable dragScroll = new Runnable() {
+    @Override public void run() {
+      if (!routerDragging || scrollView == null) return;
+      if (dragScrollDelta != 0) scrollView.scrollBy(0, dragScrollDelta);
+      main.postDelayed(this, 32);
+    }
+  };
   private String screen = "connect",
       selectedId = "",
       search = "",
@@ -51,7 +61,7 @@ public final class MainActivity extends Activity {
       pendingRevalidation,
       quietRequest,
       updatingViews,
-      addressVisible;
+      mapExpanded;
   private final Runnable refreshTick =
       () -> {
         if (resumed && api != null && api.hasSession() && isDataScreen()) {
@@ -150,6 +160,9 @@ public final class MainActivity extends Activity {
     returning = true;
     resumed = false;
     main.removeCallbacks(refreshTick);
+    main.removeCallbacks(dragScroll);
+    routerDragging = false;
+    draggedRouter = "";
     super.onPause();
   }
 
@@ -212,7 +225,6 @@ public final class MainActivity extends Activity {
     generation++;
     routerResults = null;
     main.removeCallbacks(refreshTick);
-    addressVisible = false;
     root = ui.column();
     root.setBackgroundColor(ui.BG);
     root.setOnApplyWindowInsetsListener(
@@ -227,36 +239,39 @@ public final class MainActivity extends Activity {
     NativeEffects.install(this, root);
     root.requestApplyInsets();
     LinearLayout header = ui.row();
-    header.setPadding(ui.dp(16), ui.dp(9), ui.dp(12), ui.dp(9));
-    if (!Arrays.asList("overview", "routers", "settings", "connect", "login").contains(name))
-      header.addView(ui.iconButton("back", "Назад", this::onBackPressed));
-    else header.addView(ui.iconBadge("server", ui.BLUE));
+    header.setTag("native-toolbar");
+    header.setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4));
+    if (bottom && Arrays.asList("overview", "routers", "settings").contains(name))
+      header.addView(ui.iconButton("menu", "Открыть меню Hub", this::openNavigation));
+    else if (Arrays.asList("connect", "login").contains(name)) header.addView(ui.logoBadge(40));
+    if (!Arrays.asList("connect", "login").contains(name)) header.addView(ui.logoBadge(26));
     LinearLayout labels = ui.column();
     labels.setPadding(ui.dp(10), 0, 0, 0);
-    TextView heading = ui.text(title, 20, true);
+    TextView heading =
+        ui.text(
+            name.equals("overview")
+                ? "OWRT Hub " + hubUpdateStatus.optString("current_version", "v125")
+                : title,
+            18,
+            true);
+    heading.setGravity(Gravity.START);
     heading.setSingleLine(true);
     heading.setEllipsize(TextUtils.TruncateAt.END);
     labels.addView(heading);
-    TextView sub = ui.text(api == null ? "Ваша сеть всегда рядом" : "Адрес скрыт", 12, false);
-    sub.setTextColor(ui.MUTED);
-    sub.setSingleLine(true);
-    sub.setEllipsize(TextUtils.TruncateAt.END);
-    labels.addView(ui.spacer(4));
-    labels.addView(sub);
+    if (api == null) {
+      TextView sub = ui.text("Ваша сеть всегда рядом", 12, false);
+      sub.setGravity(Gravity.START);
+      sub.setTextColor(ui.MUTED);
+      labels.addView(ui.spacer(4));
+      labels.addView(sub);
+    }
     header.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
-    if (api != null)
-      header.addView(
-          ui.iconButton(
-              "eye",
-              "Показать или скрыть адрес Hub",
-              () -> {
-                addressVisible = !addressVisible;
-                sub.setText(addressVisible ? api.getHub().getAuthority() : "Адрес скрыт");
-              }));
     if (api != null && api.hasSession() && owner())
       header.addView(ui.iconButton("bell", "Уведомления", () -> settingsTool("notifications")));
-    root.addView(header);
-    root.addView(ui.compactDivider());
+    if (!name.equals("login")) {
+      root.addView(header);
+      root.addView(ui.compactDivider());
+    }
     progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
     progress.setIndeterminate(true);
     progress.setVisibility(requesting ? View.VISIBLE : View.GONE);
@@ -270,7 +285,7 @@ public final class MainActivity extends Activity {
     scrollView = scroll;
     scroll.setFillViewport(true);
     content = ui.column();
-    content.setPadding(ui.dp(20), ui.dp(8), ui.dp(20), ui.dp(20));
+    content.setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(20));
     scroll.addView(content);
     root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
     if (restoreScrollY >= 0) {
@@ -429,7 +444,16 @@ public final class MainActivity extends Activity {
   }
 
   private void setButtonsEnabled(View view, boolean enabled) {
-    if (view instanceof Button) view.setEnabled(enabled);
+    if (view instanceof Button) {
+      boolean allowed = enabled;
+      if (view.getTag() instanceof String && ((String) view.getTag()).startsWith("router-order:")) {
+        String[] parts = ((String) view.getTag()).split(":");
+        List<String> peers = routerOrderPeers(parts[1]);
+        int direction = Integer.parseInt(parts[2]), index = peers.indexOf(parts[1]);
+        allowed &= routerOrderSupported && (direction == 0 ? peers.size() > 1 : direction < 0 ? index > 0 : index >= 0 && index < peers.size() - 1);
+      }
+      view.setEnabled(allowed);
+    }
     if (view instanceof ViewGroup) {
       ViewGroup group = (ViewGroup) view;
       for (int i = 0; i < group.getChildCount(); i++)
@@ -449,7 +473,8 @@ public final class MainActivity extends Activity {
 
   private void schedule() {
     main.removeCallbacks(refreshTick);
-    if (resumed && isDataScreen()) main.postDelayed(refreshTick, 5000);
+    if (resumed && isDataScreen())
+      main.postDelayed(refreshTick, prefs.getBoolean("lite", false) ? 10000 : 5000);
   }
 
   private boolean keyboardOpen() {
@@ -474,12 +499,14 @@ public final class MainActivity extends Activity {
     clearAccountData();
     api = null;
     frame("connect", "OWRT Hub", false);
-    space(22);
-    add(ui.iconBadge("shield", ui.BLUE));
-    space(24);
-    title(
-        "Ваша сеть.\nВсегда рядом.",
-        "Подключите свой Hub для управления роутерами из одного приложения.");
+    space(12);
+    add(ui.logoBadge(48));
+    space(16);
+    title("Подключение к Hub", "Управление вашей сетью. С любого расстояния.");
+    LinearLayout connectionPage = content;
+    LinearLayout connectCard = ui.card();
+    add(connectCard);
+    content = connectCard;
     String origin = "";
     EditText host = ui.field("https://hub.example.com", origin, false);
     host.setId(R.id.hub_host);
@@ -529,7 +556,10 @@ public final class MainActivity extends Activity {
     b.setId(R.id.hub_connect);
     add(b);
     space(20);
-    add(ui.body("Защищённое соединение HTTPS. Учётные данные вводятся на следующем шаге."));
+    TextView security = ui.text("Защищённое соединение HTTPS", 12, false);
+    security.setTextColor(ui.GREEN);
+    add(security);
+    content = connectionPage;
   }
 
   private void clearAccountData() {
@@ -542,6 +572,7 @@ public final class MainActivity extends Activity {
     filter = "Все";
     groupFilter = "";
     selectedId = "";
+    mapExpanded = false;
   }
 
   private void loginScreen() {
@@ -549,15 +580,22 @@ public final class MainActivity extends Activity {
     captchaToken = "";
     loginMeta = new JSONObject();
     frame("login", "OWRT Hub", false);
-    space(20);
-    title("С возвращением", "Войдите в свой Hub. Пароль не сохраняется в приложении.");
+    space(10);
+    LinearLayout welcomeBrand = ui.column();
+    welcomeBrand.setGravity(Gravity.CENTER_HORIZONTAL);
+    View welcomeLogo = ui.logoBadge(64);
+    welcomeLogo.setTag("welcome-logo");
+    welcomeBrand.addView(welcomeLogo);
+    add(welcomeBrand);
+    space(14);
+    title("С возвращением", "Вход в OWRT Hub");
     String username = "";
     try {
       username = store.getLastUsername();
     } catch (Exception ignored) {
     }
     LinearLayout loginPage = content;
-    credentials = ui.column();
+    credentials = ui.card();
     add(credentials);
     content = credentials;
     user = ui.field("Ваш логин", username, false);
@@ -695,7 +733,7 @@ public final class MainActivity extends Activity {
 
   private void refresh(boolean navigate) {
     if (api == null) return;
-    if (requesting) {
+    if (requesting || routerDragging) {
       schedule();
       return;
     }
@@ -749,6 +787,7 @@ public final class MainActivity extends Activity {
           }
           routers = value.optJSONArray("routers");
           if (routers == null) routers = new JSONArray();
+          routerOrderSupported = value.optBoolean("router_order_supported");
           groups = value.optJSONArray("groups");
           if (groups == null) groups = new JSONArray();
           availability = obj(value, "availability");
@@ -756,7 +795,7 @@ public final class MainActivity extends Activity {
           hubUpdateStatus = obj(value, "hub_update");
           if (!navigate && (destination.equals("overview") || destination.equals("router"))) {
             updateVisibleValues(destination);
-          } else if (!navigate && destination.equals("routers") && routerResults != null) {
+          } else if (!navigate && destination.equals("routers") && routerResults != null && !routerDragging) {
             LinearLayout replacement = ui.column();
             renderList(replacement, search);
             ViewUpdates.patchChildren(routerResults, replacement);
@@ -806,76 +845,246 @@ public final class MainActivity extends Activity {
 
   private void overview() {
     frame("overview", "OWRT Hub", true);
-    title(
-        "Всё под контролем", str(obj(session, "account"), "username", "Ваш Hub") + " · Обзор сети");
+    sectionHeading(
+        "Дашборд",
+        online() == routers.length() ? "Все роутеры на связи" : "Есть роутеры без связи");
+    TextView summary =
+        ui.text(online() + " из " + routers.length() + " на связи · данные от агентов", 12, false);
+    summary.setTextColor(ui.MUTED);
+    summary.setGravity(Gravity.CENTER);
+    add(summary);
+    space(14);
+    LinearLayout stats = ui.column();
+    stats.setTag("dashboard-statistics");
+    stats.setVisibility(prefs.getBoolean("statsVisible", true) ? View.VISIBLE : View.GONE);
+    LinearLayout previous = content;
+    content = stats;
     LinearLayout counts = ui.row();
     metric(counts, "Всего роутеров", routers.length(), ui.TEXT);
     metric(counts, "В сети", online(), ui.GREEN);
     add(counts);
-    space(12);
-    LinearLayout moreCounts = ui.row();
-    metric(moreCounts, "Не в сети", routers.length() - online(), ui.RED);
-    metric(moreCounts, "Xray запущен", xrayRunning(), ui.GREEN);
-    add(moreCounts);
-    space(18);
-    LinearLayout graph = ui.card(), top = ui.row();
-    top.addView(ui.text("Доступность роутеров", 16, true), new LinearLayout.LayoutParams(0, -2, 1));
-    top.addView(ui.chip("24 ч", ui.MUTED));
-    graph.addView(top);
-    graph.addView(ui.spacer(14));
+    space(8);
+    LinearLayout more = ui.row();
+    metric(more, "Не в сети", routers.length() - online(), ui.RED);
+    metric(more, "Xray запущен", xrayRunning(), ui.BLUE);
+    add(more);
+    if (owner()) {
+      space(8);
+      LinearLayout host = ui.row();
+      percentMetric(host, "ЦП VPS", resources.opt("cpu"), NativeUi.color("#ac94eb"));
+      percentMetric(host, "ОЗУ VPS", resources.opt("memory"), NativeUi.color("#73b6ff"));
+      add(host);
+    }
+    space(14);
+    content = previous;
+    add(stats);
+    add(
+        new NativeNetworkMap(
+            this,
+            ui,
+            orderedRouters(false),
+            mapExpanded,
+            panelVisible("map"),
+            () -> toggleDashboardPanel("map"),
+            this::detail,
+            expanded -> {
+              mapExpanded = expanded;
+              updateVisibleValues("overview");
+            }));
+    space(14);
+    LinearLayout graph = ui.card();
+    graph.setTag("availability-panel");
+    Button graphToggle = ui.panelToggle(panelVisible("availability"), "Доступность роутеров", () -> toggleDashboardPanel("availability"));
+    graphToggle.setTag("panel-toggle:availability");
+    graph.addView(ui.panelHeading("availability", "Доступность роутеров", "activity", graphToggle));
+    LinearLayout graphBody = ui.column();
+    graphBody.setTag("panel-body:availability");
+    graphBody.setVisibility(panelVisible("availability") ? View.VISIBLE : View.GONE);
+    graph.addView(graphBody);
+    graphBody.addView(ui.spacer(12));
+    LinearLayout legend = ui.row();
+    TextView on = ui.text("● Онлайн " + online(), 11, true);
+    on.setTextColor(ui.GREEN);
+    on.setGravity(Gravity.START);
+    TextView off = ui.text("● Офлайн " + (routers.length() - online()), 11, true);
+    off.setTextColor(ui.RED);
+    off.setGravity(Gravity.END);
+    legend.addView(on, new LinearLayout.LayoutParams(0, -2, 1));
+    legend.addView(off, new LinearLayout.LayoutParams(0, -2, 1));
+    graphBody.addView(legend);
+    int savedHours = prefs.getInt("availabilityHours", 24);
+    final int hours = savedHours == 6 || savedHours == 12 ? savedHours : 24;
+    LinearLayout periods = ui.row();
+    periods.setGravity(Gravity.CENTER);
+    periods.setPadding(0, ui.dp(10), 0, ui.dp(4));
+    for (final int period : new int[] {6, 12, 24}) {
+      Button choice = ui.button(period + " ч", false, () -> {
+        prefs.edit().putInt("availabilityHours", period).apply();
+        updateVisibleValues("overview");
+      });
+      choice.setTag("availability-period:" + period);
+      choice.setActivated(hours == period);
+      choice.setContentDescription("Доступность роутеров за " + period + " ч");
+      android.graphics.drawable.StateListDrawable background = new android.graphics.drawable.StateListDrawable();
+      background.addState(new int[] {android.R.attr.state_activated}, ui.shape(ui.SOFT, ui.BLUE, 8));
+      background.addState(new int[] {}, ui.ripple(ui.PANEL2, ui.LINE, 8));
+      choice.setBackground(background);
+      choice.setTextColor(hours == period ? ui.BLUE : ui.MUTED);
+      LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, ui.dp(42), 1);
+      params.setMargins(ui.dp(3), 0, ui.dp(3), 0);
+      periods.addView(choice, params);
+    }
+    graphBody.addView(periods);
     ChartView chart = new ChartView(this, ui);
+    chart.setTag("availability-chart");
     List<ChartView.Point> pts = new ArrayList<>();
     JSONArray a = availability.optJSONArray("points");
     if (a != null)
       for (int i = 0; i < a.length(); i++) {
-        JSONArray p = a.optJSONArray(i);
-        if (p != null) pts.add(new ChartView.Point(p.optLong(0) * 1000, p.optInt(1), p.optInt(2)));
+        JSONArray point = a.optJSONArray(i);
+        if (point != null)
+          pts.add(new ChartView.Point(point.optLong(0) * 1000, point.optInt(1), point.optInt(2)));
       }
     long end = availability.optLong("to", System.currentTimeMillis() / 1000) * 1000;
-    chart.setData(pts, availability.optLong("from", end / 1000 - 86400) * 1000, end);
+    chart.setData(pts, end - hours * 3600000L, end);
     chart.setExpectedIntervalMillis(availability.optLong("interval", 30) * 1000);
     chart.setGapAfterMillis(availability.optLong("gap_after", 0) * 1000);
-    graph.addView(chart, new LinearLayout.LayoutParams(-1, ui.dp(170)));
-    graph.addView(ui.label("По Heartbeat · пропуски без выдуманных данных"));
+    graphBody.addView(chart, new LinearLayout.LayoutParams(-1, ui.dp(150)));
     add(graph);
-    space(18);
-    if (owner()) {
-      LinearLayout r = ui.card();
-      r.addView(ui.text("Ресурсы VPS", 16, true));
-      r.addView(ui.spacer(16));
-      resource(r, "ЦП", resources.opt("cpu"), ui.BLUE);
-      resource(r, "ОЗУ", resources.opt("memory"), ui.GREEN);
-      resource(r, "Диск", resources.opt("disk"), ui.AMBER);
-      add(r);
-      space(18);
-    }
-    LinearLayout h = ui.row();
-    h.addView(ui.text("Ваши роутеры", 18, true), new LinearLayout.LayoutParams(0, -2, 1));
-    h.addView(ui.iconButton("router", "Все роутеры", this::routerList));
-    add(h);
-    for (int i = 0; i < Math.min(routers.length(), 3); i++) routerCard(routers.optJSONObject(i));
-    if (routers.length() == 0)
-      empty("Здесь появятся роутеры", "Добавьте устройство и подключите агент к Hub.");
     space(14);
+    if (owner()) {
+      diskBanner();
+      space(14);
+    }
     add(ui.button("Обновить состояние", false, () -> refresh(false)));
     schedule();
   }
 
-  private void metric(LinearLayout row, String label, int value, int color) {
-    LinearLayout c = ui.card();
-    c.setGravity(Gravity.CENTER);
-    c.setMinimumHeight(ui.dp(92));
-    c.setPadding(ui.dp(15), ui.dp(16), ui.dp(15), ui.dp(16));
-    TextView caption = ui.text(label, 14, false);
+  private boolean panelVisible(String key) {
+    return prefs.getBoolean("panelVisible:" + key, true);
+  }
+
+  private void toggleDashboardPanel(String key) {
+    prefs.edit().putBoolean("panelVisible:" + key, !panelVisible(key)).apply();
+    updateVisibleValues("overview");
+  }
+
+  private void sectionHeading(String title, String caption) {
+    LinearLayout section = ui.column();
+    section.setGravity(Gravity.CENTER_HORIZONTAL);
+    section.addView(ui.text(title, 17, true));
+    if (caption != null && !caption.isEmpty()) {
+      section.addView(ui.spacer(5));
+      TextView hint = ui.text(caption, 11, false);
+      hint.setTextColor(ui.MUTED);
+      section.addView(hint);
+    }
+    add(section);
+    space(8);
+  }
+
+  private double percent(Object raw) {
+    double n =
+        raw instanceof Number
+            ? ((Number) raw).doubleValue()
+            : raw instanceof JSONObject ? ((JSONObject) raw).optDouble("percent", -1) : -1;
+    return Double.isFinite(n) && n >= 0 ? Math.min(n, 100) : -1;
+  }
+
+  private void percentMetric(LinearLayout row, String label, Object data, int color) {
+    LinearLayout card =
+        metricCard(
+            row,
+            label,
+            percent(data) < 0
+                ? "—"
+                : String.format(Locale.forLanguageTag("ru"), "%.1f%%", percent(data))
+                    .replace(",0%", "%"),
+            ui.TEXT);
+    ProgressBar bar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+    bar.setMax(1000);
+    bar.setProgress((int) Math.max(0, percent(data) * 10));
+    bar.setProgressTintList(android.content.res.ColorStateList.valueOf(color));
+    bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(ui.LINE));
+    card.addView(ui.spacer(5));
+    card.addView(bar, new LinearLayout.LayoutParams(-1, ui.dp(3)));
+  }
+
+  private LinearLayout metricCard(LinearLayout row, String label, String value, int color) {
+    LinearLayout card = ui.card();
+    card.setGravity(Gravity.CENTER);
+    card.setTag("dashboard-metric:" + label);
+    card.setPadding(ui.dp(8), ui.dp(7), ui.dp(8), ui.dp(7));
+    card.setMinimumHeight(ui.dp(64));
+    TextView caption = ui.text(label, 11, false);
     caption.setTextColor(ui.MUTED);
-    c.addView(caption);
-    c.addView(ui.spacer(18), new LinearLayout.LayoutParams(-1, ui.dp(18), 1));
-    TextView n = ui.text(String.valueOf(value), 28, true);
+    card.addView(caption);
+    card.addView(ui.spacer(5));
+    TextView n = ui.text(value, 22, true);
     n.setTextColor(color);
-    c.addView(n);
-    LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(0, -1, 1);
-    if (row.getChildCount() > 0) p.setMargins(ui.dp(12), 0, 0, 0);
-    row.addView(c, p);
+    card.addView(n);
+    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, 1);
+    if (row.getChildCount() > 0) lp.setMargins(ui.dp(8), 0, 0, 0);
+    row.addView(card, lp);
+    return card;
+  }
+
+  private String sizeText(double n) {
+    if (!Double.isFinite(n) || n < 0) return "—";
+    String[] units = {"Б", "КиБ", "МиБ", "ГиБ", "ТиБ"};
+    int i = 0;
+    while (n >= 1024 && i < 4) {
+      n /= 1024;
+      i++;
+    }
+    return String.format(Locale.forLanguageTag("ru"), "%.1f", n).replace(",0", "") + " " + units[i];
+  }
+
+  private void diskBanner() {
+    JSONObject disk = obj(resources, "disk");
+    LinearLayout card = ui.card();
+    card.setTag("disk-banner");
+    card.setGravity(Gravity.CENTER_HORIZONTAL);
+    Button diskToggle = ui.panelToggle(panelVisible("disk"), "Диск VPS", () -> toggleDashboardPanel("disk"));
+    diskToggle.setTag("panel-toggle:disk");
+    card.addView(ui.panelHeading("disk", "Диск VPS", "disk", diskToggle));
+    LinearLayout diskBody = ui.column();
+    diskBody.setGravity(Gravity.CENTER_HORIZONTAL);
+    diskBody.setTag("panel-body:disk");
+    diskBody.setVisibility(panelVisible("disk") ? View.VISIBLE : View.GONE);
+    card.addView(diskBody);
+    diskBody.addView(ui.spacer(18));
+    diskBody.addView(new DiskGaugeView(this, ui, percent(disk)));
+    diskBody.addView(ui.spacer(18));
+    LinearLayout values = ui.row();
+    values.setTag("disk-values");
+    values.setGravity(Gravity.CENTER);
+    double used = disk.optDouble("used_bytes", -1),
+        total = disk.optDouble("total_bytes", -1),
+        free = disk.optDouble("free_bytes", used >= 0 && total >= used ? total - used : -1);
+    diskValue(values, "Свободно", sizeText(free), ui.AMBER);
+    diskValue(values, "Занято", sizeText(used), ui.TEXT);
+    diskValue(values, "Всего", sizeText(total), ui.TEXT);
+    diskBody.addView(values);
+    add(card);
+  }
+
+  private void diskValue(LinearLayout box, String label, String value, int color) {
+    LinearLayout column = ui.column();
+    column.setGravity(Gravity.CENTER_HORIZONTAL);
+    column.setPadding(ui.dp(8), 0, ui.dp(8), 0);
+    TextView key = ui.text(label, 12, false);
+    key.setTextColor(ui.MUTED);
+    column.addView(key, new LinearLayout.LayoutParams(-2, -2));
+    column.addView(ui.spacer(4));
+    TextView text = ui.text(value, 12, true);
+    text.setTextColor(color);
+    column.addView(text, new LinearLayout.LayoutParams(-2, -2));
+    box.addView(column, new LinearLayout.LayoutParams(-2, -2));
+  }
+
+  private void metric(LinearLayout row, String label, int value, int color) {
+    metricCard(row, label, String.valueOf(value), color);
   }
 
   private void resource(LinearLayout c, String name, Object raw, int color) {
@@ -937,6 +1146,12 @@ public final class MainActivity extends Activity {
     }
     add(filters);
     space(8);
+    TextView orderHint = ui.text(routerOrderSupported
+        ? "Удерживайте ✥ для перетаскивания или используйте стрелки. Порядок сохраняется в Hub."
+        : "Для перестановки карточек обновите панель Hub.", 11, false);
+    orderHint.setTextColor(ui.MUTED);
+    add(orderHint);
+    space(8);
     if (groups.length() > 0) {
       add(
           ui.button(
@@ -981,71 +1196,250 @@ public final class MainActivity extends Activity {
     schedule();
   }
 
+  private List<JSONObject> orderedRouters(boolean filtered) {
+    List<JSONObject> rows = new ArrayList<>();
+    for (int i = 0; i < routers.length(); i++) {
+      JSONObject r = routers.optJSONObject(i);
+      if (r == null) continue;
+      String value = (r.optString("name") + " " + r.optString("id")).toLowerCase(Locale.ROOT);
+      boolean on = r.optBoolean("online");
+      if (filtered
+          && (!value.contains(search.toLowerCase(Locale.ROOT))
+              || filter.equals("Онлайн") && !on
+              || filter.equals("Офлайн") && on
+              || !groupFilter.isEmpty() && !groupFilter.equals(r.optString("group_id")))) continue;
+      rows.add(r);
+    }
+    java.text.Collator order = java.text.Collator.getInstance(Locale.forLanguageTag("ru"));
+    rows.sort(
+        (a, b) -> {
+          int group =
+              filtered && !filter.equals("Все")
+                  ? 0
+                  : order.compare(
+                      groupName(a.optString("group_id")), groupName(b.optString("group_id")));
+          return group != 0
+              ? group
+              : a.optInt("display_order", Integer.MAX_VALUE) != b.optInt("display_order", Integer.MAX_VALUE)
+                  ? Integer.compare(a.optInt("display_order", Integer.MAX_VALUE), b.optInt("display_order", Integer.MAX_VALUE))
+                  : order.compare(a.optString("name", a.optString("id")), b.optString("name", b.optString("id")));
+        });
+    return rows;
+  }
+
   private void renderList(LinearLayout list, String query) {
     list.removeAllViews();
     LinearLayout previous = content;
     content = list;
-    int count = 0;
-    for (int i = 0; i < routers.length(); i++) {
-      JSONObject r = routers.optJSONObject(i);
-      boolean on = r.optBoolean("online");
-      String text = (r.optString("name") + " " + r.optString("id")).toLowerCase(Locale.ROOT);
-      if (!text.contains(query.toLowerCase(Locale.ROOT))
-          || filter.equals("Онлайн") && !on
-          || filter.equals("Офлайн") && on
-          || !groupFilter.isEmpty() && !groupFilter.equals(r.optString("group_id"))) continue;
+    List<JSONObject> rows = orderedRouters(true);
+    String last = "";
+    for (JSONObject r : rows) {
+      String group = groupName(r.optString("group_id"));
+      if (filter.equals("Все") && !group.equals(last)) {
+        space(10);
+        sectionHeading(group, "");
+        last = group;
+      }
       routerCard(r);
-      count++;
     }
-    if (count == 0) empty("Роутеры не найдены", "Измените поиск или фильтр.");
+    if (rows.isEmpty()) empty("Роутеры не найдены", "Измените поиск или фильтр.");
     content = previous;
   }
 
   private void routerCard(JSONObject r) {
-    space(10);
-    LinearLayout card = ui.card(), row = ui.row();
-    card.setTag("router:" + r.optString("id"));
-    row.addView(ui.iconBadge("router", r.optBoolean("online") ? ui.GREEN : ui.MUTED));
-    LinearLayout n = ui.column();
-    n.setPadding(ui.dp(12), 0, ui.dp(8), 0);
-    n.addView(ui.text(str(r, "name", r.optString("id")), 16, true));
-    TextView id =
-        ui.text(r.optString("id") + " · " + groupName(r.optString("group_id")), 12, false);
-    id.setTextColor(ui.MUTED);
-    n.addView(ui.spacer(5));
-    n.addView(id);
-    row.addView(n, new LinearLayout.LayoutParams(0, -2, 1));
-    row.addView(
-        ui.chip(
-            r.optBoolean("online") ? "Онлайн" : "Офлайн",
-            r.optBoolean("online") ? ui.GREEN : ui.RED));
-    card.addView(row);
-    card.addView(ui.spacer(16));
-    String x = obj(r, "status").optString("xray");
-    card.addView(
-        ui.text(
-            "Xray  ·  "
-                + (x.equals("running")
-                    ? "Запущен"
-                    : x.equals("stopped") ? "Остановлен" : "Нет данных"),
-            13,
-            false));
+    space(8);
+    String id = r.optString("id");
+    boolean online = r.optBoolean("online");
+    LinearLayout card = ui.card();
+    card.setTag("router:" + id);
+    card.setGravity(Gravity.CENTER_HORIZONTAL);
+    card.addView(ui.chip(online ? "● Онлайн" : "● Офлайн", online ? ui.GREEN : ui.RED));
+    card.addView(routerOrderControls(id));
+    card.setOnDragListener((view, event) -> {
+      if (event.getAction() == android.view.DragEvent.ACTION_DRAG_STARTED)
+        return routerDragging && event.getLocalState() instanceof String;
+      if (event.getAction() == android.view.DragEvent.ACTION_DRAG_ENDED) {
+        routerDragging = false; draggedRouter = ""; dragScrollDelta = 0;
+        main.removeCallbacks(dragScroll); view.setBackground(ui.ripple(ui.PANEL, ui.LINE, 9));
+        return true;
+      }
+      if (event.getAction() == android.view.DragEvent.ACTION_DRAG_LOCATION && routerDragging) {
+        int[] position = new int[2], scroll = new int[2];
+        view.getLocationOnScreen(position); scrollView.getLocationOnScreen(scroll);
+        float y = position[1] + event.getY() - scroll[1];
+        dragScrollDelta = y < ui.dp(70) ? -ui.dp(9) : y > scrollView.getHeight() - ui.dp(70) ? ui.dp(9) : 0;
+        return true;
+      }
+      if (!routerDragging || !routerOrderPeers(draggedRouter).contains(id) || id.equals(draggedRouter)) return false;
+      if (event.getAction() == android.view.DragEvent.ACTION_DRAG_ENTERED)
+        view.setBackground(ui.shape(ui.PANEL, ui.AMBER, 9));
+      if (event.getAction() == android.view.DragEvent.ACTION_DRAG_EXITED)
+        view.setBackground(ui.ripple(ui.PANEL, ui.LINE, 9));
+      if (event.getAction() == android.view.DragEvent.ACTION_DROP) {
+        String moving = draggedRouter;
+        routerDragging = false; main.removeCallbacks(dragScroll);
+        saveRouterMove(moving, id, event.getY() < view.getHeight() / 2f ? "before" : "after");
+      }
+      return true;
+    });
+    card.addView(ui.spacer(12));
+    JSONObject status = obj(r, "status");
+    String x = status.optString("xray");
+    LinearLayout device = ui.row();
+    device.setGravity(Gravity.CENTER);
+    device.setTag("router-device-summary");
+    device.addView(new RouterPhotoView(this, ui, r, 88));
+    LinearLayout metrics = ui.column();
+    metrics.setPadding(ui.dp(12), 0, 0, 0);
+    metrics.setGravity(Gravity.CENTER_HORIZONTAL);
+    deviceMetric(
+        metrics,
+        "Xray",
+        !online
+            ? "Нет связи"
+            : x.equals("running") ? "Запущен" : x.equals("stopped") ? "Остановлен" : "—",
+        !online ? ui.MUTED : x.equals("running") ? ui.GREEN : ui.RED);
+    metrics.addView(ui.spacer(8));
+    String temperature = str(status, "temperature", "—");
+    deviceMetric(
+        metrics,
+        "Температура",
+        online && !temperature.equals("—")
+            ? temperature.replaceAll("\\s*°?\\s*[Cc]$", "") + " °C"
+            : "—",
+        ui.TEXT);
+    metrics.addView(ui.spacer(8));
+    TextView memory = ui.text("ОЗУ · " + (online ? memoryPercent(status) : "—"), 11, false);
+    memory.setTextColor(ui.MUTED);
+    metrics.addView(memory);
+    device.addView(metrics, new LinearLayout.LayoutParams(ui.dp(132), -2));
+    card.addView(device);
+    card.addView(ui.spacer(10));
+    LinearLayout labels = ui.column();
+    labels.setGravity(Gravity.CENTER_HORIZONTAL);
+    TextView name = ui.routerName(str(r, "name", id), 16);
+    name.setTag("router-name:" + id);
+    labels.addView(name);
+    labels.addView(ui.spacer(5));
+    TextView ident = ui.text(id, 11, false);
+    ident.setTextColor(ui.MUTED);
+    labels.addView(ident);
+    card.addView(labels);
     String preview = str(r, "notes_preview", "");
-    if (preview.isEmpty()) preview = str(r, "notes", "");
-    int noteCount = r.optInt("notes_count", 0);
-    if (!preview.isEmpty() || noteCount > 0 || r.optBoolean("has_notes")) {
-      card.addView(ui.spacer(10));
+    int count = r.optInt("notes_count", r.optInt("note_count", 0));
+    if (!preview.isEmpty() || count > 0 || r.optBoolean("has_notes")) {
+      card.addView(ui.spacer(12));
       TextView note =
-          ui.text("Заметки" + (noteCount > 0 ? " · " + noteCount : "") + "\n" + preview, 13, false);
-      note.setMaxLines(4);
+          ui.text("Заметки" + (count > 0 ? " · " + count : "") + "\n" + preview, 12, false);
+      note.setMaxLines(3);
       note.setEllipsize(TextUtils.TruncateAt.END);
+      note.setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8));
+      note.setBackground(ui.shape(ui.PANEL2, ui.LINE, 6));
       card.addView(note);
       if (obj(r, "permissions").optBoolean("notes")) note.setOnClickListener(v -> tool("notes", r));
     }
-    card.setOnClickListener(v -> detail(r.optString("id")));
+    card.addView(ui.spacer(12));
+    card.addView(ui.button("Открыть данные", false, () -> detail(id)));
+    card.setOnClickListener(v -> detail(id));
     card.setFocusable(true);
     card.setContentDescription("Открыть роутер " + r.optString("name"));
     add(card);
+  }
+
+  private List<String> routerOrderPeers(String id) {
+    String group = "";
+    for (int i = 0; i < routers.length(); i++)
+      if (routers.optJSONObject(i).optString("id").equals(id)) group = routers.optJSONObject(i).optString("group_id");
+    List<String> ids = new ArrayList<>();
+    for (JSONObject row : orderedRouters(true))
+      if (!filter.equals("Все") || group.equals(row.optString("group_id"))) ids.add(row.optString("id"));
+    return ids;
+  }
+
+  private View routerOrderControls(String id) {
+    LinearLayout row = ui.row();
+    row.setGravity(Gravity.CENTER);
+    row.setPadding(0, ui.dp(5), 0, 0);
+    row.setTag("router-order-controls:" + id);
+    List<String> peers = routerOrderPeers(id);
+    for (int direction : new int[] {-1, 0, 1}) {
+      Button button = ui.button(direction < 0 ? "↑" : direction > 0 ? "↓" : "✥", NativeUi.Style.QUIET, () -> {
+        if (direction == 0) {
+          notice("Удерживайте значок и перетащите карточку. Стрелки меняют порядок на одну позицию.", false);
+          return;
+        }
+        List<String> current = routerOrderPeers(id);
+        int target = current.indexOf(id) + direction;
+        if (target >= 0 && target < current.size()) saveRouterMove(id, current.get(target), direction < 0 ? "before" : "after");
+      });
+      button.setTag("router-order:" + id + ":" + direction);
+      button.setContentDescription(direction == 0 ? "Перетащить " + id : "Переместить " + id + (direction < 0 ? " раньше" : " позже"));
+      button.setEnabled(routerOrderSupported && (direction == 0 ? peers.size() > 1 : direction < 0 ? peers.indexOf(id) > 0 : peers.indexOf(id) < peers.size() - 1));
+      button.setTextSize(11);
+      button.setPadding(ui.dp(4), 0, ui.dp(4), 0);
+      button.setMinHeight(ui.dp(32)); button.setMinimumHeight(ui.dp(32));
+      row.addView(button, new LinearLayout.LayoutParams(ui.dp(36), ui.dp(32)));
+      if (direction == 0) button.setOnLongClickListener(view -> {
+        if (!routerOrderSupported || (requesting && !quietRequest)) return false;
+        routerDragging = true; draggedRouter = id;
+        boolean started = view.startDragAndDrop(android.content.ClipData.newPlainText("router", id), new View.DragShadowBuilder(view), id, 0);
+        if (!started) { routerDragging = false; draggedRouter = ""; return false; }
+        main.post(dragScroll);
+        return true;
+      });
+    }
+    return row;
+  }
+
+  private void saveRouterMove(String id, String target, String placement) {
+    if ((requesting && !quietRequest) || !routerOrderSupported) return;
+    JSONArray base = new JSONArray();
+    for (JSONObject row : orderedRouters(false)) base.put(row.optString("id"));
+    call(client -> client.post("/api/routers/order", json("id", id, "target", target, "placement", placement, "base_order", base)), value -> {
+      JSONArray order = value.optJSONArray("router_order");
+      if (order == null) { notice("Hub не подтвердил порядок карточек", true); return; }
+      for (int i = 0; i < routers.length(); i++) {
+        JSONObject router = routers.optJSONObject(i);
+        int rank = Integer.MAX_VALUE;
+        for (int n = 0; n < order.length(); n++) if (order.optString(n).equals(router.optString("id"))) { rank = n; break; }
+        try { router.put("display_order", rank); } catch (JSONException ignored) {}
+      }
+      if (routerResults != null && screen.equals("routers")) {
+        LinearLayout replacement = ui.column(); renderList(replacement, search);
+        ViewUpdates.patchChildren(routerResults, replacement);
+      }
+      notice("Порядок карточек сохранён", false);
+    });
+  }
+
+  private void deviceMetric(LinearLayout column, String title, String value, int color) {
+    TextView label = ui.text(title, 11, false);
+    label.setTextColor(ui.MUTED);
+    column.addView(label);
+    column.addView(ui.spacer(3));
+    TextView n = ui.text(value, 12, true);
+    n.setTextColor(color);
+    n.setMaxLines(2);
+    n.setEllipsize(TextUtils.TruncateAt.END);
+    column.addView(n);
+  }
+
+  private String memoryPercent(JSONObject status) {
+    double reported = status.optDouble("memory_percent", Double.NaN);
+    if (Double.isFinite(reported) && reported >= 0 && reported <= 100)
+      return Math.round(reported) + "%";
+    java.util.regex.Matcher match =
+        java.util.regex.Pattern.compile("(?i)([\\d.]+)\\s*(?:MB\\s*free)?\\s*/\\s*([\\d.]+)")
+            .matcher(status.optString("memory"));
+    if (match.find())
+      try {
+        double free = Double.parseDouble(match.group(1)),
+            total = Double.parseDouble(match.group(2));
+        if (total > 0)
+          return Math.max(0, Math.min(100, Math.round((1 - free / total) * 100))) + "%";
+      } catch (NumberFormatException ignored) {
+      }
+    return "—";
   }
 
   private JSONObject selected() {
@@ -1067,9 +1461,9 @@ public final class MainActivity extends Activity {
     LinearLayout hero = ui.card();
     hero.setGravity(Gravity.CENTER_HORIZONTAL);
     hero.setTag("router-hero");
-    hero.addView(ui.iconBadge("router", ui.BLUE));
+    hero.addView(new RouterPhotoView(this, ui, r, 104));
     hero.addView(ui.spacer(14));
-    hero.addView(ui.text(str(r, "name", id), 24, true));
+    hero.addView(ui.routerName(str(r, "name", id), 24));
     hero.addView(ui.spacer(12));
     hero.addView(
         ui.chip(
@@ -1159,35 +1553,54 @@ public final class MainActivity extends Activity {
   }
 
   private void kv(LinearLayout c, String k, String v) {
-    c.addView(ui.spacer(15));
+    c.addView(ui.spacer(10));
     LinearLayout row = ui.row();
+    row.setTag("device-kv:" + k);
+    row.setGravity(Gravity.CENTER);
     TextView l = ui.text(k, 14, false);
     l.setTextColor(ui.MUTED);
     l.setGravity(Gravity.CENTER);
-    row.addView(l, new LinearLayout.LayoutParams(0, -2, 1));
-    TextView value = ui.text(v, 14, true);
+    l.setMaxWidth(ui.dp(96));
+    row.addView(l, new LinearLayout.LayoutParams(-2, -2));
+    boolean flash = k.equals("Flash");
+    TextView value = ui.text(flash ? v.replaceAll("\\s+", " ").trim() : v, 14, true);
     value.setGravity(Gravity.CENTER);
-    row.addView(value, new LinearLayout.LayoutParams(0, -2, 1));
+    if (flash) {
+      // Let the row measure the real remaining width after the short label.
+      // The old generic 110–200 dp cap wrapped otherwise fitting Flash values.
+      value.setMaxLines(1);
+      value.setMinWidth(ui.dp(24));
+      value.setHorizontallyScrolling(false);
+      value.setEllipsize(TextUtils.TruncateAt.END);
+      int maxSp = Math.max(10, (int) (value.getTextSize() / getResources().getDisplayMetrics().scaledDensity));
+      value.setAutoSizeTextTypeUniformWithConfiguration(10, maxSp, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
+    } else {
+      int width = (int) (getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density);
+      value.setMaxWidth(ui.dp(Math.max(110, Math.min(200, width - 180))));
+    }
+    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, -2);
+    params.leftMargin = ui.dp(10);
+    row.addView(value, params);
     c.addView(row);
   }
 
   private void action(String icon, String title, String subtitle, Runnable run) {
-    LinearLayout card = ui.card(), row = ui.row();
-    card.setTag("action:" + icon);
-    card.setPadding(ui.dp(14), ui.dp(14), ui.dp(10), ui.dp(14));
-    row.addView(ui.iconBadge(icon, ui.BLUE));
-    LinearLayout labels = ui.column();
-    labels.setPadding(ui.dp(12), 0, ui.dp(8), 0);
-    labels.addView(ui.text(title, 15, true));
+    LinearLayout card = ui.card();
+    card.setTag("action:" + title);
+    card.setGravity(Gravity.CENTER_HORIZONTAL);
+    card.setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12));
+    boolean support = title.equals("Поддержать разработку");
+    card.addView(ui.iconBadge(icon, support ? ui.AMBER : ui.MUTED, 26));
+    card.addView(ui.spacer(6));
+    TextView actionTitle = ui.text(title, 14, true);
+    if (support) actionTitle.setTextColor(ui.AMBER);
+    card.addView(actionTitle);
     if (subtitle != null && !subtitle.isEmpty()) {
-      labels.addView(ui.spacer(5));
+      card.addView(ui.spacer(5));
       TextView s = ui.text(subtitle, 12, false);
       s.setTextColor(ui.MUTED);
-      labels.addView(s);
+      card.addView(s);
     }
-    row.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
-    row.addView(ui.icon("chevron", ui.MUTED));
-    card.addView(row);
     card.setOnClickListener(v -> run.run());
     card.setContentDescription(title);
     card.setFocusable(true);
@@ -1262,92 +1675,87 @@ public final class MainActivity extends Activity {
 
   private void settings() {
     frame("settings", "Настройки", true);
-    TextView settingsTitle = ui.text("Ваш Hub", 16, true);
-    settingsTitle.setTag("settings-heading");
-    add(settingsTitle);
-    space(6);
-    add(ui.label("Подключение, безопасность и оформление"));
-    space(14);
-    LinearLayout c = ui.card();
-    c.setGravity(Gravity.CENTER_HORIZONTAL);
-    c.setTag("account-card");
-    c.setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12));
+    sectionHeading("Ваш Hub", "");
+    LinearLayout account = ui.card();
+    account.setTag("account-card");
+    account.setGravity(Gravity.CENTER_HORIZONTAL);
+    account.setPadding(ui.dp(12), ui.dp(12), ui.dp(12), ui.dp(12));
     if (owner()) {
       View crown = ui.iconBadge("crown", ui.AMBER, 32);
       crown.setContentDescription("Владелец Hub · золотая корона");
-      c.addView(crown);
-      c.addView(ui.spacer(6));
+      account.addView(crown);
+      account.addView(ui.spacer(6));
     }
-    c.addView(ui.text(str(obj(session, "account"), "username", "Пользователь"), 15, true));
-    c.addView(ui.spacer(5));
-    c.addView(ui.text(owner() ? "Владелец Hub" : "Доступ по назначенным правам", 13, false));
-    add(c);
+    account.addView(ui.text(str(obj(session, "account"), "username", "Пользователь"), 15, true));
+    account.addView(ui.spacer(5));
+    account.addView(ui.text(owner() ? "Владелец Hub" : "Доступ по назначенным правам", 12, false));
+    add(account);
     space(18);
-    action(
-        "server",
-        "Подключение",
-        "Адрес скрыт",
-        () -> {
-          frame("connectionInfo", "Подключение", false);
-          title("Сервер Hub", api.getHub().toString());
-          LinearLayout secured = ui.row(); secured.setGravity(Gravity.CENTER);
-          secured.addView(ui.chip("Сессия зашифрована в Android", ui.GREEN)); add(secured);
-          space(24);
-          add(
-              ui.button(
-                  "Подключить другой Hub",
-                  false,
-                  () ->
-                      confirm(
-                          "Сменить Hub?", "Текущая сессия будет завершена.", () -> logout(true))));
-        });
-    action(
-        "settings",
-        "Оформление",
-        prefs.getBoolean("winter", false) ? "Зимняя тема" : "Графитовая тема",
-        this::design);
+    sectionHeading("Рабочее пространство", "");
+    action("grid", "Дашборд", "Карта и состояние сети", this::overview);
+    action("router", "Роутеры", routers.length() + " в вашем Hub", this::routerList);
+    if (owner())
+      action("router", "Группы роутеров", groups.length() + " групп", () -> settingsTool("groups"));
+    sectionHeading("Управление", "");
     if (owner() || obj(session, "account").optBoolean("can_add_router"))
       action(
           "plus",
           "Добавить роутер",
-          "Автоматические параметры и настройка OpenWrt",
+          "Автоматические параметры OpenWrt",
           () -> settingsTool("addRouter"));
-    if (owner())
-      action("bell", "Уведомления", "События Hub на телефоне", () -> settingsTool("notifications"));
-    action("shield", "Активные сессии", "Контроль входов в Hub", () -> settingsTool("sessions"));
     if (owner()) {
+      action(
+          "terminal", "Терминал VPS", "Консоль сервера Hub", () -> tool("vps", new JSONObject()));
+      action(
+          "refresh",
+          "Обновить роутеры",
+          "Выбор устройств и отдельные пароли",
+          () -> settingsTool("routerUpdates"));
+      action("shield", "Xray на VPS", "Обновление CFG и перезапуск", () -> settingsTool("vpsXray"));
+      action("server", "Резервные копии", "Экспорт и восстановление Hub", this::backups);
+    }
+    sectionHeading("Настройки", "");
+    action("shield", "Защита приложения", AppLock.enabled(this) ? "Включена · защита телефона" : "PIN, графический ключ или отпечаток",
+        () -> startActivity(new Intent(this, AppSecurityActivity.class)));
+    action("server", "Подключение", "", this::showConnectionInfo);
+    action(
+        "settings",
+        "Оформление",
+        prefs.getBoolean("lite", false)
+            ? "Для слабых устройств"
+            : prefs.getBoolean("winter", false) ? "Зимняя тема" : "Графитовый · как на ПК",
+        this::design);
+    action(
+        "grid",
+        prefs.getBoolean("statsVisible", true) ? "Скрыть статистику" : "Открыть статистику",
+        "Выбор сохраняется на устройстве",
+        this::toggleStatistics);
+    if (owner()) {
+      action("bell", "Уведомления", "События Hub на телефоне", () -> settingsTool("notifications"));
       action(
           "shield",
           "Пользователи и доступ",
-          "Права доступа к выбранным роутерам",
+          "Права доступа к роутерам",
           () -> settingsTool("users"));
-      action("server", "Резервные копии", "Сохранение и восстановление Hub", this::backups);
       action(
           "key", "Безопасность", "Пароль и двухфакторная защита", () -> settingsTool("security"));
-      action("router", "Группы роутеров", groups.length() + " групп", () -> settingsTool("groups"));
       action(
           "refresh",
           "Обновление Hub",
           hubUpdateStatus.optBoolean("available")
               ? "Доступно обновление " + hubUpdateStatus.optString("remote_version")
-              : "Проверка и установка новой сборки",
+              : "Проверка и установка сборки",
           () -> settingsTool("hubUpdate"));
-      action(
-          "refresh",
-          "Обновить роутеры",
-          "Последовательное обновление и перезапуск",
-          () -> settingsTool("routerUpdates"));
-      action("shield", "Xray на VPS", "Обновление CFG и перезапуск сервера Xray", () -> settingsTool("vpsXray"));
-      action(
-          "terminal", "Терминал VPS", "Root-консоль сервера", () -> tool("vps", new JSONObject()));
     }
+    action("shield", "Активные сессии", "Контроль входов в Hub", () -> settingsTool("sessions"));
+    sectionHeading("Сообщество", "");
     action(
         "crown",
         "Поддержать разработку",
         "Спасибо за поддержку проекта",
         () -> settingsTool("donate"));
-    action("grid", "О приложении", BuildConfig.VERSION_NAME, () -> settingsTool("about"));
-    space(12);
+    action("info", "О приложении", BuildConfig.VERSION_NAME, () -> settingsTool("about"));
+    space(8);
     add(
         ui.button(
             "Выйти из Hub",
@@ -1359,27 +1767,279 @@ public final class MainActivity extends Activity {
                     () -> logout(false))));
   }
 
+  private void showConnectionInfo() {
+    frame("connectionInfo", "Подключение", false);
+    title("Сервер Hub", api.getHub().toString());
+    LinearLayout secured = ui.row();
+    secured.setGravity(Gravity.CENTER);
+    secured.addView(ui.chip("Сессия зашифрована в Android", ui.GREEN));
+    add(secured);
+    space(24);
+    add(
+        ui.button(
+            "Подключить другой Hub",
+            false,
+            () -> confirm("Сменить Hub?", "Текущая сессия будет завершена.", () -> logout(true))));
+  }
+
   private void design() {
-    frame("design", "Оформление", false);
-    title("Ваш стиль", "Тема применяется ко всем нативным экранам приложения.");
-    for (String theme : new String[] {"Графитовый", "Зимний"})
+    frame("design", "Дизайн и эффекты", false);
+    title("Оформление Hub", "Выбор применяется ко всем экранам приложения.");
+    String[] names = {"Графитовый", "Зимний", "Для слабых устройств"};
+    for (int i = 0; i < names.length; i++) {
+      final int index = i;
+      boolean active =
+          i == 2
+              ? prefs.getBoolean("lite", false)
+              : !prefs.getBoolean("lite", false) && prefs.getBoolean("winter", false) == (i == 1);
       action(
-          "grid",
-          theme,
-          theme.equals("Графитовый")
-              ? "Спокойные тёмные оттенки"
-              : "Ледяные оттенки и голубые акценты",
+          i == 2 ? "menu" : "grid",
+          names[i],
+          active
+              ? "Выбрано"
+              : i == 2
+                  ? "Без эффектов и анимаций"
+                  : i == 1 ? "Ледяные оттенки" : "Как в ПК-панели OWRT Hub",
           () -> {
-            prefs.edit().putBoolean("winter", theme.equals("Зимний")).apply();
-            ui = new NativeUi(this, theme.equals("Зимний"));
+            prefs.edit().putBoolean("winter", index == 1).putBoolean("lite", index == 2).apply();
+            ui = new NativeUi(this, index == 1);
             design();
           });
-    space(16); title("Эффекты", "Выбор сохраняется и применяется на экранах приложения.");
-    for (String effect : new String[] {"off", "streams", "snow"}) {
-      String label = effect.equals("off") ? "Выключены" : effect.equals("streams") ? "Потоки" : "Снег";
-      action("grid", label, prefs.getString("effect", "off").equals(effect) ? "Выбрано" : "Включить эффект",
-          () -> { prefs.edit().putString("effect", effect).apply(); design(); });
     }
+    space(12);
+    sectionHeading("Эффекты", prefs.getBoolean("lite", false) ? "Отключены в лёгком режиме" : "");
+    for (String effect : new String[] {"off", "streams", "snow"}) {
+      String label =
+          effect.equals("off") ? "Выключены" : effect.equals("streams") ? "Потоки" : "Снег";
+      action(
+          "activity",
+          label,
+          prefs.getString("effect", "off").equals(effect) ? "Выбрано" : "Включить эффект",
+          () -> {
+            prefs.edit().putString("effect", effect).apply();
+            design();
+          });
+    }
+  }
+
+  private void openNavigation() {
+    Dialog drawer = new Dialog(this);
+    LinearLayout page = ui.column();
+    page.setBackgroundColor(ui.BG);
+    page.setPadding(ui.dp(16), ui.dp(24), ui.dp(16), ui.dp(18));
+    LinearLayout brand = ui.row();
+    brand.addView(ui.logoBadge(36));
+    TextView title = ui.text("OWRT Hub v125", 17, true);
+    brand.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+    brand.addView(ui.iconButton("close", "Закрыть меню", drawer::dismiss));
+    page.addView(brand);
+    page.addView(ui.divider());
+    ScrollView scroll = new ScrollView(this);
+    LinearLayout navigation = ui.column();
+    scroll.addView(navigation);
+    page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+    menuSection(
+        navigation,
+        "workspace",
+        "Рабочее пространство",
+        new String[] {"Дашборд", "Роутеры"},
+        new Runnable[] {this::overview, this::routerList},
+        drawer);
+    List<String> management = new ArrayList<>();
+    List<Runnable> actions = new ArrayList<>();
+    if (owner() || obj(session, "account").optBoolean("can_add_router")) {
+      management.add("Добавить роутер");
+      actions.add(() -> settingsTool("addRouter"));
+    }
+    if (owner()) {
+      management.add("Терминал VPS");
+      actions.add(() -> tool("vps", new JSONObject()));
+      management.add("Обновить роутеры");
+      actions.add(() -> settingsTool("routerUpdates"));
+      management.add("Xray на VPS");
+      actions.add(() -> settingsTool("vpsXray"));
+      management.add("Группы роутеров");
+      actions.add(() -> settingsTool("groups"));
+    }
+    if (!management.isEmpty())
+      menuSection(
+          navigation,
+          "management",
+          "Управление",
+          management.toArray(new String[0]),
+          actions.toArray(new Runnable[0]),
+          drawer);
+    List<String> options =
+        new ArrayList<>(
+            Arrays.asList(
+                "Доступ к Hub",
+                "Дизайн и эффекты",
+                prefs.getBoolean("statsVisible", true)
+                    ? "Скрыть статистику"
+                    : "Открыть статистику"));
+    List<Runnable> optionActions =
+        new ArrayList<>(
+            Arrays.asList(this::showConnectionInfo, this::design, this::toggleStatistics));
+    if (owner()) {
+      options.add("Обновление панели");
+      optionActions.add(() -> settingsTool("hubUpdate"));
+    }
+    menuSection(
+        navigation,
+        "settings",
+        "Настройки",
+        options.toArray(new String[0]),
+        optionActions.toArray(new Runnable[0]),
+        drawer);
+    TextView community = ui.label("СООБЩЕСТВО");
+    community.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+    community.setPadding(0, ui.dp(12), 0, ui.dp(12));
+    navigation.addView(menuIconRow(community, "globe", ui.MUTED));
+    navigation.addView(
+        menuButton(
+            "NetHaven · чат",
+            () ->
+                startActivity(
+                    new Intent(
+                        Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://t.me/+LZDsQJhUfcNhYWEy"))),
+            drawer,
+            false));
+    navigation.addView(
+        menuButton("Поддержать разработку", () -> settingsTool("donate"), drawer, true));
+    page.addView(ui.divider());
+    TextView account =
+        ui.text(
+            str(obj(session, "account"), "username", "Пользователь")
+                + (owner() ? " · Владелец" : ""),
+            12,
+            true);
+    account.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+    account.setMinimumHeight(ui.dp(40));
+    page.addView(menuIconRow(account, "user", ui.MUTED));
+    page.addView(
+        menuButton(
+            "Выйти из Hub",
+            () ->
+                confirm(
+                    "Выйти из Hub?",
+                    "Сохранённая сессия будет удалена с устройства.",
+                    () -> logout(false)),
+            drawer,
+            false));
+    drawer.setContentView(page);
+    android.view.Window window = drawer.getWindow();
+    if (window != null) {
+      window.setBackgroundDrawableResource(android.R.color.transparent);
+      window.setGravity(Gravity.START);
+      window.setLayout(
+          Math.min(ui.dp(310), getResources().getDisplayMetrics().widthPixels - ui.dp(24)), -1);
+      window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+      window.setDimAmount(.65f);
+    }
+    drawer.show();
+    if (window != null)
+      window.setLayout(
+          Math.min(ui.dp(310), getResources().getDisplayMetrics().widthPixels - ui.dp(24)), -1);
+  }
+
+  private void menuSection(
+      LinearLayout parent,
+      String key,
+      String title,
+      String[] labels,
+      Runnable[] actions,
+      Dialog drawer) {
+    LinearLayout items = ui.column();
+    String saved = "menu:" + key;
+    boolean open = prefs.getBoolean(saved, key.equals("workspace"));
+    items.setVisibility(open ? View.VISIBLE : View.GONE);
+    Button toggle = ui.button(title + (open ? "  ⌃" : "  ⌄"), NativeUi.Style.QUIET, null);
+    toggle.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+    toggle.setTextColor(ui.MUTED);
+    toggle.setOnClickListener(
+        v -> {
+          boolean show = items.getVisibility() != View.VISIBLE;
+          items.setVisibility(show ? View.VISIBLE : View.GONE);
+          toggle.setText(title + (show ? "  ⌃" : "  ⌄"));
+          prefs.edit().putBoolean(saved, show).apply();
+        });
+    parent.addView(menuIconRow(toggle, menuIcon(title), ui.MUTED));
+    for (int i = 0; i < labels.length; i++)
+      items.addView(menuButton(labels[i], actions[i], drawer, false));
+    parent.addView(items);
+  }
+
+  private View menuButton(String title, Runnable action, Dialog drawer, boolean gold) {
+    Button button =
+        ui.button(
+            title,
+            NativeUi.Style.QUIET,
+            () -> {
+              drawer.dismiss();
+              action.run();
+            });
+    button.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+    if (gold) button.setTextColor(ui.AMBER);
+    return menuIconRow(button, menuIcon(title), gold ? ui.AMBER : ui.MUTED);
+  }
+
+  private View menuIconRow(TextView label, String name, int color) {
+    FrameLayout row = new FrameLayout(this);
+    row.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+    label.setPadding(ui.dp(44), label.getPaddingTop(), ui.dp(10), label.getPaddingBottom());
+    row.addView(label, new FrameLayout.LayoutParams(-1, -2));
+    View icon = ui.icon(name, color);
+    FrameLayout.LayoutParams placement =
+        new FrameLayout.LayoutParams(ui.dp(20), ui.dp(20), Gravity.START | Gravity.CENTER_VERTICAL);
+    placement.setMarginStart(ui.dp(14));
+    row.addView(icon, placement);
+    return row;
+  }
+
+  private String menuIcon(String title) {
+    switch (title) {
+      case "Рабочее пространство":
+      case "Дашборд":
+        return "grid";
+      case "Роутеры":
+        return "router";
+      case "Группы роутеров":
+        return "folder";
+      case "Управление":
+        return "activity";
+      case "Настройки":
+        return "settings";
+      case "Добавить роутер":
+        return "plus";
+      case "Терминал VPS":
+        return "terminal";
+      case "Обновить роутеры":
+        return "refresh";
+      case "Xray на VPS":
+      case "Доступ к Hub":
+        return "shield";
+      case "Дизайн и эффекты":
+        return "activity";
+      case "Скрыть статистику":
+      case "Открыть статистику":
+        return "grid";
+      case "Обновление панели":
+        return "download";
+      case "NetHaven · чат":
+        return "chat";
+      case "Поддержать разработку":
+        return "heart";
+      case "Выйти из Hub":
+        return "logout";
+      default:
+        return "info";
+    }
+  }
+
+  private void toggleStatistics() {
+    prefs.edit().putBoolean("statsVisible", !prefs.getBoolean("statsVisible", true)).apply();
+    overview();
   }
 
   private void confirm(String title, String text, Runnable yes) {

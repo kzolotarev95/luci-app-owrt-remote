@@ -48,10 +48,27 @@ def _same_origin(handler):
     # Native requests have no browser Origin. A browser must use this Hub's
     # origin; no CORS response headers are introduced by this module.
     origin = handler.headers.get("Origin")
-    if origin and origin != handler.request_origin():
+    if origin and (_canonical_origin(origin) is None or _canonical_origin(origin) != _canonical_origin(handler.request_origin())):
         _error(handler, 403, "origin_forbidden", "Request origin is not allowed")
         return False
     return True
+
+
+def _canonical_origin(value):
+    if not isinstance(value, str) or any(char.isspace() or char in '\\%' for char in value):
+        return None
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        if (parsed.scheme.lower() not in {'http', 'https'} or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or parsed.path not in {'', '/'} or parsed.query or parsed.fragment):
+            return None
+        port = parsed.port if parsed.port is not None else (443 if parsed.scheme.lower() == 'https' else 80)
+        if not 1 <= port <= 65535:
+            return None
+        return parsed.scheme.lower(), parsed.hostname.lower(), port
+    except ValueError:
+        return None
 
 
 def _captcha(hub):

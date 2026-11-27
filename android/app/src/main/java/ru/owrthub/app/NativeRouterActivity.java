@@ -157,8 +157,8 @@ public final class NativeRouterActivity extends Activity {
           return insets;
         });
     LinearLayout toolbar = ui.row();
+    toolbar.setTag("native-toolbar");
     toolbar.setPadding(ui.dp(6), ui.dp(4), ui.dp(10), ui.dp(4));
-    toolbar.addView(ui.iconButton("back", "Назад к роутеру", this::finish));
     TextView heading = ui.text(toolTitle(), 20, true);
     toolbar.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
     toolbar.addView(
@@ -188,7 +188,7 @@ public final class NativeRouterActivity extends Activity {
     scroll.setFillViewport(true);
     scroll.setClipToPadding(false);
     content = ui.column();
-    content.setPadding(ui.dp(18), ui.dp(14), ui.dp(18), ui.dp(28));
+    content.setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(24));
     scroll.addView(content);
     root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
     NativeEffects.install(this, root);
@@ -210,24 +210,16 @@ public final class NativeRouterActivity extends Activity {
             48));
     LinearLayout copy = ui.column();
     copy.setPadding(ui.dp(12), 0, 0, 0);
-    copy.addView(ui.text(router.optString("name", routerId), 20, true));
-    copy.addView(ui.spacer(5));
-    TextView privateAddress = ui.label(tool.equals("vps") ? "Адрес скрыт" : routerId);
-    copy.addView(privateAddress);
-    if (tool.equals("vps")) {
-      final boolean[] show = {false};
-      copy.addView(
-          ui.iconButton(
-              "eye",
-              "Показать или скрыть адрес Hub",
-              () -> {
-                show[0] = !show[0];
-                privateAddress.setText(show[0] ? api.getHub().getAuthority() : "Адрес скрыт");
-              }));
+    copy.addView(ui.routerName(router.optString("name", routerId), 20));
+    if (!tool.equals("vps")) {
+      copy.addView(ui.spacer(5));
+      copy.addView(ui.label(routerId));
     }
     hero.addView(copy, new LinearLayout.LayoutParams(0, -2, 1));
-    content.addView(hero);
-    content.addView(ui.spacer(20));
+    if (!tool.equals("vps")) {
+      content.addView(hero);
+      content.addView(ui.spacer(20));
+    }
     switch (tool) {
       case "xray":
         buildXray();
@@ -402,18 +394,25 @@ public final class NativeRouterActivity extends Activity {
     wolCount = ui.body("Найдено устройств: 0"); add(wolCount);
     password = ui.field("Пароль SSH роутера", "", true); protectInput(password);
     add(ui.labeledField("SSH пароль", password));
+    action("Забыть сохранённый пароль", NativeUi.Style.QUIET, () -> {
+      try {
+        new SshCredentialStore(this).save(api.getHub().toString(), api.getUsername(), "wol:" + routerId, "");
+        password.setText("");
+        detail.setText("Сохранённый пароль Wake-on-LAN удалён.");
+      } catch (Exception unavailable) { showError("Не удалось удалить сохранённый пароль."); }
+    });
     action("Обновить", NativeUi.Style.SECONDARY, this::discoverWol);
     action("Разбудить", NativeUi.Style.PRIMARY, () -> {
       int index = wolDevice.getSelectedItemPosition() - 1;
       JSONObject device = wolDevices.optJSONObject(index);
       if (device == null) { showError("Выбери устройство из списка."); return; }
       JSONObject payload = new JSONObject();
+      final String secret = password.getText().toString();
       try { payload.put("mac", device.optString("mac")).put("iface", device.optString("iface"))
-          .put("ssh_password", password.getText().toString()); } catch (Exception invalid) { return; }
-      password.setText("");
+          .put("ssh_password", secret); } catch (Exception invalid) { return; }
       request(() -> { try { return api.post(base + "/wol", payload); }
         finally { payload.remove("ssh_password"); } }, data -> {
-          requireRouter(data); status.setText("Пакет пробуждения отправлен"); status.setTextColor(ui.GREEN);
+          requireRouter(data); saveWolPassword(secret); status.setText("Пакет пробуждения отправлен"); status.setTextColor(ui.GREEN);
           detail.setText(data.optString("output", data.optString("message")));
         }, false);
     });
@@ -423,17 +422,18 @@ public final class NativeRouterActivity extends Activity {
       public void onNothingSelected(android.widget.AdapterView<?> parent) { updateControls(); }
     });
     LinearLayout card = ui.card(); status = ui.text("Выберите устройство", 16, true);
-    detail = ui.body("Пароль используется только для запроса и не сохраняется.");
+    detail = ui.body("После успешной команды пароль автоматически сохраняется на этом устройстве в зашифрованном виде.");
     card.addView(status); card.addView(ui.spacer(8)); card.addView(detail); add(card);
   }
 
   private void discoverWol() {
     if (busy || !sessionReady) return;
     JSONObject payload = new JSONObject();
-    try { payload.put("ssh_password", password.getText().toString()); } catch (Exception invalid) { return; }
+    final String secret = password.getText().toString();
+    try { payload.put("ssh_password", secret); } catch (Exception invalid) { return; }
     request(() -> { try { return api.post(base + "/wol/devices", payload); }
       finally { payload.remove("ssh_password"); } }, data -> {
-        requireRouter(data); JSONArray devices = data.optJSONArray("devices");
+        requireRouter(data); saveWolPassword(secret); JSONArray devices = data.optJSONArray("devices");
         wolDevices = devices == null ? new JSONArray() : devices;
         String[] labels = new String[wolDevices.length() + 1]; labels[0] = "Выбери устройство из списка";
         for (int i = 0; i < wolDevices.length(); i++) {
@@ -445,6 +445,17 @@ public final class NativeRouterActivity extends Activity {
         wolCount.setText("Найдено устройств: " + wolDevices.length());
         status.setText(wolDevices.length() == 0 ? "Устройства не найдены" : "Список устройств обновлён");
       }, false);
+  }
+
+  private void restoreWolPassword() {
+    if (api == null || password == null || !password.getText().toString().isEmpty()) return;
+    try { password.setText(new SshCredentialStore(this).load(api.getHub().toString(), api.getUsername(), "wol:" + routerId)); }
+    catch (Exception unavailable) { showError("Не удалось прочитать сохранённый пароль Wake-on-LAN."); }
+  }
+
+  private void saveWolPassword(String secret) {
+    try { new SshCredentialStore(this).save(api.getHub().toString(), api.getUsername(), "wol:" + routerId, secret); }
+    catch (Exception unavailable) { showError("Команда выполнена, но пароль не удалось сохранить."); }
   }
 
   private void buildSsh() {
@@ -517,7 +528,7 @@ public final class NativeRouterActivity extends Activity {
     content = terminalPanel;
     output = monospace("");
     output.setMinHeight(ui.dp(260));
-    output.setBackground(ui.shape(NativeUi.color("#090e13"), ui.LINE, 12));
+    output.setBackground(ui.shape(ui.PANEL2, ui.LINE, 12));
     output.setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14));
     terminalScroll = new ScrollView(this);
     terminalScroll.setFillViewport(true);
@@ -608,7 +619,7 @@ public final class NativeRouterActivity extends Activity {
     output = monospace("");
     output.setMinHeight(ui.dp(280));
     output.setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14));
-    output.setBackground(ui.shape(NativeUi.color("#090e13"), ui.LINE, 12));
+    output.setBackground(ui.shape(ui.PANEL2, ui.LINE, 12));
     add(output);
   }
 
@@ -739,6 +750,11 @@ public final class NativeRouterActivity extends Activity {
               deny("У аккаунта больше нет доступа к этому инструменту.");
               return;
             }
+          }
+          if (tool.equals("wol")) {
+            if (!credentialUser.equals(currentUser)) password.setText("");
+            credentialUser = currentUser;
+            restoreWolPassword();
           }
           content.setVisibility(View.VISIBLE);
           sessionReady = true;

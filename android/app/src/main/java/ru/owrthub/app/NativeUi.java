@@ -19,7 +19,9 @@ import android.util.AttributeSet;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.view.WindowInsets;
 import android.view.WindowInsetsController;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -30,6 +32,7 @@ import java.util.function.IntConsumer;
 
 /** Native, density-aware building blocks shared by every Hub screen. */
 public final class NativeUi {
+  public static final int BRIGHT_RED = 0xffff3030;
   public enum Style {
     PRIMARY,
     SECONDARY,
@@ -62,16 +65,16 @@ public final class NativeUi {
     medium = cachedMedium;
     semibold = cachedSemibold;
     bold = cachedBold;
-    BG = color(winter ? "#061b2b" : "#0d1014");
-    PANEL = color(winter ? "#0c293e" : "#171c23");
-    PANEL2 = color(winter ? "#14374f" : "#202730");
-    LINE = color(winter ? "#2b4a60" : "#2c3540");
-    TEXT = color(winter ? "#eaf7ff" : "#f1f4f8");
-    MUTED = color(winter ? "#9bb7cb" : "#98a6b7");
-    BLUE = color(winter ? "#93e0ff" : "#83baff");
-    GREEN = color(winter ? "#89e1cd" : "#75d5b4");
-    RED = color(winter ? "#f3adbd" : "#ef95a9");
-    AMBER = color("#e2c17b");
+    BG = color(winter ? "#061426" : "#0d0e10");
+    PANEL = color(winter ? "#0c2238" : "#15171a");
+    PANEL2 = color(winter ? "#16324b" : "#1a1d21");
+    LINE = color(winter ? "#31516a" : "#292d33");
+    TEXT = color(winter ? "#ecf9ff" : "#e8eaed");
+    MUTED = color(winter ? "#a9c9dd" : "#9097a2");
+    BLUE = color(winter ? "#7dd3fc" : "#c5ed34");
+    GREEN = color("#49cbb1");
+    RED = BRIGHT_RED;
+    AMBER = color("#e8ba66");
     SOFT = alpha(BLUE, 0.09f);
     bg = BG;
     panel = PANEL;
@@ -91,10 +94,16 @@ public final class NativeUi {
     activity.getWindow().setStatusBarColor(BG);
     activity.getWindow().setNavigationBarColor(BG);
     View decor = activity.getWindow().getDecorView();
-    decor.setSystemUiVisibility(
-        decor.getSystemUiVisibility()
-            & ~View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-            & ~View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+    hideSystemBars(activity);
+    decor.post(() -> hideSystemBars(activity));
+    // All native screens and the browser screen use NativeUi. Register once
+    // per window, including when a theme recreates its NativeUi instance.
+    if (decor.getTag(R.id.hub_immersive_installed) == null) {
+      decor.setTag(R.id.hub_immersive_installed, Boolean.TRUE);
+      decor.getViewTreeObserver().addOnWindowFocusChangeListener(focused -> {
+        if (focused) decor.post(() -> hideSystemBars(activity));
+      });
+    }
     if (Build.VERSION.SDK_INT >= 29) activity.getWindow().setNavigationBarContrastEnforced(false);
     if (Build.VERSION.SDK_INT >= 30)
       decor.post(
@@ -106,6 +115,25 @@ public final class NativeUi {
                   WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
                       | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
           });
+  }
+
+
+  private static void hideSystemBars(Activity activity) {
+    if (activity.isFinishing() || activity.isDestroyed()) return;
+    View decor = activity.getWindow().getDecorView();
+    if (Build.VERSION.SDK_INT >= 30) {
+      WindowInsetsController controller = decor.getWindowInsetsController();
+      if (controller != null) {
+        controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        controller.hide(WindowInsets.Type.systemBars());
+      }
+    } else {
+      activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+      decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+          | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+          | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+          | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+    }
   }
 
   public int dp(float value) {
@@ -137,7 +165,14 @@ public final class NativeUi {
   }
 
   public TextView text(String value, int sizeSp, boolean bold) {
-    TextView view = new TextView(context);
+    return configureText(new TextView(context), value, sizeSp, bold);
+  }
+
+  public TextView routerName(String value, int sizeSp) {
+    return configureText(new RouterNameView(context), value, sizeSp, true);
+  }
+
+  private TextView configureText(TextView view, String value, int sizeSp, boolean bold) {
     view.setText(value == null ? "" : value);
     view.setTextSize(TypedValue.COMPLEX_UNIT_SP, Math.max(11, sizeSp * .86f));
     view.setGravity(Gravity.CENTER);
@@ -187,9 +222,49 @@ public final class NativeUi {
 
   public LinearLayout card() {
     LinearLayout view = column();
-    view.setPadding(dp(16), dp(16), dp(16), dp(16));
-    view.setBackground(shape(PANEL, LINE, 16));
+    view.setPadding(dp(14), dp(14), dp(14), dp(14));
+    view.setBackground(ripple(PANEL, LINE, 9));
     return view;
+  }
+
+  /** Symmetric title space keeps the heading centred independently of its action. */
+  public FrameLayout panelHeading(String key, String title, String iconName, Button action) {
+    LinearLayout titleRow = row();
+    TextView label = text(title, 14, true);
+    FrameLayout frame = new FrameLayout(context) {
+      @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        // Text scaling changes the action width; reserve that same space on both sides.
+        measureChild(action, widthMeasureSpec, heightMeasureSpec);
+        int reserve = action.getMeasuredWidth() + dp(8);
+        label.measure(MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
+            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
+        boolean stacked = label.getMeasuredWidth() + dp(20) > MeasureSpec.getSize(widthMeasureSpec) - 2 * reserve;
+        titleRow.setPadding(stacked ? dp(4) : reserve, dp(4), stacked ? dp(4) : reserve, dp(4));
+        FrameLayout.LayoutParams titleParams = (FrameLayout.LayoutParams) titleRow.getLayoutParams();
+        FrameLayout.LayoutParams actionParams = (FrameLayout.LayoutParams) action.getLayoutParams();
+        titleParams.gravity = stacked ? Gravity.TOP | Gravity.CENTER_HORIZONTAL : Gravity.CENTER;
+        actionParams.gravity = stacked ? Gravity.TOP | Gravity.CENTER_HORIZONTAL : Gravity.END | Gravity.CENTER_VERTICAL;
+        actionParams.topMargin = 0;
+        if (stacked) {
+          measureChild(titleRow, widthMeasureSpec, heightMeasureSpec);
+          actionParams.topMargin = titleRow.getMeasuredHeight() + dp(4);
+        }
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+      }
+    };
+    frame.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+    frame.setMinimumHeight(dp(40));
+    titleRow.setTag("panel-heading:" + key);
+    titleRow.setGravity(Gravity.CENTER);
+    View mark = icon(iconName, AMBER);
+    mark.setTag("heading-icon:" + key);
+    titleRow.addView(mark, new LinearLayout.LayoutParams(dp(20), dp(20)));
+    label.setTag("panel-label:" + key);
+    label.setPadding(dp(6), 0, 0, 0);
+    titleRow.addView(label, new LinearLayout.LayoutParams(-2, -2));
+    frame.addView(titleRow, new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER));
+    frame.addView(action, new FrameLayout.LayoutParams(-2, -2, Gravity.END | Gravity.CENTER_VERTICAL));
+    return frame;
   }
 
   public View spacer(int heightDp) {
@@ -241,34 +316,34 @@ public final class NativeUi {
     Button button = new Button(context);
     button.setText(title);
     button.setAllCaps(false);
-    button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+    button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
     button.setTypeface(semibold);
     button.setGravity(Gravity.CENTER);
     button.setIncludeFontPadding(false);
-    button.setMinHeight(dp(50));
-    button.setMinimumHeight(dp(50));
+    button.setMinHeight(dp(48));
+    button.setMinimumHeight(dp(48));
     button.setMinWidth(0);
     button.setMinimumWidth(0);
-    button.setPadding(dp(16), dp(13), dp(16), dp(13));
+    button.setPadding(dp(12), dp(10), dp(12), dp(10));
     button.setElevation(0f);
     button.setStateListAnimator(null);
     int fill =
         style == Style.PRIMARY
-            ? color("#235a8a")
+            ? alpha(BLUE, .12f)
             : style == Style.DANGER
                 ? alpha(RED, 0.08f)
-                : style == Style.QUIET ? Color.TRANSPARENT : PANEL;
+                : style == Style.QUIET ? Color.TRANSPARENT : PANEL2;
     int border =
         style == Style.PRIMARY
-            ? color("#3879b4")
+            ? alpha(BLUE, .42f)
             : style == Style.DANGER
                 ? alpha(RED, 0.3f)
                 : style == Style.QUIET ? Color.TRANSPARENT : LINE;
-    int ink = style == Style.PRIMARY ? color("#f3f9ff") : style == Style.DANGER ? RED : BLUE;
+    int ink = style == Style.PRIMARY ? BLUE : style == Style.DANGER ? RED : TEXT;
     StateListDrawable backgrounds = new StateListDrawable();
     backgrounds.addState(
         new int[] {-android.R.attr.state_enabled}, shape(alpha(fill, 0.4f), alpha(LINE, 0.5f), 12));
-    backgrounds.addState(new int[] {}, ripple(fill, border, 12));
+    backgrounds.addState(new int[] {}, ripple(fill, border, 8));
     button.setBackground(backgrounds);
     button.setBackgroundTintList(null);
     button.setTextColor(
@@ -295,12 +370,12 @@ public final class NativeUi {
                 : InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS));
     field.setTypeface(regular);
     field.setPadding(dp(14), dp(13), dp(14), dp(13));
-    field.setMinHeight(dp(52));
+    field.setMinHeight(dp(48));
     field.setSelectAllOnFocus(false);
     field.setText(value == null ? "" : value);
     StateListDrawable backgrounds = new StateListDrawable();
-    backgrounds.addState(new int[] {android.R.attr.state_focused}, shape(PANEL, BLUE, 12));
-    backgrounds.addState(new int[] {}, shape(PANEL, LINE, 12));
+    backgrounds.addState(new int[] {android.R.attr.state_focused}, shape(PANEL2, BLUE, 8));
+    backgrounds.addState(new int[] {}, shape(PANEL2, LINE, 8));
     field.setBackground(backgrounds);
     field.setBackgroundTintList(null);
     field.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
@@ -329,6 +404,17 @@ public final class NativeUi {
     view.setBackground(shape(alpha(color, 0.07f), alpha(color, 0.24f), 8));
     view.setLayoutParams(new LinearLayout.LayoutParams(-2, -2));
     return view;
+  }
+
+  public Button panelToggle(boolean visible, String label, Runnable action) {
+    Button button = button(visible ? "Скрыть" : "Открыть", Style.SECONDARY, action);
+    button.setTextSize(11);
+    button.setMinHeight(dp(36));
+    button.setMinimumHeight(dp(36));
+    button.setPadding(dp(9), dp(6), dp(9), dp(6));
+    button.setLayoutParams(new LinearLayout.LayoutParams(-2, -2));
+    button.setContentDescription((visible ? "Скрыть" : "Открыть") + " — " + label);
+    return button;
   }
 
   public IconView icon(String name, int color) {
@@ -368,6 +454,17 @@ public final class NativeUi {
     return iconBadge(name, color, 40);
   }
 
+  public android.widget.ImageView logoBadge(int sizeDp) {
+    android.widget.ImageView logo = new android.widget.ImageView(context);
+    logo.setImageResource(R.drawable.ic_launcher);
+    LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp));
+    params.gravity = Gravity.CENTER;
+    logo.setLayoutParams(params);
+    logo.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+    logo.setContentDescription("Логотип OWRT Hub");
+    return logo;
+  }
+
   /** A standard, accessible three-tab navigation bar; selection is owned by the screen. */
   public LinearLayout bottomNav(String[] titles, String[] icons, int selected, IntConsumer action) {
     if (titles == null || icons == null || titles.length != icons.length || titles.length == 0)
@@ -387,7 +484,7 @@ public final class NativeUi {
       LinearLayout item = column();
       item.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
       item.setPadding(dp(4), dp(3), dp(4), dp(3));
-      item.setMinimumHeight(dp(62));
+      item.setMinimumHeight(dp(56));
       item.setLayoutParams(new LinearLayout.LayoutParams(0, -1, 1f));
       item.setBackground(ripple(Color.TRANSPARENT, Color.TRANSPARENT, 12));
       item.setFocusable(true);
@@ -398,7 +495,7 @@ public final class NativeUi {
       LinearLayout badge = row();
       badge.setGravity(Gravity.CENTER);
       badge.setLayoutParams(new LinearLayout.LayoutParams(dp(60), dp(31)));
-      if (active) badge.setBackground(shape(SOFT, Color.TRANSPARENT, 13));
+      if (active) badge.setBackground(shape(SOFT, Color.TRANSPARENT, 8));
       badge.addView(icon(icons[i], active ? BLUE : MUTED));
       item.addView(badge);
       TextView title = text(titles[i], 12, active);
@@ -474,6 +571,51 @@ public final class NativeUi {
       ink.setStyle(Paint.Style.STROKE);
       ink.setStrokeWidth(1.7f);
       switch (name) {
+        case "folder":
+          path.reset();
+          path.moveTo(3, 7);
+          path.lineTo(3, 5);
+          path.lineTo(9, 5);
+          path.lineTo(12, 8);
+          path.lineTo(21, 8);
+          path.lineTo(21, 20);
+          path.lineTo(3, 20);
+          path.close();
+          canvas.drawPath(path, ink);
+          break;
+        case "chat":
+          path.reset();
+          path.moveTo(4, 4);
+          path.lineTo(20, 4);
+          path.lineTo(20, 16);
+          path.lineTo(10, 16);
+          path.lineTo(4, 21);
+          path.close();
+          canvas.drawPath(path, ink);
+          line(canvas, 8, 8, 16, 8);
+          line(canvas, 8, 12, 14, 12);
+          break;
+        case "heart":
+          path.reset();
+          path.moveTo(12, 21);
+          path.cubicTo(8, 17, 2, 13, 2, 8);
+          path.cubicTo(2, 2, 9, 1, 12, 6);
+          path.cubicTo(15, 1, 22, 2, 22, 8);
+          path.cubicTo(22, 13, 16, 17, 12, 21);
+          canvas.drawPath(path, ink);
+          break;
+        case "menu":
+          line(canvas, 4, 6, 20, 6);
+          line(canvas, 4, 12, 20, 12);
+          line(canvas, 4, 18, 20, 18);
+          break;
+        case "disk":
+          round(canvas, 3, 4, 21, 20, 3);
+          line(canvas, 3, 14, 21, 14);
+          line(canvas, 7, 8, 17, 8);
+          dot(canvas, 7, 17, .8f);
+          dot(canvas, 11, 17, .8f);
+          break;
         case "grid":
         case "dashboard":
           round(canvas, 3, 3, 10, 10, 2);
@@ -635,6 +777,13 @@ public final class NativeUi {
           break;
         case "activity":
           poly(canvas, 2, 13, 6, 13, 9, 5, 14, 20, 17, 10, 20, 13, 22, 13);
+          break;
+        case "network":
+          round(canvas, 9, 2, 15, 8, 1);
+          round(canvas, 2, 16, 8, 22, 1);
+          round(canvas, 16, 16, 22, 22, 1);
+          line(canvas, 12, 8, 12, 12);
+          poly(canvas, 5, 16, 5, 12, 19, 12, 19, 16);
           break;
         case "download":
           poly(canvas, 7, 10, 12, 15, 17, 10);

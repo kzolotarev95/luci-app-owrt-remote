@@ -164,7 +164,12 @@ owrt-remote status
 
 ### Android-приложение OWRT Hub
 
-[Скачать Android APK 0.2.6-v124](https://github.com/kzolotarev95/luci-app-owrt-remote/raw/refs/heads/main/android/apk/OWRT-Hub-Android-0.2.6-v124.apk)
+[Скачать Android APK 0.3.12-v125](https://github.com/kzolotarev95/luci-app-owrt-remote/raw/refs/heads/main/android/apk/OWRT-Hub-Android-0.3.12-v125.apk)
+
+**OWRT Hub v125:** новый дашборд VPS и панели роутера, фотографии моделей,
+перестановка карточек, обновление панели роутера одной кнопкой, исправления
+iOS и переработанное Android-приложение с защитой входа.
+[Что изменилось](docs/RELEASE-v125.md) · [IPK/APK для OpenWrt и Android](https://github.com/kzolotarev95/luci-app-owrt-remote/releases/tag/v125).
 
 
 <div align="center">
@@ -227,6 +232,7 @@ owrt-remote status
 <img src="assets/screenshots/v123-router-panel.jpg" alt="OWRT Hub v123 — панель роутера OpenWrt с боковым меню" width="100%" />
 <br><b>Панель роутера</b><br>
 <sub>Общее оформление с VPS: состояние агента и Xray, настройки Remote и боковое меню.</sub>
+<br><sub>«Обновление панели» — проверка и установка файлов из GitHub прямо на роутере, с проверкой SHA256 и резервной копией. <a href="docs/ROUTER_PANEL_UPDATE.md">Как работает обновление и откат</a>.</sub>
 </td></tr>
 </table>
 

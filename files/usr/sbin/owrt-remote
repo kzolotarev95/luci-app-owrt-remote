@@ -850,6 +850,7 @@ heartbeat_json() {
 	cat <<EOF
 {
   "id": $(json_string "$router_id"),
+  "agent_identity": $(json_string "$(printf '%s' "$(uci_get vless_uuid '')" | sha256sum | awk '{print $1}')"),
   "agent_boot_id": $(json_string "$boot_id"),
   "sample_uptime_ms": $(safe_num "$sample_ms" 0),
   "name": $(json_string "$router_name"),

@@ -73,7 +73,7 @@ const settled = page => page.waitForFunction(() => cardDetailsAnimations.size ==
     ]) {
       const owner=scenario.profile==='owner';
       const canAdd=owner || scenario.profile==='manager';
-      const routers=owner?fixtures.routers:fixtures.delegated;
+      let routers=JSON.parse(JSON.stringify(owner?fixtures.routers:fixtures.delegated));
       const auth=owner?fixtures.auth:scenario.profile==='manager'?fixtures.manager:fixtures.viewer;
       const context=await browser.newContext({viewport:{width:scenario.width,height:scenario.height},
         hasTouch:!!scenario.mobile,isMobile:!!scenario.mobile});
@@ -89,10 +89,14 @@ const settled = page => page.waitForFunction(() => cardDetailsAnimations.size ==
           if (u.pathname==='/') return route.fulfill({contentType:'text/html; charset=utf-8',body:fs.readFileSync(path.join(output,scenario.profile+'.html'),'utf8')});
           if (u.pathname.startsWith('/api/')) apiCalls.push({path:u.pathname,query:u.search,method:request.method()});
           if (u.pathname==='/api/routers') return route.fulfill({json:{routers,...(u.searchParams.get('availability')==='1'?{availability:owner?fixtures.history:fixtures.delegated_history}:{})}});
+          if (u.pathname==='/api/router/node-1/delete'&&request.method()==='POST'){
+            routers=routers.filter(row=>row.id!=='node-1');
+            return route.fulfill({json:{ok:true,deleted:true}});
+          }
           if (u.pathname==='/api/router-groups') return route.fulfill({json:{groups:[{id:'home',name:'Дом',router_count:2}]}});
           if (u.pathname==='/api/auth/meta') return route.fulfill({json:{ok:true,auth}});
           if (u.pathname==='/api/vps/resources') return route.fulfill({json:fixtures.resources});
-          if (u.pathname==='/api/hub-update') return route.fulfill({json:owner?{ok:true,checked:true,available:false,current_version:'v124',remote_version:'v124',current_revision:'fixture',remote_revision:'fixture'}:{ok:false,error:'owner required'},status:owner?200:403});
+          if (u.pathname==='/api/hub-update') return route.fulfill({json:owner?{ok:true,checked:true,available:false,current_version:'v125',remote_version:'v125',current_revision:'fixture',remote_revision:'fixture'}:{ok:false,error:'owner required'},status:owner?200:403});
           if (u.pathname==='/api/notifications/wait') return route.fulfill({status:429,headers:{'Retry-After':'5'},json:{busy:true}});
           if (u.pathname.startsWith('/api/')) return route.fulfill({json:{ok:true,notifications:[],sessions:[],auth,groups:[]}});
           return route.fulfill({contentType:'text/plain',body:'Fixture target '+u.pathname});
@@ -158,11 +162,40 @@ const settled = page => page.waitForFunction(() => cardDetailsAnimations.size ==
         assert.equal(await page.locator('.hubPageHeading').count(),0,'introductory block removed');
         assert(!(await sidebar.innerText()).includes('Агент · Heartbeat · удалённый доступ'));
         assert(await page.locator('.hubAvailabilityPanel').isVisible(),'availability chart is present on every screen');
-        assert.equal(await page.locator('.hubSidebarBrand').getAttribute('aria-label'),'OWRT Hub v124');
+        assert.equal(await page.locator('.hubSidebarBrand').getAttribute('aria-label'),'OWRT Hub v125');
         assert.equal(await page.title(),'OWRT Hub');
         assert((await page.locator('#hubSidebarConnection').textContent()).includes('Система работает'),'healthy connection label');
-        assert.equal(await page.locator('.hubPhoneBrand').innerText(),'OWRT Hub v124');
-        assert.equal(await page.locator('.hubChartPeriod').textContent(),'24 ч');
+        assert.equal(await page.locator('.hubPhoneBrand').innerText(),'OWRT Hub v125');
+        assert.deepEqual(await page.locator('[data-availability-hours]').allTextContents(),['6 ч','12 ч','24 ч']);
+        assert.equal(await page.locator('[data-availability-hours][aria-pressed="true"]').textContent(),'24 ч');
+        const periodPoints=[];
+        for(const hours of [6,12,24]){
+          await page.locator('[data-availability-hours="'+hours+'"]').click();
+          assert.equal(await page.locator('[data-availability-hours][aria-pressed="true"]').count(),1);
+          assert.equal(await page.locator('#hubAvailabilityStart').textContent(),hours+' ч назад');
+          assert.equal(await page.locator('#hubAvailabilityMiddle').textContent(),hours/2+' ч назад');
+          assert.equal(await page.locator('#hubAvailabilityPeriodLabel').textContent(),'История за '+hours+(hours===24?' часа':' часов'));
+          const range=await page.evaluate(()=>({seconds:renderHubAvailability.seconds,start:renderHubAvailability.start,points:renderHubAvailability.points}));
+          assert.equal(range.seconds,hours*3600);
+          assert(range.points.every(point=>point[0]>=range.start&&point[0]<=range.start+range.seconds),'plot contains only the selected period');
+          periodPoints.push(range.points.length);
+          assert((await page.locator('#hubAvailabilityHint').textContent()).includes('из '+hours+' ч.'));
+          const chartPlot=page.locator('#hubAvailabilityPlot');
+          await chartPlot.scrollIntoViewIfNeeded();
+          const bounds=await chartPlot.boundingBox();
+          const middle=range.start+range.seconds/2;
+          const nearest=range.points.reduce((a,b)=>Math.abs(a[0]-middle)<=Math.abs(b[0]-middle)?a:b);
+          const stamp=await page.evaluate(at=>new Date(at*1000).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}),nearest[0]);
+          await page.mouse.move(bounds.x+bounds.width/2,bounds.y+30);
+          assert((await page.locator('#hubAvailabilityTooltip').textContent()).startsWith(stamp),'pointer inspects the midpoint of the selected period');
+          await page.mouse.move(0,0);
+        }
+        assert(periodPoints[0]<periodPoints[1]&&periodPoints[1]<periodPoints[2],'shorter periods filter real measurements');
+        const rangeLayout=await page.locator('.hubAvailabilityPanel .hubOverviewHead').evaluate(head=>{
+          const title=head.querySelector('h2').getBoundingClientRect(),group=head.querySelector('.hubChartRange').getBoundingClientRect(),panel=head.closest('article').getBoundingClientRect();
+          return {overlap:title.right>group.left+1,inside:group.right<=panel.right-5};
+        });
+        assert(!rangeLayout.overlap&&rangeLayout.inside,'period control fits beside the title');
         assert.equal(await page.locator('#hubAvailabilityOnline').textContent(),String(routers.filter(router=>router.online).length));
         const plot=page.locator('#hubAvailabilityPlot');
         await plot.focus();
@@ -336,9 +369,58 @@ const settled = page => page.waitForFunction(() => cardDetailsAnimations.size ==
         await page.locator('#hubWorkspaceSection>summary').evaluate(el=>el.parentElement.open=true);
         await page.locator('#hubSettingsSection>summary').evaluate(el=>el.parentElement.open=true);
         await page.waitForFunction(()=>{const s=JSON.parse(localStorage.getItem('owrtRemote:hubNavSections:v1:'+encodeURIComponent(authMeta.username))||'{}');return s.hubWorkspaceSection===true&&s.hubSettingsSection===true;});
+        await page.locator('[data-availability-hours="6"]').click();
+        await page.evaluate(()=>renderHubAvailability(window.ROUTERS));
+        assert.equal(await page.locator('[data-availability-hours][aria-pressed="true"]').textContent(),'6 ч','live update preserves the selected period');
         await page.reload({waitUntil:'domcontentloaded'});
         assert(await page.locator('#hubWorkspaceSection').evaluate(el=>el.open),'workspace remembered after reload');
         assert(await page.locator('#hubSettingsSection').evaluate(el=>el.open),'settings remembered after reload');
+        assert.equal(await page.locator('[data-availability-hours][aria-pressed="true"]').textContent(),'6 ч','availability period remembered after reload');
+        assert.equal(await page.locator('#hubAvailabilityStart').textContent(),'6 ч назад');
+        for(const selector of ['.hubNetworkTitle>svg','.hubAvailabilityPanel h2>svg']){
+          const bounds=await page.locator(selector).boundingBox();
+          assert(bounds&&bounds.width>=20&&bounds.height>=20,'heading icon is visible: '+selector);
+        }
+        for(const key of ['map','availability','disk']){
+          const button=page.locator('[data-hub-panel-toggle="'+key+'"]');
+          await button.click();
+          assert.equal(await button.textContent(),'Открыть');
+          assert.equal(await button.getAttribute('aria-expanded'),'false');
+          const id=await button.getAttribute('aria-controls');
+          assert.equal(await page.locator('#'+id).isVisible(),false,'panel body collapses: '+key);
+        }
+        assert.equal(await page.locator('.hubNetwork').getAttribute('data-paused'),'true','hidden map pauses motion');
+        await page.evaluate(()=>{renderHubAvailability(window.ROUTERS);updateHubVantageDashboard(window.ROUTERS,filteredRouters(window.ROUTERS));});
+        await page.reload({waitUntil:'domcontentloaded'});
+        for(const key of ['map','availability','disk']){
+          const button=page.locator('[data-hub-panel-toggle="'+key+'"]');
+          assert.equal(await button.textContent(),'Открыть','collapse remembered after F5: '+key);
+          assert.equal(await page.locator('#'+await button.getAttribute('aria-controls')).isVisible(),false);
+          await button.click();
+          assert.equal(await button.textContent(),'Скрыть');
+          assert.equal(await page.locator('#'+await button.getAttribute('aria-controls')).isVisible(),true,'panel reopens: '+key);
+        }
+        await noOverflow(page,scenario.name+' panel toggles');
+        await page.locator('.hubOverview').screenshot({path:path.join(output,'panel-controls-'+scenario.name+'.png')});
+        if(scenario.name==='desktop-owner'){
+          await page.evaluate(()=>{
+            const id='node-1';
+            wolStateByRouter.set(id,{open:false,sshPassword:'fixture-only',devices:[{mac:'old'}]});
+            noteStateByRouter.set(id,{draft:'old',dirty:true});
+            vpsHostDrafts.set(id,{host:'old.example',dirty:true});
+            diagnosticDrafts.set(id,{old:true});saveWolPassword(id,'fixture-only');
+          });
+          page.once('dialog',dialog=>dialog.accept());
+          await page.locator('.card[data-router-id="node-1"] [data-delete="node-1"]').evaluate(el=>el.click());
+          await page.waitForFunction(()=>!window.ROUTERS.some(row=>row.id==='node-1'));
+          assert(await page.evaluate(()=>[wolStateByRouter,noteStateByRouter,vpsHostDrafts,diagnosticDrafts].every(map=>!map.has('node-1'))),'delete clears card drafts');
+          assert.equal(await page.evaluate(()=>loadWolPassword('node-1')),'','delete clears remembered SSH password');
+          routers.unshift({...fixtures.routers[0],status:{},notes:'',notes_preview:'',has_notes:false,tachyon:{},online:false});
+          await page.evaluate(()=>loadRouters());
+          assert.equal(await page.locator('.card[data-router-id="node-1"] .cardNotesPreview').count(),0,'recreated node has no old note');
+          assert.equal(await page.evaluate(()=>getWolState('node-1').sshPassword),'','recreated node does not inherit password');
+          assert.deepEqual(errors,[],scenario.name+' delete/recreate browser errors');
+        }
         count++;console.log('HUB_SIDEBAR_UI_OK',scenario.name);
       } catch(error) {
         if(page)await page.screenshot({path:path.join(output,scenario.name+'-failure.png'),fullPage:true}).catch(()=>{});

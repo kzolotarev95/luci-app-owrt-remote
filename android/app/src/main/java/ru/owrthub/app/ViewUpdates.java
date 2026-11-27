@@ -26,7 +26,12 @@ final class ViewUpdates {
       }
       if (old instanceof EditText) continue;
       old.setVisibility(next.getVisibility());
+      old.setActivated(next.isActivated());
+      if (old.getTag() instanceof String && ((String) old.getTag()).startsWith("router-order:"))
+        old.setEnabled(next.isEnabled());
       old.setContentDescription(next.getContentDescription());
+      if (old instanceof NativeNetworkMap)
+        ((NativeNetworkMap) old).copyState((NativeNetworkMap) next);
       if (old instanceof TextView) {
         TextView a = (TextView) old, b = (TextView) next;
         if (!a.getText().toString().equals(b.getText().toString())) {
@@ -36,6 +41,9 @@ final class ViewUpdates {
         if (a.getCurrentTextColor() != b.getCurrentTextColor()) a.setTextColor(b.getTextColors());
       } else if (old instanceof NativeUi.IconView)
         ((NativeUi.IconView) old).copyFrom((NativeUi.IconView) next);
+      else if (old instanceof RouterPhotoView)
+        ((RouterPhotoView) old).copyFrom((RouterPhotoView) next);
+      else if (old instanceof DiskGaugeView) ((DiskGaugeView) old).copyFrom((DiskGaugeView) next);
       else if (old instanceof ChartView) ((ChartView) old).copyObservations((ChartView) next);
       else if (old instanceof ProgressBar)
         ((ProgressBar) old).setProgress(((ProgressBar) next).getProgress());

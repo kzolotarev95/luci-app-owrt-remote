@@ -1,0 +1,83 @@
+/* No timers or network refresh: the dashboard feeds all map data. */
+.hubDashboard .hubNetwork{min-width:0;margin:0 0 14px;padding:0;border:1px solid var(--line);border-radius:9px;background:var(--panel);overflow:hidden;color:var(--text)}
+.hubDashboard .hubNetwork [hidden]{display:none!important}
+.hubDashboard .hubNetworkHead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;border-bottom:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
+.hubDashboard .hubNetworkTitle{display:flex;align-items:center;gap:8px;min-width:0;margin:0;font-size:13px;font-weight:650;letter-spacing:-.15px}
+.hubDashboard .hubNetworkTitle>.hubNetworkIconSvg{width:23px;height:23px;color:var(--amber,#e8ba66);flex:none}
+.hubDashboard .hubNetworkLegend{display:flex;gap:14px;align-items:center;color:var(--muted);font-size:10px}
+.hubDashboard .hubNetworkLegendItem{display:inline-flex;align-items:center;gap:5px}
+.hubDashboard .hubNetworkLegendItem::before{content:"";width:5px;height:5px;border-radius:50%;background:var(--green)}
+.hubDashboard .hubNetworkLegendOffline::before{background:var(--red)}
+.hubDashboard .hubNetworkStage{--hub-network-height:245px;position:relative;min-height:var(--hub-network-height);margin:0 16px;background-image:radial-gradient(color-mix(in srgb,var(--line) 80%,transparent) .65px,transparent .65px);background-size:15px 15px}
+.hubDashboard .hubNetworkWires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.hubDashboard .hubNetworkWire,.hubDashboard .hubNetworkPulse{fill:none;stroke:color-mix(in srgb,var(--green) 38%,var(--line));stroke-width:1;vector-effect:non-scaling-stroke;stroke-linecap:round}
+.hubDashboard .hubNetworkWire.is-offline{stroke:color-mix(in srgb,var(--red) 40%,var(--line));stroke-dasharray:3 5}
+.hubDashboard .hubNetworkPulse{stroke:var(--cyan);stroke-width:2;stroke-dasharray:2 200;animation:hubNetworkFlow 3.5s linear infinite}
+.hubDashboard .hubNetwork[data-paused="true"] .hubNetworkPulse{animation-play-state:paused;opacity:0}
+.hubDashboard .hubNetworkNode{position:absolute;z-index:1;top:50%;transform:translateY(-50%);min-width:0;display:flex;align-items:center;gap:9px;padding:11px 12px;border:1px solid var(--line);border-radius:7px;background:var(--panel2);font-size:11px;font-weight:600}
+.hubDashboard .hubNetworkBrowser{left:1%;width:22%}
+.hubDashboard .hubNetworkHub{left:28%;width:24%;border-color:color-mix(in srgb,var(--cyan) 48%,var(--line));background:color-mix(in srgb,var(--cyan) 7%,var(--panel2))}
+.hubDashboard .hubNetworkNodeCopy{min-width:0}
+.hubDashboard .hubNetworkEyebrow{display:block;margin-bottom:2px;font-size:8px;font-weight:500;color:var(--muted);letter-spacing:.05em}
+.hubDashboard .hubNetworkNodeName{display:block;font-size:11px;font-weight:620;overflow-wrap:anywhere}
+.hubDashboard .hubNetworkNodeCaption{display:block;margin-top:3px;font-size:9px;font-weight:400;color:var(--muted);overflow-wrap:anywhere}
+.hubDashboard .hubNetworkIcon{width:27px;height:27px;display:grid;place-items:center;flex:none;border-radius:6px;background:color-mix(in srgb,var(--cyan) 10%,var(--panel));color:var(--cyan)}
+.hubDashboard .hubNetworkHub>.hubNetworkIcon{background:#c5ed34;color:#0d0e10}
+.hubDashboard .hubNetworkIconSvg{display:block;width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.hubDashboard .hubNetworkBranches{position:relative;z-index:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;width:31%;margin-left:64%;min-height:var(--hub-network-height);padding:12px 0}
+.hubDashboard .hubNetworkBranchItem{list-style:none;min-width:0;margin:0;padding:0}
+.hubDashboard .hubNetworkBranch{position:relative;display:flex;align-items:center;gap:8px;min-width:0;width:100%;min-height:40px;padding:6px 9px;border:1px solid color-mix(in srgb,var(--line) 88%,transparent);border-radius:6px;background:var(--panel2);color:var(--text);text-align:left;transition:background .16s,border-color .16s;box-shadow:none}
+.hubDashboard .hubNetworkBranch:hover,.hubDashboard .hubNetworkBranch:focus-visible{border-color:color-mix(in srgb,var(--cyan) 48%,var(--line));background:color-mix(in srgb,var(--cyan) 6%,var(--panel2));color:var(--text)}
+.hubDashboard .hubNetworkBranch:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.hubDashboard .hubNetworkBranch.is-offline{border-style:dashed;opacity:.78}
+.hubDashboard .hubNetworkBranch .hubNetworkIcon{width:22px;height:22px;background:color-mix(in srgb,var(--green) 8%,var(--panel));color:var(--green)}
+.hubDashboard .hubNetworkBranch.is-offline .hubNetworkIcon{color:var(--red);background:color-mix(in srgb,var(--red) 8%,var(--panel))}
+.hubDashboard .hubNetworkBranchCopy{min-width:0;flex:1}
+.hubDashboard .hubNetworkBranchName,.hubDashboard .hubNetworkBranchId{display:block;overflow-wrap:anywhere;white-space:normal}
+.hubDashboard .hubNetworkBranchName{font-size:11px;font-weight:600;line-height:1.3}
+.hubDashboard .hubNetworkBranchId{margin-top:2px;color:var(--muted);font-size:9px;font-weight:400;line-height:1.25}
+.hubDashboard .hubNetworkBranchState{flex:none;color:var(--green);font-size:9px;font-weight:500}
+.hubDashboard .hubNetworkBranch.is-offline .hubNetworkBranchState{color:var(--red)}
+.hubDashboard .hubNetworkControls{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 16px;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
+.hubDashboard .hubNetworkCount{color:var(--muted);font-size:10px}
+.hubDashboard .hubNetworkToggle{min-height:30px;padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--text);font-size:11px;font-weight:550;cursor:pointer}
+.hubDashboard .hubNetworkToggle:hover{border-color:color-mix(in srgb,var(--text) 30%,var(--line));background:color-mix(in srgb,var(--text) 5%,var(--panel2))}
+.hubDashboard .hubNetworkToggle:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.hubDashboard .hubNetworkEmpty{margin:0;padding:32px 16px;text-align:center;color:var(--muted);font-size:12px}
+@keyframes hubNetworkFlow{to{stroke-dashoffset:-202}}
+html[data-hub-design="lite"] .hubDashboard .hubNetworkPulse{animation:none;display:none}
+html[data-hub-design="lite"] .hubDashboard .hubNetworkBranch{transition:none}
+@media(prefers-reduced-motion:reduce){.hubDashboard .hubNetworkPulse{animation:none;display:none}.hubDashboard .hubNetworkBranch{transition:none}}
+@media(max-width:1000px) and (min-width:681px){.hubDashboard .hubNetworkNode{padding:9px;gap:6px}.hubDashboard .hubNetworkEyebrow{font-size:7px}.hubDashboard .hubNetworkNodeName{font-size:10px}.hubDashboard .hubNetworkNodeCaption{font-size:8px}.hubDashboard .hubNetworkBranchState{display:none}.hubDashboard .hubNetworkNode>.hubNetworkIcon{width:22px;height:22px}}
+@media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){
+ .hubDashboard .hubNetworkHead{align-items:flex-start;flex-direction:column;gap:6px;padding:12px}
+ .hubDashboard .hubNetworkTitle{font-size:12px}.hubDashboard .hubNetworkLegend{font-size:10px;gap:12px}
+ .hubDashboard .hubNetworkStage{display:flex;flex-direction:column;align-items:stretch;min-height:0;margin:0;padding:14px 12px;background-size:14px 14px}
+ .hubDashboard .hubNetworkWires{display:none}
+ .hubDashboard .hubNetworkNode{position:relative;top:auto;left:auto;transform:none;width:auto;margin:0 24px 22px;padding:10px}
+ .hubDashboard .hubNetworkBrowser{display:none}
+ .hubDashboard .hubNetworkHub:after{content:"";position:absolute;left:50%;top:100%;height:23px;border-left:1px solid color-mix(in srgb,var(--green) 50%,var(--line))}
+ .hubDashboard .hubNetworkNodeName{font-size:11px}.hubDashboard .hubNetworkEyebrow{font-size:8px}.hubDashboard .hubNetworkNodeCaption{font-size:9px}
+ .hubDashboard .hubNetworkBranches{position:relative;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;width:auto;margin:0;padding:1px;min-height:0}
+ .hubDashboard .hubNetworkBranches:before{content:"";position:absolute;left:25%;right:25%;top:-10px;border-top:1px solid color-mix(in srgb,var(--green) 50%,var(--line))}
+ .hubDashboard .hubNetworkBranch{min-height:49px;padding:7px 6px;gap:6px}
+ .hubDashboard .hubNetworkBranchName{font-size:10px}.hubDashboard .hubNetworkBranchId{font-size:9px}
+ .hubDashboard .hubNetworkBranchState{display:none}
+ .hubDashboard .hubNetworkBranch .hubNetworkIcon{width:20px;height:20px}.hubDashboard .hubNetworkIconSvg{width:15px;height:15px}
+ .hubDashboard .hubNetworkControls{padding:9px 12px}
+}
+/* iOS uses measured SVG connections rather than the static mobile connector. */
+@media(max-width:1024px){
+ .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkHead{flex-direction:row;align-items:flex-start;gap:8px}
+ .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkHeading{display:flex;flex-direction:column;align-items:flex-start;gap:7px;min-width:0}
+ .hubDashboard .hubNetwork[data-ios="1"] .hubPanelToggle{flex:none;margin-left:auto}
+ .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkStage{display:flex;flex-direction:column;align-items:stretch;min-height:0;margin:0;padding:14px 12px;background-size:14px 14px}
+ .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkWires{display:block}
+ .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkBrowser{display:none}
+ .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkHub{position:relative;top:auto;left:auto;transform:none;align-self:center;justify-content:center;width:auto;max-width:100%;margin:0 12px 20px;padding:10px 14px}
+ .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkHub:after,.hubDashboard .hubNetwork[data-ios="1"] .hubNetworkBranches:before{display:none}
+ .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkBranches{position:relative;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:24px;row-gap:12px;width:auto;margin:0;padding:0;min-height:0}
+ .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkBranch{height:100%;min-height:58px;padding:7px 6px;gap:5px}
+ .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkBranchState{display:none}
+ .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkBranchName{font-size:10px}
+}

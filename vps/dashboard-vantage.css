@@ -1,0 +1,213 @@
+/* Vantage-inspired dashboard; colours come from the shared Hub palette. */
+.hubDashboard{--hub-layout-max:1600px}
+.hubDashboard .wrap{padding-top:22px;padding-right:24px;padding-bottom:32px;padding-left:250px}
+.hubDashboard .hubSidebar{inset:22px auto auto max(24px,calc((100% - var(--hub-layout-max))/2 + 24px));width:204px;max-height:calc(100dvh - 44px);padding:12px 9px;border-radius:10px;background:var(--bg)}
+.hubDashboard .hubSidebarBrand{gap:10px;padding:7px 6px 17px}
+.hubDashboard .hubBrandMark{background:var(--cyan);color:var(--bg);border:0;border-radius:9px}
+.hubDashboard .hubBrandMark .hubIcon{width:21px;height:21px}
+.hubDashboard .hubBrandMark{background:#c5ed34!important;color:#0d0e10!important}
+@media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){.hubDashboard .hubPhoneBrand{display:flex;align-items:center;gap:7px}.hubDashboard .hubPhoneBrand .hubBrandMark{width:26px;height:28px;border-radius:8px}.hubDashboard .hubPhoneBrand .hubBrandMark .hubIcon{width:20px;height:20px}}
+.hubDashboard .hubSidebarBrand strong{font-size:14px!important;color:var(--text)}
+.hubDashboard .hubSidebarBrand b{color:var(--muted)}
+.hubDashboard .hubNavSection{border:0;background:none}
+.hubDashboard .hubNavSection>summary{background:transparent;border:0;color:var(--muted);letter-spacing:.04em;font-size:10px!important;text-transform:uppercase}
+.hubDashboard .hubNavItem{border-radius:6px;min-height:36px;color:var(--muted)}
+.hubDashboard .hubNavItem.is-active,.hubDashboard .hubNavItem[aria-current="page"]{color:var(--cyan);background:color-mix(in srgb,var(--cyan) 10%,var(--bg));border-color:transparent;box-shadow:inset 2px 0 var(--cyan)}
+.hubDashboard .hubNavItem:hover{color:var(--text);background:var(--panel2)}
+.hubDashboard .hubNavItem.hubNavDonate,.hubDashboard .hubNavItem.hubNavDonate:hover,.hubDashboard .hubNavItem.hubNavDonate:focus-visible{color:var(--amber)}
+.hubDashboard .hubShellTopbar{min-height:53px;margin-bottom:19px;padding:0 0 14px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:none}
+.hubDashboard #hubUpdateBtnDesktop,.hubDashboard #hubUpdateBtnMobile{border-radius:6px;background:var(--panel);border-color:var(--line)}
+.hubDashboard .hubVantageIntro{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 18px;min-width:0}
+.hubDashboard .hubVantageIntro h1{display:flex;align-items:center;gap:10px;margin:0;color:var(--text);font-size:16px!important;font-weight:650!important;letter-spacing:-.3px;line-height:1.3}
+.hubDashboard #hubVantageTitle{font:inherit!important}
+.hubDashboard .hubIntroDot{width:9px;height:9px;flex:none;border-radius:50%;background:var(--green);box-shadow:0 0 18px color-mix(in srgb,var(--green) 30%,transparent)}
+.hubDashboard .hubVantageIntro[data-attention="true"] .hubIntroDot{background:var(--amber);box-shadow:0 0 18px color-mix(in srgb,var(--amber) 30%,transparent)}
+.hubDashboard .hubVantageIntro p{margin:6px 0 0 19px;color:var(--muted);font-size:11px!important}
+.hubDashboard .hubMapMotionButton{display:flex;align-items:center;gap:7px;flex:none;padding:7px 10px;min-height:31px;border:1px solid var(--line);background:var(--panel);border-radius:6px;color:var(--muted);font-size:10px!important}
+.hubDashboard .hubKpiRow{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,2fr);gap:10px;margin-bottom:14px}
+.hubDashboard .hubKpiRow .routerStats{margin:0;gap:10px}
+.hubDashboard .hubKpiRow:has(>.routerStats[hidden]){display:none}
+html[data-hub-stats-hidden="1"] .hubDashboard .hubKpiRow{display:none}
+.hubDashboard .hubExtraStats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-width:0}
+.hubDashboard .hubKpiRow .statCard{position:relative;min-height:84px;border-radius:8px;padding:9px 9px 12px;background:var(--panel);overflow:visible}
+.hubDashboard .statCardHead{min-height:14px}
+.hubDashboard .hubKpiRow .statCardHead span{font-size:9px!important;text-transform:uppercase;letter-spacing:.055em;font-weight:550!important}
+.hubDashboard .hubKpiRow .statCard strong{font-size:22px!important;font-weight:650!important;line-height:1.2;letter-spacing:-.6px}
+.hubDashboard .hubKpiRow .statCard em{font-size:9px!important;font-weight:400!important;color:var(--muted)}
+.hubDashboard .hubKpiRow .statValueRow,.hubDashboard .hubKpiRow .offlineStatRow{min-height:27px;margin-top:3px}
+.hubDashboard .hubKpiRow .statCard.online strong{color:var(--green)}
+.hubDashboard .hubKpiRow .statCard.offline strong{color:var(--red)}
+.hubDashboard .hubKpiRow .statCard.xray strong{color:var(--cyan)}
+.hubDashboard .hubKpiRow .offlineMoreBtn{margin-left:5px;font-size:9px!important}
+.hubDashboard .hubExtraStats .vpsResource{display:flex;flex-direction:column;justify-content:center;gap:0;min-width:0;width:100%;border:0;background:none;padding:0;box-shadow:none;border-radius:0;color:var(--text)}
+.hubDashboard .hubExtraStats .vpsResource>span{display:block;text-transform:uppercase;font-size:9px!important;letter-spacing:.055em;font-weight:550!important;color:var(--muted)}
+.hubDashboard .hubExtraStats .vpsResource strong{display:block;margin:3px 0 0;font-size:22px!important;color:var(--text)!important}
+.hubDashboard .hubExtraStats .statCard::after{display:block;content:"";position:absolute;left:10px;right:10px;bottom:9px;height:2px;border-radius:2px;background:var(--line)}
+.hubDashboard .hubExtraStats .vpsResource::after{display:block;content:"";position:absolute;z-index:1;left:10px;bottom:9px;width:calc((100% - 20px)*var(--hub-resource-fraction,0));height:2px;border-radius:2px;background:var(--purple)}
+.hubDashboard .hubExtraStats [data-vps-resource="memory"]::after{background:var(--blue)}
+.hubDashboard .hubKpiRow .statCard.has-kpi-spark{padding-bottom:29px;min-height:100px}
+.hubDashboard .hubExtraStats .statCard.has-kpi-spark::after,.hubDashboard .hubExtraStats .has-kpi-spark .vpsResource::after{display:none}
+.hubDashboard .hubKpiSpark{position:absolute;left:1px;bottom:1px;width:calc(100% - 2px);height:25px;overflow:hidden;border-radius:0 0 7px 7px;color:var(--blue);pointer-events:none}
+.hubDashboard .statCard.online .hubKpiSpark{color:var(--green)}
+.hubDashboard .statCard.offline .hubKpiSpark{color:var(--red)}
+.hubDashboard .statCard.xray .hubKpiSpark{color:var(--cyan)}
+.hubDashboard .hubKpiSpark[data-metric="cpu"]{color:var(--purple)}
+.hubDashboard .hubKpiSparkLine{fill:none;stroke:currentColor;stroke-width:1.1;vector-effect:non-scaling-stroke;stroke-linejoin:round;stroke-linecap:round}
+.hubDashboard .hubKpiSparkDot{fill:currentColor}
+.hubDashboard .hubKpiSpark[data-stale="true"]{opacity:.45}
+.hubDashboard .hubKpiSpark[data-empty="true"] .hubKpiSparkLine{stroke-dasharray:3 3}
+.hubDashboard [data-vps-resource][data-stale="true"]{opacity:.6}
+.hubDashboard #hubNetworkMap{min-width:0}
+.hubDashboard .hubOverview{gap:12px;margin:0 0 20px;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
+.hubDashboard .hubOverviewPanel{padding:16px;border-radius:8px}
+.hubDashboard .hubOverviewPanel:only-child{grid-column:1 / -1}
+.hubDashboard .hubOverviewHead h2{font-size:12px!important;font-weight:600!important}
+.hubDashboard .hubPanelToggle{flex:none;min-height:28px;margin:0;padding:5px 9px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--muted);font-family:inherit;font-size:10px!important;font-weight:600;line-height:1.3;cursor:pointer;white-space:nowrap}
+.hubDashboard .hubPanelToggle:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.hubDashboard .hubPanelBody[hidden]{display:none!important}
+html[data-hub-map-hidden="1"] #hubMapBody,html[data-hub-availability-hidden="1"] #hubAvailabilityBody,html[data-hub-disk-hidden="1"] #hubDiskBody{display:none!important}
+html[data-hub-availability-hidden="1"] .hubAvailabilityPanel .hubChartRange{display:none}
+.hubDashboard .hubPanelHeadActions{display:flex;align-items:flex-start;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.hubDashboard .hubNetworkHeading{display:flex;align-items:center;justify-content:space-between;flex:1;min-width:0;gap:12px}
+.hubDashboard .hubNetworkHead{align-items:center;gap:10px}
+.hubDashboard .hubNetworkTitle>.hubNetworkIconSvg{display:block!important;width:23px;height:23px;flex:none;color:var(--amber);fill:none;stroke:currentColor;stroke-width:1.7}
+@media(max-width:680px){.hubDashboard .hubNetworkHead{flex-direction:row;align-items:flex-start}.hubDashboard .hubNetworkHeading{flex-direction:column;align-items:flex-start;gap:7px}.hubDashboard .hubAvailabilityPanel .hubPanelHeadActions{max-width:110px;flex-direction:column;align-items:flex-end;gap:6px}}
+.hubDashboard .hubAvailabilityPanel .hubOverviewHead{align-items:flex-start;gap:8px}
+.hubDashboard .hubAvailabilityPanel .hubOverviewHead h2{flex:1;min-width:0;line-height:1.4}
+.hubDashboard .hubChartRange{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.hubDashboard .hubChartPeriods{display:flex;gap:2px;padding:2px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+.hubDashboard .hubChartPeriods button{min-height:28px;margin:0;padding:5px 7px;border:0;border-radius:4px;background:transparent;box-shadow:none;color:var(--muted);font-family:inherit;font-size:10px!important;font-weight:600;line-height:1.2;white-space:nowrap;cursor:pointer}
+.hubDashboard .hubChartPeriods button:hover{color:var(--text);background:var(--panel2)}
+.hubDashboard .hubChartPeriods button[aria-pressed="true"]{color:var(--cyan);background:color-mix(in srgb,var(--cyan) 13%,var(--panel))}
+.hubDashboard .hubChartPeriods button:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.hubDashboard #hubAvailabilityPeriodLabel{color:var(--muted);font-size:9px;line-height:1.3;white-space:nowrap}
+.hubDashboard .hubDiskPanel{display:flex;flex-direction:column;justify-content:space-between}
+.hubDashboard .hubDiskTitle{display:flex;align-items:center;gap:8px}
+.hubDashboard .hubDiskTitle svg{width:23px;height:23px;fill:none;stroke:var(--amber);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.hubDashboard .hubSectionTitle{display:flex;align-items:center;gap:8px;min-width:0}
+.hubDashboard .hubSectionTitle>.hubIcon{width:23px;height:23px;fill:none;stroke:var(--amber);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.hubDashboard .hubDiskBanner{--hub-disk-color:var(--amber);display:flex;align-items:center;justify-content:center;gap:25px;min-width:0;padding:19px 0 14px}
+.hubDashboard .hubDiskRing{display:grid;place-items:center;width:104px;height:104px;border-radius:50%;flex:none;background:conic-gradient(var(--hub-disk-color) var(--hub-usage,0%),var(--line) 0);padding:6px;transform:rotate(-90deg)}
+.hubDashboard .hubDiskRingInner{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;border-radius:50%;background:var(--panel);transform:rotate(90deg)}
+.hubDashboard .hubDiskRingInner strong{font-size:23px!important;line-height:1.3;font-weight:650!important;color:var(--text)}
+.hubDashboard .hubDiskRingInner span{font-size:9px!important;color:var(--muted);margin-top:2px}
+.hubDashboard .hubDiskSpace{display:grid;gap:9px;min-width:0;flex:none;width:max-content;max-width:100%;margin:0}
+.hubDashboard .hubDiskSpace>div{display:grid;grid-template-columns:70px max-content;align-items:center;gap:10px;min-width:0}
+.hubDashboard .hubDiskSpace dt{font-size:10px!important;color:var(--muted)}
+.hubDashboard .hubDiskSpace dd{margin:0;font-size:11px!important;font-weight:600!important;text-align:right;color:var(--text)}
+.hubDashboard .hubDiskSpace [data-vps-disk-bytes="free"]{color:var(--amber)}
+.hubDashboard .hubDiskBanner[data-disk-level="critical"]{--hub-disk-color:var(--red)}
+.hubDashboard .hubDiskBanner[data-disk-level="unknown"]{--hub-disk-color:var(--line)}
+.hubDashboard .hubDiskBanner[data-stale="true"]{opacity:.6}
+.hubDashboard .hubDiskPanel .hubOverviewFoot{margin-top:0}
+.hubDashboard .hubOverviewPanel:has(>.hubPanelBody[hidden]){align-self:start}
+.hubDashboard .hubChartOnlineLine{stroke:var(--green)}
+.hubDashboard .hubChartArea{fill:color-mix(in srgb,var(--green) 8%,transparent)}
+.hubDashboard .hubAvailabilityChart{height:125px}
+.hubDashboard .hubAvailabilityChart svg{height:97px}
+.hubDashboard .hubRoutersHeading{margin-top:8px;margin-bottom:12px}
+.hubDashboard .hubRouterFilters :is(#routerStatusFilter,#routerGroupFilter),.hubDashboard .hubRouterFilters #hubShellSearchHost :is(#routerSearchToggle,#mobileRouterSearchToggle){height:30px;min-height:30px}
+.hubDashboard .routerGroupHeading{padding:8px 11px;border-radius:7px;background:var(--panel);border:1px solid var(--line)}
+.hubDashboard .routerGroupCards{gap:12px}
+.hubDashboard .routerCardSlot>.card{background:var(--panel);border:1px solid var(--line);border-radius:9px;box-shadow:none;padding:13px 12px 10px}
+.hubDashboard .routerCardSlot>.card::before,.hubDashboard .routerCardSlot>.card::after{display:none}
+.hubDashboard .cardTop{margin-bottom:9px}
+.hubDashboard .nameRow{margin-bottom:8px}
+/* Static glyph-only gradient, shared with native Android RouterNameView. */
+.hubDashboard .routerNameGradient{color:#218fc4}
+@supports ((background-clip:text) or (-webkit-background-clip:text)){
+ .hubDashboard .routerNameGradient{background:linear-gradient(90deg,#218fc4 0%,#697bd0 46%,#ff3030 100%);background-clip:text;-webkit-background-clip:text;-webkit-text-fill-color:transparent;color:transparent;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+}
+@media(forced-colors:active){.hubDashboard .routerNameGradient{background:none;-webkit-text-fill-color:currentColor;color:CanvasText}}
+.hubDashboard .routerQuickMetrics{display:grid;grid-template-columns:repeat(3,max-content);justify-content:center;gap:16px;margin:11px 0 12px;text-align:center}
+.hubDashboard .routerQuickMetrics div{min-width:0}
+.hubDashboard .routerQuickMetrics span{display:block;color:var(--muted);font-size:9px!important;font-weight:400!important}
+.hubDashboard .routerQuickMetrics b{display:block;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px!important;font-weight:600!important}
+.hubDashboard .routerQuickMetrics b[data-xray="running"]{color:var(--green)}
+.hubDashboard .routerQuickMetrics b[data-xray="stopped"]{color:var(--red)}
+.hubDashboard .cardDetailsToggle{background:transparent;border-color:var(--line);border-radius:6px;color:var(--cyan)}
+html[data-hub-design] .hubDashboard :is(#routerForm button[type="submit"],.actionToggle.primary){background:color-mix(in srgb,var(--green) 10%,var(--panel));color:var(--green);border-color:color-mix(in srgb,var(--green) 32%,var(--line))}
+.hubDashboard .routerGroupPickerToggle{background:transparent;color:var(--muted);border-color:var(--line)}
+.hubDashboard .notesPreview{background:var(--panel2);border-color:var(--line)}
+.hubDashboard .cardFloating{border-color:var(--line);background:var(--panel)}
+@media(min-width:681px) and (max-width:1180px){
+ .hubDashboard .wrap{padding-left:222px;padding-right:16px}
+ .hubDashboard .hubSidebar{width:190px;left:16px}
+ .hubDashboard .hubKpiRow{grid-template-columns:1fr}
+ .hubDashboard .hubExtraStats{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .hubDashboard .hubExtraStats .statCard{min-height:80px}
+ .hubDashboard .hubVantageIntro h1{font-size:15px!important}
+}
+@media(max-width:680px),(max-width:1024px) and (orientation:landscape) and (pointer:coarse){
+ .hubDashboard .wrap{padding:10px 12px 22px;max-width:none}
+ .hubDashboard .hubSidebar{inset:12px auto auto 12px;width:min(264px,calc(100vw - 32px));max-height:calc(100dvh - 24px)}
+ .hubDashboard .hubShellTopbar{min-height:50px;margin-bottom:16px;padding:0 0 10px;gap:6px}
+ .hubDashboard .hubVantageIntro{gap:7px;align-items:flex-start;margin-bottom:14px}
+ .hubDashboard .hubVantageIntro h1{font-size:14px!important;letter-spacing:-.2px;gap:7px}
+ .hubDashboard .hubIntroDot{width:7px;height:7px}
+ .hubDashboard .hubVantageIntro p{font-size:10px!important;margin-left:14px;max-width:260px}
+ .hubDashboard .hubMapMotionButton{width:30px;min-height:30px;padding:6px;justify-content:center}
+ .hubDashboard .hubMapMotionButton span{display:none}
+ .hubDashboard .hubKpiRow{grid-template-columns:1fr;gap:8px;margin-bottom:12px}
+ .hubDashboard .hubKpiRow .routerStats{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ .hubDashboard .hubExtraStats{gap:8px}
+ .hubDashboard .hubKpiRow .statCard{min-height:80px;padding:8px 8px 12px}
+ .hubDashboard .hubKpiRow .statCard strong,.hubDashboard .hubExtraStats .vpsResource strong{font-size:21px!important}
+ .hubDashboard .hubOverview{grid-template-columns:1fr;gap:14px;margin-bottom:18px}
+ .hubDashboard .hubOverviewPanel{padding:13px}
+ .hubDashboard .hubAvailabilityChart{height:125px}
+ .hubDashboard .hubResourcesPanel{margin:0}
+ .hubDashboard .hubDiskBanner{gap:18px;padding:17px 0}
+ .hubDashboard .hubDiskRing{width:96px;height:96px}
+ .hubDashboard .routerGroupCards{gap:10px}
+ .hubDashboard .routerQuickMetrics{margin:10px 0}
+}
+html[data-hub-design="lite"] .hubDashboard .hubIntroDot{box-shadow:none}
+.hubDashboard .hubOrderControls{display:flex;justify-content:center;align-items:center;gap:5px;margin:7px 0 0}
+.hubDashboard .hubOrderControls button{display:grid;place-items:center;min-height:24px;width:28px;padding:3px;border:1px solid var(--line);border-radius:5px;background:var(--panel2);color:var(--muted);font-size:12px;line-height:1;box-shadow:none}
+.hubDashboard .hubOrderControls button:disabled{opacity:.3;cursor:default}
+.hubDashboard .hubOrderControls svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.hubDashboard .hubOrderControls button:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.hubDashboard .hubOrderHandle{touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;cursor:grab}
+.hubDashboard .hubOrderDragging{opacity:.65;outline:2px solid var(--green)}
+.hubDashboard .hubOrderTarget{outline:2px dashed var(--amber)}
+.hubDashboard .hubOrderTarget[data-order-placement="before"]{box-shadow:inset 0 4px var(--amber)}
+.hubDashboard .hubOrderTarget[data-order-placement="after"]{box-shadow:inset 0 -4px var(--amber)}
+.hubOrderStatus{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:140;max-width:calc(100vw - 24px);padding:8px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--green);font-size:12px;text-align:center;pointer-events:none}
+.hubOrderStatus[data-error="true"]{color:var(--red)}
+@media(pointer:coarse){.hubDashboard .hubOrderControls button{min-height:32px;width:34px}}
+@media(min-width:1025px){html:not([data-hub-ios="1"]) .hubDashboard .hubDiskPanel{justify-content:flex-start}html:not([data-hub-ios="1"]) .hubDashboard .hubDiskPanel>#hubDiskBody{flex:1;display:flex;flex-direction:column;justify-content:center}html:not([data-hub-ios="1"]) .hubDashboard .hubDiskPanel .hubDiskBanner{flex:1;padding:12px 0}html:not([data-hub-ios="1"]) .hubDashboard .hubDiskPanel .hubOverviewFoot{flex:none}}
+/* Standalone iOS keeps readable numbers in a smaller statistics block. */
+@media(max-width:1024px){
+ html[data-hub-ios="1"] .hubDashboard .hubKpiRow{grid-template-columns:1fr;gap:6px;margin-bottom:10px}
+ html[data-hub-ios="1"] .hubDashboard .hubKpiRow .routerStats,html[data-hub-ios="1"] .hubDashboard .hubExtraStats{gap:6px}
+ html[data-hub-ios="1"] .hubDashboard .hubKpiRow .statCard{min-height:66px;padding:6px 6px 9px}
+ html[data-hub-ios="1"] .hubDashboard .hubKpiRow .statCard.has-kpi-spark{min-height:78px;padding-bottom:22px}
+ html[data-hub-ios="1"] .hubDashboard .hubKpiRow .statCard strong,html[data-hub-ios="1"] .hubDashboard .hubExtraStats .vpsResource strong{font-size:18px!important}
+ html[data-hub-ios="1"] .hubDashboard .hubKpiRow .statValueRow,html[data-hub-ios="1"] .hubDashboard .hubKpiRow .offlineStatRow{min-height:23px;margin-top:1px}
+ html[data-hub-ios="1"] .hubDashboard .hubKpiRow .statCard em{font-size:8px!important}
+ html[data-hub-ios="1"] .hubDashboard .hubKpiSpark{height:17px;bottom:3px}
+ html[data-hub-ios="1"] .hubDashboard .hubDiskBanner{flex-direction:column;align-items:center;text-align:center;gap:15px;padding:16px 0}
+ html[data-hub-ios="1"] .hubDashboard .hubDiskSpace{width:max-content;max-width:100%;margin:0 auto}
+ html[data-hub-ios="1"] .hubDashboard .hubRoutersHeading{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center}
+ html[data-hub-ios="1"] .hubDashboard .hubRoutersHeading>.hubSectionTitle{justify-content:center;width:100%;text-align:center}
+ html[data-hub-ios="1"] .hubDashboard .hubRoutersHeading .hubRouterFilters{justify-content:center;margin:0}
+ html[data-hub-ios="1"] .hubDashboard .hubVantageIntro{display:grid;grid-template-columns:minmax(0,1fr) auto;position:relative;justify-items:center;text-align:center}
+ html[data-hub-ios="1"] .hubDashboard .hubVantageIntro>div{grid-column:1 / -1;grid-row:1;width:100%;padding:0 36px}
+ html[data-hub-ios="1"] .hubDashboard .hubVantageIntro h1{justify-content:center}
+ html[data-hub-ios="1"] .hubDashboard .hubVantageIntro p{margin:6px auto 0;max-width:none}
+ html[data-hub-ios="1"] .hubDashboard .hubMapMotionButton{grid-column:2;grid-row:1;align-self:start}
+ html[data-hub-ios="1"] .hubDashboard :is(.hubNetworkHead,.hubOverviewHead){display:grid;grid-template-columns:minmax(0,1fr) auto;position:relative;align-items:start}
+ html[data-hub-ios="1"] .hubDashboard :is(.hubNetworkHeading,.hubDiskTitle,.hubOverviewHead>.hubSectionTitle){grid-column:1 / -1;grid-row:1;justify-content:center;justify-items:center;align-items:center;width:100%;margin:0;padding:0 62px;text-align:center}
+ html[data-hub-ios="1"] .hubDashboard .hubNetworkHeading{gap:9px}
+ html[data-hub-ios="1"] .hubDashboard .hubNetworkTitle{justify-content:center;text-align:center;flex-wrap:wrap}
+ html[data-hub-ios="1"] .hubDashboard :is(.hubNetworkHead,.hubOverviewHead)>.hubPanelToggle{grid-column:2;grid-row:1;margin:0;align-self:start}
+ html[data-hub-ios="1"] .hubDashboard .hubPanelHeadActions{display:contents}
+ html[data-hub-ios="1"] .hubDashboard .hubPanelHeadActions>.hubPanelToggle{grid-column:2;grid-row:1;justify-self:end}
+ html[data-hub-ios="1"] .hubDashboard .hubChartRange{grid-column:1 / -1;grid-row:2;justify-self:center;align-items:center;margin-top:9px}
+ html[data-hub-ios="1"] .hubDashboard .hubChartLegend{justify-content:center}
+ html[data-hub-ios="1"] .hubDashboard .hubChartLegend #hubAvailabilityLabel{margin-left:0}
+ html[data-hub-ios="1"] .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkHead{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start}
+ html[data-hub-ios="1"] .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkHeading{align-items:center;justify-content:center;margin:0;min-width:0}
+ html[data-hub-ios="1"] .hubDashboard .hubNetwork[data-ios="1"] .hubNetworkHead>.hubPanelToggle{margin:0}
+}

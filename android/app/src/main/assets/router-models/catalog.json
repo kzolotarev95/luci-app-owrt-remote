@@ -1,0 +1,750 @@
+[
+  {
+    "model": "ABT ASR3000",
+    "aliases": [
+      "ABT ASR3000"
+    ],
+    "file": "abt-asr3000.webp"
+  },
+  {
+    "model": "Acer Predator Connect W6",
+    "aliases": [
+      "Acer Predator Connect W6"
+    ],
+    "file": "acer-predator-connect-w6.webp"
+  },
+  {
+    "model": "Acer Predator Connect W6x",
+    "aliases": [
+      "Acer Predator Connect W6x"
+    ],
+    "file": "acer-predator-connect-w6x.webp"
+  },
+  {
+    "model": "ASUS RT-AX59U",
+    "aliases": [
+      "ASUS RT-AX59U"
+    ],
+    "file": "asus-rt-ax59u.webp"
+  },
+  {
+    "model": "ASUS TUF-AX4200",
+    "aliases": [
+      "ASUS TUF-AX4200"
+    ],
+    "file": "asus-tuf-ax4200.webp"
+  },
+  {
+    "model": "ASUS TUF-AX4200Q",
+    "aliases": [
+      "ASUS TUF-AX4200Q"
+    ],
+    "file": "asus-tuf-ax4200q.webp"
+  },
+  {
+    "model": "ASUS TUF-AX6000",
+    "aliases": [
+      "ASUS TUF-AX6000"
+    ],
+    "file": "asus-tuf-ax6000.webp"
+  },
+  {
+    "model": "ASUS ZenWiFi BT8",
+    "aliases": [
+      "ASUS ZenWiFi BT8"
+    ],
+    "file": "asus-zenwifi-bt8.webp"
+  },
+  {
+    "model": "Banana Pi BPI-R3",
+    "aliases": [
+      "Banana Pi BPI-R3"
+    ],
+    "file": "banana-pi-bpi-r3.webp"
+  },
+  {
+    "model": "Banana Pi BPI-R3 Mini",
+    "aliases": [
+      "Banana Pi BPI-R3 Mini"
+    ],
+    "file": "banana-pi-bpi-r3-mini.webp"
+  },
+  {
+    "model": "Banana Pi BPI-R4",
+    "aliases": [
+      "Banana Pi BPI-R4"
+    ],
+    "file": "banana-pi-bpi-r4.webp"
+  },
+  {
+    "model": "Banana Pi BPI-R4 Lite",
+    "aliases": [
+      "Banana Pi BPI-R4 Lite"
+    ],
+    "file": "banana-pi-bpi-r4-lite.webp"
+  },
+  {
+    "model": "Banana Pi BPI-R4 Pro",
+    "aliases": [
+      "Banana Pi BPI-R4 Pro"
+    ],
+    "file": "banana-pi-bpi-r4-pro.webp"
+  },
+  {
+    "model": "Bazis AX3000WM",
+    "aliases": [
+      "Bazis AX3000WM"
+    ],
+    "file": "bazis-ax3000wm.webp"
+  },
+  {
+    "model": "Benton SN-R1",
+    "aliases": [
+      "Benton SN-R1"
+    ],
+    "file": "benton-sn-r1.webp"
+  },
+  {
+    "model": "Cetron CT3003",
+    "aliases": [
+      "Cetron CT3003"
+    ],
+    "file": "cetron-ct3003.webp"
+  },
+  {
+    "model": "CMCC A10",
+    "aliases": [
+      "CMCC A10"
+    ],
+    "file": null
+  },
+  {
+    "model": "CMCC RAX3000M",
+    "aliases": [
+      "CMCC RAX3000M"
+    ],
+    "file": "cmcc-rax3000m.webp"
+  },
+  {
+    "model": "CreatLentem CLT-R30B1",
+    "aliases": [
+      "CreatLentem CLT-R30B1"
+    ],
+    "file": "creatlentem-clt-r30b1.webp"
+  },
+  {
+    "model": "COMFAST CF-WR632AX",
+    "aliases": [
+      "COMFAST CF-WR632AX"
+    ],
+    "file": "comfast-cf-wr632ax.webp"
+  },
+  {
+    "model": "Cudy AP3000 v1",
+    "aliases": [
+      "Cudy AP3000 v1",
+      "Cudy AP3000"
+    ],
+    "file": "cudy-ap3000.webp"
+  },
+  {
+    "model": "Cudy AP3000 Outdoor v1",
+    "aliases": [
+      "Cudy AP3000 Outdoor v1",
+      "Cudy AP3000 Outdoor"
+    ],
+    "file": "cudy-ap3000-outdoor.webp"
+  },
+  {
+    "model": "Cudy AP3000 Wall v1",
+    "aliases": [
+      "Cudy AP3000 Wall v1",
+      "Cudy AP3000 Wall"
+    ],
+    "file": "cudy-ap3000-wall.webp"
+  },
+  {
+    "model": "Cudy M3000 v1",
+    "aliases": [
+      "Cudy M3000 v1",
+      "Cudy M3000"
+    ],
+    "file": "cudy-m3000.webp"
+  },
+  {
+    "model": "Cudy P2 v1",
+    "aliases": [
+      "Cudy P2 v1",
+      "Cudy P2"
+    ],
+    "file": "cudy-p2.webp"
+  },
+  {
+    "model": "Cudy TR3000",
+    "aliases": [
+      "Cudy TR3000",
+      "Cudy TR3000 v1",
+      "Cudy TR3000 256MB v1"
+    ],
+    "file": "cudy-tr3000.webp"
+  },
+  {
+    "model": "Cudy WBR3000UAX v1",
+    "aliases": [
+      "Cudy WBR3000UAX v1",
+      "Cudy WBR3000UAX"
+    ],
+    "file": "cudy-wbr3000uax.webp"
+  },
+  {
+    "model": "Cudy WR3000E v1",
+    "aliases": [
+      "Cudy WR3000E v1",
+      "Cudy WR3000E"
+    ],
+    "file": "cudy-wr3000e.webp"
+  },
+  {
+    "model": "Cudy WR3000H v1",
+    "aliases": [
+      "Cudy WR3000H v1",
+      "Cudy WR3000H"
+    ],
+    "file": "cudy-wr3000h.webp"
+  },
+  {
+    "model": "Cudy WR3000P v1",
+    "aliases": [
+      "Cudy WR3000P v1",
+      "Cudy WR3000P"
+    ],
+    "file": "cudy-wr3000p.webp"
+  },
+  {
+    "model": "Cudy WR3000S v1",
+    "aliases": [
+      "Cudy WR3000S v1",
+      "Cudy WR3000S"
+    ],
+    "file": "cudy-wr3000s.webp"
+  },
+  {
+    "model": "Cudy WR3000U v1",
+    "aliases": [
+      "Cudy WR3000U v1",
+      "Cudy WR3000U"
+    ],
+    "file": "cudy-wr3000u.webp"
+  },
+  {
+    "model": "D-Link AQUILA PRO AI M30 A1",
+    "aliases": [
+      "D-Link AQUILA PRO AI M30 A1"
+    ],
+    "file": "d-link-aquila-pro-ai-m30-a1.webp"
+  },
+  {
+    "model": "Gemtek MXF-W1700K",
+    "aliases": [
+      "Gemtek MXF-W1700K"
+    ],
+    "file": "gemtek-mxf-w1700k.webp"
+  },
+  {
+    "model": "Gemtek XR1710G",
+    "aliases": [
+      "Gemtek XR1710G"
+    ],
+    "file": null
+  },
+  {
+    "model": "GL.iNet Beryl 7 (GL-MT3600BE)",
+    "aliases": [
+      "GL.iNet Beryl 7 (GL-MT3600BE)",
+      "GL.iNet GL-MT3600BE"
+    ],
+    "file": "gl-inet-beryl-7-gl-mt3600be.webp"
+  },
+  {
+    "model": "GL.iNet Beryl AX (GL-MT3000)",
+    "aliases": [
+      "GL.iNet Beryl AX (GL-MT3000)",
+      "GL.iNet GL-MT3000"
+    ],
+    "file": "gl-inet-beryl-ax-gl-mt3000.webp"
+  },
+  {
+    "model": "GL.iNet Flint 2 (GL-MT6000)",
+    "aliases": [
+      "GL.iNet Flint 2 (GL-MT6000)",
+      "GL.iNet GL-MT6000"
+    ],
+    "file": "gl-inet-flint-2-gl-mt6000.webp"
+  },
+  {
+    "model": "GL.iNet Flint 4 (GL-BE14000)",
+    "aliases": [
+      "GL.iNet Flint 4 (GL-BE14000)",
+      "GL.iNet GL-BE14000"
+    ],
+    "file": "gl-inet-flint-4-gl-be14000.webp"
+  },
+  {
+    "model": "GL.iNet Slate 7 Pro (GL-BE10000)",
+    "aliases": [
+      "GL.iNet Slate 7 Pro (GL-BE10000)",
+      "GL.iNet GL-BE10000"
+    ],
+    "file": "gl-inet-slate-7-pro-gl-be10000.webp"
+  },
+  {
+    "model": "H3C Magic NX30 Pro",
+    "aliases": [
+      "H3C Magic NX30 Pro"
+    ],
+    "file": "h3c-magic-nx30-pro.webp"
+  },
+  {
+    "model": "Hiveton H5000M",
+    "aliases": [
+      "Hiveton H5000M"
+    ],
+    "file": "hiveton-h5000m.webp"
+  },
+  {
+    "model": "Huasifei WH3000",
+    "aliases": [
+      "Huasifei WH3000"
+    ],
+    "file": "huasifei-wh3000.webp"
+  },
+  {
+    "model": "Huasifei WH3000 Pro eMMC",
+    "aliases": [
+      "Huasifei WH3000 Pro eMMC"
+    ],
+    "file": "huasifei-wh3000-pro-emmc.webp"
+  },
+  {
+    "model": "Huasifei WH3000 Pro NAND",
+    "aliases": [
+      "Huasifei WH3000 Pro NAND"
+    ],
+    "file": "huasifei-wh3000-pro-nand.webp"
+  },
+  {
+    "model": "Huasifei WH3000R NAND",
+    "aliases": [
+      "Huasifei WH3000R NAND"
+    ],
+    "file": "huasifei-wh3000r-nand.webp"
+  },
+  {
+    "model": "JCG Q30 Pro",
+    "aliases": [
+      "JCG Q30 Pro"
+    ],
+    "file": "jcg-q30-pro.webp"
+  },
+  {
+    "model": "JDCloud RE-CP-03",
+    "aliases": [
+      "JDCloud RE-CP-03"
+    ],
+    "file": null
+  },
+  {
+    "model": "Keenetic Buddy 6 (KN-3411)",
+    "aliases": [
+      "Keenetic Buddy 6 (KN-3411)",
+      "Keenetic KN-3411"
+    ],
+    "file": "keenetic-buddy-6-kn-3411.webp"
+  },
+  {
+    "model": "Keenetic Giga (KN-1012)",
+    "aliases": [
+      "Keenetic Giga (KN-1012)",
+      "Keenetic KN-1012"
+    ],
+    "file": "keenetic-giga-kn-1012.webp"
+  },
+  {
+    "model": "Keenetic Hopper (KN-3811)",
+    "aliases": [
+      "Keenetic Hopper (KN-3811)",
+      "Keenetic KN-3811"
+    ],
+    "file": "keenetic-hopper-kn-3811.webp"
+  },
+  {
+    "model": "Keenetic Sprinter (KN-3711)",
+    "aliases": [
+      "Keenetic Sprinter (KN-3711)",
+      "Keenetic KN-3711"
+    ],
+    "file": "keenetic-sprinter-kn-3711.webp"
+  },
+  {
+    "model": "Keenetic Titan (KN-1812)",
+    "aliases": [
+      "Keenetic Titan (KN-1812)",
+      "Keenetic KN-1812"
+    ],
+    "file": "keenetic-titan-kn-1812.webp"
+  },
+  {
+    "model": "Konka KOMI A31",
+    "aliases": [
+      "Konka KOMI A31"
+    ],
+    "file": null
+  },
+  {
+    "model": "Mercusys Halo H90X v1",
+    "aliases": [
+      "Mercusys Halo H90X v1",
+      "Mercusys Halo H90X"
+    ],
+    "file": "mercusys-halo-h90x.webp"
+  },
+  {
+    "model": "Mercusys MR85X",
+    "aliases": [
+      "Mercusys MR85X"
+    ],
+    "file": "mercusys-mr85x.webp"
+  },
+  {
+    "model": "Mercusys MR90X v1",
+    "aliases": [
+      "Mercusys MR90X v1",
+      "Mercusys MR90X"
+    ],
+    "file": "mercusys-mr90x.webp"
+  },
+  {
+    "model": "Netcore n60",
+    "aliases": [
+      "Netcore n60"
+    ],
+    "file": null
+  },
+  {
+    "model": "netis EAP930",
+    "aliases": [
+      "netis EAP930"
+    ],
+    "file": "netis-eap930.webp"
+  },
+  {
+    "model": "netis N6v2",
+    "aliases": [
+      "netis N6v2",
+      "Netis N6 v2",
+      "Netis N6V2"
+    ],
+    "file": "netis-n6v2.webp"
+  },
+  {
+    "model": "netis NX30v2",
+    "aliases": [
+      "netis NX30v2",
+      "Netis NX30 v2",
+      "Netis NX30V2"
+    ],
+    "file": "netis-nx30v2.webp"
+  },
+  {
+    "model": "netis NX31",
+    "aliases": [
+      "netis NX31"
+    ],
+    "file": "netis-nx31.webp"
+  },
+  {
+    "model": "netis NX32U",
+    "aliases": [
+      "netis NX32U"
+    ],
+    "file": "netis-nx32u.webp"
+  },
+  {
+    "model": "netis NX62",
+    "aliases": [
+      "netis NX62"
+    ],
+    "file": "netis-nx62.webp"
+  },
+  {
+    "model": "Nokia EA0326GMP",
+    "aliases": [
+      "Nokia EA0326GMP"
+    ],
+    "file": null
+  },
+  {
+    "model": "Nokia XG-040G-MD",
+    "aliases": [
+      "Nokia XG-040G-MD"
+    ],
+    "file": "nokia-xg-040g-md.webp"
+  },
+  {
+    "model": "Nokia XG-040G-MF",
+    "aliases": [
+      "Nokia XG-040G-MF"
+    ],
+    "file": "nokia-xg-040g-mf.webp"
+  },
+  {
+    "model": "OpenWrt One",
+    "aliases": [
+      "OpenWrt One",
+      "OpenWrt One (MT7981B)"
+    ],
+    "file": "openwrt-one.webp"
+  },
+  {
+    "model": "Qihoo 360T7",
+    "aliases": [
+      "Qihoo 360T7",
+      "Qihoo 360 T7",
+      "360 T7"
+    ],
+    "file": null
+  },
+  {
+    "model": "Quantum Fiber Q1000K",
+    "aliases": [
+      "Quantum Fiber Q1000K"
+    ],
+    "file": "quantum-fiber-q1000k.webp"
+  },
+  {
+    "model": "Redmi AX6000 (RB06)",
+    "aliases": [
+      "Redmi AX6000 (RB06)",
+      "Redmi AX6000",
+      "Xiaomi Redmi AX6000",
+      "Xiaomi Redmi Router AX6000"
+    ],
+    "file": "redmi-ax6000-rb06.webp"
+  },
+  {
+    "model": "Routerich AX3000 v1",
+    "aliases": [
+      "Routerich AX3000 v1",
+      "Routerich AX3000"
+    ],
+    "file": "routerich-ax3000.webp"
+  },
+  {
+    "model": "Routerich BE7200",
+    "aliases": [
+      "Routerich BE7200"
+    ],
+    "file": null
+  },
+  {
+    "model": "Ruijie RG-X60 Pro",
+    "aliases": [
+      "Ruijie RG-X60 Pro"
+    ],
+    "file": "ruijie-rg-x60-pro.webp"
+  },
+  {
+    "model": "SNR CPE AX2",
+    "aliases": [
+      "SNR CPE AX2",
+      "SNR-CPE-AX2",
+      "SNR SNR-CPE-AX2"
+    ],
+    "file": "snr-cpe-ax2.webp"
+  },
+  {
+    "model": "Tenda BE12 Pro",
+    "aliases": [
+      "Tenda BE12 Pro"
+    ],
+    "file": "tenda-be12-pro.webp"
+  },
+  {
+    "model": "TP-Link Archer AX80 v1",
+    "aliases": [
+      "TP-Link Archer AX80 v1",
+      "TP-Link Archer AX80"
+    ],
+    "file": "tp-link-archer-ax80.webp"
+  },
+  {
+    "model": "TP-Link Archer BE450",
+    "aliases": [
+      "TP-Link Archer BE450"
+    ],
+    "file": "tp-link-archer-be450.webp"
+  },
+  {
+    "model": "TP-Link EX820v",
+    "aliases": [
+      "TP-Link EX820v"
+    ],
+    "file": "tp-link-ex820v.webp"
+  },
+  {
+    "model": "TP-Link TL-7DR7230 v1/v2",
+    "aliases": [
+      "TP-Link TL-7DR7230 v1/v2"
+    ],
+    "file": "tp-link-tl-7dr7230.webp"
+  },
+  {
+    "model": "TP-Link TL-7DR7250 v1",
+    "aliases": [
+      "TP-Link TL-7DR7250 v1",
+      "TP-Link TL-7DR7250"
+    ],
+    "file": null
+  },
+  {
+    "model": "TP-Link TL-XDR6086",
+    "aliases": [
+      "TP-Link TL-XDR6086"
+    ],
+    "file": null
+  },
+  {
+    "model": "TP-Link TL-XDR6088",
+    "aliases": [
+      "TP-Link TL-XDR6088"
+    ],
+    "file": "tp-link-tl-xdr6088.webp"
+  },
+  {
+    "model": "Wavlink WL-WNT100X3",
+    "aliases": [
+      "Wavlink WL-WNT100X3"
+    ],
+    "file": "wavlink-wl-wnt100x3.webp"
+  },
+  {
+    "model": "wwGate AX3000",
+    "aliases": [
+      "wwGate AX3000"
+    ],
+    "file": "wwgate-ax3000.webp"
+  },
+  {
+    "model": "Xiaomi Mi Router AX3000T",
+    "aliases": [
+      "Xiaomi Mi Router AX3000T",
+      "Xiaomi AX3000T",
+      "Xiaomi Router AX3000T"
+    ],
+    "file": "xiaomi-mi-router-ax3000t.webp"
+  },
+  {
+    "model": "Xiaomi WR30U",
+    "aliases": [
+      "Xiaomi WR30U",
+      "Xiaomi Mi Router WR30U",
+      "Xiaomi Mi Router WR30U v1"
+    ],
+    "file": "xiaomi-wr30u.webp"
+  },
+  {
+    "model": "Zbtlink ZBT-Z8102AX",
+    "aliases": [
+      "Zbtlink ZBT-Z8102AX"
+    ],
+    "file": "zbtlink-zbt-z8102ax.webp"
+  },
+  {
+    "model": "Zbtlink ZBT-Z8105AX-C",
+    "aliases": [
+      "Zbtlink ZBT-Z8105AX-C"
+    ],
+    "file": "zbtlink-zbt-z8105ax-c.webp"
+  },
+  {
+    "model": "Zbtlink ZBT-Z8114AX-DS",
+    "aliases": [
+      "Zbtlink ZBT-Z8114AX-DS"
+    ],
+    "file": null
+  },
+  {
+    "model": "Zbtlink ZBT-Z8803BE",
+    "aliases": [
+      "Zbtlink ZBT-Z8803BE"
+    ],
+    "file": null
+  },
+  {
+    "model": "Zyxel EX5601-T0",
+    "aliases": [
+      "Zyxel EX5601-T0"
+    ],
+    "file": "zyxel-ex5601-t0.webp"
+  },
+  {
+    "model": "netis N6",
+    "aliases": [
+      "netis N6"
+    ],
+    "file": "netis-n6.webp"
+  },
+  {
+    "model": "Xiaomi Mi Router 4A Gigabit Edition",
+    "aliases": [
+      "Xiaomi Mi Router 4A Gigabit Edition"
+    ],
+    "file": "xiaomi-mi-router-4a-gigabit-edition.webp"
+  },
+  {
+    "model": "Xiaomi Mi Router 3G",
+    "aliases": [
+      "Xiaomi Mi Router 3G"
+    ],
+    "file": "xiaomi-mi-router-3g.webp"
+  },
+  {
+    "model": "Cudy WR3000",
+    "aliases": [
+      "Cudy WR3000"
+    ],
+    "file": "cudy-wr3000.webp"
+  },
+  {
+    "model": "GL.iNet GL-MT1300",
+    "aliases": [
+      "GL.iNet GL-MT1300"
+    ],
+    "file": "gl-inet-gl-mt1300.webp"
+  },
+  {
+    "model": "TP-Link Archer C6 v3",
+    "aliases": [
+      "TP-Link Archer C6 v3"
+    ],
+    "file": "tp-link-archer-c6-v3.webp"
+  },
+  {
+    "model": "ASUS RT-AX53U",
+    "aliases": [
+      "ASUS RT-AX53U"
+    ],
+    "file": "asus-rt-ax53u.webp"
+  },
+  {
+    "model": "Xiaomi Redmi Router AX6S",
+    "aliases": [
+      "Xiaomi Redmi Router AX6S",
+      "Xiaomi Redmi AX6S",
+      "Redmi Router AX6S",
+      "Redmi AX6S",
+      "Xiaomi Redmi Aiot AX6S"
+    ],
+    "file": "xiaomi-redmi-router-ax6s.webp"
+  }
+]

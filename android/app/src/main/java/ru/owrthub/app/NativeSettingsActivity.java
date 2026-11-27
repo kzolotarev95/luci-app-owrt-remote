@@ -117,8 +117,8 @@ public final class NativeSettingsActivity extends Activity {
           return insets;
         });
     LinearLayout bar = ui.row();
+    bar.setTag("native-toolbar");
     bar.setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4));
-    bar.addView(ui.iconButton("back", "Назад", this::finish));
     bar.addView(ui.text(title(), 20, true), new LinearLayout.LayoutParams(0, -2, 1));
     bar.addView(
         ui.iconButton(
@@ -141,7 +141,7 @@ public final class NativeSettingsActivity extends Activity {
     ScrollView scroll = new ScrollView(this);
     scroll.setFillViewport(true);
     content = ui.column();
-    content.setPadding(ui.dp(18), ui.dp(20), ui.dp(18), ui.dp(28));
+    content.setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(24));
     scroll.addView(content);
     root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
     NativeEffects.install(this, root);
@@ -1363,6 +1363,13 @@ public final class NativeSettingsActivity extends Activity {
 
   private void renderAbout(JSONObject data) {
     reset();
+    content.removeAllViews();
+    LinearLayout brand = ui.column();
+    brand.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
+    View crown = ui.iconBadge("crown", ui.AMBER, 56);
+    crown.setTag("about-crown");
+    crown.setContentDescription("Золотая корона OWRT Hub");
+    brand.addView(crown); brand.addView(ui.spacer(14)); add(brand);
     body(
         "OWRT Hub для Android\nВерсия приложения: "
             + BuildConfig.VERSION_NAME
@@ -1416,22 +1423,25 @@ public final class NativeSettingsActivity extends Activity {
       R.drawable.bank_vtb,
       R.drawable.bank_tbank
     };
-    for (int start = 0; start < names.length; start += 3) {
-      LinearLayout row = ui.row();
-      row.setGravity(android.view.Gravity.CENTER);
-      for (int i = start; i < Math.min(start + 3, names.length); i++) {
-        LinearLayout brand = ui.column();
-        brand.setGravity(android.view.Gravity.CENTER);
-        brand.setPadding(ui.dp(5), ui.dp(6), ui.dp(5), ui.dp(6));
-        android.widget.ImageView mark = new android.widget.ImageView(this);
-        mark.setImageResource(marks[i]);
-        mark.setContentDescription(names[i]);
-        brand.addView(mark, new LinearLayout.LayoutParams(ui.dp(24), ui.dp(24)));
-        brand.addView(ui.text(names[i], 12, true));
-        row.addView(brand, new LinearLayout.LayoutParams(0, -2, 1));
-      }
-      card.addView(row);
+    LinearLayout banks = ui.row();
+    banks.setTag("support-banks");
+    banks.setGravity(android.view.Gravity.CENTER);
+    for (int i = 0; i < names.length; i++) {
+      LinearLayout brand = ui.column();
+      brand.setGravity(android.view.Gravity.CENTER);
+      brand.setPadding(ui.dp(2), ui.dp(6), ui.dp(2), ui.dp(6));
+      android.widget.ImageView mark = new android.widget.ImageView(this);
+      mark.setImageResource(marks[i]);
+      mark.setContentDescription(names[i]);
+      brand.addView(mark, new LinearLayout.LayoutParams(ui.dp(24), ui.dp(24)));
+      TextView bankName = ui.text(i == 2 ? "Альфа" : names[i], 11, true);
+      bankName.setMaxLines(1);
+      bankName.setAutoSizeTextTypeUniformWithConfiguration(8, 11, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
+      brand.addView(ui.spacer(5));
+      brand.addView(bankName, new LinearLayout.LayoutParams(-1, ui.dp(20)));
+      banks.addView(brand, new LinearLayout.LayoutParams(0, -1, 1));
     }
+    card.addView(banks);
     add(card);
   }
 

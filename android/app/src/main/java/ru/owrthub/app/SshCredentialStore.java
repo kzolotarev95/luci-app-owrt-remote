@@ -9,7 +9,7 @@ import java.security.*;
 import javax.crypto.*;
 import javax.crypto.spec.GCMParameterSpec;
 
-/** Opt-in SSH secrets, scoped to Hub, Hub account and router; excluded from backup. */
+/** Requested SSH/WOL secrets, scoped to Hub, Hub account and router; excluded from backup. */
 final class SshCredentialStore {
   private final SharedPreferences prefs;
 
@@ -29,7 +29,7 @@ final class SshCredentialStore {
     if (password.length() > 4096) throw new IllegalArgumentException("Слишком длинный пароль");
     String name = id(origin, user, router);
     if (password.isEmpty()) {
-      prefs.edit().remove(name).commit();
+      if (!prefs.edit().remove(name).commit()) throw new java.io.IOException("Не удалось удалить пароль");
       return;
     }
     Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");

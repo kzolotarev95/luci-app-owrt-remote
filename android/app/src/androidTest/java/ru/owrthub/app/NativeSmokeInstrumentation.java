@@ -117,8 +117,8 @@ public class NativeSmokeInstrumentation extends Instrumentation {
             require(!stored.contains(PASSWORD) && !stored.contains(saved.cookie) && !stored.contains(USERNAME),
                     "Saved credentials and session metadata remain encrypted");
             checks.add("native_login_encrypted_session_without_webview");
-            require(hasText("Адрес скрыт") && !hasText("127.0.0.1"),"Header hides server by default");
-            checks.add("hub_address_hidden_by_default");
+            require(!hasText("Адрес скрыт") && !hasText("127.0.0.1"),"Header omits the address and its placeholder");
+            checks.add("hub_header_without_address_or_placeholder");
             capture("native-overview");
             checkLandscapeOverview();
 
@@ -496,7 +496,10 @@ public class NativeSmokeInstrumentation extends Instrumentation {
             for(int n=0;n<stats.getChildCount();n++)if(stats.getChildAt(n) instanceof android.widget.LinearLayout){
                 android.widget.LinearLayout row=(android.widget.LinearLayout)stats.getChildAt(n);
                 if(row.getChildCount()!=2)continue;
-                require(Math.abs(row.getChildAt(0).getWidth()-row.getChildAt(1).getWidth())<=1,"Device stat columns have equal width");
+                int gap=row.getChildAt(1).getLeft()-row.getChildAt(0).getRight();
+                float dp=getTargetContext().getResources().getDisplayMetrics().density;
+                require(gap>=8*dp && gap<=11*dp,"Device stat values stay close to their labels");
+                require(Math.abs((row.getChildAt(0).getLeft()+row.getChildAt(1).getRight())/2f-row.getWidth()/2f)<=2,"Compact device stat pairs centered");
                 for(int j=0;j<2;j++)require((((TextView)row.getChildAt(j)).getGravity() & android.view.Gravity.HORIZONTAL_GRAVITY_MASK)==android.view.Gravity.CENTER_HORIZONTAL,"Device labels and values centered");
             }
             return null;
@@ -659,7 +662,7 @@ public class NativeSmokeInstrumentation extends Instrumentation {
             try { result.set(action.call()); }
             catch (Throwable error) { failure.set(error); }
         });
-        if (failure.get() != null) throw new AssertionError("Native UI inspection failed", failure.get());
+        if (failure.get() != null) throw new AssertionError("Native UI inspection failed: " + failure.get(), failure.get());
         return result.get();
     }
     protected interface Condition { boolean holds(); }

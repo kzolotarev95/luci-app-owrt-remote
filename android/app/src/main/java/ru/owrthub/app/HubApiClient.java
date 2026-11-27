@@ -295,7 +295,10 @@ public final class HubApiClient {
           connection.setRequestProperty("Cookie", auth.cookie);
           if (payload != null) {
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
-            connection.setRequestProperty("Origin", hub.toString());
+            if (current.getRawPath().equals("/api/routers/order"))
+              connection.setRequestProperty("X-Router-Order", "1");
+            // Native HTTP is not a browser request; retain CSRF tokens without
+            // inventing an Origin that may disagree with a reverse proxy.
             if (!auth.csrf.isEmpty()) connection.setRequestProperty("X-Mobile-CSRF", auth.csrf);
             String operationHeader = operationCsrfHeader(current.getRawPath());
             String operationToken =

@@ -6,7 +6,7 @@ on:
   release:
     types: [published]
   pull_request:
-    paths: ['files/**', 'package/**', 'scripts/*openwrt*', 'tests/test_openwrt_package.py', '.github/workflows/openwrt-packages.yml']
+    paths: ['files/**', 'package/**', 'scripts/*openwrt*', 'scripts/router-update-manifest.py', 'scripts/router-download.sh', 'router-update.manifest', 'tests/test_router_panel_update*.py', 'tests/test_openwrt_package.py', '.github/workflows/openwrt-packages.yml']
   workflow_dispatch:
     inputs:
       publish_release:
@@ -37,6 +37,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test package tooling and shell syntax
         run: |
+          python3 scripts/router-update-manifest.py --check
+          python3 -m unittest discover -s tests -p 'test_router_panel_update*.py' -v
           python3 -m unittest discover -s tests -p test_openwrt_package.py -v
           sh -n scripts/build-openwrt-package.sh
           sh -n package/luci-app-owrt-remote/root/usr/lib/owrt-remote/package.sh

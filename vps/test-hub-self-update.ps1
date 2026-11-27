@@ -83,7 +83,8 @@ def cleanup_test():
         raise RuntimeError('Unsafe test cleanup path.')
     job_directory = ROOT / 'job'
     if job_directory.exists():
-        for name in ('candidate.py', 'previous.py', 'job.json', 'worker.lock'):
+        for name in ('candidate.py', 'candidate-mobile-api.py', 'previous.py',
+                     'previous-mobile-api.py', 'previous-mobile-api.absent', 'job.json', 'worker.lock'):
             (job_directory / name).unlink(missing_ok=True)
         job_directory.rmdir()
     for name in ('candidate.py', 'before.py', 'test.json'):

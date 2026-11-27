@@ -15,6 +15,44 @@ spec.loader.exec_module(m)
 
 
 class MaintenanceTests(unittest.TestCase):
+    def nginx_paths(self, filenames, missing=(), resolved=None):
+        class ConfigPath:
+            def __init__(self, filename):
+                self.filename = filename
+            def resolve(self):
+                return ConfigPath((resolved or {}).get(self.filename, self.filename))
+            def __str__(self):
+                return self.filename
+            def is_file(self):
+                return self.filename not in missing
+            def read_text(self):
+                if self.filename.startswith('/etc/letsencrypt/'):
+                    raise AssertionError('Certbot TLS policy must not be edited')
+                return 'http { access_log /var/log/nginx/custom.log; }\n'
+        rendered = ''.join('# configuration file ' + filename + ':\n' for filename in filenames)
+        return (mock.patch.object(m, 'Path', ConfigPath), mock.patch.object(m, 'command',
+                return_value=subprocess.CompletedProcess([], 0, rendered)))
+
+    def test_certbot_exact_ssl_policy_is_allowed_read_only(self):
+        paths, command = self.nginx_paths(['/etc/nginx/nginx.conf', '/etc/letsencrypt/options-ssl-nginx.conf'])
+        with paths, command:
+            self.assertEqual(m.nginx_policies(), {})
+
+    def test_certbot_exception_does_not_allow_other_external_configs(self):
+        for filename in ['/etc/letsencrypt/other.conf', '/etc/letsencrypt/options-ssl-nginx.conf.bak',
+                         '/tmp/options-ssl-nginx.conf', '/etc/nginx-evil/options.conf']:
+            with self.subTest(filename=filename):
+                paths, command = self.nginx_paths([filename])
+                with paths, command, self.assertRaisesRegex(RuntimeError, 'Unexpected nginx configuration'):
+                    m.nginx_policies()
+
+    def test_missing_or_escaped_certbot_policy_is_rejected(self):
+        filename = '/etc/letsencrypt/options-ssl-nginx.conf'
+        for missing, resolved in [([filename], {}), ([], {filename:'/tmp/tls.conf'})]:
+            paths, command = self.nginx_paths([filename], missing, resolved)
+            with paths, command, self.assertRaisesRegex(RuntimeError, 'Unexpected nginx configuration'):
+                m.nginx_policies()
+
     def test_only_exact_old_project_rule_can_be_removed(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / 'owrt-remote'

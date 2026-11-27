@@ -203,6 +203,47 @@ print(str(value).lower() if isinstance(value,bool) else value)' "$@"
         self.assertEqual(state['service'],'stopped')
         self.assertTrue(state['available'],'web reachability is independent of the core service')
 
+    def test_actual_binary_version_wins_over_stale_opkg_and_protected_api(self):
+        result = self.harness.run_shell(self.mocks + r'''
+tachyon_binary_version() { printf '2.0.0-rc.5'; }
+tachyon_json force
+''', TEST_VERSION='2.0.0~rc.2-1', TEST_HTTP='200', TEST_SERVICE='true', TEST_API='0')
+        status = json.loads(result.stdout)
+        self.assertEqual(status['version'], '2.0.0-rc.5')
+        self.assertEqual(status['package_version'], '2.0.0~rc.2-1')
+        self.assertTrue(status['available'])
+        self.assertEqual(status['mode'], 'standalone')
+
+    def test_actual_binary_version_wins_over_stale_apk_and_old_openapi(self):
+        result = self.run_shell(r'''
+apk() {
+    case "$1" in
+        info) printf 'base-files\ntachyon\n' ;;
+        list) printf 'tachyon 2.0.0~rc.2-r1\n' ;;
+        *) return 1 ;;
+    esac
+}
+tachyon_binary_version() { printf '2.0.0-rc.5'; }
+tachyon_json force
+''')
+        status = json.loads(result.stdout)
+        self.assertEqual(status['version'], '2.0.0-rc.5')
+        self.assertEqual(status['package_version'], '2.0.0~rc.2-r1')
+
+    def test_binary_version_reader_accepts_only_tachyon_semver(self):
+        command = r'''
+command() { if [ "$1:$2" = '-v:tachyon' ]; then printf /test/tachyon; else builtin command "$@"; fi; }
+timeout() { printf '%s\n' "$TEST_BINARY_OUTPUT"; }
+tachyon_binary_version
+'''
+        for output, expected in [('tachyon 2.0.0-rc.5', '2.0.0-rc.5'),
+                                 ('tachyon v2.0.0-rc.5', '2.0.0-rc.5'),
+                                 ('tachyon-core 0.6.8', ''), ('tachyon invalid', ''),
+                                 ('panic: permission denied', '')]:
+            with self.subTest(output=output):
+                result = self.run_shell(command, TEST_BINARY_OUTPUT=output)
+                self.assertEqual(result.stdout.strip(), expected, result.stderr)
+
     def test_first_transient_web_failure_is_unknown_and_second_confirms_unreachable(self):
         self.assertTrue(json.loads(self.run_shell('tachyon_json force').stdout)['available'])
         first = self.harness.run_shell(self.mocks + 'tachyon_json force',
@@ -223,6 +264,19 @@ print(str(value).lower() if isinstance(value,bool) else value)' "$@"
         self.assertEqual(state['mode'],'standalone')
         self.assertEqual(state['port'],1680)
         self.assertTrue(state['available'])
+
+    def test_discovery_cache_is_invalidated_after_binary_replacement(self):
+        result = self.run_shell(r'''
+stat() { printf '%s' "$TEST_BINARY_STAMP"; }
+ls() { printf '%s' "$TEST_BINARY_STAMP"; }
+tachyon_binary_version() { printf '%s' "$TEST_RUNNING_VERSION"; }
+TEST_BINARY_STAMP=old; TEST_RUNNING_VERSION=2.0.0-rc.4
+tachyon_json
+TEST_BINARY_STAMP=new; TEST_RUNNING_VERSION=2.0.0-rc.5
+tachyon_json
+''')
+        states = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+        self.assertEqual([state['version'] for state in states], ['2.0.0-rc.4', '2.0.0-rc.5'])
 
     def test_apk_discovery_and_legacy_luci(self):
         code = r'''
@@ -296,6 +350,15 @@ tachyon_reconcile_xray
         config = json.loads(result.stdout)
         self.assertEqual(config['outbounds'][0]['settings']['redirect'], '127.0.0.1:1680')
         self.assertEqual(config['routing']['rules'][0]['outboundTag'], 'router-tachyon')
+
+    def test_heartbeat_binds_instance_without_sending_raw_tunnel_key(self):
+        import hashlib
+        result = self.run_shell('heartbeat_json')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertEqual(payload['agent_identity'], hashlib.sha256(
+            b'11111111-1111-4111-8111-111111111111').hexdigest())
+        self.assertNotIn('11111111-1111-4111-8111-111111111111', result.stdout)
 
 
 class ProxyTests(unittest.TestCase):

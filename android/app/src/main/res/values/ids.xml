@@ -10,4 +10,5 @@
     <item name="hub_captcha" type="id" />
     <item name="hub_otp" type="id" />
     <item name="native_search" type="id" />
+    <item name="hub_immersive_installed" type="id" />
 </resources>

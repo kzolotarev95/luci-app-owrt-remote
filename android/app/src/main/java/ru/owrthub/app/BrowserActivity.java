@@ -67,7 +67,7 @@ public final class BrowserActivity extends Activity {
   private FrameLayout body;
   private ScrollView connection;
   private TextView title, subtitle, connectionStatus;
-  private Button back, connectButton;
+  private Button connectButton;
   private ProgressBar progress;
   private EditText hostField, portField, userField, passwordField;
   private SharedPreferences prefs;
@@ -179,12 +179,9 @@ public final class BrowserActivity extends Activity {
 
   private void buildToolbar() {
     toolbar = new LinearLayout(this);
+    toolbar.setTag("native-toolbar");
     toolbar.setGravity(Gravity.CENTER_VERTICAL);
     toolbar.setPadding(dp(6), dp(2), dp(6), dp(2));
-    back = smallButton("‹", "Назад");
-    back.setTextSize(31);
-    back.setOnClickListener(v -> navigateBack());
-    toolbar.addView(back, new LinearLayout.LayoutParams(dp(44), dp(48)));
     LinearLayout labels = new LinearLayout(this);
     labels.setOrientation(LinearLayout.VERTICAL);
     title = label("OWRT Hub", 17, TEXT, true);
@@ -281,7 +278,6 @@ public final class BrowserActivity extends Activity {
     body.addView(connection, new FrameLayout.LayoutParams(-1, -1));
     title.setText("OWRT Hub");
     subtitle.setText("Подключение · " + BuildConfig.VERSION_NAME);
-    back.setVisibility(tabs.isEmpty() ? View.INVISIBLE : View.VISIBLE);
   }
 
   private void connect() {
@@ -293,7 +289,7 @@ public final class BrowserActivity extends Activity {
     } catch (IllegalArgumentException ex) {
       connectionStatus.setText(
           "Проверьте адрес и порт. Нужен HTTPS-адрес Hub без пути, логина и пароля в URL.");
-      connectionStatus.setTextColor(Color.rgb(239, 149, 169));
+      connectionStatus.setTextColor(NativeUi.BRIGHT_RED);
       return;
     }
     final int attempt = ++connectionAttempt;
@@ -450,9 +446,8 @@ public final class BrowserActivity extends Activity {
             ? tab.web.getTitle()
             : "OWRT Hub");
     subtitle.setText(
-        (hub == null ? "" : hub.getAuthority())
-            + (tabs.size() > 1 ? " · экран " + tabs.size() : " · " + BuildConfig.VERSION_NAME));
-    back.setVisibility(View.VISIBLE);
+        "Android · " + BuildConfig.VERSION_NAME
+            + (tabs.size() > 1 ? " · экран " + tabs.size() : ""));
   }
 
   private boolean navigation(Tab tab, String url, boolean gesture) {
@@ -1121,12 +1116,12 @@ public final class BrowserActivity extends Activity {
     button.setText(text);
     button.setAllCaps(false);
     button.setTextSize(13);
-    button.setTextColor(primary ? TEXT : BLUE);
+    button.setTextColor(TEXT);
     button.setBackground(
         shape(
-            primary ? Color.rgb(35, 90, 138) : PANEL,
-            primary ? Color.rgb(56, 121, 180) : LINE,
-            12));
+            primary ? NativeUi.alpha(BLUE, .12f) : PANEL,
+            primary ? NativeUi.alpha(BLUE, .42f) : LINE,
+            8));
     return button;
   }
 

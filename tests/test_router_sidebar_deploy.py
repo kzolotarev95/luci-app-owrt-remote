@@ -33,8 +33,8 @@ class RouterSidebarDeploymentTests(unittest.TestCase):
             'effects': b'/* old design */\n',
         }
         self.candidate = {
-            'cgi': b'#!/bin/sh\n# routerSidebar <title>OWRT Hub v124</title>\necho new\n',
-            'luci': b'/* OWRT Hub v124 */\n',
+            'cgi': b'#!/bin/sh\n# routerSidebar <title>OWRT Hub v125</title>\necho new\n',
+            'luci': b'/* OWRT Hub v125 */\n',
             'effects': b'const HUB_DESIGN_MODES = new Set();\n',
         }
         for name, target in self.targets.items():

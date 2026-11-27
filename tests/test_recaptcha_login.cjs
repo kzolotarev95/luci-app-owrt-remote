@@ -33,6 +33,7 @@ function fixture(kind = 'v3') {
     reset() { resetCount++; },
   };
   const window = {
+    navigator: {standalone: false},
     grecaptcha: google, FormData: true, fetch: true, AbortController: true,
     setTimeout(callback, delay) { const id = ++timerId; timers.set(id, {callback, delay}); return id; },
     clearTimeout(id) { timers.delete(id); },
@@ -102,6 +103,11 @@ function fixture(kind = 'v3') {
   native.window.fetch = false;
   await native.submit();
   assert.deepEqual(native.posts, [{native: true, token: 'fresh-token-1'}]);
+
+  const standalone = fixture();
+  standalone.window.navigator.standalone = true;
+  await standalone.submit();
+  assert.deepEqual(standalone.posts, [{native: true, token: 'fresh-token-1'}], 'Home Screen navigation retains the awaited v3 token');
 
   for (const kind of ['v2', 'digits']) {
     const previous = fixture(kind);

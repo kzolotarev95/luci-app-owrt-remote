@@ -15,6 +15,8 @@ STATE = tempfile.TemporaryDirectory(prefix="owrt-global-design-")
 sys.modules[SPEC.name] = hub
 with mock.patch.dict(os.environ, {"OWRT_REMOTE_STATE_DIR": STATE.name}):
     SPEC.loader.exec_module(hub)
+# Rendering tests use existing fixture authentication, not first-run provisioning.
+hub.write_json_private(hub.AUTH_FILE, hub.normalize_auth_state({"username": "fixture-owner"}))
 
 
 def preview_pages():
@@ -27,6 +29,9 @@ def preview_pages():
             "/router-updates/": hub.router_updates_html("test"),
             "/router/main/notes": hub.router_notes_html(router),
             "/ssh/main/": hub.ssh_terminal_html_v2(hub.vps_terminal_row(), "test"),
+            "/router/main/xray-control": hub.router_xray_control_html(router, "test"),
+            "/donate/": hub.donate_html(),
+            "/ssh-key-manual/": hub.ssh_key_manual_html(),
         }
     return {path: hub.inject_hub_appearance(path, page.encode("utf-8"), "text/html").decode("utf-8")
             for path, page in pages.items()}

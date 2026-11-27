@@ -1,0 +1,2033 @@
+{
+  "schema": 1,
+  "catalog_source": "https://hattabbi4.github.io/openwrt-router-compare/",
+  "catalog_rows": 92,
+  "retrieved": "2026-11-26",
+  "models": [
+    {
+      "id": "abt-asr3000",
+      "model": "ABT ASR3000",
+      "catalog_name": "ABT ASR3000",
+      "aliases": [
+        "ABT ASR3000"
+      ],
+      "file": "abt-asr3000.webp",
+      "sha256": "0a0d071abf345a4f27381dbf3ad0ef62ddf87596271e5eed79c2441ba7662f10",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/ABT_ASR3000",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/9/92/Asr-ax3000.jpg",
+      "source_title": "ABT ASR3000 ABT ASR3000",
+      "original_sha256": "6430a5868275ad9c10ceaa594ee402a0d2209bd626f3c3c66af179727ca808c6",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "acer-predator-connect-w6",
+      "model": "Acer Predator Connect W6",
+      "catalog_name": "Acer Predator Connect W6",
+      "aliases": [
+        "Acer Predator Connect W6"
+      ],
+      "file": "acer-predator-connect-w6.webp",
+      "sha256": "a579b39d009dbf266ee97ff21ea26c1eab34badd8f8492227bc09edf2696e500",
+      "source_page": "https://catalog.onliner.by/wrouter/acer/predatorw6/prices?position_id=20236%3Asm1x8683140",
+      "source_image": "https://imgproxy.onliner.by/WdZhGTDnMTzjKLnI-gcasJCLO6PxrASSbgaIBeQ6KKE/w:700/h:550/z:2/f:jpg/aHR0cHM6Ly9jb250/ZW50Lm9ubGluZXIu/YnkvY2F0YWxvZy9k/ZXZpY2UvMjAyMy83/N2I0MGI4ODQ0NDdh/M2VlOWU4Mzk3ZmNh/YTEzYWIxYi5wbmc",
+      "source_title": "Acer Predator Connect W6 цена в Беларуси",
+      "original_sha256": "4a5bdd2c02acff4b38a29e6703dfa48118f638dbd06b43c5c6ce79dab234481d",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "acer-predator-connect-w6x",
+      "model": "Acer Predator Connect W6x",
+      "catalog_name": "Acer Predator Connect W6x",
+      "aliases": [
+        "Acer Predator Connect W6x"
+      ],
+      "file": "acer-predator-connect-w6x.webp",
+      "sha256": "f785248faf09cd3de1e0bc69460f147ef2fd7c5c32d314ea71d100c5c772d339",
+      "source_page": "https://blog.acer.com/en/discussion/1654/predator-connect-w6x-no-interruptions-ever",
+      "source_image": "https://us.v-cdn.net/6036147/uploads/EAKA9URRJ9SO/predator-connect-w6x-no-interruptions-ever.jpg",
+      "source_title": "Predator Connect W6x: No Interruptions Ever - Acer Corner",
+      "original_sha256": "b3403fb9630521e00b51081ad056b9d6e49b91e1f0431154d009fa07064ef94c",
+      "width": 320,
+      "height": 240,
+      "background": "transparent",
+      "quality_checks": [
+        {
+          "feature": "antenna_1",
+          "x": 48,
+          "y": 83,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_2",
+          "x": 82,
+          "y": 83,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_3",
+          "x": 125,
+          "y": 67,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_4",
+          "x": 244,
+          "y": 67,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_5",
+          "x": 276,
+          "y": 83,
+          "radius": 1,
+          "min_alpha": 230
+        }
+      ]
+    },
+    {
+      "id": "asus-rt-ax59u",
+      "model": "ASUS RT-AX59U",
+      "catalog_name": "ASUS RT-AX59U",
+      "aliases": [
+        "ASUS RT-AX59U"
+      ],
+      "file": "asus-rt-ax59u.webp",
+      "sha256": "9d3064cbe0b961f82f6d02cbaaf7c6dac4df71a7a70b6c88834dc36643d78629",
+      "source_page": "https://www.asus.com/ru/networking-iot-servers/wifi-routers/asus-wifi-routers/rt-ax59u/",
+      "source_image": "https://dlcdnwebimgs.asus.com/files/media/13abfcf0-e62a-4cde-8978-ce9a4d37149f/v2/img/kv/bg-kv.jpg",
+      "source_title": "RT-AX59U ｜ Беспроводные маршрутизаторы ｜ ASUS в СНГ",
+      "original_sha256": "055c780c3178a65871cbaa7665efbf48fe73157b8111d454e382a942158398ec",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "asus-tuf-ax4200",
+      "model": "ASUS TUF-AX4200",
+      "catalog_name": "ASUS TUF-AX4200",
+      "aliases": [
+        "ASUS TUF-AX4200"
+      ],
+      "file": "asus-tuf-ax4200.webp",
+      "sha256": "771d372907e1f397f3ee98e1780503e11bdb96406e72a750a3378ba9253638c9",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/ASUS_TUF-AX4200",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/1/17/TUF-AX4200.png",
+      "source_title": "ASUS TUF-AX4200 ASUS TUF-AX4200",
+      "original_sha256": "281cf7fe259a7bcf4a56b036223ab3526bd5eaa475b43a6a57ca8e354717f18c",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "asus-tuf-ax4200q",
+      "model": "ASUS TUF-AX4200Q",
+      "catalog_name": "ASUS TUF-AX4200Q",
+      "aliases": [
+        "ASUS TUF-AX4200Q"
+      ],
+      "file": "asus-tuf-ax4200q.webp",
+      "sha256": "1abefaf3c97ae34fc12fcf98f840af8e6473c87a73463177f3086a8fca88518f",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/ASUS_TUF-AX4200Q",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/9/97/Ax4200q.png",
+      "source_title": "ASUS TUF-AX4200Q ASUS TUF-AX4200Q",
+      "original_sha256": "a632bb05d6976d1d26d0365b7022c0b58225d1aeb908cae86f7c415a4ec20798",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "asus-tuf-ax6000",
+      "model": "ASUS TUF-AX6000",
+      "catalog_name": "ASUS TUF-AX6000",
+      "aliases": [
+        "ASUS TUF-AX6000"
+      ],
+      "file": "asus-tuf-ax6000.webp",
+      "sha256": "9f92802cf7a4214b7d0a3b17d39f09cc95cbdbd57df392c16ec576a692b3c1c6",
+      "source_page": "https://www.atehno.md/products/wifi-6-dual-band-asus-tuf-gaming-router-tufax6000-6000mbps-ofdma-4xgbit-2x25gbit-usb30-standardul-wifi-ieee-80211abgnacax-viteza-wifi-1148-mbps-4804-mbps-frecven3fa-wifi-24-g-9857901507265",
+      "source_image": "https://dlcdnwebimgs.asus.com/files/media/1a3fd73a-db31-4076-b878-e497f3861989/v1/img/port/TUF-AX6000-I-O-port.png",
+      "source_title": "Wi-Fi 6 Dual Band ASUS TUF Gaming Router \"TUF-AX6000&qu - ATEHNO",
+      "original_sha256": "fc996fbb8b8852449b70c0b33602da236f2a5a258b6c8c4cf96afa79434e77be",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "asus-zenwifi-bt8",
+      "model": "ASUS ZenWiFi BT8",
+      "catalog_name": "ASUS ZenWiFi BT8",
+      "aliases": [
+        "ASUS ZenWiFi BT8"
+      ],
+      "file": "asus-zenwifi-bt8.webp",
+      "sha256": "51c0e2b8ec413341786a70aaabfb5d3842f9d43d8526e1ef3e90b5701cf1ef58",
+      "source_page": "https://www.asus.com/eg/networking-iot-servers/whole-home-mesh-systems/asus-zenwifi/asus-zenwifi-bt8/",
+      "source_image": "https://mediawebimg.asus.com/files/media/0c4dddf5-f77f-4b47-bc60-99bbf82f0fb6/v1/img/aimesh/mesh-backhaul-1.png",
+      "source_title": "ASUS ZenWiFi BT8 ASUS Egypt",
+      "original_sha256": "9caf0be46e9db3add461361377730a547b020422a7149c7b597877879205ca6e",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "banana-pi-bpi-r3",
+      "model": "Banana Pi BPI-R3",
+      "catalog_name": "Banana Pi BPI-R3",
+      "aliases": [
+        "Banana Pi BPI-R3"
+      ],
+      "file": "banana-pi-bpi-r3.webp",
+      "sha256": "1c0da9630e5972dd00151ddb6b1e8b604302c45b6aac73c8f23b1bfb2e6c5a31",
+      "source_page": "https://banana-pi.org/en/bananapi-router/99.html",
+      "source_image": "https://banana-pi.org/web/userfiles/product/Banana%20Pi%20BPI-R3%20(4).jpg",
+      "source_title": "Banana Pi BPI-R3 Router board with MediaTek MT7986(Filogic 830),support Wi-Fi 6/6E,2.5GbE SFP-Banana Pi open source hardware com",
+      "original_sha256": "e6df64bd3781c0f856bc6204a3be1b5f2f98adb10068b29bf3e730d238bc8df6",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "banana-pi-bpi-r3-mini",
+      "model": "Banana Pi BPI-R3 Mini",
+      "catalog_name": "Banana Pi BPI-R3 Mini",
+      "aliases": [
+        "Banana Pi BPI-R3 Mini"
+      ],
+      "file": "banana-pi-bpi-r3-mini.webp",
+      "sha256": "338aaaea756136a24e409663e0935db7988d590840c5cf1df100d7c66d084525",
+      "source_page": "https://mobismart.ru/banana-pi/",
+      "source_image": "https://mobismart.ru/wp-content/uploads/2025/09/bananapi-bpi-r3-mini-2.jpg",
+      "source_title": "Микрокомпьютеры Banana Pi купить с доставкой по России",
+      "original_sha256": "e0c7e7a9efdb1c3e899029533c21f9d86761cbbf09d5d0b3cf9b3333ebf33b56",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "banana-pi-bpi-r4",
+      "model": "Banana Pi BPI-R4",
+      "catalog_name": "Banana Pi BPI-R4",
+      "aliases": [
+        "Banana Pi BPI-R4"
+      ],
+      "file": "banana-pi-bpi-r4.webp",
+      "sha256": "9b0a218b70fa2a7fc9b22f1fc0835e93218b98f7da5711632184d9fb8ac85c87",
+      "source_page": "https://docs.banana-pi.org/en/BPI-R4/Photo_BPI-R4",
+      "source_image": "https://docs.banana-pi.org/bpi-r4/banana_pi_bpi-r4_wifi7_be14_5.jpg",
+      "source_title": "Banana Pi BPI-R4 photo BananaPi Docs",
+      "original_sha256": "23be600df15b08bc9d27db80a51696d46a3bc7fbbeea67cc8d3d79e2e09887af",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "banana-pi-bpi-r4-lite",
+      "model": "Banana Pi BPI-R4 Lite",
+      "catalog_name": "Banana Pi BPI-R4 Lite",
+      "aliases": [
+        "Banana Pi BPI-R4 Lite"
+      ],
+      "file": "banana-pi-bpi-r4-lite.webp",
+      "sha256": "79be4374c92c389bf68df8a1559738fa4a518534c2c1e05468d99362c9c2513f",
+      "source_page": "https://docs.banana-pi.org/en/BPI-R4_Lite/BananaPi_BPI-R4_Lite",
+      "source_image": "https://docs.banana-pi.org/bpi-r4_lite/banana_pi_bpi-r4_lite_case_1.png",
+      "source_title": "Banana Pi BPI-R4 Lite design with Mediatek MT7987 chip BananaPi Docs",
+      "original_sha256": "99ec854f42c1b3f308344577ae4cd21d0907af9eac3675ba32b75063b3bc0511",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "banana-pi-bpi-r4-pro",
+      "model": "Banana Pi BPI-R4 Pro",
+      "catalog_name": "Banana Pi BPI-R4 Pro",
+      "aliases": [
+        "Banana Pi BPI-R4 Pro"
+      ],
+      "file": "banana-pi-bpi-r4-pro.webp",
+      "sha256": "893ceb8a947e5b36913c25e31a142a4bf095e7ed05a417d97f85d98018134e05",
+      "source_page": "https://banana-pi.org/en/product-news/595.html",
+      "source_image": "https://banana-pi.org/web/userfiles/product/BPI_R4_Pro/Banana%20Pi%20BPI-R4%20Pro%20Product%206.jpg",
+      "source_title": "Banana Pi BPI-R4 Pro Wifi7 Router product public sale-Banana Pi open source hardware community,Single board computer, Router,IoT",
+      "original_sha256": "ffcc54213cbe80a68036785b374e1290f85a237b220e6ae7cb52c09308694be8",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "bazis-ax3000wm",
+      "model": "Bazis AX3000WM",
+      "catalog_name": "Bazis AX3000WM / WD-R3000N-G2A",
+      "aliases": [
+        "Bazis AX3000WM"
+      ],
+      "file": "bazis-ax3000wm.webp",
+      "sha256": "bf102400f6ff6cc4a28378496dd62191ad69ed1391a371ed1ddbedac181db3ed",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Bazis_AX3000WM",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/c/cb/Bazis_AX3000WM.png",
+      "source_title": "Bazis AX3000WM Bazis AX3000WM",
+      "original_sha256": "ced5c5a757aee6db3c35dfdb914adfadd7f22d18524032ff1518b7825b5eedbb",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "benton-sn-r1",
+      "model": "Benton SN-R1",
+      "catalog_name": "Benton SN-R1",
+      "aliases": [
+        "Benton SN-R1"
+      ],
+      "file": "benton-sn-r1.webp",
+      "sha256": "4bc49577f9ec06fa084b5dd784cbefb1b5933a56ebb869f739bc8da97e8e5cc8",
+      "source_page": "https://forum.openwrt.org/t/253504",
+      "source_image": "https://forum.openwrt.org/uploads/default/optimized/3X/8/8/88c022420a1780e16ae0e96640e35e4b2d1ac322_2_666x500.jpeg",
+      "source_title": "Benton SN-R1, owner photograph by gitkabir",
+      "original_sha256": "66f0a6b46de07173b916f8994d48cc37f262d0fbf75ee89f5023b38ce7006445",
+      "width": 320,
+      "height": 240,
+      "background": "transparent",
+      "quality_checks": [
+        {
+          "feature": "antenna_1",
+          "x": 40,
+          "y": 98,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_2",
+          "x": 73,
+          "y": 98,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_3",
+          "x": 115,
+          "y": 98,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_4",
+          "x": 226,
+          "y": 98,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_5",
+          "x": 265,
+          "y": 98,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_6",
+          "x": 281,
+          "y": 98,
+          "radius": 1,
+          "min_alpha": 230
+        }
+      ]
+    },
+    {
+      "id": "cetron-ct3003",
+      "model": "Cetron CT3003",
+      "catalog_name": "Cetron CT3003",
+      "aliases": [
+        "Cetron CT3003"
+      ],
+      "file": "cetron-ct3003.webp",
+      "sha256": "ece8efdb37bc5f15f89fa4a00d10e8516c25f618cdb86fc72cd14a2518608e08",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Cetron_CT3003",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/2/26/Cetron_CT3003_01.png",
+      "source_title": "Cetron CT3003 Cetron CT3003",
+      "original_sha256": "759f562adc705ca53945d10fc4388781bb4151eed8a4225dc7d0a66b680dddb9",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "cmcc-a10",
+      "model": "CMCC A10",
+      "catalog_name": "CMCC A10 / SuperElectron ZN-M5",
+      "aliases": [
+        "CMCC A10"
+      ],
+      "file": null,
+      "pending_reason": "No verified model photograph was found in the reviewed sources."
+    },
+    {
+      "id": "cmcc-rax3000m",
+      "model": "CMCC RAX3000M",
+      "catalog_name": "CMCC RAX3000M / RAX3000Me / XR30",
+      "aliases": [
+        "CMCC RAX3000M"
+      ],
+      "file": "cmcc-rax3000m.webp",
+      "sha256": "7c51f3fc8040629b142abab3ba0cd4adba33d05b7fde30da4f5c5aa2803953af",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/CMCC_RAX3000M",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/5/5a/CMCC_RAX3000M.jpg",
+      "source_title": "CMCC RAX3000M CMCC RAX3000M",
+      "original_sha256": "07bb7eaac6402d099296774a19d49dd92f6b94769cb25c6c924e7ec17c8d58d9",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "creatlentem-clt-r30b1",
+      "model": "CreatLentem CLT-R30B1",
+      "catalog_name": "CreatLentem CLT-R30B1",
+      "aliases": [
+        "CreatLentem CLT-R30B1"
+      ],
+      "file": "creatlentem-clt-r30b1.webp",
+      "sha256": "40e794d9e08c1d9568864b235b461ba4cf06154003c65c1ec4225410f8c73757",
+      "source_page": "https://russian.alibaba.com/product-detail/CLT-R30B1-5-High-Gain-Antennas-1601627922902.html",
+      "source_image": "https://sc04.alicdn.com/kf/H5d59eef0864749a48466c0259c04d4c6g.png",
+      "source_title": "CLT-R30B1 5-диапазонный Wi-Fi роутер с высоким коэффициентом усиления, AX3000 Mesh, беспроводной, Wi-Fi 6, двухдиапазонный, с ги",
+      "original_sha256": "bf2b5d1fcf8704ed7e1bf213cd4cbc3bb7d4b4ec69bb589b1b66b57195164908",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "comfast-cf-wr632ax",
+      "model": "COMFAST CF-WR632AX",
+      "catalog_name": "COMFAST CF-WR632AX",
+      "aliases": [
+        "COMFAST CF-WR632AX"
+      ],
+      "file": "comfast-cf-wr632ax.webp",
+      "sha256": "edb4f5a98c6f8bc946aa3dcfd03d86fb74be67296892a10590d2e184f3a85cc7",
+      "source_page": "https://comfast.ru/catalog/routers/index.php?PAGEN_1=2&order=asc&sort=SHOWS",
+      "source_image": "https://comfast.ru/upload/iblock/772/c1t0kkleb1rsbtj8bqkmv0pkkd0o6tys/COMFAST_CF_WR632AX_1.png",
+      "source_title": "Купить Wi-Fi Роутер для дома COMFAST (Комфаст) - официальный интернет-магазин",
+      "original_sha256": "3fb20d52e04d90dda24bd303ea1a95b441e96f88f17248845343e2ff27e819ac",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "cudy-ap3000",
+      "model": "Cudy AP3000 v1",
+      "catalog_name": "Cudy AP3000 v1",
+      "aliases": [
+        "Cudy AP3000 v1",
+        "Cudy AP3000"
+      ],
+      "file": "cudy-ap3000.webp",
+      "sha256": "e80214008b42351ff2a62e8ad77939e4bb6d5b8c4de2411e7c5593cf2f118a11",
+      "source_page": "https://www.bigtv.ru/product/retranslyator-cudy-ap3000-782799/",
+      "source_image": "https://www.bigtv.ru/storage/goodsImages/782/782799/clear_782799_1.jpg",
+      "source_title": "Купить Cudy AP3000 Ретранслятор в каталоге интернет магазина BIGtv по низкой цен",
+      "original_sha256": "41cf6949847dfa46320002217c1f56314e8fb73b8b491e8cbfd0646ad97a9fec",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "cudy-ap3000-outdoor",
+      "model": "Cudy AP3000 Outdoor v1",
+      "catalog_name": "Cudy AP3000 Outdoor v1",
+      "aliases": [
+        "Cudy AP3000 Outdoor v1",
+        "Cudy AP3000 Outdoor"
+      ],
+      "file": "cudy-ap3000-outdoor.webp",
+      "sha256": "ddc9de0ce0bf289d625c078721345c118f6d838cf922d118dd05f9377bfbd9fc",
+      "source_page": "https://i-teh.com/catalog/tochki-dostupa/cudy_ap3000_outdoor_tochka_dostupa/",
+      "source_image": "https://i-teh.com/upload/resize_cache/iblock/ea9/900_900_140cd750bba9870f18aada2478b24840a/j0al91r2lmcjgx2cibbs0ut8q73ojhez.png",
+      "source_title": "Купить Cudy AP3000 Outdoor Точка доступа за 13 174 руб в Москве: описание, характеристики, комплектация, инструкции интернет-маг",
+      "original_sha256": "f3610d0884932a493ddc8d0fe3d02baa708b0939a4f3d98742492e1b4c30d21a",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "cudy-ap3000-wall",
+      "model": "Cudy AP3000 Wall v1",
+      "catalog_name": "Cudy AP3000 Wall v1",
+      "aliases": [
+        "Cudy AP3000 Wall v1",
+        "Cudy AP3000 Wall"
+      ],
+      "file": "cudy-ap3000-wall.webp",
+      "sha256": "6d0c19ef3ebe6a9c78483afe9dfac9bbefd968dfd87e43e05e529f048c8ef8e6",
+      "source_page": "https://www.dparadise.ru/tochka-dostupa-cudy-ap3000-wall-1000793846/",
+      "source_image": "https://www.dparadise.ru/wa-data/public/shop/products/12/83/208312/images/257816/257816.970.jpeg",
+      "source_title": "Точка доступа Cudy AP3000 Wall купить по цене 10 115 руб. с доставкой - интернет магазин Цифровой рай",
+      "original_sha256": "efa70a706ea616268c16321372b0c80cc76a82167a030c299cc6c016992bbebd",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "cudy-m3000",
+      "model": "Cudy M3000 v1",
+      "catalog_name": "Cudy M3000 v1 / M3000 v2",
+      "aliases": [
+        "Cudy M3000 v1",
+        "Cudy M3000"
+      ],
+      "file": "cudy-m3000.webp",
+      "sha256": "2c1a3ed53dc9dcf494b1cfe45845a400f866d2ac22b34f3e29071a93cd24ca9b",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Cudy_M3000_v1",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/4/45/Cudy_M3000.jpg",
+      "source_title": "Cudy M3000 v1 Cudy M3000",
+      "original_sha256": "ab9fa7e3449e47396009647357643e936f058d1b10975f37c922332fcbfee09f",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "cudy-p2",
+      "model": "Cudy P2 v1",
+      "catalog_name": "Cudy P2 v1",
+      "aliases": [
+        "Cudy P2 v1",
+        "Cudy P2"
+      ],
+      "file": "cudy-p2.webp",
+      "sha256": "69c37ce64b5f31e7d0e237477f5fe20f2431217db250c39ddad676af417d458d",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Cudy_P2_v1",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/1/1a/Cudy_P2_v1.png",
+      "source_title": "Cudy P2 v1",
+      "original_sha256": "67193f5fe67769c294bf0b1d0399f59a31895aa4494c40abdb3816913d19f952",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "cudy-tr3000",
+      "model": "Cudy TR3000",
+      "catalog_name": "Cudy TR3000 / TR30",
+      "aliases": [
+        "Cudy TR3000",
+        "Cudy TR3000 v1",
+        "Cudy TR3000 256MB v1"
+      ],
+      "file": "cudy-tr3000.webp",
+      "sha256": "b6f81cb0a4108bc9485ea6650350a6008b0610d7c46a9f73263d03ad6021b9c9",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Cudy_TR3000",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/4/47/Cudy_TR3000.png",
+      "source_title": "Cudy TR3000 Cudy TR3000",
+      "original_sha256": "e841079232dd9682ed8b5b8443c3b36e9544d528c66661341aa0913d87f4acab",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "cudy-wbr3000uax",
+      "model": "Cudy WBR3000UAX v1",
+      "catalog_name": "Cudy WBR3000UAX v1",
+      "aliases": [
+        "Cudy WBR3000UAX v1",
+        "Cudy WBR3000UAX"
+      ],
+      "file": "cudy-wbr3000uax.webp",
+      "sha256": "727d3c752753a89be1973aa6671888de70ec84a0867581b9417bddb752f89215",
+      "source_page": "https://www.cudy.com/collections/wi-fi-routers",
+      "source_image": null,
+      "source_title": "Cudy WBR3000UAX: provided product photograph",
+      "original_sha256": "ef6931bca0bb854e761b0a81f93740c6156ce29ccaef4e4d238960f955e2890b",
+      "width": 320,
+      "height": 240,
+      "background": "transparent",
+      "source_kind": "user-provided"
+    },
+    {
+      "id": "cudy-wr3000e",
+      "model": "Cudy WR3000E v1",
+      "catalog_name": "Cudy WR3000E v1",
+      "aliases": [
+        "Cudy WR3000E v1",
+        "Cudy WR3000E"
+      ],
+      "file": "cudy-wr3000e.webp",
+      "sha256": "3653f0dc56b07fb32d4765428f1bd65ddffb92dc3c9b86001e35775b2de61bfe",
+      "source_page": "https://market.yandex.ru/product--wifi-router-marshrutizator-cudy-wr3000e-belyi-2-4-5-ggts-wi-fi-6-5-portov-10-100-1000-mbit-s/954769114?sku=103733164930&businessId=757189",
+      "source_image": "https://avatars.mds.yandex.net/get-mpic/1715213/2a00000194ad77471895a2f29ffab5032a3a/orig",
+      "source_title": "Wifi роутер / маршрутизатор CUDY WR3000E белый, 2.4 / 5 Ггц, Wi-Fi 6, 5 портов 10/100/1000 Мбит/с - купить в интернет-магазине М",
+      "original_sha256": "ea7d4c29802a280f3e1dc82f6fd8d4a795158c5f269112edd670c5e15315d906",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "cudy-wr3000h",
+      "model": "Cudy WR3000H v1",
+      "catalog_name": "Cudy WR3000H v1",
+      "aliases": [
+        "Cudy WR3000H v1",
+        "Cudy WR3000H"
+      ],
+      "file": "cudy-wr3000h.webp",
+      "sha256": "0b47d96a02100cb4f45b0224fb860efae205370404c006f6eef871c64636fd97",
+      "source_page": "https://market.yandex.ru/card/marshrutizator-besprovodnoy-cudy-wr3000h-belyy/103707254564",
+      "source_image": "https://avatars.mds.yandex.net/get-mpic/14367910/2a00000195fb83459bb8f9d07dc087417eb2/orig",
+      "source_title": "Маршрутизатор беспроводной Cudy WR3000H белый - купить в интернет-магазине ПОЗИТРОНИКА на Яндекс Маркете",
+      "original_sha256": "3bf28b8e14209adc8065e1ea3089c5da86c0dec617073089117bfd5508a80ee3",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "cudy-wr3000p",
+      "model": "Cudy WR3000P v1",
+      "catalog_name": "Cudy WR3000P v1",
+      "aliases": [
+        "Cudy WR3000P v1",
+        "Cudy WR3000P"
+      ],
+      "file": "cudy-wr3000p.webp",
+      "sha256": "795889c17cd59de5960c0c3b062276c8c749188da917092af2f0fd52286ef487",
+      "source_page": "https://www.wildberries.ru/catalog/901494028/detail.aspx",
+      "source_image": "https://basket-39.wbbasket.ru/vol9014/part901494/901494028/images/big/1.webp",
+      "source_title": "Cudy WR3000P: complete four-antenna rear view",
+      "original_sha256": "a5e6923a565cd760211836ad25214fa6102390dc27ad85f69af742d188068309",
+      "width": 320,
+      "height": 240,
+      "background": "transparent",
+      "quality_checks": [
+        {
+          "feature": "antenna_1",
+          "x": 39,
+          "y": 77,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_2",
+          "x": 73,
+          "y": 77,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_3",
+          "x": 241,
+          "y": 77,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_4",
+          "x": 280,
+          "y": 77,
+          "radius": 1,
+          "min_alpha": 230
+        }
+      ]
+    },
+    {
+      "id": "cudy-wr3000s",
+      "model": "Cudy WR3000S v1",
+      "catalog_name": "Cudy WR3000S v1",
+      "aliases": [
+        "Cudy WR3000S v1",
+        "Cudy WR3000S"
+      ],
+      "file": "cudy-wr3000s.webp",
+      "sha256": "896a946ca4fe67f1e3cd9db49f50a837fe4eaee6ad6b4fd77cd29f6a6d4b6ed8",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Cudy_WR3000S_v1",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/d/df/Cudy-Router-WiFi-6-AX3000-WR3000S_6.jpg",
+      "source_title": "Cudy WR3000S v1 Cudy WR3000S",
+      "original_sha256": "1aa8c98563b204421da5349ad26f055071fbb1029b2af9b7789cb1d76828a238",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "cudy-wr3000u",
+      "model": "Cudy WR3000U v1",
+      "catalog_name": "Cudy WR3000U v1",
+      "aliases": [
+        "Cudy WR3000U v1",
+        "Cudy WR3000U"
+      ],
+      "file": "cudy-wr3000u.webp",
+      "sha256": "00e3c8a2122348fa07b6e253d7bf22caa720e6375215c2c337f5657c1a4c89c8",
+      "source_page": "https://club.dns-shop.ru/amp/review/t-280-marshrutizatoryi/179879-obzor-wi-fi-routera-cudy-wr3000u-256mb-ideal-dlya-openwrt/",
+      "source_image": "https://c.dns-shop.ru/thumb/st1/fit/760/600/22eb76fe5afc8c6f3a24be8a6bceface/q93_3bc4b7a53c90da7823d358c1845358d415464111145199ebdaaccb18e6d7eb99.jpg",
+      "source_title": "Обзор Wi-Fi роутера Cudy WR3000U-256MB - идеал для OpenWRT? Роутеры (маршрутизаторы) Обзоры Клуб DNS",
+      "original_sha256": "ca0b587c0204011c1aeacbdb2baf1b371766c75b8ea8953ffcfda1c5340f33b1",
+      "width": 320,
+      "height": 240,
+      "background": "transparent",
+      "quality_checks": [
+        {
+          "feature": "antenna_left_1",
+          "x": 52,
+          "y": 38,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_left_2",
+          "x": 55,
+          "y": 108,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_left_3",
+          "x": 59,
+          "y": 177,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_inner_left_1",
+          "x": 91,
+          "y": 33,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_inner_left_2",
+          "x": 96,
+          "y": 96,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_inner_left_3",
+          "x": 100,
+          "y": 159,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_inner_right_1",
+          "x": 214,
+          "y": 24,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_inner_right_2",
+          "x": 215,
+          "y": 93,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_inner_right_3",
+          "x": 216,
+          "y": 154,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_right_1",
+          "x": 264,
+          "y": 30,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_right_2",
+          "x": 265,
+          "y": 96,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_right_3",
+          "x": 267,
+          "y": 171,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "hinge_left_1",
+          "x": 71,
+          "y": 189,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "hinge_right_1",
+          "x": 259,
+          "y": 175,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "housing_1",
+          "x": 162,
+          "y": 188,
+          "radius": 1,
+          "min_alpha": 230
+        }
+      ],
+      "processing_note": "Contour mask corrected from the original photograph: all four antennas, both side hinges and the housing form one connected cutout; no antenna geometry generated or warped."
+    },
+    {
+      "id": "d-link-aquila-pro-ai-m30-a1",
+      "model": "D-Link AQUILA PRO AI M30 A1",
+      "catalog_name": "D-Link AQUILA PRO AI M30 A1",
+      "aliases": [
+        "D-Link AQUILA PRO AI M30 A1"
+      ],
+      "file": "d-link-aquila-pro-ai-m30-a1.webp",
+      "sha256": "fb11d6958283585b574de60b240630a3c5e80e9eb3e3b038b767e6c134f45461",
+      "source_page": "https://uae.microless.com/ru/product/d-link-m30-aquila-pro-ai-ax3000-wi-fi-6-smart-mesh-router-dual-band-2-4ghz-1200mbps-5ghz-1800mbps-data-rate-4-ethernet-ports-5x-internal-dual-band-antennas-white-blue-m30-3pk/",
+      "source_image": "https://microless.com/cdn/products/21de966f50e9cb0ce47e6809043f9ca8-hi.jpg",
+      "source_title": "D-Link M30 Aquila Pro AI AX3000 Wi-Fi 6 Smart Mesh Router, двухдиапазонный (2,4 ГГц (1200 Мбит/с) и 5 ГГц (1800 Мбит/с)), 4 порт",
+      "original_sha256": "7c181d0a8d94c2b52281821e91980115cf4ca5b9b853f2ec1d105cfc8f701555",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "gemtek-mxf-w1700k",
+      "model": "Gemtek MXF-W1700K",
+      "catalog_name": "Gemtek MXF-W1700K",
+      "aliases": [
+        "Gemtek MXF-W1700K"
+      ],
+      "file": "gemtek-mxf-w1700k.webp",
+      "sha256": "525d32bc25ae8e431bb7fc2ea06b538c3c34eed1482506666e6d55a69c8dd567",
+      "source_page": "https://forum.openwrt.org/t/quantum-fiber-w1700k-support/222776?page=179",
+      "source_image": "https://forum.openwrt.org/uploads/default/original/3X/6/e/6e0d08736f029b2b308399dea0480eeca10b5635.jpeg",
+      "source_title": "Quantum Fiber W1700k support - Page 179 - For Developers - OpenWrt Forum",
+      "original_sha256": "11239b1cbc484b65c6e5bdb56bf0038801df1f22f7078ecbe383ffa0e8f3c2f1",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "gemtek-xr1710g",
+      "model": "Gemtek XR1710G",
+      "catalog_name": "Gemtek XR1710G",
+      "aliases": [
+        "Gemtek XR1710G"
+      ],
+      "file": null,
+      "pending_reason": "No verified model photograph was found in the reviewed sources."
+    },
+    {
+      "id": "gl-inet-beryl-7-gl-mt3600be",
+      "model": "GL.iNet Beryl 7 (GL-MT3600BE)",
+      "catalog_name": "GL.iNet Beryl 7 (GL-MT3600BE)",
+      "aliases": [
+        "GL.iNet Beryl 7 (GL-MT3600BE)",
+        "GL.iNet GL-MT3600BE"
+      ],
+      "file": "gl-inet-beryl-7-gl-mt3600be.webp",
+      "sha256": "dabe3c351d75348845da38dfc220b8c84fd34cecf06b9163bccdf7c6909bc4c9",
+      "source_page": "https://www.gl-inet.com/en-us/products/gl-mt3600be",
+      "source_image": "https://www.gl-inet.com/cdn/shop/files/2_mt3600be_main.jpg?v=1774433014&width=1000",
+      "source_title": "Beryl 7 (GL-MT3600BE) Dual-band Wi-Fi 7 Travel Router - GL.iNet",
+      "original_sha256": "70cd3a6d75be84de1c43196adf9441f396515dd32ded86aa4ffa1d6bacf830c3",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "gl-inet-beryl-ax-gl-mt3000",
+      "model": "GL.iNet Beryl AX (GL-MT3000)",
+      "catalog_name": "GL.iNet Beryl AX (GL-MT3000)",
+      "aliases": [
+        "GL.iNet Beryl AX (GL-MT3000)",
+        "GL.iNet GL-MT3000"
+      ],
+      "file": "gl-inet-beryl-ax-gl-mt3000.webp",
+      "sha256": "a8edd703476b8ae8ab0e38a63034268d31f67988f7995daf53510f8c09c6fd25",
+      "source_page": "https://www.gl-inet.com/products/gl-mt3000/",
+      "source_image": "https://www.gl-inet.com/cdn/shop/files/3-shopify_mt3000_side.jpg?v=1776303167&width=1000",
+      "source_title": "Beryl AX (GL-MT3000) Pocket-sized Wi-Fi 6 Travel Router - GL.iNet",
+      "original_sha256": "0e4fb66632b163f9b71963045b779bdf4cccfe423b6a417c2b9936cc51c84b3a",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "gl-inet-flint-2-gl-mt6000",
+      "model": "GL.iNet Flint 2 (GL-MT6000)",
+      "catalog_name": "GL.iNet Flint 2 (GL-MT6000)",
+      "aliases": [
+        "GL.iNet Flint 2 (GL-MT6000)",
+        "GL.iNet GL-MT6000"
+      ],
+      "file": "gl-inet-flint-2-gl-mt6000.webp",
+      "sha256": "aa2fd915eff0318810a45443a3f9bdb147a5258ac222e9c50f0fd2b9f519cc8d",
+      "source_page": "https://market.yandex.ru/card/igrovoy-vysokoskorostnoy-wifi-6-router-glinet-gl-mt6000-flint-2-dlya-besprovodnykh-setey-osnashchennyy-dvumya-portami-ethernet-25-gbits-kitayskaya-versiya/6081273144",
+      "source_image": "https://avatars.mds.yandex.net/get-mpic/18788743/2a0000019d5ba88afae6bf21121daea04e45/orig",
+      "source_title": "Игровой высокоскоростной WiFi 6 роутер GL.iNet GL-MT6000 (Flint 2) для беспроводных сетей, оснащенный двумя портами Ethernet 2,5",
+      "original_sha256": "f61e37ef9a4dfc359c3549210aaea833899453fb9d94c50649378bfa030ca394",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "gl-inet-flint-4-gl-be14000",
+      "model": "GL.iNet Flint 4 (GL-BE14000)",
+      "catalog_name": "GL.iNet Flint 4 (GL-BE14000)",
+      "aliases": [
+        "GL.iNet Flint 4 (GL-BE14000)",
+        "GL.iNet GL-BE14000"
+      ],
+      "file": "gl-inet-flint-4-gl-be14000.webp",
+      "sha256": "6da321d8117e20052ad0542361fc68d2aebcb4b9244b4c43b3769823b73171fe",
+      "source_page": "https://www.gl-inet.com/products/flint-4/",
+      "source_image": "https://static.gl-inet.com/www/images/products/ogimage/og-be14000.jpg",
+      "source_title": "GL-BE14000 / Flint 4 - GL.iNet",
+      "original_sha256": "65dd0a5b045ce5a0baa4a946ba130a013265604840dced1241881a230f995cf3",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "gl-inet-slate-7-pro-gl-be10000",
+      "model": "GL.iNet Slate 7 Pro (GL-BE10000)",
+      "catalog_name": "GL.iNet Slate 7 Pro (GL-BE10000)",
+      "aliases": [
+        "GL.iNet Slate 7 Pro (GL-BE10000)",
+        "GL.iNet GL-BE10000"
+      ],
+      "file": "gl-inet-slate-7-pro-gl-be10000.webp",
+      "sha256": "999a1e104bcb5d25a7c268451750a265f029afee5a773f3e3efb58aac8da246b",
+      "source_page": "https://www.gl-inet.com/en-us/products/gl-be10000",
+      "source_image": "https://static.gl-inet.com/www/images/products/gl-be10000/be10000_4.jpg",
+      "source_title": "Slate 7 Pro (GL-BE10000) Tri-band Wi-Fi 7 Travel Router - GL.iNet",
+      "original_sha256": "568f0f567fa7be0ffaecceafc3e3a6c500213ab3ca3c72270d75fd3527f10ea4",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "h3c-magic-nx30-pro",
+      "model": "H3C Magic NX30 Pro",
+      "catalog_name": "H3C Magic NX30 Pro",
+      "aliases": [
+        "H3C Magic NX30 Pro"
+      ],
+      "file": "h3c-magic-nx30-pro.webp",
+      "sha256": "453f8275112c2db0a8c1940416a1b26179328ffb274a6bf0eefc902c17d44921",
+      "source_page": "https://www.bilibili.com/video/BV1cs4y1y7ht/?spm_id_from=333.337.search-card.all.click&vd_source=59f735ecdc23ca2238939da75ef38693",
+      "source_image": "https://i2.hdslb.com/bfs/archive/86c059a1004309629b01fdb141bafd7f58e26abe.jpg@1200w_630h",
+      "source_title": "H3C NX30 Pro 超 值 百 元 路 由 器.刷 openwrt 教 程 能 顶 软 路 由 哔 哩 哔 哩 bilibili",
+      "original_sha256": "581bbd9b61285e886ad35d7575463664696dc952b8aad508d9e8107d2376f840",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "hiveton-h5000m",
+      "model": "Hiveton H5000M",
+      "catalog_name": "Hiveton H5000M",
+      "aliases": [
+        "Hiveton H5000M"
+      ],
+      "file": "hiveton-h5000m.webp",
+      "sha256": "06bc4cb087fdf01ad61291f9f711ad8acb2c993ef8f82a7586d60226ee6e5b3a",
+      "source_page": "https://aliexpress.ru/item/1005011653468328.html?shpMethod=CAINIAO_STANDARD",
+      "source_image": "https://ae-pic-a1.aliexpress-media.com/kf/S86c3e6bb73d04f8d83862fd9067d8c50O.jpg",
+      "source_title": "Разработка роутера H5000M 5G WIFI7 AliExpress",
+      "original_sha256": "bc81a8784f918e67962f2ae95a5f7f6e620834c7588ba801731bc324885481c0",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "huasifei-wh3000",
+      "model": "Huasifei WH3000",
+      "catalog_name": "Huasifei WH3000",
+      "aliases": [
+        "Huasifei WH3000"
+      ],
+      "file": "huasifei-wh3000.webp",
+      "sha256": "8769ba39e146617d52862ff94c22b561c7006a88f1c55765ecaf543a55f6bed1",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Huasifei_WH3000",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/2/24/WH3000.jpg",
+      "source_title": "Huasifei WH3000 Huasifei WH3000",
+      "original_sha256": "5f28bbdf95340913a431bf9b6bab78e31f09af0eb585b92a8ace58d1e1547d1a",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "huasifei-wh3000-pro-emmc",
+      "model": "Huasifei WH3000 Pro eMMC",
+      "catalog_name": "Huasifei WH3000 Pro eMMC",
+      "aliases": [
+        "Huasifei WH3000 Pro eMMC"
+      ],
+      "file": "huasifei-wh3000-pro-emmc.webp",
+      "sha256": "12bf86a88c661b2d079de811ad336163a757de5c95ce50a7365d7b381a3d9c6d",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Huasifei_WH3000_Pro",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/5/55/Huasifei_WH3000_Pro.jpg",
+      "source_title": "Huasifei WH3000 Pro Huasifei WH3000 Pro eMMC",
+      "original_sha256": "ca02221a6eac91f6e7a5ce2bd5bdba222df744e9f9c8ad73eef043f796d14ff7",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "huasifei-wh3000-pro-nand",
+      "model": "Huasifei WH3000 Pro NAND",
+      "catalog_name": "Huasifei WH3000 Pro NAND",
+      "aliases": [
+        "Huasifei WH3000 Pro NAND"
+      ],
+      "file": "huasifei-wh3000-pro-nand.webp",
+      "sha256": "12bf86a88c661b2d079de811ad336163a757de5c95ce50a7365d7b381a3d9c6d",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Huasifei_WH3000_Pro",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/5/55/Huasifei_WH3000_Pro.jpg",
+      "source_title": "Huasifei WH3000 Pro Huasifei WH3000 Pro NAND",
+      "original_sha256": "ca02221a6eac91f6e7a5ce2bd5bdba222df744e9f9c8ad73eef043f796d14ff7",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "huasifei-wh3000r-nand",
+      "model": "Huasifei WH3000R NAND",
+      "catalog_name": "Huasifei WH3000R NAND",
+      "aliases": [
+        "Huasifei WH3000R NAND"
+      ],
+      "file": "huasifei-wh3000r-nand.webp",
+      "sha256": "f2b12a9a11d2071c9441f6eaa940afe98211ddf02e4a03837e996880b8b1fb01",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Huasifei_WH3000R",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/9/9a/Huasifei_WH3000R.jpg",
+      "source_title": "Huasifei WH3000R Huasifei WH3000R NAND",
+      "original_sha256": "9d474270148fd688afb4f64b565823bd9a4ddde661028034f389bf92b9e0500e",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "jcg-q30-pro",
+      "model": "JCG Q30 Pro",
+      "catalog_name": "JCG Q30 Pro",
+      "aliases": [
+        "JCG Q30 Pro"
+      ],
+      "file": "jcg-q30-pro.webp",
+      "sha256": "1894cad603e908ca57fcffd288e9ba4f669dfdd3e00b5f66ca9a5fa2832aa04c",
+      "source_page": "https://www.alibaba.com/product-detail/JCG-Q30-Pro-AX3000-WiFi-6_1601944454134.html",
+      "source_image": "https://sc04.alicdn.com/kf/H01bdb6d40f6b4434b73c0cef9b01dfa4f/JCG-Q30-Pro-AX3000-WiFi-6-Router,-1GE-WAN-+-3GE-LAN,-Mesh-/-WISP,-OpenWrt-Supported--FTTH-Long-Range-WiFi.jpeg",
+      "source_title": "JCG Q30 Pro AX3000 WiFi 6 Router, 1GE WAN + 3GE LAN, Mesh / WISP, OpenWrt Supported -FTTH Long-Range WiFi Alibaba.com",
+      "original_sha256": "013e557e0ea12fcf2db8680f22f4decf362544792a42cf79cc997e222d289683",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "jdcloud-re-cp-03",
+      "model": "JDCloud RE-CP-03",
+      "catalog_name": "JDCloud RE-CP-03",
+      "aliases": [
+        "JDCloud RE-CP-03"
+      ],
+      "file": null,
+      "pending_reason": "No verified model photograph was found in the reviewed sources."
+    },
+    {
+      "id": "keenetic-buddy-6-kn-3411",
+      "model": "Keenetic Buddy 6 (KN-3411)",
+      "catalog_name": "Keenetic Buddy 6 (KN-3411) / Netcraze NC-3411",
+      "aliases": [
+        "Keenetic Buddy 6 (KN-3411)",
+        "Keenetic KN-3411"
+      ],
+      "file": "keenetic-buddy-6-kn-3411.webp",
+      "sha256": "e7776c05741a7eff0d4eba96f2987b1ddcfb3ded36add30776383bd895c381c5",
+      "source_page": "https://market.yandex.ru/card/usilitel-wifi-repiter-keenetic-buddy-6-kn-3411/103195330397",
+      "source_image": "https://avatars.mds.yandex.net/get-mpic/1886132/2a00000191a3863625ff911aa5a7c7ac26b8/orig",
+      "source_title": "Keenetic Buddy 6 KN-3411-01 Mesh-ретранслятор (1UTP 1000Mbps,802.11a/b/g/n/ac/ax) - купить в интернет-магазине НИКС КОМПЬЮТЕРНЫЙ",
+      "original_sha256": "8ab4010c71516807d56fca9ea5b95e06914e6ec0cb58f760d582855c7fbdb5fa",
+      "width": 320,
+      "height": 240,
+      "background": "transparent",
+      "quality_checks": [
+        {
+          "feature": "antenna_1",
+          "x": 125,
+          "y": 66,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_2",
+          "x": 196,
+          "y": 66,
+          "radius": 1,
+          "min_alpha": 230
+        }
+      ]
+    },
+    {
+      "id": "keenetic-giga-kn-1012",
+      "model": "Keenetic Giga (KN-1012)",
+      "catalog_name": "Keenetic Giga (KN-1012) / Netcraze NC-1012",
+      "aliases": [
+        "Keenetic Giga (KN-1012)",
+        "Keenetic KN-1012"
+      ],
+      "file": "keenetic-giga-kn-1012.webp",
+      "sha256": "4f2900583d1f10b0d43b5ff783ac56bb6cdd478f1fc6aff844bde2da021f743c",
+      "source_page": "https://tm.by/besprovodnoy-marshrutizator-keenetic-giga-kn-1012",
+      "source_image": "https://tm.by/sites/default/files/styles/uc_product_full/public/content/product/2025/01/8/i847428-20250108_2.jpg",
+      "source_title": "Купить беспроводной маршрутизатор Keenetic Giga KN-1012 в Минске - TM.by",
+      "original_sha256": "ada20579ca794d1d2dc511a7f7b26509739e90fd9de7604b2037066290eb9a37",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "keenetic-hopper-kn-3811",
+      "model": "Keenetic Hopper (KN-3811)",
+      "catalog_name": "Keenetic Hopper (KN-3811)",
+      "aliases": [
+        "Keenetic Hopper (KN-3811)",
+        "Keenetic KN-3811"
+      ],
+      "file": "keenetic-hopper-kn-3811.webp",
+      "sha256": "475c97c54a40fa751beddb6fd4cc40fec5e5355bdcc5555b0d74dc630664166d",
+      "source_page": "https://megamarket.ru/catalog/details/router-keenetic-hopper-kn-3811-700000198624/spec/",
+      "source_image": "https://main-cdn.sbermegamarket.ru/big2/hlr-system/ccs/254875/MTc4NzMwXzYxMzA3MDQ3Ng==/b4.jpg",
+      "source_title": "Роутер Keenetic Hopper (KN-3811) - характеристики и описание на Мегамаркет 700000198624",
+      "original_sha256": "bc034f5d302ab477c62c42f53d476fc734347c1525ece7f9eb0194894c9c749c",
+      "width": 320,
+      "height": 240,
+      "background": "transparent",
+      "quality_checks": [
+        {
+          "feature": "antenna_1",
+          "x": 84,
+          "y": 75,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_2",
+          "x": 117,
+          "y": 75,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_3",
+          "x": 135,
+          "y": 75,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "antenna_4",
+          "x": 194,
+          "y": 75,
+          "radius": 1,
+          "min_alpha": 230
+        }
+      ]
+    },
+    {
+      "id": "keenetic-sprinter-kn-3711",
+      "model": "Keenetic Sprinter (KN-3711)",
+      "catalog_name": "Keenetic Sprinter (KN-3711)",
+      "aliases": [
+        "Keenetic Sprinter (KN-3711)",
+        "Keenetic KN-3711"
+      ],
+      "file": "keenetic-sprinter-kn-3711.webp",
+      "sha256": "eab4e71bd484c7a633a54ec02b51df8c72ca3eeff51c265e845f9a71154cfd8e",
+      "source_page": "https://market.yandex.ru/product--wi-fi-router-keenetic-sprinter-kn-3710-ru-belyi/1132468398?uniqueId=172264107&sku=4352297994",
+      "source_image": "https://avatars.mds.yandex.net/get-mpic/5378193/2a000001934df49f70dfeb2d86c798665a30/orig",
+      "source_title": "Гигабитный роутер Keenetic Sprinter KN-3711с Mesh Wi-Fi 6, 4-портовым Smart-коммутатором и переключателем режима - купить в инте",
+      "original_sha256": "12d665563c5b0217bf7e5d2ac45fdab7477d027fe6c8839954ac3aaacac6f2f2",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "keenetic-titan-kn-1812",
+      "model": "Keenetic Titan (KN-1812)",
+      "catalog_name": "Keenetic Titan (KN-1812) / Netcraze Ultra (NC-1812)",
+      "aliases": [
+        "Keenetic Titan (KN-1812)",
+        "Keenetic KN-1812"
+      ],
+      "file": "keenetic-titan-kn-1812.webp",
+      "sha256": "77b749fb7abff7daf872bcb8e67f5513bc9e7cc99c5122cc68b729e36385077a",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Keenetic_KN-1812",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/b/b1/Keenetic_KN-1812.png",
+      "source_title": "Keenetic KN-1812 Keenetic Titan (KN-1812)",
+      "original_sha256": "fd1d49e4cfa0102d80fdb929e87bfbd8cea4b5fb766e382e1ee1234f67189ce7",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "konka-komi-a31",
+      "model": "Konka KOMI A31",
+      "catalog_name": "Konka KOMI A31",
+      "aliases": [
+        "Konka KOMI A31"
+      ],
+      "file": null,
+      "pending_reason": "No verified model photograph was found in the reviewed sources."
+    },
+    {
+      "id": "mercusys-halo-h90x",
+      "model": "Mercusys Halo H90X v1",
+      "catalog_name": "Mercusys Halo H90X v1",
+      "aliases": [
+        "Mercusys Halo H90X v1",
+        "Mercusys Halo H90X"
+      ],
+      "file": "mercusys-halo-h90x.webp",
+      "sha256": "27747cb0c0e8c02d31e668f84dc16674425da9e9b270e98c3d5421012df1857f",
+      "source_page": "https://www.mercusys.com/cac/product/details/halo-h90x/v1/3-pack/",
+      "source_image": "https://static.mercusys.com/product-image/04_Lifestyle_large20220921025559.jpg",
+      "source_title": "Halo H90X AX6000 Whole Home Mesh WiFi 6 System - Welcome to MERCUSYS",
+      "original_sha256": "75a2f7161dd5caafb3ee3a8ddb39de63e34a205800b3aa41bc173709dbdc15a2",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "mercusys-mr85x",
+      "model": "Mercusys MR85X",
+      "catalog_name": "Mercusys MR85X",
+      "aliases": [
+        "Mercusys MR85X"
+      ],
+      "file": "mercusys-mr85x.webp",
+      "sha256": "001f923ee0edf1c7cddf8c05d13d986b9152dd7f4b9902784f59e28566e02090",
+      "source_page": "https://www.mercusys.com/eg/product/wifi-router/mr85x/v1/",
+      "source_image": "https://static-product.mercusys.com/mr85x_v1/img/j-2.png",
+      "source_title": "MR85X v1 AX3000 Dual-Band Wi-Fi 6 Router - MERCUSYS",
+      "original_sha256": "08e8b9a1800bebb7dafa1b32394ce204789e1851ef5ebad8c341d33601a00d99",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "mercusys-mr90x",
+      "model": "Mercusys MR90X v1",
+      "catalog_name": "Mercusys MR90X v1",
+      "aliases": [
+        "Mercusys MR90X v1",
+        "Mercusys MR90X"
+      ],
+      "file": "mercusys-mr90x.webp",
+      "sha256": "5ed020bff96674bcf4520d9f07f3443bbef320e4c916ecea3b7653c9d5daa29c",
+      "source_page": "https://www.mercusys.com/ru/product/wifi-router/mr90x/v1.20/",
+      "source_image": "https://static.mercusys.com/product-image/MR90X_(11)_normal20240524145636.jpg",
+      "source_title": "MR90X v1.20 Двухдиапазонный роутер Wi-Fi 6 класса AX6000 с портом WAN/LAN 2,5 Гбит/с - MERCUSYS",
+      "original_sha256": "1a0574ee901478c0ce2cf54c165f882f8af7771ae041cd2f04eed455fd0cc595",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "netcore-n60",
+      "model": "Netcore n60",
+      "catalog_name": "Netcore n60",
+      "aliases": [
+        "Netcore n60"
+      ],
+      "file": null,
+      "pending_reason": "No verified model photograph was found in the reviewed sources."
+    },
+    {
+      "id": "netis-eap930",
+      "model": "netis EAP930",
+      "catalog_name": "netis EAP930",
+      "aliases": [
+        "netis EAP930"
+      ],
+      "file": "netis-eap930.webp",
+      "sha256": "81caca344d5f10487359c45c426489712e0fba61339229f21ac752ce3a6239a0",
+      "source_page": "https://www.regard.ru/product/756534/wi-fi-tocka-dostupa-netis-eap930",
+      "source_image": "https://www.regard.ru/api/photo/goods/6449795.webp",
+      "source_title": "Wi-Fi точка доступа Netis EAP930: купить в интернет магазине Регард Москва: цена, характеристики, описание, отзывы",
+      "original_sha256": "03de79ff8807afec33247988c02345b0a9c4aed46d7e9f44b3fa80b1fa3e0891",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "netis-n6v2",
+      "model": "netis N6v2",
+      "catalog_name": "netis N6v2",
+      "aliases": [
+        "netis N6v2",
+        "Netis N6 v2",
+        "Netis N6V2"
+      ],
+      "file": "netis-n6v2.webp",
+      "sha256": "27b7faf8a207d625e39972c4ad6b46c387752f10d6c448fac2c877758f139e8c",
+      "source_page": "https://www.holodilnik.ru/komputernaya_tehnika/network_devices/netis/n6_ax1800/",
+      "source_image": "https://holod.ru/pics/clean/medium/55/1227255_3175731.webp",
+      "source_title": "Роутер беспроводной Netis N6 V2 AX1800 купить в Москве по низким ценам в интерне",
+      "original_sha256": "e47d9eaf1de20ef0da8c551d95d4baaaa29857cf446a4639d7362be1192a64a8",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "netis-nx30v2",
+      "model": "netis NX30v2",
+      "catalog_name": "netis NX30v2",
+      "aliases": [
+        "netis NX30v2",
+        "Netis NX30 v2",
+        "Netis NX30V2"
+      ],
+      "file": "netis-nx30v2.webp",
+      "sha256": "2b4bd03f5c33df8bb2804d48b2e20eef5fd27218e7a81015645b476c6a07f93a",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Netis_NX30_v2",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/1/16/Netis_NX30_01.png",
+      "source_title": "Netis NX30 v2 netis NX30v2",
+      "original_sha256": "0daad9c2a21c1a0fa9478a76ac7d8d6cad7c1a2e73cfe787555121997a7c7aa3",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "netis-nx31",
+      "model": "netis NX31",
+      "catalog_name": "netis NX31 / W3000G",
+      "aliases": [
+        "netis NX31"
+      ],
+      "file": "netis-nx31.webp",
+      "sha256": "b8e75262c3ab63734f4ad3167e32dd7816acf99db474cd0e78f05d1d2df168a6",
+      "source_page": "https://www.netisru.com/review/info.html?id=45",
+      "source_image": "https://cms.gdelu.ru/media_cms/original_images/Vneshniy-vid-netis-NX31_FL6Usss.jpg",
+      "source_title": "netis Easy Network,Trustable",
+      "original_sha256": "a6fa017781fa85a1791e6efad786112ef7eb13cc552352be533369ddfa024b98",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "netis-nx32u",
+      "model": "netis NX32U",
+      "catalog_name": "netis NX32U",
+      "aliases": [
+        "netis NX32U"
+      ],
+      "file": "netis-nx32u.webp",
+      "sha256": "948ae0e81b40c6ce38918fedf6a1683f87d106c7fd56c1816939f22226cf9938",
+      "source_page": "https://st-petersburg.pult.ru/product/router-netis-nx32u",
+      "source_image": "https://impult.ru/preview/r/1200x-/upload/iblock/b0c/2mvce0f65dhpna2c6jha3tps6qettmrt.jpg",
+      "source_title": "Роутер NETIS NX32U - купить в Санкт-Петербурге в интернет-магазине Pult.ru",
+      "original_sha256": "f739a8c8070b0043a9fee58c49899fde2357d17fa75a4532e4c8b51b121c6569",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "netis-nx62",
+      "model": "netis NX62",
+      "catalog_name": "netis NX62 / Netcore n60 pro",
+      "aliases": [
+        "netis NX62"
+      ],
+      "file": "netis-nx62.webp",
+      "sha256": "254fce21d1e9aeb3f7e314a73dc0a0c9cced8ab46046e22e84fff4f79619d12a",
+      "source_page": "https://megamarket.ru/catalog/details/router-netis-nx62-ax6000-1010010002500base-t-700000411844/spec/",
+      "source_image": "https://main-cdn.sbermegamarket.ru/big2/hlr-system/ccs/254831/MTg1Mzk3Xzg3MTY1MDI2Nw==/b2.jpg",
+      "source_title": "Роутер Netis NX62 AX6000 (1010010002500BASE-T) - характеристики и описание на Мегамаркет 700000411844",
+      "original_sha256": "e078548ab6a8ece1a5e9741d88886cb29cbe89864b84c8a848b5b1c8232f6ef0",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "nokia-ea0326gmp",
+      "model": "Nokia EA0326GMP",
+      "catalog_name": "Nokia EA0326GMP",
+      "aliases": [
+        "Nokia EA0326GMP"
+      ],
+      "file": null,
+      "pending_reason": "No verified model photograph was found in the reviewed sources."
+    },
+    {
+      "id": "nokia-xg-040g-md",
+      "model": "Nokia XG-040G-MD",
+      "catalog_name": "Nokia XG-040G-MD",
+      "aliases": [
+        "Nokia XG-040G-MD"
+      ],
+      "file": "nokia-xg-040g-md.webp",
+      "sha256": "c360370838ce07313e1a198ae7f429a76a4154d1f40ef75b5a30a3171132d28e",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Nokia_XG-040G-MD",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/2/28/Xg-040g-md.jpg",
+      "source_title": "Nokia XG-040G-MD Nokia XG-040G-MD",
+      "original_sha256": "f58b44f8cfd1dbd7727b7f24308e186cdcdf10a706835cf0cd5d947afd9116a5",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "nokia-xg-040g-mf",
+      "model": "Nokia XG-040G-MF",
+      "catalog_name": "Nokia XG-040G-MF",
+      "aliases": [
+        "Nokia XG-040G-MF"
+      ],
+      "file": "nokia-xg-040g-mf.webp",
+      "sha256": "114c6222cf9b4ed77af51ed26a48ee63701c20b113e44af9a450d6f2a5cacb7d",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Nokia_XG-040G-MF",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/5/5d/Xg-040g-mf.jpg",
+      "source_title": "Nokia XG-040G-MF Nokia XG-040G-MF",
+      "original_sha256": "f5dec150735903139f1b0c984474848032ba8e6b8fc59f1661abfe35fda0f416",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "openwrt-one",
+      "model": "OpenWrt One",
+      "catalog_name": "OpenWrt One",
+      "aliases": [
+        "OpenWrt One",
+        "OpenWrt One (MT7981B)"
+      ],
+      "file": "openwrt-one.webp",
+      "sha256": "57fde2d08bef396ec601c70d4618b59dd2a2c52b96662da77f8bd528920d1408",
+      "source_page": "https://docs.banana-pi.org/en/OpenWRT-One/OpenWRT-One_Photo",
+      "source_image": "https://docs.banana-pi.org/openwrt-one/banana_pi_openwrt_one_case_2.jpg",
+      "source_title": "OpenWrt One Product photo BananaPi Docs",
+      "original_sha256": "1c3a63ec0d6e3462f12b9dd722e45277e9fd8f5a528255e2b62b0ab327e20334",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "qihoo-360t7",
+      "model": "Qihoo 360T7",
+      "catalog_name": "Qihoo 360T7",
+      "aliases": [
+        "Qihoo 360T7",
+        "Qihoo 360 T7",
+        "360 T7"
+      ],
+      "file": null,
+      "pending_reason": "No verified model photograph was found in the reviewed sources."
+    },
+    {
+      "id": "quantum-fiber-q1000k",
+      "model": "Quantum Fiber Q1000K",
+      "catalog_name": "Quantum Fiber Q1000K",
+      "aliases": [
+        "Quantum Fiber Q1000K"
+      ],
+      "file": "quantum-fiber-q1000k.webp",
+      "sha256": "830f05652ad2315961b20078d2b1b6e0f0968bb5b4ecc2451c4e7035f756b3b0",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Quantum_Fiber_Q1000K",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/a/a9/Q1000k-iso.png",
+      "source_title": "Quantum Fiber Q1000K Quantum Fiber Q1000K",
+      "original_sha256": "cb3fc2f4948595caa3e80cf0a9132191b971c5a38c62d58d931c669cf0ab7793",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "redmi-ax6000-rb06",
+      "model": "Redmi AX6000 (RB06)",
+      "catalog_name": "Redmi AX6000 (RB06)",
+      "aliases": [
+        "Redmi AX6000 (RB06)",
+        "Redmi AX6000",
+        "Xiaomi Redmi AX6000",
+        "Xiaomi Redmi Router AX6000"
+      ],
+      "file": "redmi-ax6000-rb06.webp",
+      "sha256": "ef47bc6fab8ebf8454726e8d2a5225252d7a39992b30c4c9425df124a8d68641",
+      "source_page": "https://kartmaster.ru/catalog/kompyuternaya_i_ofisnaya_tekhnika/routery_marshrutizatory/router_xiaomi_redmi_router_ax6000_rb06_wi_fi6_dvb4337cn_cn_versiya/",
+      "source_image": "https://kartmaster.ru/upload/iblock/9a7/c0e6kci9f4t5004kdgpo1d8yuhyex3jy.jpg",
+      "source_title": "Роутер Xiaomi Redmi Router AX6000 RB06, Wi-Fi6, DVB4337CN, CN версия - купить за 7 235 руб. со склада в Москве",
+      "original_sha256": "5120abf37a1180dd3dd67034e06e280911285aed8b8f6a2581f201d1eb7ca18b",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "routerich-ax3000",
+      "model": "Routerich AX3000 v1",
+      "catalog_name": "Routerich AX3000 v1",
+      "aliases": [
+        "Routerich AX3000 v1",
+        "Routerich AX3000"
+      ],
+      "file": "routerich-ax3000.webp",
+      "sha256": "d3e560984224862832c23ef616a59970013ed71fa370fc72091637e694d23a16",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Routerich_AX3000_v1",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/9/91/Routerich_AX3000.png",
+      "source_title": "Routerich AX3000 v1 Routerich AX3000",
+      "original_sha256": "b56c17ff60a73247b005b22d359c7f727b2098d530c868982b0de85b1c3a2fde",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "routerich-be7200",
+      "model": "Routerich BE7200",
+      "catalog_name": "Routerich BE7200",
+      "aliases": [
+        "Routerich BE7200"
+      ],
+      "file": null,
+      "pending_reason": "No verified model photograph was found in the reviewed sources."
+    },
+    {
+      "id": "ruijie-rg-x60-pro",
+      "model": "Ruijie RG-X60 Pro",
+      "catalog_name": "Ruijie RG-X60 Pro",
+      "aliases": [
+        "Ruijie RG-X60 Pro"
+      ],
+      "file": "ruijie-rg-x60-pro.webp",
+      "sha256": "479a660ae03f91ebc10283730ff709af30c7bff1ce98921177148a394d1f1d94",
+      "source_page": "https://market.yandex.ru/card/ruijie-ruijie-star-scorpio-kibersportivnyy-marshrutizator-x60pro-besprovodnoy-gigabitnyy-wifi6-5g-dvukhchastotnyy-6-xingyao-scorpio-esports-route-x60pro/4337690549",
+      "source_image": "https://avatars.mds.yandex.net/get-mpic/12363834/2a000001966fc4590136ca13563f3dad2790/orig",
+      "source_title": "Игровой маршрутизатор Ruijie Xingyao WiFi 6 Scorpio X60 ProRoute X60PRO - купить в интернет-магазине на Яндекс Маркете",
+      "original_sha256": "b141f9d41847a80d6c475c9a71080637acfce86395aa130980312273437fb5bd",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "snr-cpe-ax2",
+      "model": "SNR CPE AX2",
+      "catalog_name": "SNR CPE AX2",
+      "aliases": [
+        "SNR CPE AX2",
+        "SNR-CPE-AX2",
+        "SNR SNR-CPE-AX2"
+      ],
+      "file": "snr-cpe-ax2.webp",
+      "sha256": "d698a7a6933aac11e7ccbeddae21a5303516f274aa265c802806694326d37b03",
+      "source_page": "https://shop.nag.uz/product/65677.snr-rt622-g41",
+      "source_image": "https://cdn.nag.shop/product-images/SNR-RT622-G41/173824/image-thumb__173824__1000x1000/2168a15c256e.webp",
+      "source_title": "Wi-Fi 6 роутер SNR AX2 AX3000 с TR-069 и EasyWRT для операторов связи - НАГ",
+      "original_sha256": "20113a6ccbdbedc9475b74a926d5baf219b614ec4e58b3c8b377fd19fa9df319",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "tenda-be12-pro",
+      "model": "Tenda BE12 Pro",
+      "catalog_name": "Tenda BE12 Pro",
+      "aliases": [
+        "Tenda BE12 Pro"
+      ],
+      "file": "tenda-be12-pro.webp",
+      "sha256": "e3910be44a4f7779c3bf6dbdcf36a0475b31e818520683e464c9b45150535a02",
+      "source_page": "https://www.tendacn.com/es/product/BE12Pro",
+      "source_image": "https://static.tenda.com.cn/tdeweb/products/BE12LPro/bg1-1920.jpg",
+      "source_title": "BE12 Pro BE7200 Dual Band Gigabit Wi-Fi7 Router - Tenda Spain",
+      "original_sha256": "01bf73f24588f9af6680a6a35161abca17247bed68937f5a3c4eeb600de08766",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "tp-link-archer-ax80",
+      "model": "TP-Link Archer AX80 v1",
+      "catalog_name": "TP-Link Archer AX80 v1",
+      "aliases": [
+        "TP-Link Archer AX80 v1",
+        "TP-Link Archer AX80"
+      ],
+      "file": "tp-link-archer-ax80.webp",
+      "sha256": "544e38a44b74048cb5b0e0258178c8847b27fb41f2481ea909db5eb44b63df73",
+      "source_page": "https://ogo1.ru/market/wi_fi_routery/392298/",
+      "source_image": "https://ogo1.ru/upload/iblock/68d/py863dm8mr48v0avoit2z0psr83vyi8a.jpg",
+      "source_title": "Беспроводной маршрутизатор TP-LINK Archer AX80(EU), Wi-Fi 6 AX6000 1x2,5Gb WAN/LAN 1xGb WAN/LAN 3xGB LAN 1xUSB3.0 купить в ОГО!",
+      "original_sha256": "81b4932512c667c289987dbcfb31a7b1beb062a085813cd7dd7ee48800f9bd21",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "tp-link-archer-be450",
+      "model": "TP-Link Archer BE450",
+      "catalog_name": "TP-Link Archer BE450",
+      "aliases": [
+        "TP-Link Archer BE450"
+      ],
+      "file": "tp-link-archer-be450.webp",
+      "sha256": "3ecd4151fc74883f26c4d0acac30d5d06e9a064d0f2cfd4da0aee6222faabf56",
+      "source_page": "https://www.tp-link.com/nordic/home-networking/wifi-router/archer-be450/?app=tether",
+      "source_image": "https://static.tp-link.com/upload/image-line/Archer_BE450_EU_1.0_overview_08_large_20250520141847q.jpg",
+      "source_title": "Archer BE450 BE7200 Dual-Band Wi-Fi 7 Router TP-Link Nordic",
+      "original_sha256": "da35c33c9da95bbc3626897e629daf09b920621197e8eb8e9b41e9f7c1432d45",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "tp-link-ex820v",
+      "model": "TP-Link EX820v",
+      "catalog_name": "TP-Link EX820v",
+      "aliases": [
+        "TP-Link EX820v"
+      ],
+      "file": "tp-link-ex820v.webp",
+      "sha256": "a5ce6055479100618fa5dcc5127d1c64c470409c4902c7139282c8efc67997b7",
+      "source_page": "https://www.tp-link.com/uk/service-provider/wifi-router/ex820v/",
+      "source_image": "https://static.tp-link.com/upload/image-line/overview-01_large_20230808062113g.jpg",
+      "source_title": "EX820v AX6000 Dual Band Wi-Fi 6 VoIP Router TP-Link United Kingdom",
+      "original_sha256": "5ac1bf18794fca800e5346327545ef10a0be339feadd8085c9315e3a3b7e7dae",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "tp-link-tl-7dr7230",
+      "model": "TP-Link TL-7DR7230 v1/v2",
+      "catalog_name": "TP-Link TL-7DR7230 v1/v2",
+      "aliases": [
+        "TP-Link TL-7DR7230 v1/v2"
+      ],
+      "file": "tp-link-tl-7dr7230.webp",
+      "sha256": "aeb6ae884e7b71a4ee03d04b3b603313fe513b7cd65d6814f1b150a1ac4a289d",
+      "source_page": "https://cdek.shopping/p/9946706/wi-fi-router-tp-link-tl-7dr7230-be7200-cernyi",
+      "source_image": "https://n.cdn.cdek.shopping/images/shopping/b192f314881c4b44adcb9c48607a9032.jpg?v=1",
+      "source_title": "Wi-Fi роутер TP-Link BE7200 (TL-7DR7230), черный выгодно купить по цене от 8281 ₽ в интернет-магазине за рубежом с доставкой по",
+      "original_sha256": "49c9507ef26caa3060e428c6a60c2f911004b9897e0620b74d73bf7e6e5105a1",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "tp-link-tl-7dr7250",
+      "model": "TP-Link TL-7DR7250 v1",
+      "catalog_name": "TP-Link TL-7DR7250 v1",
+      "aliases": [
+        "TP-Link TL-7DR7250 v1",
+        "TP-Link TL-7DR7250"
+      ],
+      "file": null,
+      "pending_reason": "No verified model photograph was found in the reviewed sources."
+    },
+    {
+      "id": "tp-link-tl-xdr6086",
+      "model": "TP-Link TL-XDR6086",
+      "catalog_name": "TP-Link TL-XDR6086",
+      "aliases": [
+        "TP-Link TL-XDR6086"
+      ],
+      "file": null,
+      "pending_reason": "No verified model photograph was found in the reviewed sources."
+    },
+    {
+      "id": "tp-link-tl-xdr6088",
+      "model": "TP-Link TL-XDR6088",
+      "catalog_name": "TP-Link TL-XDR6088",
+      "aliases": [
+        "TP-Link TL-XDR6088"
+      ],
+      "file": "tp-link-tl-xdr6088.webp",
+      "sha256": "428d503152ec688a029af6db5cec4f24dfad94b2677ea1792dfb88b908242ee5",
+      "source_page": "https://aliexpress.ru/item/1_270238866.html",
+      "source_image": "https://st.aestatic.net/items-img-12/R/B/7/H/e9c6519a93ecf24b45772837a6c164b7.jpg_960x960.jpg",
+      "source_title": "TP-LINK TL-XDR6088 EasyMesh Turbo Edition AX6000 ДвухДиапазонный 5G ГиГабитный Беспроводной РоутеР WiFi 6 AliExpress",
+      "original_sha256": "cd5a8875f16a21ddb4a88db4225ae944a8c35aab0c56100128b1c170932c045e",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "wavlink-wl-wnt100x3",
+      "model": "Wavlink WL-WNT100X3",
+      "catalog_name": "Wavlink WL-WNT100X3",
+      "aliases": [
+        "Wavlink WL-WNT100X3"
+      ],
+      "file": "wavlink-wl-wnt100x3.webp",
+      "sha256": "2b28f73b516f8a690f239d5cc3b910dd2def360b7795b63b3578dc7404206f3c",
+      "source_page": "https://www.wavlink.com/index.php/en_us/product/WL-WNT100X3.html",
+      "source_image": "https://files2.wavlink.com/images/product/WL-WNT100X3/main-3.jpg",
+      "source_title": "AX3000 Wi-Fi 6 VPN Travel Router-Wavlink.com",
+      "original_sha256": "3ebcb38d477f521625fff498d17f11e075d0274e67dafd2948b77317c2780c7a",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "wwgate-ax3000",
+      "model": "wwGate AX3000",
+      "catalog_name": "wwGate AX3000",
+      "aliases": [
+        "wwGate AX3000"
+      ],
+      "file": "wwgate-ax3000.webp",
+      "sha256": "61b25c3a12b8afcdcde1b2e45dda1912139c3e42183c87120b547e76a6994b9c",
+      "source_page": "https://www.ozon.ru/product/wi-fi-router-wwgate-ax3000-wi-fi-6-802-11ax-dvuhdiapazonnyy-2-4-5-ggts-gigabitnye-porty-usb-3-0-4745136095/product/wi-fi-router-wwgate-ax3000-wi-fi-6-802-11ax-dvuhdiapazonnyy-2-4-5-ggts-gigabitnye-porty-usb-3-0-4745136095/reviews",
+      "source_image": "https://ir.ozone.ru/s3/multimedia-1-j/15110634511.jpg",
+      "source_title": "Wi-Fi роутер wwGate AX3000, Wi-Fi 6 (802.11ax), двухдиапазонный 2.4/5 ГГц, гигабитные порты, USB 3.0, прошивка OpenWrt - купить",
+      "original_sha256": "4e7bbfa3cecbe6e0fbd9ced71f9036b3c5774d4ee8d02c2c81d220487c00da1a",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "xiaomi-mi-router-ax3000t",
+      "model": "Xiaomi Mi Router AX3000T",
+      "catalog_name": "Xiaomi Mi Router AX3000T",
+      "aliases": [
+        "Xiaomi Mi Router AX3000T",
+        "Xiaomi AX3000T",
+        "Xiaomi Router AX3000T"
+      ],
+      "file": "xiaomi-mi-router-ax3000t.webp",
+      "sha256": "b07b2f554087caf83c8d0a4c8c7aa8131093fcd1817228535ba799134f4116ad",
+      "source_page": "https://kartmaster.ru/catalog/kompyuternaya_i_ofisnaya_tekhnika/routery_marshrutizatory/router_xiaomi_mi_router_ax3000t_rd03_wi_fi6_dvb4382cn_mediatek_cn_versiya/",
+      "source_image": "https://kartmaster.ru/upload/iblock/558/3u05wjgkr1jj6fmx39jpy3atxu1wj52x.jpg",
+      "source_title": "Xiaomi Router AX3000T: complete four-antenna product view",
+      "original_sha256": "a4624b4de93d44f48d1d1d75e504967e4a3f2ef334e751ddcfd051b9b5103b29",
+      "width": 320,
+      "height": 240,
+      "background": "transparent",
+      "quality_checks": [
+        {
+          "feature": "left_antenna",
+          "x": 141,
+          "y": 81,
+          "radius": 2,
+          "min_alpha": 230
+        },
+        {
+          "feature": "middle_left_antenna",
+          "x": 177,
+          "y": 81,
+          "radius": 2,
+          "min_alpha": 230
+        },
+        {
+          "feature": "middle_right_antenna",
+          "x": 219,
+          "y": 81,
+          "radius": 2,
+          "min_alpha": 230
+        },
+        {
+          "feature": "right_antenna",
+          "x": 269,
+          "y": 81,
+          "radius": 2,
+          "min_alpha": 230
+        },
+        {
+          "feature": "housing",
+          "x": 183,
+          "y": 191,
+          "radius": 2,
+          "min_alpha": 230
+        }
+      ]
+    },
+    {
+      "id": "xiaomi-wr30u",
+      "model": "Xiaomi WR30U",
+      "catalog_name": "Xiaomi WR30U",
+      "aliases": [
+        "Xiaomi WR30U",
+        "Xiaomi Mi Router WR30U",
+        "Xiaomi Mi Router WR30U v1"
+      ],
+      "file": "xiaomi-wr30u.webp",
+      "sha256": "baad59a4be54ab8629fef8eba234a74bc26defe7b5f673e088342ad93225f34d",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/Xiaomi_WR30U",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/8/84/Wr30u-main.png",
+      "source_title": "Xiaomi WR30U Xiaomi WR30U",
+      "original_sha256": "a4f90696dba84048765debab0e62ad45e61999d0018dae319f35c51477b18a43",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "zbtlink-zbt-z8102ax",
+      "model": "Zbtlink ZBT-Z8102AX",
+      "catalog_name": "Zbtlink ZBT-Z8102AX",
+      "aliases": [
+        "Zbtlink ZBT-Z8102AX"
+      ],
+      "file": "zbtlink-zbt-z8102ax.webp",
+      "sha256": "cff92f16f2cb2c9a7e1d3770e9621c09cb374459f8706fc48d7a11385ea51b17",
+      "source_page": "https://www.zbtlink.com/products/ax3000-cat9-4g-lte-router-with-dual-sim-card-slot-unlocked-dual-band-wifi-6-cellular-router-with-all-gigabit-ports-and-usb-3-0-z8102-m2-s-ln940?variant=48757603008801",
+      "source_image": "https://www.zbtlink.com/cdn/shop/files/2_43ba13f7-d055-4586-8720-8e9628ac7e7e.jpg?v=1709344702",
+      "source_title": "Z8102AX-S AX3000 Cat9 4G LTE Router with Dual SIM Card Slot Unlocked - Zbtlink Online Store",
+      "original_sha256": "c8df05765536beee7d4a6a962b5c79c7669acab7b7db14f023d6aef1dc61ab3e",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "zbtlink-zbt-z8105ax-c",
+      "model": "Zbtlink ZBT-Z8105AX-C",
+      "catalog_name": "Zbtlink ZBT-Z8105AX-C",
+      "aliases": [
+        "Zbtlink ZBT-Z8105AX-C"
+      ],
+      "file": "zbtlink-zbt-z8105ax-c.webp",
+      "sha256": "92e2fe194837aaa08048e2ff92ab829f6c15c1d5c2b74216292e4d4aa6e3ed88",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/ZBT_Z8105AX-C",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/0/0a/ZBT_Z8105AX-C.jpg",
+      "source_title": "ZBT Z8105AX-C Zbtlink ZBT-Z8105AX-C",
+      "original_sha256": "1af878cd77ebb0a711baa7bf6b8f4346687284e62c13bce8d42d404ff5e293ed",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "zbtlink-zbt-z8114ax-ds",
+      "model": "Zbtlink ZBT-Z8114AX-DS",
+      "catalog_name": "Zbtlink ZBT-Z8114AX-DS",
+      "aliases": [
+        "Zbtlink ZBT-Z8114AX-DS"
+      ],
+      "file": null,
+      "pending_reason": "No verified model photograph was found in the reviewed sources."
+    },
+    {
+      "id": "zbtlink-zbt-z8803be",
+      "model": "Zbtlink ZBT-Z8803BE",
+      "catalog_name": "Zbtlink ZBT-Z8803BE",
+      "aliases": [
+        "Zbtlink ZBT-Z8803BE"
+      ],
+      "file": null,
+      "pending_reason": "No verified model photograph was found in the reviewed sources."
+    },
+    {
+      "id": "zyxel-ex5601-t0",
+      "model": "Zyxel EX5601-T0",
+      "catalog_name": "Zyxel EX5601-T0 / T-56",
+      "aliases": [
+        "Zyxel EX5601-T0"
+      ],
+      "file": "zyxel-ex5601-t0.webp",
+      "sha256": "eba63f19d7b99421de11dabab5ff854033fa355aa9c99802b168eff73c6070fd",
+      "source_page": "https://eyenetworks.no/en/zyxel-ex5601-t0-images/",
+      "source_image": "https://eyenetworks.no/wp-content/uploads/ex5601-landscape-2-1080-1024x683.jpg",
+      "source_title": "Zyxel EX5601-T0 Product Images Eye Networks",
+      "original_sha256": "9752a1093718ebe51ab9e3199b37319f731ec47443ce2815a517c4ee5b12e18d",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "netis-n6",
+      "model": "netis N6",
+      "catalog_name": "netis N6",
+      "aliases": [
+        "netis N6"
+      ],
+      "file": "netis-n6.webp",
+      "sha256": "8aaf1b3f467e5c1a35a187213c06db15bd82ccd9bd29881021009eaf83b002bb",
+      "source_page": "https://gipermix.ru/catalog/elektronika/noutbuki-planshety-i-kompyutery/wi-fi-routery-i-oborudovanie-dlya-setey/marshrutizatory/marshrutizator_netis_n6_ax1800_usb_3_012/",
+      "source_image": "https://gipermix.ru/upload/iblock/b58/ez6zwvxsfkn1ygese4gtgqtrbotfwb1c.jpg",
+      "source_title": "Маршрутизатор Netis N6, AX1800, USB 3.0 купить по цене 4026 руб. с доставкой в GiperMix.ru",
+      "original_sha256": "8fd3f402b5453760d7caacc3e7577baaa705e5f9af4644d9d8f29ae2f7d3acf7",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "xiaomi-mi-router-4a-gigabit-edition",
+      "model": "Xiaomi Mi Router 4A Gigabit Edition",
+      "catalog_name": "Xiaomi Mi Router 4A Gigabit Edition",
+      "aliases": [
+        "Xiaomi Mi Router 4A Gigabit Edition"
+      ],
+      "file": "xiaomi-mi-router-4a-gigabit-edition.webp",
+      "sha256": "997f7011499ba7462999834d5b4066e44ef5ffc60c32c730de3cc0110d9a8037",
+      "source_page": "https://forum.openwrt.org/t/xiaomi-mi-router-4a-gigabit-edition-r4ag-r4a-gigabit-fully-supported-and-flashable-with-openwrtinvasion/36685/",
+      "source_image": "https://forum.openwrt.org/uploads/default/original/2X/8/8bc49af96690ede1b620bd004ff42564dbd693e5.jpeg",
+      "source_title": "Xiaomi Mi Router 4A Gigabit Edition (R4AG/R4A Gigabit) -- fully supported and flashable with OpenWRTInvasion - For Developers -",
+      "original_sha256": "4589fb566f3a6a146be861054685b0b5bd3497a874be7a7bef8f9129b25f3e92",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "xiaomi-mi-router-3g",
+      "model": "Xiaomi Mi Router 3G",
+      "catalog_name": "Xiaomi Mi Router 3G",
+      "aliases": [
+        "Xiaomi Mi Router 3G"
+      ],
+      "file": "xiaomi-mi-router-3g.webp",
+      "sha256": "ca38517c7336c6a2a3bba1bcb42624d233732401fe4cb344f80f9a40d773f24b",
+      "source_page": "https://abc.ru/catalog/router-xiaomi-mi-wi-fi-router-3g-belyj-105804.html",
+      "source_image": "https://static.abc.ru/unsafe/1040x0/abc.ru/upload/catalog/yy/wl/1570670459.9712yywlb3rag33td5jpknyvi72ehbi-t5n6kbng.jpg",
+      "source_title": "Роутер Xiaomi Mi Wi-Fi Router 3G белый (с USB) купить недорого в Москве в интернет-магазине abc.ru - низкие цены, характеристики",
+      "original_sha256": "d94c9cc3977edc65187b930c4a17c0ab9d14520ac0e524ecb72dfabda32aed51",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "cudy-wr3000",
+      "model": "Cudy WR3000",
+      "catalog_name": "Cudy WR3000",
+      "aliases": [
+        "Cudy WR3000"
+      ],
+      "file": "cudy-wr3000.webp",
+      "sha256": "64c111ac9de97693523453fbc62d1d3e6a5083ba6567792fab8ae336731e32b0",
+      "source_page": "https://asp24.ru/routery/cudy-wr3000/",
+      "source_image": "https://asp24.ru/images/detailed/27/wr3000-1-0-1.jpg",
+      "source_title": "Cudy WR3000 - Роутер Wi-Fi 6 AX3000 с гигабитными портами и поддержкой Mesh - asp24.ru",
+      "original_sha256": "c16e47f326662ebf784a8559a2826e7d7815277313f125944619fda33f3afd39",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "gl-inet-gl-mt1300",
+      "model": "GL.iNet GL-MT1300",
+      "catalog_name": "GL.iNet GL-MT1300",
+      "aliases": [
+        "GL.iNet GL-MT1300"
+      ],
+      "file": "gl-inet-gl-mt1300.webp",
+      "sha256": "c1b1fa584b1d10a6bd12064a7a30cb90586bd30e9bd661d00fb3aef1d848b29b",
+      "source_page": "https://www.gl-inet.com/products/gl-mt1300/?amp=",
+      "source_image": "https://static.gl-inet.com/www/images/products/gl-mt1300/mt1300_2.jpg",
+      "source_title": "GL-MT1300 / Beryl - GL.iNet",
+      "original_sha256": "b15b344cbcc3dede9316c75ca366567f58395eab00fde7e5b395376aefe28bf4",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "tp-link-archer-c6-v3",
+      "model": "TP-Link Archer C6 v3",
+      "catalog_name": "TP-Link Archer C6 v3",
+      "aliases": [
+        "TP-Link Archer C6 v3"
+      ],
+      "file": "tp-link-archer-c6-v3.webp",
+      "sha256": "379274ae615e1ea3f519c4a32df06659809ca5687a38b4a0f788dd850d692006",
+      "source_page": "https://market.yandex.ru/product--marshrutizator-tp-link-archer-c6-v3/1768985971?text=TP-Link+Archer+C64&sku=101763976002&do-waremd5=1n6e4TjxSxPVD6ghuM6jTw",
+      "source_image": "https://avatars.mds.yandex.net/get-mpic/5111824/img_id5760608538785278325.jpeg/orig",
+      "source_title": "Маршрутизатор TP-Link Archer C6 v3 - купить в интернет-магазине по низкой цене на Яндекс Маркете",
+      "original_sha256": "cacc7e977ca4d49ad9d85dce5d288ded49604832aecac3c2c4dd8a8b93a794fa",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "asus-rt-ax53u",
+      "model": "ASUS RT-AX53U",
+      "catalog_name": "ASUS RT-AX53U",
+      "aliases": [
+        "ASUS RT-AX53U"
+      ],
+      "file": "asus-rt-ax53u.webp",
+      "sha256": "52b4a170077631666808561392294495a85a04473d9806c04a8f789f27be5e98",
+      "source_page": "https://techinfodepot.shoutwiki.com/wiki/ASUS_RT-AX53U",
+      "source_image": "https://images.shoutwiki.com/techinfodepot/0/02/RT-AX53U_01.png",
+      "source_title": "ASUS RT-AX53U ASUS RT-AX53U",
+      "original_sha256": "9c290daa557ab5a08e34acf22567dd3872767d21b9b16d9416fb99e7b0ee19e1",
+      "width": 320,
+      "height": 240,
+      "background": "transparent"
+    },
+    {
+      "id": "xiaomi-redmi-router-ax6s",
+      "model": "Xiaomi Redmi Router AX6S",
+      "catalog_name": "Xiaomi Redmi Router AX6S",
+      "aliases": [
+        "Xiaomi Redmi Router AX6S",
+        "Xiaomi Redmi AX6S",
+        "Redmi Router AX6S",
+        "Redmi AX6S",
+        "Xiaomi Redmi Aiot AX6S"
+      ],
+      "file": "xiaomi-redmi-router-ax6s.webp",
+      "sha256": "b66c35382995f0111872d7b6c2df17394cff61a4af8a68f59f8be2aa8a988f4c",
+      "source_page": "https://catalog.onliner.by/wrouter/xiaomi/dvb4326cn",
+      "source_image": "https://imgproxy.onliner.by/qz1_2Rq-PFeferFivw3ddQCXBzbPlDKHRxTUaNKk_fc/w:700/h:550/f:jpg/aHR0cHM6Ly9jb250/ZW50Lm9ubGluZXIu/YnkvY2F0YWxvZy9k/ZXZpY2UvMjAyMi85/OWE5NDI3MjE3MDc0/ZGY2Mjg4ZDI5ODVm/N2NjNDE1MC5qcGVn",
+      "source_title": "Xiaomi Redmi Aiot AX6S (DVB4326CN)",
+      "original_sha256": "19310db9d086a57be195ddfb5c5a9a50eb44c566aaac759b7b1fc6970f0e9344",
+      "width": 320,
+      "height": 240,
+      "background": "transparent",
+      "quality_checks": [
+        {
+          "feature": "left_antenna",
+          "x": 51,
+          "y": 52,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "back_left_antenna",
+          "x": 98,
+          "y": 56,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "back_middle_antenna",
+          "x": 154,
+          "y": 56,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "back_right_antenna",
+          "x": 251,
+          "y": 65,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "right_antenna",
+          "x": 267,
+          "y": 90,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "front_right_antenna",
+          "x": 224,
+          "y": 115,
+          "radius": 1,
+          "min_alpha": 230
+        },
+        {
+          "feature": "housing",
+          "x": 153,
+          "y": 160,
+          "radius": 1,
+          "min_alpha": 230
+        }
+      ]
+    }
+  ],
+  "image_format": {
+    "width": 320,
+    "height": 240,
+    "color": "RGBA",
+    "background": "transparent",
+    "presentation": "product-card"
+  }
+}

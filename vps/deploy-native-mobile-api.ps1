@@ -105,8 +105,12 @@ if [ "$action" = Install ]; then
     validate "$stage"
     "$python_bin" - "$stage" <<'PY'
 import ast
+import base64
+import hashlib
 from pathlib import Path
 import sys
+import warnings
+import zlib
 
 folder = Path(sys.argv[1])
 hub = (folder / 'hub.py').read_text(encoding='utf-8')
@@ -117,6 +121,26 @@ api = ast.parse((folder / 'mobile_api.py').read_text(encoding='utf-8'))
 names = {node.name for node in api.body if isinstance(node, ast.FunctionDef)}
 if not {'dispatch_get', 'dispatch_post'} <= names:
     raise SystemExit('Native API candidate is incomplete')
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore', SyntaxWarning)
+    tree = ast.parse(hub)
+values = {}
+for node in tree.body:
+    if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+        if node.targets[0].id in {'HUB_MOBILE_API_SHA256', 'HUB_MOBILE_API_BUNDLE'}:
+            values[node.targets[0].id] = ast.literal_eval(node.value)
+try:
+    unpack = zlib.decompressobj()
+    embedded = unpack.decompress(base64.b64decode(values['HUB_MOBILE_API_BUNDLE'], validate=True), 131073)
+    if not unpack.eof or unpack.unused_data or not 1000 <= len(embedded) <= 131072:
+        raise ValueError('invalid embedded module size')
+    if hashlib.sha256(embedded).hexdigest() != values['HUB_MOBILE_API_SHA256']:
+        raise ValueError('embedded module checksum mismatch')
+except (KeyError, TypeError, ValueError, zlib.error) as error:
+    raise SystemExit('Invalid embedded mobile API: ' + str(error))
+if embedded != (folder / 'mobile_api.py').read_bytes():
+    raise SystemExit('Hub embeds a different mobile_api.py. Run python scripts/embed-mobile-api.py before deployment. Nothing changed.')
+print('Embedded mobile API matches uploaded module: ' + values['HUB_MOBILE_API_SHA256'])
 print('Hub and native API candidates validated')
 PY
     step=backup
@@ -197,9 +221,15 @@ if [ "$healthy" != 1 ]; then
     cat "$stage/health-check" >&2 2>/dev/null || true
     exit 1
 fi
+step=verify-files
 for name in $names; do
     path="$(target "$name")"
-    if [ -e "$source_dir/$name.absent" ]; then test ! -e "$path"; else cmp "$source_dir/$name" "$path"; fi
+    if [ -e "$source_dir/$name.absent" ]; then
+        test ! -e "$path"
+    elif ! cmp -s "$source_dir/$name" "$path"; then
+        echo "Installed file changed after Hub restart: $name. Restoring previous files." >&2
+        exit 1
+    fi
 done
 cat "$stage/health-check"
 printf '\nBackup: %s\nNATIVE_MOBILE_API_%s_OK\n' "$backup" "$action"

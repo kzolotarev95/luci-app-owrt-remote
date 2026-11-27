@@ -1,0 +1,11 @@
+/* One default palette for every Hub page and the router companion panel. */
+:root{--red:#ff3030}
+.brandSeal{background:none!important;border:0!important;box-shadow:none!important}
+.brandSeal:before,.brandSeal:after{display:none!important}
+.brandSeal svg{width:56px!important;height:56px!important;filter:none!important}
+:root[data-hub-design="default"]{
+ --bg:#0d0e10;--panel:#15171a;--panel2:#1a1d21;--text:#e8eaed;--muted:#9097a2;
+ --line:#292d33;--cyan:#c5ed34;--blue:#73b6ff;--green:#49cbb1;--red:#ff3030;
+ --amber:#e8ba66;--purple:#ac94eb;--teal:#49cbb1;--code:#1a1d21;
+ --term-selection:#39432c;--scroll-thumb:#555c67;--grid:transparent;
+}

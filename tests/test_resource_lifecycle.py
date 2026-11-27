@@ -107,6 +107,8 @@ class HubFixture:
         self.threads = []
         self.push_patch = mock.patch.object(hub, "queue_web_push_payload")
         self.push_patch.start()
+        self.xray_patch = mock.patch.object(hub, "reload_vps_xray", return_value={"ok": True})
+        self.xray_patch.start()
         for server in (self.backend, self.server):
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
@@ -131,7 +133,7 @@ class HubFixture:
         assert "groups" in json.loads(self.request("/api/router-groups"))
         assert "notifications" in json.loads(self.request("/api/notifications"))
         assert self.request("/access/test-router/") == b"router proxy fixture"
-        assert b"v123" in self.request("/")
+        assert hub.HUB_LOADED_VERSION.encode('ascii') in self.request("/")
         self.app.snapshot_router_states()
 
     def __exit__(self, *args):
@@ -142,6 +144,7 @@ class HubFixture:
         for thread in self.threads:
             thread.join(timeout=5)
         self.push_patch.stop()
+        self.xray_patch.stop()
         self.tmp.cleanup()
 
 

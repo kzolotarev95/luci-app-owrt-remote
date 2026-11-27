@@ -8,12 +8,32 @@ tachyon_inventory_failed() {
     else printf '{"checked":false}'; fi
 }
 
+tachyon_binary_version() {
+    local binary result
+    binary="$(command -v tachyon 2>/dev/null)" || return 0
+    case "$binary" in /*) ;; *) return 0 ;; esac
+    # The built-in updater replaces the binary without updating opkg/APK's
+    # installed manifest. Read Tachyon itself, never tachyon-core's version.
+    if command -v timeout >/dev/null 2>&1; then
+        result="$(timeout 3 "$binary" --version 2>/dev/null)" || return 0
+    elif command -v busybox >/dev/null 2>&1 && busybox timeout 1 true >/dev/null 2>&1; then
+        result="$(busybox timeout 3 "$binary" --version 2>/dev/null)" || return 0
+    else return 0; fi
+    printf '%s\n' "$result" | LC_ALL=C awk '
+        NR == 1 && $1 == "tachyon" && $2 ~ /^v?[0-9]+\.[0-9]+\.[0-9]+([.+~_-][a-zA-Z0-9.+~_-]+)?$/ && length($2) <= 80 {
+            sub(/^v/, "", $2); print $2
+        }'
+}
+
 tachyon_json() (
-    local dir package version package_version mode port service available api code pkg rc now last admin_port candidate_port probe checked attempt failures
+    local dir package version package_version binary_version mode port service available api code pkg rc now last admin_port candidate_port probe checked attempt failures version_stamp
     umask 077
     ulimit -f 64
     mkdir -p "$TACHYON_RUNTIME" || { printf '{"checked":false}'; return; }
-    if [ "${1:-}" != force ] && [ -s "$TACHYON_RUNTIME/status" ]; then
+    version_stamp="$(stat -c '%n:%s:%Y:%i' /usr/bin/tachyon /usr/sbin/tachyon 2>/dev/null)"
+    [ -n "$version_stamp" ] || version_stamp="$(ls -ln /usr/bin/tachyon /usr/sbin/tachyon 2>/dev/null)"
+    if [ "${1:-}" != force ] && [ -s "$TACHYON_RUNTIME/status" ] &&
+            [ "$(cat "$TACHYON_RUNTIME/binary-stamp" 2>/dev/null)" = "$version_stamp" ]; then
         now="$(cut -d. -f1 /proc/uptime)"
         last="$(cat "$TACHYON_RUNTIME/updated" 2>/dev/null)"
         case "$last" in ''|*[!0-9]*) ;; *)
@@ -63,6 +83,8 @@ tachyon_json() (
             case "$rc" in ''|*[!0-9a-zA-Z.+~_-]*) ;; *) [ "${#rc}" -gt 80 ] || version="$rc" ;; esac
         fi
         package_version="$version"
+        binary_version="$(tachyon_binary_version)"
+        [ -z "$binary_version" ] || version="$binary_version"
         port=0; mode=luci; api=''
         candidate_port="$(uci -q get tachyon.settings.listen_port 2>/dev/null)"
         case "$candidate_port" in ''|*[!0-9]*) candidate_port=1680 ;; esac
@@ -122,7 +144,7 @@ tachyon_json() (
             # The Hub bounds retention of the previous confirmation to 120s.
             [ "$failures" -ge 2 ] || checked=false
         fi
-        if [ "$mode" = standalone ] && [ "$available" = true ] && [ "$api" = /api/agent/v1 ]; then
+        if [ -z "$binary_version" ] && [ "$mode" = standalone ] && [ "$available" = true ] && [ "$api" = /api/agent/v1 ]; then
             rc="$(curl -q -fsS --noproxy '*' --connect-timeout 1 --max-time 1 --max-filesize 65536 \
                 "http://127.0.0.1:$port/api/agent/v1/openapi.json" 2>/dev/null | jsonfilter -e '@.info.version' 2>/dev/null)"
             case "$rc" in ''|*[!a-zA-Z0-9.+~_-]*) ;; *) [ "${#rc}" -gt 80 ] || version="$rc" ;; esac
@@ -141,6 +163,7 @@ tachyon_json() (
     fi
     cat "$dir/json"
     mv -f "$dir/json" "$TACHYON_RUNTIME/status"
+    printf '%s\n' "$version_stamp" >"$TACHYON_RUNTIME/binary-stamp"
     cut -d. -f1 /proc/uptime >"$TACHYON_RUNTIME/updated"
 )
 

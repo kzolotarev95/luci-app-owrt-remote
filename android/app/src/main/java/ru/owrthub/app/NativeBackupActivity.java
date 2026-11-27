@@ -103,7 +103,7 @@ public final class NativeBackupActivity extends Activity {
           return insets;
         });
     LinearLayout bar = ui.row();
-    bar.addView(ui.iconButton("back", "Назад", this::onBackPressed));
+    bar.setTag("native-toolbar");
     bar.addView(ui.text("Резервные копии", 20, true), new LinearLayout.LayoutParams(0, -2, 1));
     root.addView(bar);
     bar.addView(
@@ -119,7 +119,7 @@ public final class NativeBackupActivity extends Activity {
     root.addView(progress, new LinearLayout.LayoutParams(-1, ui.dp(2)));
     ScrollView scroll = new ScrollView(this);
     LinearLayout content = ui.column();
-    content.setPadding(ui.dp(18), ui.dp(20), ui.dp(18), ui.dp(28));
+    content.setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(24));
     scroll.addView(content);
     root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
     content.addView(ui.title("Состояние вашего Hub"));

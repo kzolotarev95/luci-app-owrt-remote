@@ -140,6 +140,10 @@ def nginx_policies():
         path = Path(filename).resolve()
         if str(path) == "/etc/nginx/conf.d/owrt-remote-log-policy.conf":
             continue
+        # Certbot includes this standard TLS policy outside /etc/nginx.
+        # Read-only exception for this exact resolved file, not its directory.
+        if str(path) == "/etc/letsencrypt/options-ssl-nginx.conf" and path.is_file():
+            continue
         if not str(path).startswith("/etc/nginx/") or not path.is_file():
             raise RuntimeError("Unexpected nginx configuration: " + str(path))
         text = path.read_text()

@@ -446,12 +446,16 @@ install_file "usr/lib/owrt-remote/wan.sh" 0644
 install_file "usr/lib/owrt-remote/control.sh" 0644
 install_file "usr/lib/owrt-remote/tachyon.sh" 0644
 install_file "usr/lib/owrt-remote/retire-logs.sh" 0644
+install_file "usr/lib/owrt-remote/panel-update.sh" 0644
+install_file "usr/lib/owrt-remote/panel-download.sh" 0644
+install_file "usr/share/owrt-remote/panel-version" 0644
 run_step retire-journal env OWRT_REMOTE_RETIRE_ROOT="$ROOT" sh "$(target_path usr/lib/owrt-remote/retire-logs.sh)"
 install_file "etc/init.d/owrt-remote" 0755
 install_file "etc/hotplug.d/iface/99-owrt-remote" 0755
 install_config
 install_file "www/cgi-bin/owrt-remote" 0755
 install_file "www/luci-static/resources/owrt_remote_effects.js" 0644
+install_file "www/luci-static/resources/owrt_remote_update.js" 0644
 install_file "usr/share/luci/menu.d/luci-app-owrt-remote.json" 0644
 install_file "usr/share/rpcd/acl.d/luci-app-owrt-remote.json" 0644
 install_file "www/luci-static/resources/view/owrt_remote.js" 0644

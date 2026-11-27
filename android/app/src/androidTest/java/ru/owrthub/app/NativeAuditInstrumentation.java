@@ -123,9 +123,7 @@ public final class NativeAuditInstrumentation extends NativeSmokeInstrumentation
 
     private void checkStableOverview()throws Exception {
         android.view.View eye=onUi(()->{for(android.view.View v:views())if("Показать или скрыть адрес Hub".contentEquals(v.getContentDescription()==null?"":v.getContentDescription()))return v;return null;});
-        require(eye!=null && hasText("Адрес скрыт"),"Private header by default");
-        runOnMainSync(()->eye.performClick());require(containsText("127.0.0.1"),"Eye reveals server");
-        runOnMainSync(()->eye.performClick());require(hasText("Адрес скрыт")&&!hasText("127.0.0.1"),"Eye hides server again");
+        require(eye==null && !hasText("Адрес скрыт") && !hasText("127.0.0.1"),"Header omits address, placeholder and eye");
         android.view.View root=onUi(()->activity.getWindow().getDecorView());
         android.view.View refresh=onUi(()->{for(android.view.View v:views())if(v instanceof android.widget.Button && ((android.widget.Button)v).getText().toString().equals("Обновить состояние"))return v;return null;});
         require(refresh!=null,"Refresh button exists");
@@ -258,13 +256,12 @@ public final class NativeAuditInstrumentation extends NativeSmokeInstrumentation
     }
 
     private void checkWol()throws Exception{
-        openRouterTool("Wake-on-LAN");waitFor("WOL ready",10000,()->enabledText("Разбудить устройство"));
-        EditText mac=editorWithHint("AA:BB:CC");require(mac!=null,"MAC address editor");
-        runOnMainSync(()->mac.setText("bad"));clickText("Разбудить устройство");
-        waitFor("MAC validation",5000,()->containsText("Укажите MAC-адрес"));
-        runOnMainSync(()->mac.setText("02:00:00:00:00:01"));clickText("Разбудить устройство");
+        openRouterTool("Wake-on-LAN");waitFor("WOL discovery",10000,()->containsText("Найдено устройств: 1"));
+        require(!enabledText("Разбудить"),"A device must be selected before waking it");
+        onUi(()->{for(android.view.View v:views())if(v instanceof android.widget.Spinner)((android.widget.Spinner)v).setSelection(1);return null;});
+        waitFor("WOL device selected",5000,()->enabledText("Разбудить"));clickText("Разбудить");
         waitFor("WOL accepted",10000,()->hasText("Пакет пробуждения отправлен")&&containsText("no packet was sent"));
-        checks.add("wol_validates_mac_and_sends_selected_router_request");backToMain();
+        checks.add("wol_requires_selection_and_sends_selected_router_request");backToMain();
     }
     private void checkNotifications()throws Exception{
         ActivityMonitor monitor=addMonitor("ru.owrthub.app.NativeSettingsActivity",null,false);
@@ -276,8 +273,8 @@ public final class NativeAuditInstrumentation extends NativeSmokeInstrumentation
         checks.add("notification_screen_shows_server_title_and_body");backToMain();
     }
     private void checkRouterQueue()throws Exception{
-        openSettingsTool("Обновить роутеры");waitFor("router queue form",10000,()->enabledText("Перезагрузить все роутеры"));
-        clickText("Перезагрузить все роутеры");acceptConfirmationIfPresent();
+        openSettingsTool("Обновить роутеры");waitFor("router queue form",10000,()->enabledText("Перезапустить выбранные"));
+        clickText("Перезапустить выбранные");acceptConfirmationIfPresent();
         waitFor("queue started",10000,()->hasText("Остановить очередь"));clickText("Остановить очередь");acceptConfirmationIfPresent();
         waitFor("queue cancelled",10000,()->containsText("Fixture queue cancelled"));
         require(hasText("Убрать результаты"),"Completed queue can be cleared");clickText("Убрать результаты");
@@ -337,7 +334,11 @@ public final class NativeAuditInstrumentation extends NativeSmokeInstrumentation
         checks.add("protected_browser_sign_in_returns_to_native_app_automatically");
     }
     private void checkViewerLogin()throws Exception{
-        control.logout();relaunch();waitFor("viewer login",10000,()->shown("hub_user")&&hasText("2468"));
+        // The browser file test deliberately expired this session before returning.
+        try{control.logout();}catch(HubApiClient.AuthRequiredException expired){
+            require(store.load()==null,"An expired logout still clears the local session");
+        }
+        relaunch();waitFor("viewer login",10000,()->shown("hub_user")&&hasText("2468"));
         fill("hub_user","fixture-viewer");require(!shown("hub_otp"),"Viewer login does not request owner OTP");
         fill("hub_password",PASSWORD);fill("hub_captcha","2468");clickId("hub_login");waitForNativeHome();
         clickText("Роутеры");waitFor("viewer assigned router",10000,()->hasText("Домашний роутер"));require(!hasText("Дача"),"Viewer does not receive unrelated routers");

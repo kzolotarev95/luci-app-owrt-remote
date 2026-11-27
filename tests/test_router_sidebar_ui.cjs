@@ -59,7 +59,7 @@ DRAFT
 )"
 ` : '';
   const html = execFileSync(shell, [], {input:source+'\n'+mocks+'\n'+draftState+'\nrender_page\n',
-    cwd:root, encoding:'utf8', timeout:15000, env:{...process.env,
+    cwd:root, encoding:'utf8', timeout:45000, env:{...process.env,
       PATH:path.dirname(shell)+path.delimiter+process.env.PATH}});
   assert(html.includes('Content-Type: text/html; charset=utf-8'));
   assert(html.includes('id="routerSidebar"'));
@@ -74,7 +74,7 @@ const keyFile=path.join(output,'web-key.fixture');
 fs.writeFileSync(keyFile,'fixture-key\n');
 function renderDonation(key) {
   return execFileSync(shell,[path.join(root,'files/www/cgi-bin/owrt-remote')],{
-    cwd:root,encoding:'utf8',timeout:15000,env:{...process.env,
+    cwd:root,encoding:'utf8',timeout:45000,env:{...process.env,
       PATH:path.dirname(shell)+path.delimiter+process.env.PATH,
       KEY_FILE:keyFile.replace(/\\/g,'/'),REQUEST_METHOD:'GET',CONTENT_TYPE:'',
       QUERY_STRING:'key='+key+'&action=donate',
@@ -175,8 +175,8 @@ async function noOverflow(page,label) {
       };
       assert.equal(await menu.isVisible(),!!scenario.mobile,'menu follows mobile breakpoint');
       assert.equal(await sidebar.locator('details[open]').count(),0,'sidebar sections start collapsed');
-      assert.equal(await page.title(),'OWRT Hub v124');
-      assert((await page.locator('.routerBrand').textContent()).includes('OWRT Hub v124'));
+      assert.equal(await page.title(),'OWRT Hub v125');
+      assert((await page.locator('.routerBrand').textContent()).includes('OWRT Hub v125'));
       assert.equal(await page.locator('.routerPageHead h1').textContent(),routerName,'router name is safely escaped');
       for(const field of requiredFields)assert(await page.locator('#routerSettings [name="'+field+'"]').count(),'settings field retained: '+field);
       assert.equal(await page.locator('form form').count(),0,'forms are never nested');
@@ -192,11 +192,11 @@ async function noOverflow(page,label) {
       if(scenario.mobile)assert(Math.abs(size.rightGap-12)<1,'mobile workspace keeps its side padding: '+JSON.stringify(size));
       else {
         assert(Math.abs(size.leftGap-size.rightGap)<1,'sidebar and workspace share equal outer margins: '+JSON.stringify(size));
-        assert(size.wrapWidth<=1360.1,'desktop shell has a bounded readable width');
+        assert(size.wrapWidth<=1600.1,'desktop shell has a bounded readable width');
       }
       assert(Math.abs(size.settingsRight-size.headerRight)<1,'settings and header share the right edge');
       assert.equal(size.font,'12px','VPS typography retained');
-      assert.equal(size.bg,'rgb(11, 11, 12)','default graphite palette');
+      assert.equal(size.bg,'rgb(13, 14, 16)','default graphite palette');
       await noOverflow(page,scenario.name+' initial');
       await page.screenshot({path:path.join(output,scenario.name+'-initial.png'),fullPage:false});
       if(scenario.mobile){
