@@ -15,6 +15,11 @@ spec.loader.exec_module(m)
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_managed_journald_policy_is_loaded_after_common_size_dropin(self):
+        self.assertGreater(
+            Path('/etc/systemd/journald.conf.d/zz-owrt-remote-limits.conf').name,
+            Path('/etc/systemd/journald.conf.d/size.conf').name)
+
     def test_custom_hub_rule_is_preserved_during_install_and_rollback(self):
         rule = '/var/log/owrt-remote*.log {\n daily\n rotate 7\n size 50M\n missingok\n notifempty\n compress\n delaycompress\n copytruncate\n}\n'
         with tempfile.TemporaryDirectory() as folder:
@@ -161,6 +166,18 @@ class MaintenanceTests(unittest.TestCase):
                        "/var/log/a { rotate 1 }\n", "/var/log/a {\nolddir /home/user\n}\n"):
             with self.subTest(source=source), self.assertRaises(RuntimeError):
                 m.retention_config(source)
+
+    def test_approved_service_logs_are_allowed_but_other_external_targets_are_rejected(self):
+        source = ("/etc/csqtt/csqtt.log {\n    daily\n}\n"
+                  "/root/freeze-watch.log {\n    daily\n}\n"
+                  "/root/scripts/*.log {\n    weekly\n}\n")
+        result, patterns = m.retention_config(source)
+        self.assertEqual(patterns, ["/etc/csqtt/csqtt.log", "/root/freeze-watch.log", "/root/scripts/*.log"])
+        self.assertIn("maxsize 20M", result)
+        for target in ("/etc/csqtt/other.log", "/etc/csqtt/csqtt.log.*", "/opt/csqtt/csqtt.log",
+                       "/root/other.log", "/root/scripts/private.txt"):
+            with self.subTest(target=target), self.assertRaisesRegex(RuntimeError, "outside /var/log"):
+                m.retention_config(target + " {\n}\n")
 
     def test_archive_names_do_not_match_active_or_user_files(self):
         for suffix in (".1", ".20.gz", ".old", "-20261119.gz", ".20261119-032000.xz"):

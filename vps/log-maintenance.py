@@ -30,8 +30,19 @@ RESULT = Path("/var/log/owrt-remote-maintenance.log")
 HUB = Path("/opt/owrt-remote/owrt-remote-hub.py")
 LEGACY = Path("/etc/logrotate.d/owrt-remote")
 POLICY = "\n    daily\n    maxsize 20M\n    rotate 1\n    maxage 1\n    compress\n    nodelaycompress\n"
+# These are explicit, administrator-owned logrotate targets used by the
+# supported server helpers. Arbitrary paths remain rejected so a custom rule
+# cannot make cleanup touch unrelated user data.
+ALLOWED_EXTERNAL_LOGS = {
+    "/etc/csqtt/csqtt.log",
+    "/root/freeze-watch.log",
+    "/root/scripts/*.log",
+}
 CONFIGS = {
-    "/etc/systemd/journald.conf.d/owrt-remote-limits.conf": MARKER + """
+    # Keep this drop-in lexically after third-party files such as size.conf.
+    # The older owrt-remote-limits.conf, if present, is retained for rollback;
+    # this managed file is the effective final policy.
+    "/etc/systemd/journald.conf.d/zz-owrt-remote-limits.conf": MARKER + """
 [Journal]
 SystemMaxUse=50M
 SystemKeepFree=500M
@@ -227,8 +238,9 @@ def flatten_config(path, seen=None):
 def retention_config(source):
     """Keep native create/su/reopen hooks, override only retention per stanza.
 
-    Refuse ambiguous syntax and targets outside /var/log before any rotation.
-    In particular, no arbitrary service file in /var/lib can enter cleanup.
+    Refuse ambiguous syntax and targets outside the trusted log roots before
+    any rotation. The exact CSQTT application log is the only approved
+    external target; no arbitrary service file can enter cleanup.
     """
     output, patterns, header, block = [], [], [], []
     script, inside = False, False
@@ -269,7 +281,8 @@ def retention_config(source):
                     raise RuntimeError("Unsupported inline logrotate stanza")
                 targets = shlex.split(combined.split("{", 1)[0], comments=True)
                 for target in targets:
-                    if not target.startswith("/var/log/") or ".." in Path(target).parts:
+                    trusted = (target.startswith("/var/log/") and ".." not in Path(target).parts)
+                    if not trusted and target not in ALLOWED_EXTERNAL_LOGS:
                         raise RuntimeError("Refusing log target outside /var/log: " + target)
                 patterns.extend(targets)
                 output.extend(header)
