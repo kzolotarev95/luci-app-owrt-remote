@@ -84,6 +84,13 @@ APP_NAME = "OWRT Hub"
 # Increment with PKG_RELEASE for a new revision of the same panel version.
 HUB_PACKAGE_RELEASE = 4
 RAW_REPO_BASE = os.environ.get("RAW_REPO_BASE", "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main").rstrip("/")
+# Russian, user-facing notes for this build. Keep this text focused on what
+# changed and what was fixed; it is shown before any technical metadata.
+HUB_UPDATE_NOTES = (
+    "Исправили обновление панели VPS.\n"
+    "Добавили поддержку логов CSQTT, freeze-watch и служебных скриптов.\n"
+    "Исправили конфликт journald-конфигураций и сохранили пользовательские настройки."
+)
 APP_DIR = Path(__file__).resolve().parent
 
 
@@ -102,12 +109,29 @@ def hub_update_release(data):
     return 1
 
 
+def hub_update_notes(data):
+    """Read the author-facing Russian change summary without executing code."""
+    try:
+        tree = ast.parse(data.decode('utf-8'))
+        for node in tree.body:
+            if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and node.targets[0].id == 'HUB_UPDATE_NOTES'):
+                value = ast.literal_eval(node.value)
+                if isinstance(value, str):
+                    return value.replace('\r\n', '\n').replace('\r', '\n').strip()[:4000]
+    except (UnicodeDecodeError, SyntaxError, ValueError):
+        pass
+    return ''
+
+
 def _hub_source_identity():
     source = Path(__file__).read_bytes()
     return hashlib.sha256(source).hexdigest(), hub_update_version(source), hub_update_release(source)
 
 
 HUB_LOADED_REVISION, HUB_LOADED_VERSION, HUB_LOADED_RELEASE = _hub_source_identity()
+HUB_LOADED_NOTES = hub_update_notes(Path(__file__).read_bytes())
 STATIC_DIR = APP_DIR / "static"
 BRAND_THEME_COLOR = "#0d0e10"
 FAVICON_ICO_FILE = STATIC_DIR / "favicon.ico"
@@ -23611,6 +23635,8 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
 .hubUpdateConfirmLead{{margin:10px 0 0;color:#f7f2ff;font-size:14px;font-weight:750;line-height:1.45}}
 .hubUpdateConfirmMeta{{display:grid;gap:6px;margin:14px 0 0;padding:11px 12px;border:1px solid var(--line);border-radius:11px;background:rgba(0,0,0,.14);color:var(--muted);font-size:12px;line-height:1.4;overflow-wrap:anywhere}}
 .hubUpdateConfirmMeta strong{{color:#f3e8ff;font-weight:850}}
+.hubUpdateConfirmChangesRow{{display:grid;gap:4px}}
+.hubUpdateConfirmChanges{{white-space:pre-wrap;overflow-wrap:anywhere;color:#f7f2ff;line-height:1.5}}
 .hubUpdateConfirmActions{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}}
 .hubUpdateConfirmActions button{{width:100%;min-width:0;min-height:42px}}
 .hubUpdateConfirmCancel{{background:rgba(255,255,255,.08);color:#f3e8ff}}
@@ -23659,6 +23685,7 @@ input,select{{min-width:0;border:1px solid var(--line);border-radius:8px;padding
       <div class="hubUpdateConfirmMeta">
         <div>Сборка: <strong id="hubUpdateConfirmVersion">—</strong></div>
         <div>Источник: <strong id="hubUpdateConfirmSource">—</strong></div>
+        <div class="hubUpdateConfirmChangesRow">Что изменилось: <strong class="hubUpdateConfirmChanges" id="hubUpdateConfirmChanges">Описание изменений для этой сборки пока не добавлено.</strong></div>
         <div>После запуска Hub будет перезапущен, затем страница обновится автоматически.</div>
       </div>
       <div class="hubUpdateConfirmActions">
@@ -29853,6 +29880,7 @@ function initHubUpdate() {{
   const confirmLead = document.getElementById('hubUpdateConfirmLead');
   const confirmVersion = document.getElementById('hubUpdateConfirmVersion');
   const confirmSource = document.getElementById('hubUpdateConfirmSource');
+  const confirmChanges = document.getElementById('hubUpdateConfirmChanges');
   const confirmCancel = document.getElementById('hubUpdateConfirmCancel');
   const confirmAccept = document.getElementById('hubUpdateConfirmAccept');
   let state = null, timer = null, loading = false, stopped = false, csrf = '', pending = '', deadline = 0;
@@ -29872,7 +29900,7 @@ function initHubUpdate() {{
     resolve(Boolean(answer));
   }};
   const askConfirmation = (candidate) => new Promise((resolve) => {{
-    if (!confirmPanel || !confirmLead || !confirmVersion || !confirmSource || !confirmCancel || !confirmAccept) {{
+    if (!confirmPanel || !confirmLead || !confirmVersion || !confirmSource || !confirmChanges || !confirmCancel || !confirmAccept) {{
       resolve(window.confirm(candidate.retry_available ? 'Повторить незавершённое обновление панели VPS?' : 'Действительно обновить панель VPS до ' + candidate.remote_version + '?'));
       return;
     }}
@@ -29881,6 +29909,7 @@ function initHubUpdate() {{
     confirmLead.textContent = candidate.retry_available ? 'Повторить незавершённое обновление панели VPS и проверить обслуживание журналов?' : 'Действительно обновить панель VPS до последней доступной сборки ' + candidate.remote_version + ' (' + candidate.remote_revision.slice(0, 8) + ')?';
     confirmVersion.textContent = candidate.remote_version + ' · ' + candidate.remote_revision.slice(0, 8);
     confirmSource.textContent = candidate.source || 'источник обновления';
+    confirmChanges.textContent = candidate.remote_notes || 'Описание изменений для этой сборки пока не добавлено.';
     confirmPanel.hidden = false;
     document.body.classList.add('hubUpdateConfirmOpen');
     confirmAccept.focus();
@@ -34237,6 +34266,7 @@ class HubUpdateManager:
         self.remote_revision = ''
         self.remote_version = ''
         self.remote_release = 1
+        self.remote_notes = ''
         self.health_url = 'http://127.0.0.1:8088/health'
         self.log_maintenance_status = ''
         self.log_maintenance_error = ''
@@ -34293,10 +34323,13 @@ class HubUpdateManager:
                 self.checking = False
             raise
 
-    def fetch_candidate(self):
-        if urllib.parse.urlsplit(self.source).scheme != 'https':
+    def fetch_candidate(self, revision=''):
+        source = self.source
+        if revision and self.source == RAW_REPO_BASE:
+            source = RAW_REPO_BASE.rsplit('/', 1)[0] + '/' + revision
+        if urllib.parse.urlsplit(source).scheme != 'https':
             raise ValueError('Источник обновления должен использовать HTTPS.')
-        request = urllib.request.Request(self.source + '/vps/owrt-remote-hub.py', headers={
+        request = urllib.request.Request(source + '/vps/owrt-remote-hub.py', headers={
             'User-Agent': 'OpenWrt-Remote-Hub-Updater', 'Cache-Control': 'no-cache'})
         with urllib.request.urlopen(request, timeout=15) as response:
             if urllib.parse.urlsplit(response.geturl()).scheme != 'https':
@@ -34324,6 +34357,7 @@ class HubUpdateManager:
             self.remote_revision = hashlib.sha256(data).hexdigest() if not error else ''
             self.remote_version = hub_update_version(data) if not error else ''
             self.remote_release = release if not error else 1
+            self.remote_notes = hub_update_notes(data) if not error else ''
             self.checking = False
 
     def snapshot(self):
@@ -34348,6 +34382,7 @@ class HubUpdateManager:
             return {'checking': self.checking, 'error': self.error, 'source': self.source,
                     'current_revision': revision, 'current_version': HUB_LOADED_VERSION,
                     'current_release': HUB_LOADED_RELEASE, 'remote_release': self.remote_release,
+                    'current_notes': HUB_LOADED_NOTES, 'remote_notes': self.remote_notes,
                     'remote_revision': self.remote_revision, 'source_older': source_older,
                     'source_incompatible': bool(self.source_incompatible), 'notice': self.source_incompatible,
                     'remote_version': self.remote_version, 'checked': bool(self.checked_at),

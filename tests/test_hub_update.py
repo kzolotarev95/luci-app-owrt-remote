@@ -85,12 +85,26 @@ class UpdateTests(unittest.TestCase):
             self.manager.source = source
             with mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response()) as fetch:
                 self.manager._check()
-            self.assertEqual(fetch.call_args.args[0].full_url, source + '/vps/owrt-remote-hub.py')
+            calls = [call.args[0].full_url for call in fetch.call_args_list]
+            self.assertIn(source + '/vps/owrt-remote-hub.py', calls)
             data = self.manager.snapshot()
             self.assertTrue(data['available'])
             self.assertEqual(data['remote_version'], hub.HUB_LOADED_VERSION)
             self.assertEqual(data['remote_revision'], hashlib.sha256(NEW).hexdigest())
         self.assertEqual(self.target.read_bytes(), SOURCE)
+
+    def test_author_notes_are_shown_for_each_candidate_build(self):
+        with mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response(SOURCE)):
+            self.manager._check()
+        state = self.manager.snapshot()
+        self.assertEqual(state['remote_notes'], hub.HUB_LOADED_NOTES)
+        self.assertFalse(state['available'])
+
+        with mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response(SOURCE.replace(b'HUB_UPDATE_NOTES = (', b'HUB_UPDATE_NOTES_REMOVED = ('))):
+            self.manager._check()
+        state = self.manager.snapshot()
+        self.assertTrue(state['available'])
+        self.assertEqual(state['remote_notes'], '')
 
     def test_unchanged_source_is_current_and_errors_do_not_offer_update(self):
         with mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response(SOURCE)):

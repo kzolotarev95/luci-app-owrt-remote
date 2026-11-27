@@ -10,7 +10,9 @@ execFileSync(process.env.TEST_PYTHON || 'python', ['tests/test_vps_resources.py'
 const pageHtml = fs.readFileSync(path.join(output, 'dashboard.html'), 'utf8');
 function state() {
   return {ok:true,checked:true,checking:false,error:'',source:'https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main',
-    current_revision:'a'.repeat(64),current_version:'v123',remote_revision:'b'.repeat(64),remote_version:'v123',source_older:false,available:true,job:{},csrf:'test-csrf'};
+    current_revision:'a'.repeat(64),current_version:'v123',remote_revision:'b'.repeat(64),remote_version:'v123',
+    remote_notes:'Исправили обслуживание журналов.\nДобавили понятное описание обновления.',
+    source_older:false,available:true,job:{},csrf:'test-csrf'};
 }
 async function createFixture(browser,width,height,mobile) {
   const page = await browser.newPage({viewport:{width,height},isMobile:mobile,hasTouch:mobile});
@@ -146,6 +148,7 @@ async function createFixture(browser,width,height,mobile) {
       await confirmPanel.waitFor({state:'visible'});
       assert((await page.locator('#hubUpdateConfirmLead').textContent()).includes('Действительно обновить'));
       assert((await page.locator('#hubUpdateConfirmSource').textContent()).includes('https://raw.githubusercontent.com'));
+      assert.equal(await page.locator('#hubUpdateConfirmChanges').textContent(),fixture.data.remote_notes);
       assert(await confirmPanel.evaluate(el=>el.scrollWidth<=innerWidth+1),'confirmation has no horizontal overflow');
       await page.locator('#hubUpdateConfirmCancel').click();
       assert.equal(fixture.starts,0,'cancel must not start update');
