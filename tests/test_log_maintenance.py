@@ -46,7 +46,7 @@ class MaintenanceTests(unittest.TestCase):
                 self.assertEqual(legacy.read_text(), rule)
                 self.assertFalse(installed.exists())
 
-    def nginx_paths(self, filenames, missing=(), resolved=None):
+    def nginx_paths(self, filenames, missing=(), resolved=None, module_text=None, uid=0, mode=0o100644):
         class ConfigPath:
             def __init__(self, filename):
                 self.filename = filename
@@ -56,9 +56,13 @@ class MaintenanceTests(unittest.TestCase):
                 return self.filename
             def is_file(self):
                 return self.filename not in missing
+            def stat(self):
+                return type('Info', (), {'st_mode': mode, 'st_uid': uid, 'st_size': 80})()
             def read_text(self):
                 if self.filename.startswith('/etc/letsencrypt/'):
                     raise AssertionError('Certbot TLS policy must not be edited')
+                if self.filename.startswith('/usr/share/nginx/'):
+                    return module_text or 'load_module modules/ngx_http_geoip2_module.so;\n'
                 return 'http { access_log /var/log/nginx/custom.log; }\n'
         rendered = ''.join('# configuration file ' + filename + ':\n' for filename in filenames)
         return (mock.patch.object(m, 'Path', ConfigPath), mock.patch.object(m, 'command',
@@ -81,6 +85,41 @@ class MaintenanceTests(unittest.TestCase):
         filename = '/etc/letsencrypt/options-ssl-nginx.conf'
         for missing, resolved in [([filename], {}), ([], {filename:'/tmp/tls.conf'})]:
             paths, command = self.nginx_paths([filename], missing, resolved)
+            with paths, command, self.assertRaisesRegex(RuntimeError, 'Unexpected nginx configuration'):
+                m.nginx_policies()
+
+    def test_distro_module_includes_are_allowed_without_modifying_them(self):
+        target = '/usr/share/nginx/modules-available/mod-http-geoip2.conf'
+        link = '/etc/nginx/modules-enabled/50-mod-http-geoip2.conf'
+        for filename, resolved in [(target, {}), (link, {link: target})]:
+            with self.subTest(filename=filename):
+                paths, command = self.nginx_paths(['/etc/nginx/nginx.conf', filename], resolved=resolved)
+                with paths, command:
+                    self.assertEqual(m.nginx_policies(), {})
+        paths, command = self.nginx_paths([target], module_text='# packaged module\nload_module /usr/lib/nginx/modules/ngx_http_geoip2_module.so;\n')
+        with paths, command:
+            self.assertEqual(m.nginx_policies(), {})
+
+    def test_module_exception_rejects_unsafe_permissions_and_non_module_directives(self):
+        target = '/usr/share/nginx/modules-available/mod-http-geoip2.conf'
+        for options in ({'uid': 1000}, {'mode': 0o100666}, {'mode': 0o040755},
+                        {'module_text': 'access_log /var/log/nginx/access.log;'},
+                        {'module_text': 'load_module /tmp/evil.so;'},
+                        {'module_text': 'load_module modules/../evil.so;'},
+                        {'module_text': 'load_module modules/ngx_http_geoip2_module.so;\ninclude /tmp/site.conf;'}):
+            with self.subTest(options=options):
+                paths, command = self.nginx_paths([target], **options)
+                with paths, command, self.assertRaisesRegex(RuntimeError, 'nginx module'):
+                    m.nginx_policies()
+
+    def test_module_exception_cannot_allow_other_external_or_missing_files(self):
+        target = '/usr/share/nginx/modules-available/mod-http-geoip2.conf'
+        for filename, missing, resolved in [
+                ('/usr/share/nginx/modules-available/site.conf', [], {}),
+                ('/usr/share/nginx/modules-available/mod-http-geoip2.conf.bak', [], {}),
+                ('/usr/share/nginx/modules-available-evil/mod-http-geoip2.conf', [], {}),
+                (target, [target], {}), (target, [], {target: '/tmp/module.conf'})]:
+            paths, command = self.nginx_paths([filename], missing=missing, resolved=resolved)
             with paths, command, self.assertRaisesRegex(RuntimeError, 'Unexpected nginx configuration'):
                 m.nginx_policies()
 

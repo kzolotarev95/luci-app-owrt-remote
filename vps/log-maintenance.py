@@ -129,6 +129,20 @@ def legacy_policy(path=None):
             and lines[-1] == "}" and set(lines[1:-1]) == expected)
 
 
+def nginx_module_include(path):
+    """Distro module includes are read-only, never sites or log policy files."""
+    if not re.fullmatch(r"/usr/share/nginx/modules-available/mod-[a-z0-9-]+\.conf", str(path)):
+        return False
+    info = path.stat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022 or info.st_size > 16384:
+        raise RuntimeError("Untrusted nginx module configuration: " + str(path))
+    text = re.sub(r"#[^\n]*", "", path.read_text())
+    directive = r"\s*load_module\s+(?:modules/|/usr/lib/nginx/modules/)[a-zA-Z0-9_-]+\.so\s*;"
+    if not re.fullmatch(r"(?:" + directive + r")+\s*", text):
+        raise RuntimeError("Unexpected nginx module directives: " + str(path))
+    return True
+
+
 def nginx_policies():
     """Patch existing standard destinations; never add a second access logger.
 
@@ -144,6 +158,10 @@ def nginx_policies():
         # Certbot includes this standard TLS policy outside /etc/nginx.
         # Read-only exception for this exact resolved file, not its directory.
         if str(path) == "/etc/letsencrypt/options-ssl-nginx.conf" and path.is_file():
+            continue
+        # Debian/Ubuntu modules-enabled symlinks resolve to these distro files.
+        # Accept only trusted load_module directives; never rewrite the include.
+        if path.is_file() and nginx_module_include(path):
             continue
         if not str(path).startswith("/etc/nginx/") or not path.is_file():
             raise RuntimeError("Unexpected nginx configuration: " + str(path))

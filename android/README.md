@@ -1,13 +1,13 @@
 # OWRT Hub — нативное приложение Android
 
-Текущая тестовая версия **0.3.12-v125**, Android **8.0+**. Основные экраны состоят
+Текущая тестовая версия **0.3.13-v125**, Android **8.0+**. Основные экраны состоят
 из нативных View Android и работают через JSON API Hub. Интерфейс переработан под
 ПК-панель: графитовые поверхности, компактные показатели, меню разделов, карта
 подключений и фотографии моделей. Есть зимняя тема и режим для слабых устройств.
 
 [Скриншоты текущего Android-приложения](../README.md#android-screenshots).
 
-Изменения выпуска: [v125](../docs/RELEASE-v125.md), [0.3.12](CHANGES-0.3.12.md), [0.3.11](CHANGES-0.3.11.md), [0.3.10](CHANGES-0.3.10.md), [0.3.9](CHANGES-0.3.9.md), [0.3.8](CHANGES-0.3.8.md), [0.3.7](CHANGES-0.3.7.md), [редизайн 0.3.0](CHANGES-0.3.0.md).
+Изменения выпуска: [0.3.13](CHANGES-0.3.13.md), [v125](../docs/RELEASE-v125.md), [0.3.12](CHANGES-0.3.12.md), [0.3.11](CHANGES-0.3.11.md), [0.3.10](CHANGES-0.3.10.md), [0.3.9](CHANGES-0.3.9.md), [0.3.8](CHANGES-0.3.8.md), [0.3.7](CHANGES-0.3.7.md), [редизайн 0.3.0](CHANGES-0.3.0.md).
 Предыдущий [аудит 0.2.1](AUDIT-0.2.1.md).
 
 ## Что работает нативно
@@ -81,14 +81,14 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File $Fix -Vps root@YOUR_VPS 
 `/root/owrt-remote-backup-before-mobile-update-check-v123`, чтобы сохранить
 установленный ранее мобильный API. APK для этого исправления менять не нужно.
 
-[Скачать готовую APK 0.3.12-v125](https://github.com/kzolotarev95/luci-app-owrt-remote/raw/refs/heads/main/android/apk/OWRT-Hub-Android-0.3.12-v125.apk).
+[Скачать готовую APK 0.3.13-v125](https://github.com/kzolotarev95/luci-app-owrt-remote/raw/refs/heads/main/android/apk/OWRT-Hub-Android-0.3.13-v125.apk).
 Контрольная сумма — в [android/apk/SHA256SUMS](apk/SHA256SUMS).
 
 Для самостоятельной сборки используйте раздел ниже. Результат —
 `android/app/build/outputs/apk/debug/app-debug.apk`. Для обновления поверх
 прежней APK используйте тот же ключ подписи. Локальная тестовая сборка
-`OWRT-Hub-Android-0.3.12-v125.apk` подписана прежним ключом 0.2.0/0.2.1.
-Готовая APK опубликована в [android/apk](apk/README.md) и [Releases v125](https://github.com/kzolotarev95/luci-app-owrt-remote/releases/tag/v125), отдельно от пакетов OpenWrt. В 0.3.12 включены новый нативный дашборд, карта и график доступности 6/12/24 ч, фото моделей, перестановка карточек, защита приложения системным PIN/ключом/отпечатком, сохранение пароля Wake-on-LAN и исправления интерфейса. См. [выпуск v125](../docs/RELEASE-v125.md).
+`OWRT-Hub-Android-0.3.13-v125.apk` подписана прежним ключом 0.2.0/0.2.1.
+Готовая APK опубликована в [android/apk](apk/README.md) и [Releases v125-r3](https://github.com/kzolotarev95/luci-app-owrt-remote/releases/tag/v125-r3), отдельно от пакетов OpenWrt. В 0.3.12 включены новый нативный дашборд, карта и график доступности 6/12/24 ч, фото моделей, перестановка карточек, защита приложения системным PIN/ключом/отпечатком, сохранение пароля Wake-on-LAN и исправления интерфейса. См. [выпуск v125](../docs/RELEASE-v125.md).
 Откройте приложение, укажите свой адрес, например
 `https://hub.example.com`, порт 443 или оставьте поле порта пустым. Вводите
 учётную запись **Hub**, а не SSH/root-пароль VPS. Настройки старой WebView-версии
@@ -127,7 +127,7 @@ SSH — построчная консоль, не полная эмуляция 
 
 Для удаления заметок нужен мобильный API ревизии 4: см. установку
 и откат `deploy-android-note-delete.ps1` в [CHANGES-0.2.4.md](CHANGES-0.2.4.md).
-Установите APK 0.3.12 поверх предыдущей версии: подпись, имя пакета и формат зашифрованной
+Установите APK 0.3.13 поверх предыдущей версии: подпись, имя пакета и формат зашифрованной
 сессии сохраняются. Старую APK оставьте для отката.
 
 При подключённом через USB телефоне с разрешённой отладкой, PowerShell Windows 11:
@@ -135,7 +135,7 @@ SSH — построчная консоль, не полная эмуляция 
 ```powershell
 $Repo = Join-Path $env:USERPROFILE 'Documents\openwrt overlay'
 $Adb = Join-Path $Repo '.test-output\android-build-tools\sdk\platform-tools\adb.exe'
-& $Adb -d install -r (Join-Path $Repo 'android\apk\OWRT-Hub-Android-0.3.12-v125.apk')
+& $Adb -d install -r (Join-Path $Repo 'android\apk\OWRT-Hub-Android-0.3.13-v125.apk')
 # Откат тестовой APK с сохранением данных:
 & $Adb -d install -r -d (Join-Path $Repo 'android\apk\OWRT-Hub-Android-0.2.6-v124.apk')
 ```

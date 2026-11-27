@@ -1,10 +1,11 @@
 param(
     [ValidateNotNullOrEmpty()][string]$Vps = 'root@13.143.167.219',
     [ValidateSet('Install', 'Rollback')][string]$Action = 'Install',
+    [ValidatePattern('^owrt-remote-backup-[A-Za-z0-9_-]{1,96}$')]
+    [string]$BackupName = 'owrt-remote-backup-before-logrotate-custom-v125',
     [switch]$PrepareOnly
 )
 $ErrorActionPreference = 'Stop'
-$BackupName = 'owrt-remote-backup-before-logrotate-custom-v125'
 if ($Action -eq 'Install' -or $PrepareOnly) {
     & (Join-Path $PSScriptRoot 'deploy-native-mobile-api.ps1') -Vps $Vps -Action $Action `
         -BackupName $BackupName -PrepareOnly:$PrepareOnly
@@ -23,7 +24,7 @@ import tempfile
 import urllib.request
 
 action = '__ACTION__'
-backup = Path('/root/owrt-remote-backup-before-logrotate-custom-v125/maintenance')
+backup = Path('/root/__BACKUP_NAME__/maintenance')
 target = Path('/opt/owrt-remote/owrt-remote-hub.py')
 spec = importlib.util.spec_from_file_location('local_logrotate_repair', target)
 hub = importlib.util.module_from_spec(spec)
@@ -88,7 +89,7 @@ with tempfile.TemporaryDirectory(prefix='owrt-logrotate-custom-') as folder:
                 subprocess.run([sys.executable, str(script), 'rollback', '--backup', str(backup)], check=True)
             raise
 '@
-$Component.Replace('__ACTION__', $Action) | & ssh $Vps 'python3 -'
+$Component.Replace('__ACTION__', $Action).Replace('__BACKUP_NAME__', $BackupName) | & ssh $Vps 'python3 -'
 if ($LASTEXITCODE -ne 0) {
     if ($Action -eq 'Install') {
         & (Join-Path $PSScriptRoot 'deploy-native-mobile-api.ps1') -Vps $Vps -Action Rollback -BackupName $BackupName

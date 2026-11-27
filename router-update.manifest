@@ -1,6 +1,6 @@
 OWRT_ROUTER_UPDATE 1
 version 125
-release 2
+release 3
 0a1a5114f55dd84c3d48cd4dfd2b52ccfdf294d57e841017acb04fabc28a1231 0755 usr/sbin/owrt-remote
 c4e84624536fe1003717ea7bee542453f47ee9922df7b7ff26d8e145b570a0ce 0644 usr/lib/owrt-remote/wan.sh
 a3c59c84f6e164d1763b2f143a8067f5b03e56419626ae6ae1c7a1d5d4bd69d1 0644 usr/lib/owrt-remote/control.sh
@@ -16,4 +16,4 @@ a42f0cd0ae11379bee93d81761a0b70c5ba7c644122c129d89e0152045568c41 0644 usr/lib/ow
 22d247bca332359ef77c208e4ec92d056d83d99ef1c5820de8d263ddcdad6118 0644 www/luci-static/resources/view/owrt_remote.js
 cf32888c85a356acea23b0096e4c6ad9807ab407c2b7f6e9ff9cd9aaefe9cd20 0644 usr/share/luci/menu.d/luci-app-owrt-remote.json
 0c8f1f620d7437596946291336d72fea5ec60cc9739a0335400854d2ad5b348f 0644 usr/share/rpcd/acl.d/luci-app-owrt-remote.json
-1000bc58d28f41726b8672f6ed1796dfbaaf27f2fbc0501a12382edcb8520b42 0644 usr/share/owrt-remote/panel-version
+23c178554e387ff00d9111033b126fe4abddcb3b8c343016ee68e58e76484edb 0644 usr/share/owrt-remote/panel-version

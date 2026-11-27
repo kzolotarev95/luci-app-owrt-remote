@@ -2021,6 +2021,47 @@
           "min_alpha": 230
         }
       ]
+    },
+    {
+      "id": "friendly-nanopi-r3s",
+      "model": "Friendly NanoPi R3S",
+      "catalog_name": "Friendly NanoPi R3S",
+      "aliases": [
+        "Friendly NanoPi R3S",
+        "FriendlyElec NanoPi R3S",
+        "FriendlyARM NanoPi R3S",
+        "NanoPi R3S",
+        "friendlyarm,nanopi-r3s"
+      ],
+      "file": "friendly-nanopi-r3s.webp",
+      "sha256": "7b3cf6baed170768310a0b2ecc45e6ed584a045b8178a58bf3372e4fb48b668b",
+      "source_page": "https://www.armbian.com/nanopi-r3s/",
+      "source_image": "https://www.armbian.com/api/v1/images/boards/480/nanopi-r3s.png",
+      "source_title": "Armbian — NanoPi R3S",
+      "width": 320,
+      "height": 240,
+      "background": "transparent",
+      "asset_kind": "photograph",
+      "original_sha256": "b31b849cce4ade45375d363ecf457a17d1632b989e09e8a349b4a9328893288a"
+    },
+    {
+      "id": "qemu-standard-pc",
+      "model": "QEMU Standard PC (i440FX + PIIX, 1996)",
+      "catalog_name": "QEMU Standard PC (i440FX + PIIX, 1996)",
+      "aliases": [
+        "QEMU Standard PC (i440FX + PIIX, 1996)",
+        "QEMU Standard PC (1440FX + PIX, 1996)"
+      ],
+      "file": "qemu-standard-pc.webp",
+      "sha256": "d09f3ba895d1d09e4df2eaae86072f5115da414f226a5d112037aed42dd974e9",
+      "source_page": "https://www.qemu.org/docs/master/system/i386/pc.html",
+      "source_image": null,
+      "source_title": "OWRT Hub — original virtual-machine illustration",
+      "width": 320,
+      "height": 240,
+      "background": "transparent",
+      "asset_kind": "illustration",
+      "attribution": "Original OWRT Hub artwork; depicts a virtual machine, not physical QEMU hardware."
     }
   ],
   "image_format": {

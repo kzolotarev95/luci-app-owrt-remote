@@ -746,5 +746,24 @@
       "Xiaomi Redmi Aiot AX6S"
     ],
     "file": "xiaomi-redmi-router-ax6s.webp"
+  },
+  {
+    "model": "Friendly NanoPi R3S",
+    "aliases": [
+      "Friendly NanoPi R3S",
+      "FriendlyElec NanoPi R3S",
+      "FriendlyARM NanoPi R3S",
+      "NanoPi R3S",
+      "friendlyarm,nanopi-r3s"
+    ],
+    "file": "friendly-nanopi-r3s.webp"
+  },
+  {
+    "model": "QEMU Standard PC (i440FX + PIIX, 1996)",
+    "aliases": [
+      "QEMU Standard PC (i440FX + PIIX, 1996)",
+      "QEMU Standard PC (1440FX + PIX, 1996)"
+    ],
+    "file": "qemu-standard-pc.webp"
   }
 ]

@@ -15,7 +15,8 @@
 92 позиции на 26 ноября 2026 года. Подобраны фотографии для 80 позиций и
 восьми дополнительных моделей: netis N6, Xiaomi Mi Router 4A Gigabit Edition,
 Xiaomi Mi Router 3G, Cudy WR3000, GL.iNet GL-MT1300, TP-Link Archer C6 v3,
-ASUS RT-AX53U, Xiaomi Redmi Router AX6S. Всего 88 фотографий.
+ASUS RT-AX53U, Xiaomi Redmi Router AX6S. Дополнительно включены фото
+Friendly NanoPi R3S и отдельная иллюстрация QEMU Standard PC: всего 90 изображений.
 
 Источники, оригинальные URL и SHA256 сохранены для каждого изображения в
 [catalog.json](../vps/router-model-photos/catalog.json). Использованы
@@ -103,6 +104,13 @@ URL оригинала и его SHA256 сохранены в каталоге; 
 Redmi Router AX6S, Redmi AX6S и Xiaomi Redmi Aiot AX6S. Модели AX6, AX6000
 и неизвестные ревизии не подменяются изображением AX6S. Один файл используется
 в карточках и карте подключений VPS/ПК/iOS, копия синхронизирована в Android.
+
+### Friendly NanoPi R3S и QEMU Standard PC
+
+Добавлены изображение R3S и карточка виртуальной машины QEMU. Тип изображения,
+источник и SHA256 указаны в каталоге; поддержаны точные строки моделей и aliases.
+Netis NX62 в этом исправлении не менялся и отложен для отдельной проверки.
+Подробнее: [изображения и проверка nginx-модулей](MODELS_NGINX_MODULE_FIX.md).
 Роутерный агент обновлять для этого исправления не требуется.
 
 Установка локального исправления и откат, PowerShell Windows 11:

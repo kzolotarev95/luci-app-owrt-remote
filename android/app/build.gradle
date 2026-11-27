@@ -8,8 +8,8 @@ android {
         applicationId 'ru.owrthub.app'
         minSdk 26
         targetSdk 35
-        versionCode 22
-        versionName '0.3.12-v125'
+        versionCode 23
+        versionName '0.3.13-v125'
         testInstrumentationRunner project.hasProperty('nativeSecurity')
                 ? 'ru.owrthub.app.NativeDeviceSecurityInstrumentation' : project.hasProperty('nativeRedesign')
                 ? 'ru.owrthub.app.NativeRedesignInstrumentation' : project.hasProperty('nativeAudit')

@@ -10,7 +10,7 @@ with tempfile.TemporaryDirectory() as state:
  os.environ['OWRT_REMOTE_STATE_DIR']=state
  spec=importlib.util.spec_from_file_location('photo_browser_hub','vps/owrt-remote-hub.py')
  hub=importlib.util.module_from_spec(spec);sys.modules[spec.name]=hub;spec.loader.exec_module(hub)
- names=['Cudy WBR3000UAX v1 (OpenWrt U-Boot layout)','Xiaomi Mi Router AX3000T (OpenWrt U-Boot layout)','Netis N6 v2','ASUS TUF-AX4200Q','Xiaomi Redmi Router AX6S','unsupported model','']
+ names=['Cudy WBR3000UAX v1 (OpenWrt U-Boot layout)','Xiaomi Mi Router AX3000T (OpenWrt U-Boot layout)','Netis N6 v2','ASUS TUF-AX4200Q','Xiaomi Redmi Router AX6S','Netis NX62','Friendly NanoPi R3S','QEMU Standard PC (1440FX + PIX, 1996)','unsupported model','']
  routers=[dict(id='node-'+str(i+1),name='Основа' if i==0 else 'Советская 30' if i==1 else 'Роутер '+str(i+1),online=i==0,group_id='',last_seen_iso='2026-11-26T00:00:00Z',permissions={'manage':True,'admin':True,'ssh':True,'owner':True},status={'model':model,'xray':'running','memory':'24000 / 48000 kB','temperature':'43.8 C'},ssh_entry_port=19001+i) for i,model in enumerate(names)]
  auth={'username':'owner','is_owner':True,'can_add_router':True}
  resources={'ok':True,'cpu':{'percent':1,'cores':1},'memory':{'percent':29.9},'disk':{'percent':40}}
@@ -41,6 +41,14 @@ const photoChecks=JSON.parse(fs.readFileSync('vps/router-model-photos/catalog.js
   });
   const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
   await page.goto('http://hub.test/');await page.locator('.card').nth(5).waitFor();
+  await page.locator('.hubNetworkToggle').click();
+  assert.deepEqual(await page.evaluate(()=>[
+   {status:{model:'Netis NX62'}},
+   {status:{model:'FriendlyElec NanoPi R3S'}},{status:{model:'FriendlyARM NanoPi R3S'}},
+   {status:{model:'QEMU Standard PC (i440FX + PIIX, 1996)'}}
+  ].map(row=>HubRouterPhotos.resolve(row)?.id)),[
+   'netis-nx62','friendly-nanopi-r3s','friendly-nanopi-r3s','qemu-standard-pc']);
+  assert.equal(await page.evaluate(()=>HubRouterPhotos.resolve({status:{model:'NanoPi R3S Plus'}})),null,'different hardware is never substituted');
   if(width===1366){
    // Pixel checks catch the real regression: a transparent mask erasing antennas.
    for(const model of photoChecks){
@@ -58,12 +66,12 @@ const photoChecks=JSON.parse(fs.readFileSync('vps/router-model-photos/catalog.js
     assert.deepEqual(failures,[],model.id+' must preserve every reviewed antenna and housing region');
    }
   }
-  const modelIds=['cudy-wbr3000uax','xiaomi-mi-router-ax3000t','netis-n6v2','asus-tuf-ax4200q','xiaomi-redmi-router-ax6s','',''];
-  for(let i=0;i<7;i++){
+  const modelIds=['cudy-wbr3000uax','xiaomi-mi-router-ax3000t','netis-n6v2','asus-tuf-ax4200q','xiaomi-redmi-router-ax6s','netis-nx62','friendly-nanopi-r3s','qemu-standard-pc','',''];
+  for(let i=0;i<modelIds.length;i++){
    const id='node-'+(i+1),card=page.locator('.card[data-router-id="'+id+'"]'),map=page.locator('.hubNetworkBranch[data-router-id="'+id+'"]');
    assert.equal(await card.locator('.hubRouterPhoto').getAttribute('data-photo-model'),modelIds[i]);
    assert.equal(await map.locator('.hubRouterPhoto').getAttribute('data-photo-model'),modelIds[i]);
-   if(i<5){
+   if(i<8){
     await card.locator('.hubRouterPhoto').scrollIntoViewIfNeeded();
     await page.waitForFunction(id=>document.querySelector('.card[data-router-id="'+id+'"] .hubRouterPhoto')?.classList.contains('has-photo'),id);
     assert.equal(await card.locator('img.hubRouterPhotoImage').getAttribute('src'),await map.locator('img.hubRouterPhotoImage').getAttribute('src'));
