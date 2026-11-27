@@ -184,64 +184,133 @@ owrt-remote status
 
 <h2> Скриншоты интерфейса</h2>
 
+<p><sub>OWRT Hub v125 · Android 0.3.12-v125. Снимки текущих интерфейсов с демонстрационными данными. Нажмите на изображение, чтобы открыть его в полном размере.</sub></p>
+
 <table>
 <tr><td align="center">
-<img src="assets/screenshots/v123-hub-dashboard.jpg" alt="OWRT Hub v123 — дашборд VPS с боковым меню, графиком доступности и карточками роутеров" width="100%" />
+<a href="assets/screenshots/v125-hub-dashboard.jpg"><img src="assets/screenshots/v125-hub-dashboard.jpg" alt="OWRT Hub v125 — новый дашборд VPS с картой подключений и фотографиями моделей" width="100%" /></a>
 <br><b>Дашборд VPS</b><br>
-<sub>Боковое меню, доступность за 24 часа, ресурсы VPS и статусы роутеров.</sub>
+<sub>Статистика с мини-графиками, карта подключений, доступность за 6/12/24 часа, диск VPS и фотографии роутеров.</sub>
 </td></tr>
 </table>
 
 <table>
 <tr>
 <td width="50%" align="center" valign="top">
-<img src="assets/screenshots/v123-router-card.jpg" alt="OWRT Hub v123 — раскрытая карточка роутера и Tachyon" width="420" />
-<br><b>Данные роутера</b><br>
-<sub>Модель, OpenWrt, Xray, SSH, память, Flash, температура и Tachyon.</sub>
+<a href="assets/screenshots/v125-router-card.jpg"><img src="assets/screenshots/v125-router-card.jpg" alt="OWRT Hub v125 — полное содержимое раскрытой карточки роутера" width="360" /></a>
+<br><b>Карточка роутера</b><br>
+<sub>Фото модели, показатели устройства, Tachyon и кнопки управления. Полное содержимое карточки с прокруткой.</sub>
 </td>
 <td width="50%" align="center" valign="top">
-<img src="assets/screenshots/v123-hub-access.jpg" alt="OWRT Hub v123 — настройки доступа к Hub" width="520" />
+<a href="assets/screenshots/v125-hub-access.jpg"><img src="assets/screenshots/v125-hub-access.jpg" alt="OWRT Hub v125 — настройки доступа и безопасности" width="460" /></a>
 <br><b>Доступ к Hub</b><br>
-<sub>Безопасность, привязанные сервисы, сессии, пользователи, уведомления и резервные копии.</sub>
+<sub>Безопасность, сервисы, сессии, пользователи, уведомления и резервные копии.</sub>
 </td>
 </tr>
+</table>
+
+<table>
 <tr>
 <td width="50%" align="center" valign="top">
-<img src="assets/screenshots/v123-hub-login.jpg" alt="OWRT Hub v123 — экран авторизации без поля выключенной 2FA" width="400" />
-<br><b>Авторизация</b><br>
-<sub>Вход по паролю и быстрый вход. Поле 2FA появляется только при включённой защите.</sub>
+<a href="assets/screenshots/v125-hub-login.jpg"><img src="assets/screenshots/v125-hub-login.jpg" alt="OWRT Hub v125 — экран авторизации в новом дизайне" width="400" /></a>
+<br><b>Вход в Hub</b><br>
+<sub>Парольный и быстрый вход. Поле 2FA показывается при включённой защите.</sub>
 </td>
 <td width="50%" align="center" valign="top">
-<img src="assets/screenshots/v123-hub-effects.jpg" alt="OWRT Hub v123 — выбор эффектов и дизайна панели" width="310" />
+<a href="assets/screenshots/v125-hub-effects.jpg"><img src="assets/screenshots/v125-hub-effects.jpg" alt="OWRT Hub v125 — дизайн и эффекты" width="310" /></a>
 <br><b>Дизайн и эффекты</b><br>
-<sub>Обычный и зимний дизайн, режим для слабых устройств и выбор анимации.</sub>
+<sub>Обычный и зимний дизайн, облегчённый режим, снег, потоки и другие эффекты.</sub>
 </td>
 </tr>
 </table>
 
 <table>
 <tr><td align="center">
-<img src="assets/screenshots/v123-router-panel.jpg" alt="OWRT Hub v123 — панель роутера OpenWrt с боковым меню" width="100%" />
-<br><b>Панель роутера</b><br>
-<sub>Общее оформление с VPS: состояние агента и Xray, настройки Remote и боковое меню.</sub>
-<br><sub>«Обновление панели» — проверка и установка файлов из GitHub прямо на роутере, с проверкой SHA256 и резервной копией. <a href="docs/ROUTER_PANEL_UPDATE.md">Как работает обновление и откат</a>.</sub>
+<a href="assets/screenshots/v125-router-panel.jpg"><img src="assets/screenshots/v125-router-panel.jpg" alt="OWRT Hub v125 — текущая панель роутера OpenWrt" width="100%" /></a>
+<br><b>Панель роутера OpenWrt</b><br>
+<sub>Состояние Remote и Xray, схема подключения, настройки и боковое меню. Обновление панели из GitHub с проверкой SHA256 и резервной копией. <a href="docs/ROUTER_PANEL_UPDATE.md">Обновление и откат</a>.</sub>
 </td></tr>
 </table>
 
 <table>
 <tr>
 <td width="50%" align="center" valign="top">
-<img src="assets/screenshots/v123-hub-mobile.jpg" alt="OWRT Hub v123 — мобильный дашборд VPS" width="360" />
+<a href="assets/screenshots/v125-hub-mobile.jpg"><img src="assets/screenshots/v125-hub-mobile.jpg" alt="OWRT Hub v125 — мобильный веб-интерфейс VPS" width="330" /></a>
 <br><b>Hub на телефоне</b><br>
-<sub>Компактная шапка, статистика, график доступности и ресурсы VPS.</sub>
+<sub>Мобильный дашборд VPS: статистика, фотографии устройств, карта и график доступности.</sub>
 </td>
 <td width="50%" align="center" valign="top">
-<img src="assets/screenshots/v123-router-mobile.jpg" alt="OWRT Hub v123 — мобильная панель роутера" width="360" />
+<a href="assets/screenshots/v125-router-mobile.jpg"><img src="assets/screenshots/v125-router-mobile.jpg" alt="OWRT Hub v125 — мобильная панель роутера" width="330" /></a>
 <br><b>Панель роутера на телефоне</b><br>
-<sub>Состояние Remote и Xray, кнопки управления и настройки в одну колонку.</sub>
+<sub>Состояние сервиса и Xray, схема подключения и настройки в мобильной раскладке.</sub>
 </td>
 </tr>
 </table>
+
+<a id="android-screenshots"></a>
+<h3>Android-приложение</h3>
+<p><sub>Настоящие экраны APK 0.3.12-v125, снятые в Android-эмуляторе. <a href="android/README.md">Установка и возможности приложения</a>.</sub></p>
+
+<table>
+<tr>
+<td width="50%" align="center" valign="top">
+<a href="assets/screenshots/v125-android-connect.jpg"><img src="assets/screenshots/v125-android-connect.jpg" alt="OWRT Hub Android 0.3.12-v125 — Подключение к своему Hub" width="300" /></a>
+<br><b>Подключение к своему Hub</b><br>
+<sub>Введите адрес своего Hub и порт подключения.</sub>
+</td>
+<td width="50%" align="center" valign="top">
+<a href="assets/screenshots/v125-android-login.jpg"><img src="assets/screenshots/v125-android-login.jpg" alt="OWRT Hub Android 0.3.12-v125 — Авторизация" width="300" /></a>
+<br><b>Авторизация</b><br>
+<sub>Нативный вход с капчей и двухфакторной защитой.</sub>
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="50%" align="center" valign="top">
+<a href="assets/screenshots/v125-android-dashboard.jpg"><img src="assets/screenshots/v125-android-dashboard.jpg" alt="OWRT Hub Android 0.3.12-v125 — Дашборд Android" width="300" /></a>
+<br><b>Дашборд Android</b><br>
+<sub>Количество роутеров, состояние Xray, ресурсы VPS и карта подключений.</sub>
+</td>
+<td width="50%" align="center" valign="top">
+<a href="assets/screenshots/v125-android-map.jpg"><img src="assets/screenshots/v125-android-map.jpg" alt="OWRT Hub Android 0.3.12-v125 — Карта подключений" width="300" /></a>
+<br><b>Карта подключений</b><br>
+<sub>Фотографии моделей, онлайн/офлайн и раскрытие полного списка.</sub>
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="50%" align="center" valign="top">
+<a href="assets/screenshots/v125-android-routers.jpg"><img src="assets/screenshots/v125-android-routers.jpg" alt="OWRT Hub Android 0.3.12-v125 — Роутеры" width="300" /></a>
+<br><b>Роутеры</b><br>
+<sub>Группы, заметки, фотографии, показатели и изменение порядка карточек.</sub>
+</td>
+<td width="50%" align="center" valign="top">
+<a href="assets/screenshots/v125-android-router.jpg"><img src="assets/screenshots/v125-android-router.jpg" alt="OWRT Hub Android 0.3.12-v125 — Состояние устройства" width="300" /></a>
+<br><b>Состояние устройства</b><br>
+<sub>Данные выбранного роутера, настройки Xray, админка и SSH.</sub>
+</td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td width="50%" align="center" valign="top">
+<a href="assets/screenshots/v125-android-settings.jpg"><img src="assets/screenshots/v125-android-settings.jpg" alt="OWRT Hub Android 0.3.12-v125 — Настройки приложения" width="300" /></a>
+<br><b>Настройки приложения</b><br>
+<sub>Рабочее пространство, инструменты управления и параметры Hub.</sub>
+</td>
+<td width="50%" align="center" valign="top">
+<a href="assets/screenshots/v125-android-menu.jpg"><img src="assets/screenshots/v125-android-menu.jpg" alt="OWRT Hub Android 0.3.12-v125 — Боковое меню" width="300" /></a>
+<br><b>Боковое меню</b><br>
+<sub>Быстрый переход между разделами, управление, настройки и сообщество.</sub>
+</td>
+</tr>
+</table>
+
 
 </div>
 
