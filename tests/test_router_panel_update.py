@@ -209,19 +209,35 @@ remote_download() {
         self.assertFalse((self.root / 'restarts').exists())
 
     def test_cgi_authentication_and_csrf(self):
-        def cgi(key='secret', method='GET', header='', operation='check'):
+        proof = hashlib.sha256(b'owrt-remote:panel-update:v1:secret').hexdigest()
+        stub = self.base / 'cgi-updater.sh'
+        stub.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >>"$CGI_CALLS"\nstate="$1"; [ "$state" != status ] || state=idle\nprintf \'{"ok":true,"status":"%s"}\\n\' "$state"\n', newline='\n')
+        calls = self.base / 'cgi-calls'
+        def cgi(key='secret', method='GET', header='', operation='check', body='', extra_query=''):
             keyfile = self.base / 'web.key'; keyfile.write_text('secret\n')
             env = dict(self.env, KEY_FILE=keyfile.as_posix(), TMPDIR=self.base.as_posix(),
-                       REQUEST_METHOD=method, QUERY_STRING=f'key={key}&action=panel_update&operation={operation}',
-                       CONTENT_LENGTH='0', HTTP_X_OWRT_PANEL_UPDATE=header,
-                       PANEL_UPDATER=(self.root / 'usr/lib/owrt-remote/panel-update.sh').as_posix())
+                       REQUEST_METHOD=method, QUERY_STRING=f'key={key}&action=panel_update&operation={operation}'+extra_query,
+                       CONTENT_LENGTH=str(len(body.encode())), HTTP_X_OWRT_PANEL_UPDATE=header,
+                       PANEL_UPDATER=stub.as_posix(), CGI_CALLS=calls.as_posix())
             return subprocess.run([SH, str(ROOT / 'files/www/cgi-bin/owrt-remote')], env=env,
-                                  capture_output=True, encoding='utf-8', timeout=10).stdout
+                                  input=body, capture_output=True, encoding='utf-8', timeout=10).stdout
         self.assertIn('403 Forbidden', cgi())
         self.assertIn('403 Forbidden', cgi(method='POST'))
         self.assertIn('Доступ', cgi(key='wrong'))
         self.assertIn('"status":"idle"', cgi(operation='status'))
         self.assertIn('400 Bad Request', cgi(method='POST', header='1', operation='rollback'))
+        # No custom header is exported by uhttpd. A proof from the authenticated
+        # page must work for check/install, while a URL-only/invalid proof cannot.
+        self.assertIn('"ok":true', cgi(method='POST', body='panel_update_token='+proof))
+        self.assertIn('"ok":true', cgi(method='POST', operation='install', body='panel_update_token='+proof+'&revision='+COMMIT))
+        self.assertIn('install '+COMMIT, calls.read_text())
+        before = calls.read_text()
+        for response in (cgi(method='POST', body='panel_update_token=wrong'),
+                         cgi(method='POST', extra_query='&panel_update_token='+proof),
+                         cgi(body='panel_update_token='+proof),
+                         cgi(key='wrong', method='POST', body='panel_update_token='+proof)):
+            self.assertNotIn('"ok":true', response)
+        self.assertEqual(calls.read_text(), before, 'rejected requests never invoke the updater')
 
 
 if __name__ == '__main__':

@@ -35,6 +35,12 @@ def versioned_source(version):
                   SOURCE, count=1)
 
 
+def released_source(release, source=SOURCE):
+    return re.sub(rb'(?m)^HUB_PACKAGE_RELEASE = [0-9]+\r?\n',
+                  b'' if release is None else ('HUB_PACKAGE_RELEASE = ' + str(release) + '\n').encode(),
+                  source, count=1)
+
+
 def without_mobile_payload(source=SOURCE, names=None):
     names = names or {'HUB_MOBILE_API_SHA256', 'HUB_MOBILE_API_BUNDLE'}
     lines = source.splitlines(keepends=True)
@@ -116,6 +122,67 @@ class UpdateTests(unittest.TestCase):
         self.assertEqual(self.target.read_bytes(), SOURCE)
         self.assertFalse((self.directory / 'candidate.py').exists())
         self.assertFalse((self.directory / 'job.json').exists())
+
+    def test_older_revision_of_same_version_cannot_replace_local_fix(self):
+        for release in (None, hub.HUB_LOADED_RELEASE - 1):
+            older = released_source(release)
+            with self.subTest(release=release), mock.patch.object(
+                    hub.urllib.request, 'urlopen', return_value=self.response(older)):
+                self.manager._check()
+            state = self.manager.snapshot()
+            self.assertEqual(state['remote_version'], state['current_version'])
+            self.assertEqual(state['current_release'], hub.HUB_LOADED_RELEASE)
+            self.assertEqual(state['remote_release'], 1 if release is None else release)
+            self.assertTrue(state['source_older'])
+            self.assertFalse(state['available'])
+            self.assertEqual(state['error'], '')
+            with mock.patch.object(hub.subprocess, 'run') as run:
+                with self.assertRaisesRegex(ValueError, 'Понижение версии'):
+                    self.manager.start(state['remote_revision'])
+                run.assert_not_called()
+        self.assertEqual(self.target.read_bytes(), SOURCE)
+        self.install_logs.assert_not_called()
+        self.assertFalse((self.directory / 'job.json').exists())
+
+    def test_worker_independently_rejects_older_revision_before_changes(self):
+        for release in (None, hub.HUB_LOADED_RELEASE - 1):
+            job = self.prepare()
+            older = released_source(release)
+            (self.directory / 'candidate.py').write_bytes(older)
+            job.update(revision=hashlib.sha256(older).hexdigest())
+            hub.hub_update_state(self.directory, job)
+            with mock.patch.object(hub.time, 'sleep'), mock.patch.object(hub.subprocess, 'run') as run:
+                self.assertEqual(hub.run_hub_update_worker(job['id'], self.directory, self.target), 1)
+                run.assert_not_called()
+            self.install_logs.assert_not_called()
+            self.rollback_logs.assert_not_called()
+            self.assertEqual(self.target.read_bytes(), SOURCE)
+            self.assertFalse(self.target.with_name('mobile_api.py').exists())
+            self.assertIn('Понижение версии', hub.hub_update_state(self.directory)['message'])
+
+    def test_newer_panel_version_with_first_release_can_be_installed(self):
+        newer = released_source(None, versioned_source(CURRENT_VERSION + 1))
+        with mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response(newer)):
+            self.manager._check()
+        state = self.manager.snapshot()
+        self.assertTrue(state['available'])
+        self.assertFalse(state['source_older'])
+        self.assertEqual(state['remote_release'], 1)
+        with mock.patch.object(hub.subprocess, 'run'):
+            job = self.manager.start(state['remote_revision'])
+        with mock.patch.object(hub.time, 'sleep'), mock.patch.object(hub.subprocess, 'run'), \
+                mock.patch.object(hub, 'hub_update_health', return_value=True):
+            self.assertEqual(hub.run_hub_update_worker(job['id'], self.directory, self.target), 0)
+        self.assertEqual(self.target.read_bytes(), newer)
+
+    def test_invalid_release_metadata_is_a_check_error(self):
+        malformed = released_source('"two"')
+        with mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response(malformed)):
+            self.manager._check()
+        state = self.manager.snapshot()
+        self.assertIn('Некорректная ревизия', state['error'])
+        self.assertFalse(state['available'])
+        self.assertIsNone(self.manager.candidate)
 
     def test_source_without_mobile_api_is_unsupported_not_a_check_failure(self):
         for source in (without_mobile_payload(), without_mobile_payload(versioned_source(CURRENT_VERSION + 1))):
@@ -329,6 +396,70 @@ class UpdateTests(unittest.TestCase):
             with self.assertRaises(OSError): hub.hub_update_write(self.target, NEW)
         self.assertEqual(self.target.read_bytes(), SOURCE)
         self.assertFalse(list(self.root.glob('.hub.py-*')))
+
+    def test_failed_current_build_can_retry_and_clear_maintenance_error(self):
+        with mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response(SOURCE)):
+            self.manager._check()
+        revision = hub.HUB_LOADED_REVISION
+        with self.assertRaisesRegex(ValueError, 'уже установлена'):
+            self.manager.start(revision)
+        hub.hub_update_state(self.directory, {'id': 'failed-maintenance', 'status': 'failed',
+            'revision': revision, 'message': 'Обновление не выполнено: Обслуживание журналов: rc=1'})
+        self.manager.log_maintenance_status = 'failed'
+        self.manager.log_maintenance_error = 'Custom logrotate rule'
+        state = self.manager.snapshot()
+        self.assertTrue(state['available'])
+        self.assertTrue(state['retry_available'])
+        self.assertEqual(state['job']['status'], 'failed')
+        with mock.patch.object(hub.subprocess, 'run'):
+            job = self.manager.start(revision)
+        self.assertEqual(self.manager.log_maintenance_status, '')
+        self.assertEqual(self.manager.log_maintenance_error, '')
+        self.assertEqual(job['previous_revision'], revision)
+        with mock.patch.object(hub.time, 'sleep'), mock.patch.object(hub.subprocess, 'run'), \
+                mock.patch.object(hub, 'hub_update_health', return_value=True):
+            self.assertEqual(hub.run_hub_update_worker(job['id'], self.directory, self.target), 0)
+        self.install_logs.assert_called_once()
+        state = self.manager.snapshot()
+        self.assertEqual(state['job']['status'], 'succeeded')
+        self.assertFalse(state['available'])
+        self.assertFalse(state['retry_available'])
+
+    def test_failed_job_does_not_allow_retry_of_invalid_source(self):
+        hub.hub_update_state(self.directory, {'id': 'failed', 'status': 'failed'})
+        with mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response(b'invalid')):
+            self.manager._check()
+        state = self.manager.snapshot()
+        self.assertFalse(state['available'])
+        self.assertFalse(state['retry_available'])
+        with self.assertRaisesRegex(ValueError, 'устарел'):
+            self.manager.start(hub.HUB_LOADED_REVISION)
+
+    def test_bootstrap_failure_allows_retry_after_original_worker_completed(self):
+        with mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response(SOURCE)):
+            self.manager._check()
+        hub.hub_update_state(self.directory, {'id': 'old-worker', 'status': 'succeeded',
+            'revision': hub.HUB_LOADED_REVISION})
+        self.manager.log_maintenance_status = 'failed'
+        self.manager.log_maintenance_error = 'Custom logrotate rule'
+        self.assertTrue(self.manager.snapshot()['retry_available'])
+        with mock.patch.object(hub.subprocess, 'run'):
+            self.assertEqual(self.manager.start(hub.HUB_LOADED_REVISION)['status'], 'starting')
+
+    def test_failed_bootstrap_cannot_overlap_original_active_worker(self):
+        with mock.patch.object(hub.urllib.request, 'urlopen', return_value=self.response(SOURCE)):
+            self.manager._check()
+        hub.hub_update_state(self.directory, {'id': 'old-worker', 'status': 'restarting',
+            'revision': hub.HUB_LOADED_REVISION, 'started_at': hub.time.time()})
+        self.manager.log_maintenance_status = 'failed'
+        self.manager.log_maintenance_error = 'Custom logrotate rule'
+        self.assertFalse(self.manager.snapshot()['retry_available'])
+        with self.assertRaisesRegex(RuntimeError, 'уже выполняется'):
+            self.manager.start(hub.HUB_LOADED_REVISION)
+        job = hub.hub_update_state(self.directory)
+        job['started_at'] = hub.time.time() - 421
+        hub.hub_update_state(self.directory, job)
+        self.assertTrue(self.manager.snapshot()['retry_available'], 'a vanished old worker cannot block recovery forever')
 
     def test_failed_maintenance_does_not_replace_or_restart_hub(self):
         job = self.prepare()

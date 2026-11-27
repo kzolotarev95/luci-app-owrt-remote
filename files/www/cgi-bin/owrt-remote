@@ -3,14 +3,15 @@
 KEY_FILE="${KEY_FILE:-/etc/owrt-remote/web.key}"
 AGENT="${AGENT:-/usr/sbin/owrt-remote}"
 PANEL_UPDATER="${PANEL_UPDATER:-/usr/lib/owrt-remote/panel-update.sh}"
-OWRT_REMOTE_UI_VERSION="2026-11-27-v125-panel-update"
-OWRT_REMOTE_UPDATE_ASSET_VERSION="5e28ab666cff054d"
+OWRT_REMOTE_UI_VERSION="2026-11-27-v125-panel-update-post"
+OWRT_REMOTE_UPDATE_ASSET_VERSION="686cdb1d1fcf4979"
 PARAMS_FILE="${TMPDIR:-/tmp}/owrt-remote-cgi.$$"
 RESULT_TITLE=""
 RESULT_BODY=""
 RESULT_KIND="info"
 SHOW_XRAY_SETTINGS="0"
 XRAY_SETTINGS_DRAFT=""
+PANEL_UPDATE_POST_TOKEN=""
 
 cleanup() {
 	rm -f "$PARAMS_FILE"
@@ -42,6 +43,9 @@ parse_params() {
 		value="${pair#*=}"
 		[ "$pair" = "$key" ] && value=""
 		key="$(url_decode "$key" | tr -d '\r\n\t')"
+		if [ "${2:-}" = POST ] && [ "$key" = panel_update_token ]; then
+			PANEL_UPDATE_POST_TOKEN="$(url_decode "$value")"
+		fi
 		[ -n "$key" ] && printf '%s\t%s\n' "$key" "$value" >>"$PARAMS_FILE"
 	done
 	IFS="$old_ifs"
@@ -74,7 +78,7 @@ read_request() {
 	esac
 	if [ "${REQUEST_METHOD:-GET}" = "POST" ] && [ -n "${CONTENT_LENGTH:-}" ]; then
 		post_data="$(dd bs=1 count="$CONTENT_LENGTH" 2>/dev/null)"
-		parse_params "$post_data"
+		parse_params "$post_data" POST
 	fi
 }
 
@@ -92,6 +96,28 @@ http_json() {
 
 web_key() {
 	cat "$KEY_FILE" 2>/dev/null
+}
+
+panel_update_token() {
+	local key token
+	key="$(web_key)"
+	[ -n "$key" ] || return 1
+	token="$(printf 'owrt-remote:panel-update:v1:%s' "$key" | sha256sum 2>/dev/null)" || return 1
+	token="${token%% *}"
+	[ "${#token}" -eq 64 ] || return 1
+	printf '%s' "$token"
+}
+
+panel_update_confirmed() {
+	local expected
+	[ "${REQUEST_METHOD:-GET}" = POST ] || return 1
+	# Preserve clients on CGI servers exporting custom headers. OpenWrt uhttpd
+	# exports only its header allowlist, so current clients also use a POST-only
+	# proof rendered into the authenticated page. Query parameters cannot supply it.
+	[ "${HTTP_X_OWRT_PANEL_UPDATE:-}" = 1 ] && return 0
+	[ -n "$PANEL_UPDATE_POST_TOKEN" ] || return 1
+	expected="$(panel_update_token)" || return 1
+	[ "$PANEL_UPDATE_POST_TOKEN" = "$expected" ]
 }
 
 authorized() {
@@ -708,7 +734,7 @@ body.routerShell{--router-layout-max:1360px;background:var(--bg);background-imag
 .routerUpdateDialog::backdrop{background:#0009;backdrop-filter:blur(3px)}
 .routerUpdateHead{display:flex;align-items:center;justify-content:space-between;gap:12px}.routerUpdateHead h2{margin:0;font-size:16px}.routerUpdateHead .btn{min-height:28px;padding:4px 10px;font-size:12px}
 .routerUpdateDialog p{line-height:1.6}.routerUpdateDialog small{display:block;color:var(--muted);margin:12px 0}.routerShell .routerUpdateDialog .actions{justify-content:center}.routerUpdateDialog [hidden]{display:none!important}
-.routerUpdateButton[data-state="current"],.routerUpdateDialog [data-state="current"],.routerUpdateDialog [data-state="succeeded"]{color:var(--green)}
+.routerShell .routerUpdateButton:is([data-state="current"],[data-state="local_newer"]),.routerShell .routerUpdateDialog :is([data-state="current"],[data-state="local_newer"],[data-state="succeeded"]){color:var(--green)!important}
 .routerUpdateDialog [data-state="failed"]{color:var(--red)}
 @media(max-width:820px){.routerShell .routerTopActions{flex-wrap:wrap;justify-content:flex-end}.routerShell .routerUpdateButton{max-width:170px;white-space:normal;font-size:11px}.routerShell .routerUpdateDialog{padding:15px}}
 body.routerShell{--router-layout-max:1600px}
@@ -863,7 +889,7 @@ html[data-hub-design="lite"] .routerShell .routerFlow{display:none}
     <div class="routerBreadcrumb"><span class="routerDesktopPath">Рабочее пространство / </span><strong>Роутер</strong><span class="routerMobileBrand"><span class="routerBrandMark" aria-hidden="true"><svg class="routerIcon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 14l4-9v6h4l-4 8v-5z"/></svg></span><span>OWRT Hub <b>v125</b></span></span></div>
     <div class="routerTopActions"><button class="btn routerUpdateButton" type="button" data-router-update-open>Проверить обновление панели</button><a class="btn" href="/cgi-bin/luci/">Открыть LuCI</a></div>
   </header>
-  <dialog id="routerUpdateDialog" class="routerUpdateDialog" aria-labelledby="routerUpdateTitle">
+  <dialog id="routerUpdateDialog" class="routerUpdateDialog" aria-labelledby="routerUpdateTitle" data-router-update-token="$(h "$(panel_update_token)")">
     <div class="routerUpdateHead"><h2 id="routerUpdateTitle">Обновление панели</h2><button class="btn" type="button" data-router-update-close>Закрыть</button></div>
     <p>Обновление OWRT Hub на этом роутере из GitHub. Настройки и Xray сохраняются. При перезапуске службы удалённое соединение может ненадолго прерваться.</p>
     <p data-router-update-message role="status" aria-live="polite">Проверить обновление панели</p>
@@ -1107,7 +1133,7 @@ action="$(param action)"
 
 if [ "$action" = panel_update ]; then
 	operation="$(param operation)"
-	if [ "$operation" != status ] && { [ "${REQUEST_METHOD:-GET}" != POST ] || [ "${HTTP_X_OWRT_PANEL_UPDATE:-}" != 1 ]; }; then
+	if [ "$operation" != status ] && ! panel_update_confirmed; then
 		printf 'Status: 403 Forbidden\r\n'; http_json
 		printf '{"ok":false,"error":"Обновление требует подтверждённого POST-запроса панели."}\n'; exit 0
 	fi

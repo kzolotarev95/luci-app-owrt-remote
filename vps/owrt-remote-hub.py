@@ -81,6 +81,8 @@ except Exception:
 
 
 APP_NAME = "OWRT Hub"
+# Increment with PKG_RELEASE for a new revision of the same panel version.
+HUB_PACKAGE_RELEASE = 2
 RAW_REPO_BASE = os.environ.get("RAW_REPO_BASE", "https://raw.githubusercontent.com/kzolotarev95/luci-app-owrt-remote/main").rstrip("/")
 APP_DIR = Path(__file__).resolve().parent
 
@@ -90,12 +92,22 @@ def hub_update_version(data):
     return match[1].decode('ascii') if match else 'последняя сборка'
 
 
+def hub_update_release(data):
+    # Published Hub builds before package revisions did not declare this field.
+    match = re.search(rb'(?m)^HUB_PACKAGE_RELEASE\s*=[ \t]*([1-9][0-9]*)[ \t]*(?:#.*)?\r?$', data)
+    if match:
+        return int(match[1])
+    if re.search(rb'(?m)^HUB_PACKAGE_RELEASE[ \t]*=', data):
+        raise ValueError('Некорректная ревизия сборки панели.')
+    return 1
+
+
 def _hub_source_identity():
     source = Path(__file__).read_bytes()
-    return hashlib.sha256(source).hexdigest(), hub_update_version(source)
+    return hashlib.sha256(source).hexdigest(), hub_update_version(source), hub_update_release(source)
 
 
-HUB_LOADED_REVISION, HUB_LOADED_VERSION = _hub_source_identity()
+HUB_LOADED_REVISION, HUB_LOADED_VERSION, HUB_LOADED_RELEASE = _hub_source_identity()
 STATIC_DIR = APP_DIR / "static"
 BRAND_THEME_COLOR = "#0d0e10"
 FAVICON_ICO_FILE = STATIC_DIR / "favicon.ico"
@@ -6858,6 +6870,7 @@ html[data-hub-design="lite"] .hubDashboard .hubRouterPhotoImage{filter:none}
 
 HUB_DASHBOARD_VANTAGE_CSS = r'''
 /* Vantage-inspired dashboard; colours come from the shared Hub palette. */
+.hubDashboard .hubUpdateButton[data-update-state="failed"]{color:var(--red)!important;border-color:color-mix(in srgb,var(--red) 40%,var(--line));background:color-mix(in srgb,var(--red) 9%,var(--panel))}
 .hubDashboard{--hub-layout-max:1600px}
 .hubDashboard .wrap{padding-top:22px;padding-right:24px;padding-bottom:32px;padding-left:250px}
 .hubDashboard .hubSidebar{inset:22px auto auto max(24px,calc((100% - var(--hub-layout-max))/2 + 24px));width:204px;max-height:calc(100dvh - 44px);padding:12px 9px;border-radius:10px;background:var(--bg)}
@@ -29686,12 +29699,12 @@ function initHubUpdate() {{
   }};
   const askConfirmation = (candidate) => new Promise((resolve) => {{
     if (!confirmPanel || !confirmLead || !confirmVersion || !confirmSource || !confirmCancel || !confirmAccept) {{
-      resolve(window.confirm('Действительно обновить панель VPS до ' + candidate.remote_version + '?'));
+      resolve(window.confirm(candidate.retry_available ? 'Повторить незавершённое обновление панели VPS?' : 'Действительно обновить панель VPS до ' + candidate.remote_version + '?'));
       return;
     }}
     closeConfirmation(false);
     confirmResolve = resolve;
-    confirmLead.textContent = 'Действительно обновить панель VPS до последней доступной сборки ' + candidate.remote_version + ' (' + candidate.remote_revision.slice(0, 8) + ')?';
+    confirmLead.textContent = candidate.retry_available ? 'Повторить незавершённое обновление панели VPS и проверить обслуживание журналов?' : 'Действительно обновить панель VPS до последней доступной сборки ' + candidate.remote_version + ' (' + candidate.remote_revision.slice(0, 8) + ')?';
     confirmVersion.textContent = candidate.remote_version + ' · ' + candidate.remote_revision.slice(0, 8);
     confirmSource.textContent = candidate.source || 'источник обновления';
     confirmPanel.hidden = false;
@@ -29708,13 +29721,16 @@ function initHubUpdate() {{
   }};
   const render = () => {{
     if (!state) return;
-    const job = state.job || {{}}, busy = active(job);
+    const job = state.job || {{}}, busy = active(job), failed = job.status === 'failed';
+    // A verified local repair may archive the failed job. Do not retain its
+    // obsolete pending ID and poll forever after an authoritative fresh check.
+    if (pending && !job.id && state.checked && !state.checking) remember('');
     buttons.forEach(button => {{
       button.disabled = busy || state.checking;
       button.dataset.available = state.available ? 'true' : 'false';
-      button.dataset.updateState = busy ? 'busy' : state.checking ? 'checking' : state.error ? 'error' : state.source_incompatible ? 'unavailable' : state.available ? 'available' : state.checked ? 'current' : 'checking';
-      button.textContent = busy ? 'Обновляется…' : state.checking ? 'Проверка…' : state.source_incompatible ? 'Проверить обновление' : state.available ? 'Доступно обновление' : state.checked && !state.error ? 'Установлена последняя версия' : 'Проверить обновление панели';
-      button.title = state.available ? 'Доступна сборка ' + state.remote_version + ' · ' + state.remote_revision.slice(0, 8) : state.error || state.notice || (state.source_older ? 'Установлена ' + state.current_version + '; в источнике ' + state.remote_version + '. Более старая версия не устанавливается.' : 'Проверить обновление панели');
+      button.dataset.updateState = busy ? 'busy' : state.checking ? 'checking' : failed ? 'failed' : state.error ? 'error' : state.source_incompatible ? 'unavailable' : state.available ? 'available' : state.checked ? 'current' : 'checking';
+      button.textContent = busy ? 'Обновляется…' : state.checking ? 'Проверка…' : failed ? (state.available ? 'Повторить обновление' : 'Повторить проверку') : state.source_incompatible ? 'Проверить обновление' : state.available ? 'Доступно обновление' : state.checked && !state.error ? (state.source_older ? 'Установлена локальная версия' : 'Установлена последняя версия') : 'Проверить обновление панели';
+      button.title = failed ? job.message : state.available ? 'Доступна сборка ' + state.remote_version + ' · ' + state.remote_revision.slice(0, 8) : state.error || state.notice || (state.source_older ? 'Установлена ' + state.current_version + '-r' + (state.current_release || 1) + '; в источнике ' + state.remote_version + '-r' + (state.remote_release || 1) + '. Более старая сборка не устанавливается.' : 'Проверить обновление панели');
     }});
     if (busy) {{
       if (!pending) {{ remember(job.id); deadline = Date.now() + 300000; }}
@@ -33482,111 +33498,112 @@ HUB_UPDATE_ACTIVE = {'starting', 'installing', 'restarting', 'rollback'}
 HUB_LOG_MAINTENANCE_RESULT = Path('/var/lib/owrt-remote-log-maintenance/result.json')
 
 # BEGIN EMBEDDED LOG MAINTENANCE
-HUB_LOG_MAINTENANCE_SHA256 = '49d0dc3b4526f4897a39096d5e1ec3de99ce2a419a99639d96f58e79ba05f5c2'
+HUB_LOG_MAINTENANCE_SHA256 = 'fb3ca8f683d54368859654c96dfdcdb17bcee5888b78ee5db39f6f4623f7167d'
 HUB_LOG_MAINTENANCE_BUNDLE = (
-    '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'
+    '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'
-    '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'
+    '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'
-    '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'
+    'FVWWzV3LnkrvbEPssARVDXsi0L4jXxFV9LUERw+OVXjXYAJ7i0iKPBE4H5hM7jZcPH0YGWBrxaCqpT3Raga2BFghCAyNsHQ0//34'
+    '6PDtX8Vnfnp9fLB/qh/2378/OPxJPx0e/Xz09u3R70PB+nXQp2K8nuXVNAadvGL6SF6AHTlne4iU4+wQmK+uwZWXodQw2j/YhzVL'
+    'Q7tDHzBWhCnlTeJmsfOzByMfo9mb3XHlSCBnxJqKIQXICJYo4LwTNDzIOYpiJPp1FOY0rqHccO4aGGQYXDs1RqoVeSfNM8S1bT2x'
+    'nHOCIW9BFuUSD/bOIi8KpYpymX7A30To4Jrg71WYoS2SXOEDmXJgYeQbq61bLO1EYc+aV4UNfgJ2tCIu696U47ZmaND3s5nYmdBm'
+    'qOEMZBw0VS4o28XfuWRzWrUlVINGOzzq3qLGTLI0zM52pvCKJtE40JREcJmQQlmeOkh8oBD/ks06ssjARgGXJgBTFxvYpt0TMUV/'
+    'vCAQnmAZL9g4RlF3gZEVgpcBAWcjEILAs4EA2ysNMcCTSrIRErTcFSFlU8HhgLEMwhxZP0xRdSXRtQzYYAMdKnOK+VQewxBYwrvG'
+    'haKw0LDwYZVJGIrdc5Ahrt6eOocYRAcRhLZVziyChwc3OrXOHaWJB+xAY1gJKfmOzxFJmAQlGpkhKmaQm4CmKLJT648n9TgU9RT2'
+    '2R8f4/OnzvQbmELPj7/cdwYLmTa4ngDVIaHB4AhghtI6Znr5Mh+qRkfQBCdbSEP8vpbgWgBzhbEfFQGF7cKsooXTtyeC4QnAURaC'
+    'aK4W4BpwjoG1R3TM8taXa0YHII/AyVs4mPKMlYGCLB3CKYPNDvSapBv3gU1HQBNgDaQb9FVphmyUZdGI10LbJabQggunsZ0HMKDk'
+    'YjldTa4YuLbIbihFaA/4biOhlEoEqk4znQ4QMQGISSCQptws35OzFwRz5MgQIYGeB35uLIiRi3p1Jui9ewEO9FqrQAMLVo//ayHZ'
+    'l2CmLdGoJF3Zowk3xbgFxoaBYT4uwuWM3TTu7HTA60Dh6yID80KhD+VjuWkADy4/UBbsLi48tIGvQ3nTi1UmVgYUSxlgjAAlJgrH'
+    'XLBRKzhMKZjGACY4k8CdOZog4sMCVlZ8mzUg6vAA8k64WgMb/M0IITRkPL9BQb/3N7dpa4HJBGdVYugM5XoTp6hV2OUgLaqcYod4'
+    'ZbeNUgX1KTASSsEFKIygrmDUIeqO0A8Oqocg9qqhxRq9BBSueMrFAo7Y/nHl/PEx+67q/zF72rn/j4gA+8cpvD/7Y49E5o97QBw1'
+    'ombPrSYO9aT/MaN3Lf5GAX5WHj2oSz3CVMyqn1KRy8jLwYCfc6sKnoDtHJs2F6gUFHICNH2G85u5DQ1Pq0t5K/0CTA7KaoigSFFv'
+    'Yc4B/pbOVncYBqdFUxs0u0OCEJ9rlh22mEYaMij1QnMLKQN+owOxs/vyoWCMX8CSrimLg6kWNI4CI0ujlEInN4XxMtHyKWJHptdy'
+    '1KITu7kn8zcnxwe/2AgAXQ8Ko2AP3VCEdLgTsw07if8CK3uyu/uQT6YPqNoHn073NpblHGQa/lnsvtjdefZs+yRHHcjaMgmeiAt0'
+    'bRwzWW1AZD5Ysyjnz86Hhj39WMv5CpwnsDAyM85CLkiSIleaZrQSFeBiD8WOA9anyVPUH+ayrWUI/jRHS9FCAonA26OHBGCVT5HX'
+    '7AiS4lpaDZle7hCXWL6RkZ4V1TtugbpZPWMrzJg6m99ywMYl7YZGGQgfRbcgWWBp5FXV4a5RxSOTGTIUuw3JSCxjnk6X3KWxDhLo'
+    'riZrbjtTpnkj18N2CfTc1imo9WjbIGbqyHIeqTU/xFmxxrxgP0+bBNLYLXer5BMvrd7JvwyjIGV5RfPYapgL3kCKIWTHYQ5Trdmc'
+    'GlmOnanmunpD0ie4SI96gvaGKV4HLyuYmIk2bA3QLP/8/NGFPwvv6nMSBZ9BYJN38jlYX12M3Kef0/Uqljf4J/PAFnHQYGegHQHQ'
+    'XguyuSI8X+WYk99Wc+S/FCixueutkcvthpqi2VhPGYeHqK1PUoPBMYZSKDHPGnKpjNJaFscz2XsdGBzAXUjDTJ69fP7Di+2y8m1D'
+    'QpKDgJbXjngXvuqKe6rYXxn+VAk/ve8sKVLf0MoUQUJ/FRSZD4Iyl+OsGNfrCnQhgSAXpQQp1qCs0dn55Ck/lhIUUnhgJV0UGPXK'
+    'NuBW3tJRar+09ISUWaMNRi/ecHoWaxII2puYmDr0i8hL0eUBj3gR5lTCoLJ57DSiq6sS3sJHkzTGkgofXN64WNddWph9jSHtNRJD'
+    'GsPmLik+NhSLKPGvlC6p/j+oJOkQ5qGVK4nap3IYw49RNCQ71rKpbExRzVPWSVLpJz26Xzd1i/t/o7rqV1ml2mouZJsG26LFurdW'
+    'IZSiPG1oTwTIMpB44PBsBBBCWXfTIssp0DkRc54wJWGwBERkCyQlPuZblqnpI8TKGsA7EVq3JFMniz0ftjwaqPg3H2vPdluH/GU2'
+    'yhcj0sw2qb5bIPYphsq71oYP2D2g7Jg4PivV6rAJhKexBSFdUpvhjLUZoOQGCjsWl5Xj7QWrMEZfyMtJBaP/bTmtyVhsuWDCohoi'
+    'CurtpHSVKosBbXCPqaC2xqVFVXJPybSz8zbPNrjMtu4orlFyW5Iawsiwvu7/RWuLl8Y6pHQNaBqnscisI7ZCo9uae1swi3VB337A'
+    'nARy+Nb6Fnjl29bWeGz/fBglYrzhu/ZydWzBsB4YpNNpLKneYCEDIvFEyKrewbWX75TouGPRQaYxyZRuYn7oXMKYNFx1PEzLHaSl'
+    'VX3dR+hZ1uR8q+OgpSfDRPQp6NM+rkZq5T51V0CHUTgYabkuHQYZ6NzdcclQ/zJWL2sykLvVItu6BGlXTdIOMClTRHO32t9DQqCP'
+    'OLQ9UxoraMg03Mcmu9QlR0W7NZZQAJE5GnK3Cy9vYkzyRDKXLS9fBW/rxqumeV6KU1loujSHFfUcnQubs51DNPaCEMNTiqTV6ZfN'
+    'JgF4zZhpKw/HKVdMdujxZ2ix64Hn5nIXSRLZmM8ookjrEAzHuR+Dp+A4ocd0NnLPPwZ3L++hXf1+Nnxx7/zoUEf45+LT59tPnxef'
+    'dj9/ynLH+REYgtfg6PQTWuFzSuqWuSdsIilBQa7S+iwTASVRW2Ms+sCUvHYnp80gQJU9QLSCNxiEF8CaD4X9azVBZaKHrY9qHWNh'
+    'LYPu6XsBVcqJ4mPLwDWCYy1+IExQaKiMhwXyeljGpABxTnsop1gEFlAeJvnPWLxNNNu9krWXVeHqxw0thyha4XWqE12nRSzn2uxU'
+    'xDVHFxJ8EbmSwPuxv5kpbRwnNxRFHSogZkgV3mGNF1aZ4D8c8MTGWrwTGupkUyMpKl/iN7VRasm8CTQJwVVeppIATIZiUpJdWXeg'
+    'YxhIlRz04BT2morPjV06bTLk11VaSJSAW4FQ1Vym+lDpeR3JlRbNUmRE83W1Jl2z10OkeoFt4eNyZVglanqiHp02qCLvanDUQeZl'
+    'cu0xYV+qLiML4LFLYOglxalCgRsxqsLGVMv/3zPx8sWzyeTxcPuZEfHOpPVIaBEgJ8sfgyqbu5bTVo8wsflIu5rHHIXsXeqwjgXs'
+    '/8glVytVJX8Oup1UfXst03AZAhP5UZLBHy0FhrpOgJkJ9GXmNjJMxIOYhNqpC17iSWg2w/D1mJDJvUoGBWF2NaeqslKrlJErZf8T'
+    '66r0CNu9pQFleocFFqKRnYdXMFwCTG1GUIz97ndULxEsp2yXYzExxnAwoU23YIjLJHObWb6EZhUV+JglTGWPeQ6GRYRZKpzULRCr'
+    'T9UD7riqGJCpD3wusIxkIr4z+49b4ICcmk0kFWFoCZDQh7b66+M3p29e77+1KHmjpvmz+NOEx1i/7x8fNt798Fy9O/rNMswRqmxU'
+    'NphKo6kxQ57O6S9zVPGwOddj61NF1OriC/BKjWsTWLOjCznSbJPhuWKBD1fPj/RlBqtmLykSqWpBuLufRzg2zEZMwBYXIJ/rMlbS'
+    'ZRUtcBni0rrDTvfTRk2n9lGwppO3du1FxE9ztSgdyVRLk8ulVOZgJimWQQUosCCrFZprrjwYeQBw84nw4Xv5iEEbmKhf66gKXmoV'
+    'WNNm3UFfNA9f15ySs1bCp9wC9q1nfMp3QHXltRGrrPBqAsfKLtjIHniq1MeakcPTTvteyc0QsVxINa320GbkodVdbY3tMxilt4hp'
+    'Yhpf2zMi3gANU99Z5h0XC9wiVUtWv+nCL/BNnydmNa6y4Ai8zYKw9IUWbNvIzLpH3b7KGtZvuQ8XfC0blknqgFb6cFHKfsz3IjRt'
+    'NAqZqnt36PYBbAzC7HWGenQgKCipHYu6AXO+VGyjHBu+orb04zyiBrrupW4aqCsKP0wm6DU9cOvg+MPh1wyjskwb74uBWY8CHAx7'
+    'Lh71uDazHtRsewi4cneJvWz8Z6ha3h69/m1+8L/is/l8+MppmtyvcBC42W+OugxukihAFFUlsRdh0pfu3cQwbE9kVxTPaUQrWJRW'
+    'y06AiLCAhCu4XXqulWw7RvDeW62hL1+8G3MwdYRO62qdW00Tl45UxahhXL2gmZtqWWpVvQmsTmvo3O9PWKIp1Izljlfgr+8JjFzD'
+    '3sVoxDNTITCcClXsIAa3I+KJ+B11rs7N3CTp1VSACsJ7pOoqgfBTL7tEc4ddbkr86CJHqh7FBbjNGmfa61BhWpWp95MNM1YVDKBi'
+    'mUZGq5HY60whN9xAT1d1ndVcFZ5ElQ3wfKULg7dYXfzHVu+cRqC0NKRnmMqyK23/8jlBmRvafM5lYYYVVl+fQvus3qflcnfZCJRh'
+    'oOFd1WbmXYilpaa5QzioiBWkqbuzvP9PJKEmu+g6dS0GajgeqtNqhlm1yi27U/HoKJCLAjUtVnt0A3TOnS4ruPJEO31p04sufzVr'
+    '2E7QKEJbCS/r4b2VjCuSkipYxTWWSO7hNceuVmupa33zRiKod5d4qw1ZcESDRiQ56QWx5QPbNy4FPZ9M+vCqtJCywkYjNb0x+kVj'
+    '7LXnF8WqZsk1gXCXEUKY7QS1NnQxZqjZbGsHlDRp05L42a5Ftd48vRWQGmwXy4S+/uQMRwjhdftCpQ9Uku0S88HbuKm0bbHwfQOm'
+    'A8kn2HVyBQ+sFS293LlahTUtSbLHULHotprRn9YIoMrtQVv5uxcKrZs2Ad3pL4BYojFxKYO5l+N6qzDQfRfLllpKGdt48x5OFf+4'
+    'QbFaZ2VhQlMmG4ID/RWUGzqyG+yJJk7w2hb9uN8Ttc3P7mjv0Fwd8l35E692MXmVV7uemze7HiP1CDEPCz0mhi0yb6/6PgMqZ2hK'
+    'qQVNEUznNYUia+N+VsLTG5G/aboPzbIhZecclPXfHlZ++9OvO8xOMlYxRYv1/5RED0zhlNfoth/+wfHx0bGF1qHvtE3kKtDWvCGJ'
+    '//WJOB0jUZdJKptTebWxt84uk9xW8VG++qBsYn74GmMWDipcSmhVRaQMCden3zBKdU6h1r/jApB+D6DoDKLECzK7Psqw7ngR9SyM'
+    'AeLOwigo+i+YubHorv1c3Q2Bxn7vW/cZmnim4VbDF29QYbfgUTMrn376GLf/C+dlSXUVJzfks6OfdmbR/b/zWsWERs6Zwsz5fStG'
+    'RQTSfUGkHomq3Y6AgTT7w9ccttznejAzSLY33dTcenGbZsIdIwkQFqZVF2RbojtorFGhukGl+mK+qoUtx1AJeittIm6WJXeFWbEu'
+    'hevBmeF0bPrd0U8H9dj0UBRhMDOKkofiwmiA352WZcmJTAu0s/OhUcVLOsWUm63d6ggalW0MDNg1fqxJS/2mTLuBXAUfXdo1edPN'
+    '5Xaf8HDaLN/DQTDXupN5qjhKLyd0k7zJSfVyMnqhKOm8U7kwdrpPwqkdwlC9wwO3zluX7P1L4CwFjjsCGeBp8sMFPmyrvKRD79MP'
+    'W9AZeGBxxKNU4gHpKXr64kF7ad4Z+jwvc+Aqun1zGfqXtoqbGpzTdTcubyD+McKTRzdFZnX/HaMBk2mPF9DYFu29guk0VdlZQ6+c'
+    'qzItpWUGD0zAHbcQbf04+06Ka4q3gOlYscIXL1grp4dmKk+5fx502msaaEYllvavH14523nQeXB6g8zMIPy5eS/fel0LIioRFLhi'
+    'X4eyaN3BOJBke1eliyoEs5DVoDKcSF/PiCL7sljMy8yUSikzi8/4+1NGxoDv31AChvIGNZe2bt3WkdyIqbcTvTVGqqZ5hDJ9xwJA'
+    'UI3iP4oQb8yyFjXADL6A2VofBnrAVmFUVOPpl4fxAOuB7xz87vHlOLp6q+KR7Q+t6YJmMBbYs1NW+BOxL3y+wWeQDn0CDlP2WLEk'
+    'kiXBjjFEGYn2DR5Vh6jg5eCHueIvKqsi+BZxys4OVipjC98G3uOCb4TNl1CTRZZQSQ+JFQUvKPACIH2XDjyFC1g7fzKtUbuPq12F'
+    'FyldP2MnzCsNfFcntr46tIelSiaNt3IypBhrXZzOq6EeKHD6wJ3dujxnHf1+fDo/Pnh3dHow//X09P38p4NXH36x+DZuV2qlix7w'
+    'C4BVJUKQAAdTBBWsTi+M+SOBAJsyn8vw1nIal6uD0M9t9S2y2ucJHlRTBMFdJ2v7Cy9Cd8t0BqfsweZF+eqzSPRpg+9Udw54mV/L'
+    'c7iJL304+OkS+0zL3fPWsarLL0py9viH7Q8XfZ3lVY844AFhRDcsLyy2M0stO0oNok9cPHvW+uKHiYghk+icimDm86atBc7t8+c1'
+    'ctx6OYbxWa9BiAKDWWs5Kx3sZJqLZO02eQ9fGduAsxr2M1jfFnRwf/7/ENX/yrRWO6its819Me2OFMXjA9x14GaEdGvUpDFsq1H8'
+    'pYZxV/9aWpyKVjbdKnM76/Qm7mvO+Hah9Sj7+t9rY3+5nf2vORwPc91XWZn1axaX0ouQXfl7rG526e0+f4F8XHez3Ut5G4QXANj0'
+    'uZ8I+kghqap1+TlGikGnbDKwfsdPOwFnR9LL6IZNSllisGgFkq6qL2SAvvomJCUZqYKXvz14g/ozXK1kEAIaOKdIlgpYuyqli5HS'
+    'RZEZX8D4WqfFMMZfkSap4jRKs7T6vT36Zf5u/83h6cHh/uHrg7kW6Ee/aaXZiOvW6mnMIEPdhtSfiDMPC0sG8NuH9ZqAIo3wBNEq'
+    'BoDKJjtMME17uxEyvg7TJMbqepAk2aWMInETRoGP3yeRt2svzugbwMeUHCb6Aa+fPgQZKYz6UciVU/WZ3EUBcOZUzpfajXfvcfJf'
+    '4QwieHd371SRDJ2uRsrw4gtp7zx3ttQNUN0Br0DVG1zm+Xo6Hu/s/uBO4H8705eTly/HjKIfYT8yGrFJMtuxqhTY91SkAChfJ3HX'
+    'ZREK8BuBHVt37bx9QR8exMIRDKxzDr9q0sdkUfpeP/Xcuain3RWx2EcnZCsO0Uov2G50emqM9Qf73CwC291W5Tp9diejSX2sb+mF'
+    'UWmLa+GhHUfkXbv8YFaaUQJNf/vZ3U8vCqSp9/TGDiRfCYB9zubzIPHBfDFGYon23FND2ImihIV/mYAWyWa2pdxU/t5UFCFL0O8i'
+    'Vt47fmTU2QJzhF8PHpXy0tralTkOqWOzlrP3/LVP/gaJ8ob7P5AIHLSeNXx1bYZW3+xR+6HX43JHWxelE8KMnZlFwmGOn7i1hmrW'
+    'A/2plfJzLcAve6rYgqUvF5IWmfoWkZoSP6tIcV2amf7g3Fn11YkkQ+KVRRhwTfXEDCzSKKmi2gWlprBgs/pKH8JyeeHsJ3edpxkO'
+    'aJYz/Ysm3BdWJ/VePfjqKqXHViptueZtfghxrPDXLmNSRTzEsioNW12lMSSUeSIYKNMHMu26B0gRIhpRMzrKCBG9aqqp/ot3WrF1'
+    'Dnv02joP6CvDe31J1i9cezvhSXWZzf2g1DLUvPpKq0sM3uVJNxPIta1FQPBUhpFmXRskTyNORmvvgrarolbO4F/JTjdHdyeca+ET'
+    'KsHv6VbWunFxCNgm5jc/VenFRuZWl9fdzvN3VK/Xl6tS/Tx+adVT/MYkzZpp0Hywiznd8pjP6Sjnc1zqfK7Os0aTrCEHvcn7Ovcr'
+    'e5GS6JVZSZ3w46ugiWdw7i5/sddY4wbvBYY5Kvb/A5CVIYQ='
 )
 # END EMBEDDED LOG MAINTENANCE
 
@@ -33910,17 +33927,20 @@ def hub_update_validate(data):
     return data
 
 
-def hub_update_older_version(candidate_version, installed_version):
+def hub_update_older_version(candidate_version, installed_version, candidate_release=1, installed_release=1):
     candidate = re.fullmatch(r'v([0-9]+)', candidate_version)
     installed = re.fullmatch(r'v([0-9]+)', installed_version)
-    return bool(candidate and installed and int(candidate[1]) < int(installed[1]))
+    return bool(candidate and installed
+                and (int(candidate[1]), candidate_release) < (int(installed[1]), installed_release))
 
 
-def hub_update_require_version(data, installed_version):
+def hub_update_require_version(data, installed_version, installed_release=1):
     version = hub_update_version(data)
-    if hub_update_older_version(version, installed_version):
-        raise ValueError('В источнике более старая версия ' + version + ', установлена '
-                         + installed_version + '. Понижение версии через обновление панели запрещено.')
+    release = hub_update_release(data)
+    if hub_update_older_version(version, installed_version, release, installed_release):
+        raise ValueError('В источнике более старая сборка ' + version + '-r' + str(release)
+                         + ', установлена ' + installed_version + '-r' + str(installed_release)
+                         + '. Понижение версии через обновление панели запрещено.')
 
 
 def hub_update_health(url, revision, attempts=30):
@@ -33961,7 +33981,7 @@ def run_hub_update_worker(job_id, directory=None, target=None):
             previous = target.read_bytes()
             if hashlib.sha256(previous).hexdigest() != job.get('previous_revision'):
                 raise RuntimeError('Файл Hub изменился после подтверждения; обнови страницу.')
-            hub_update_require_version(data, hub_update_version(previous))
+            hub_update_require_version(data, hub_update_version(previous), hub_update_release(previous))
             mobile_data, _ = hub_mobile_api_payload(data)
             previous_mobile = mobile_target.read_bytes() if mobile_target.exists() else None
             hub_update_write(directory / 'previous.py', previous, 0o700)
@@ -34035,6 +34055,7 @@ class HubUpdateManager:
         self.candidate = None
         self.remote_revision = ''
         self.remote_version = ''
+        self.remote_release = 1
         self.health_url = 'http://127.0.0.1:8088/health'
         self.log_maintenance_status = ''
         self.log_maintenance_error = ''
@@ -34103,9 +34124,11 @@ class HubUpdateManager:
 
     def _check(self):
         data, error, incompatibility = None, '', ''
+        release = 1
         try:
             data = self.fetch_candidate()
             hub_update_validate(data)
+            release = hub_update_release(data)
             hub_log_maintenance_payload(data)
             data = hub_preserve_mobile_api(data)
         except HubUpdateSourceUnsupported as exc:
@@ -34119,27 +34142,36 @@ class HubUpdateManager:
             self.candidate = data if not error and not incompatibility else None
             self.remote_revision = hashlib.sha256(data).hexdigest() if not error else ''
             self.remote_version = hub_update_version(data) if not error else ''
+            self.remote_release = release if not error else 1
             self.checking = False
 
     def snapshot(self):
         with self.lock:
             job = hub_update_state(self.directory)
+            worker_active = job.get('status') in HUB_UPDATE_ACTIVE
             if job.get('revision') == HUB_LOADED_REVISION:
                 if self.log_maintenance_status == 'installing':
                     job = {**job, 'status': 'installing', 'message': 'Настраивается обслуживание журналов; ожидается проверка очистки и таймера…'}
                 elif self.log_maintenance_status == 'failed':
                     job = {**job, 'status': 'failed', 'message': 'Обслуживание журналов не установлено: ' + self.log_maintenance_error}
-            if job.get('status') in HUB_UPDATE_ACTIVE and time.time() - job.get('started_at', 0) > 420:
+            if worker_active and time.time() - job.get('started_at', 0) > 420:
                 job.update(status='failed', message='Процесс обновления прерван. Итог не подтверждён; проверь сервис owrt-remote на VPS.')
                 hub_update_state(self.directory, job)
+                worker_active = False
             revision = HUB_LOADED_REVISION
-            source_older = hub_update_older_version(self.remote_version, HUB_LOADED_VERSION)
+            source_older = hub_update_older_version(self.remote_version, HUB_LOADED_VERSION,
+                                                  self.remote_release, HUB_LOADED_RELEASE)
+            retry_available = bool(job.get('status') == 'failed' and self.candidate
+                                   and self.remote_revision == revision and not self.error
+                                   and not self.source_incompatible and not worker_active)
             return {'checking': self.checking, 'error': self.error, 'source': self.source,
                     'current_revision': revision, 'current_version': HUB_LOADED_VERSION,
+                    'current_release': HUB_LOADED_RELEASE, 'remote_release': self.remote_release,
                     'remote_revision': self.remote_revision, 'source_older': source_older,
                     'source_incompatible': bool(self.source_incompatible), 'notice': self.source_incompatible,
                     'remote_version': self.remote_version, 'checked': bool(self.checked_at),
-                    'available': bool(self.remote_revision and self.remote_revision != revision
+                    'retry_available': retry_available,
+                    'available': bool(self.remote_revision and (self.remote_revision != revision or retry_available)
                                       and not source_older and not self.source_incompatible),
                     'job': job, 'csrf': self.csrf}
 
@@ -34149,21 +34181,25 @@ class HubUpdateManager:
                 job = hub_update_state(self.directory)
                 if job.get('status') in HUB_UPDATE_ACTIVE:
                     raise RuntimeError('Обновление панели уже выполняется.')
+                if job.get('revision') == HUB_LOADED_REVISION and self.log_maintenance_status == 'failed':
+                    job = {**job, 'status': 'failed'}
                 if self.log_maintenance_status == 'installing':
                     raise RuntimeError('Ещё устанавливается обслуживание журналов.')
                 if self.source_incompatible:
                     raise ValueError(self.source_incompatible)
                 if not revision or revision != self.remote_revision or not self.candidate or self.error or self.checking:
                     raise ValueError('Результат проверки устарел. Проверь обновление ещё раз.')
-                if revision == HUB_LOADED_REVISION:
+                if revision == HUB_LOADED_REVISION and job.get('status') != 'failed':
                     raise ValueError('Эта сборка панели уже установлена.')
                 hub_update_validate(self.candidate)
-                hub_update_require_version(self.candidate, HUB_LOADED_VERSION)
+                hub_update_require_version(self.candidate, HUB_LOADED_VERSION, HUB_LOADED_RELEASE)
                 hub_mobile_api_payload(self.candidate)
                 if shutil.disk_usage(self.target.parent).free < HUB_UPDATE_LIMIT * 3:
                     raise RuntimeError('Недостаточно свободного места для обновления и резервной копии.')
                 if shutil.disk_usage(self.directory).free < HUB_UPDATE_LIMIT * 3:
                     raise RuntimeError('Недостаточно свободного места для резервной копии панели.')
+                self.log_maintenance_status = ''
+                self.log_maintenance_error = ''
                 job = {'id': secrets.token_hex(16), 'status': 'starting', 'started_at': time.time(),
                        'message': 'Запускается обновление панели…', 'revision': revision,
                        'version': self.remote_version, 'previous_revision': HUB_LOADED_REVISION,

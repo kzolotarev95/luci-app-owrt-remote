@@ -9,6 +9,7 @@
   var install = dialog.querySelector('[data-router-update-install]');
   var message = dialog.querySelector('[data-router-update-message]');
   var version = dialog.querySelector('[data-router-update-version]');
+  var confirmation = dialog.getAttribute('data-router-update-token') || '';
   var job = null, request = null, timer = null, disposed = false, failures = 0, reloadTimer = null, pendingInstall = false;
   var busyStates = ['checking', 'downloading', 'installing'];
   var endpoint = new URL(window.location.href);
@@ -59,7 +60,9 @@
     if (operation !== 'status') {
       options.method = 'POST';
       options.headers = {'Content-Type': 'application/x-www-form-urlencoded', 'X-OWRT-Panel-Update': '1'};
-      options.body = new URLSearchParams({revision: revision || ''}).toString();
+      // uhttpd does not expose arbitrary X-* headers to CGI. Keep the proof in
+      // the POST body, separate from the URL/web key and compatible with Hub.
+      options.body = new URLSearchParams({revision: revision || '', panel_update_token: confirmation}).toString();
     }
     request = fetch(url.href, options).then(function (response) {
       return response.json().then(function (data) {

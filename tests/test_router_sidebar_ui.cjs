@@ -19,6 +19,7 @@ const draft = "uci set owrtremote.main.router_name='Дом & Офис'\n# <scrip
 function renderPage(showDraft) {
   const mocks = String.raw`
 param() { [ "$1" != key ] || printf '%s' fixture-key; }
+web_key() { printf '%s' fixture-key; }
 uci_get() {
   case "$1" in
     router_id) printf '%s' node-12 ;;

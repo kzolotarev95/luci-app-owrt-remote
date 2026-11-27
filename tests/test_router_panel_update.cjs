@@ -10,17 +10,18 @@ const effects = fs.readFileSync(path.join(root, 'files/www/luci-static/resources
 const output = path.join(root, '.test-output/router-panel-update');
 fs.mkdirSync(output, {recursive:true});
 const revision = 'a'.repeat(40);
+const confirmation = require('node:crypto').createHash('sha256').update('owrt-remote:panel-update:v1:fixture-key').digest('hex');
 
 (async function () {
   const browser = await chromium.launch({headless:true, channel:'chrome'});
   try {
-    for (const width of [1920, 390, 320]) {
+    for (const width of [1920, 1366, 390, 320]) {
       const context = await browser.newContext({viewport:{width, height:900}, isMobile:width<500, hasTouch:width<500});
       const page = await context.newPage();
       let state = 'idle', active = 0, max = 0, checks = 0, installs = 0;
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
-      const base = '/access/node-12/cgi-bin/owrt-remote';
+      const base = width === 1366 ? '/cgi-bin/owrt-remote' : '/access/node-12/cgi-bin/owrt-remote';
       await context.route('**/*', async route => {
         const request = route.request(), url = new URL(request.url());
         if (url.pathname.endsWith('/owrt_remote_update.js')) return route.fulfill({contentType:'text/javascript',body:script});
@@ -32,7 +33,9 @@ const revision = 'a'.repeat(40);
           if (op !== 'status') {
             assert.equal(request.method(), 'POST');
             assert.equal(request.headers()['x-owrt-panel-update'], '1');
+            assert.equal(new URLSearchParams(request.postData()).get('panel_update_token'), confirmation, 'uhttpd proof is in the POST body');
           }
+          assert(!url.searchParams.has('panel_update_token'), 'proof is never placed in the URL');
           active++; max = Math.max(max, active);
           await new Promise(resolve => setTimeout(resolve, 80));
           if (op === 'check') { checks++; state = 'available'; }

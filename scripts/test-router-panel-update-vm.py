@@ -10,6 +10,8 @@ import http.server
 import importlib.util
 import json
 from pathlib import Path
+import re
+import shlex
 import shutil
 import socket
 import ssl
@@ -80,8 +82,27 @@ def main():
                             '-addext', 'subjectAltName=DNS:api.github.com,DNS:raw.githubusercontent.com'],
                            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
             archive = work / 'fixture.tar'
+            # Exercise the actual web server contract, not a shell environment
+            # manually supplying a custom HTTP_X_* variable that uhttpd omits.
+            http_files = {
+                # uhttpd also clears inherited process environment. Inject only
+                # isolated fixture paths into this test copy of the real CGI.
+                'www/cgi-bin/owrt-remote': (ROOT / 'files/www/cgi-bin/owrt-remote').read_bytes().replace(
+                    b'#!/bin/sh\n', b'#!/bin/sh\nKEY_FILE=/tmp/uhttpd-fixture/web.key\nPANEL_UPDATER=/tmp/uhttpd-fixture/updater.sh\nAGENT=/tmp/uhttpd-fixture/agent\n', 1),
+                'www/cgi-bin/headers': b'#!/bin/sh\nprintf "Content-Type: text/plain\\r\\n\\r\\ncustom=%s\\n" "$HTTP_X_OWRT_PANEL_UPDATE"\n',
+                'updater.sh': b'#!/bin/sh\nprintf "%s\\n" "$*" >>/tmp/uhttpd-fixture/calls\nstate="$1"; [ "$state" != status ] || state=idle\nprintf \'{"ok":true,"status":"%s"}\\n\' "$state"\n',
+                'agent': case.old_agent.encode(),
+                'web.key': b'secret\n',
+            }
+            http_root = work / 'uhttpd-fixture'
+            for name, data in http_files.items():
+                path = http_root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data)
+                path.chmod(0o755 if name.startswith('www/cgi-bin/') or name == 'agent' else 0o600)
             with tarfile.open(archive, 'w') as tar:
                 tar.add(case.root, arcname='router-fixture')
+                tar.add(http_root, arcname='uhttpd-fixture')
             server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
             plain = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -122,11 +143,55 @@ def main():
             remote('uci set network.lan.gateway=192.168.1.2; uci set network.lan.dns=192.168.1.3; uci commit network; /etc/init.d/network reload; sleep 2')
             print('Preparing curl and real jsonfilter…', flush=True)
             remote('if ! command -v curl >/dev/null || ! command -v jsonfilter >/dev/null; then if command -v apk >/dev/null; then apk update && apk add curl jsonfilter; else opkg update && opkg install curl jsonfilter; fi; fi', timeout=240)
+            remote('if ! command -v uhttpd >/dev/null; then if command -v apk >/dev/null; then apk update && apk add uhttpd; else opkg update && opkg install uhttpd; fi; fi', timeout=240)
             origin = 'http://192.168.1.2:' + str(plain.server_port)
             remote(f"set -e; wget -qO /tmp/fixture.tar '{origin}/fixture.tar'; tar -xf /tmp/fixture.tar -C /tmp; wget -qO /tmp/update-cert.pem '{origin}/cert.pem'; mkdir /tmp/update-bin")
             wrapper = '#!/bin/sh\nexec /usr/bin/curl --cacert /tmp/update-cert.pem --connect-to api.github.com:443:192.168.1.2:' + str(server.server_port) + ' --connect-to raw.githubusercontent.com:443:192.168.1.2:' + str(server.server_port) + ' "$@"\n'
-            import shlex
             remote('printf %s ' + shlex.quote(wrapper) + ' >/tmp/update-bin/curl; chmod 755 /tmp/update-bin/curl')
+            # Fail secondary transports locally: an injected API failure must
+            # not fall back to the real public GitHub outside this fixture.
+            blocked = '#!/bin/sh\necho "fixture secondary transport disabled" >&2\nexit 1\n'
+            for tool in ('uclient-fetch', 'wget'):
+                remote('printf %s ' + shlex.quote(blocked) + ' >/tmp/update-bin/' + tool + '; chmod 755 /tmp/update-bin/' + tool)
+            print('Testing real uhttpd POST confirmation…', flush=True)
+            # Windows does not preserve executable mode when creating this tar.
+            remote('chmod 755 /tmp/uhttpd-fixture/www/cgi-bin/* /tmp/uhttpd-fixture/agent')
+            remote('uhttpd -f -p 127.0.0.1:18080 -h /tmp/uhttpd-fixture/www -x /cgi-bin </dev/null >/tmp/uhttpd-fixture/server.log 2>&1 &')
+
+            def http_request(query, body=None, header=False):
+                command = 'curl -sS --max-time 15 -w ' + shlex.quote('\n%{http_code}')
+                if body is not None:
+                    command += ' --data ' + shlex.quote(body)
+                if header:
+                    command += ' -H ' + shlex.quote('X-OWRT-Panel-Update: 1')
+                command += ' ' + shlex.quote('http://127.0.0.1:18080/cgi-bin/owrt-remote?' + query)
+                value, status = remote(command).rsplit('\n', 1)
+                return int(status), value
+
+            assert remote("curl -fsS -H 'X-OWRT-Panel-Update: 1' http://127.0.0.1:18080/cgi-bin/headers") == 'custom='
+            query = 'key=secret&action=panel_update&operation='
+            assert http_request(query + 'check', body='', header=True)[0] == 403
+            code, page = http_request('key=secret')
+            assert code == 200
+            proof = re.search(r'data-router-update-token="([0-9a-f]{64})"', page)[1]
+            assert proof == hashlib.sha256(b'owrt-remote:panel-update:v1:secret').hexdigest()
+            assert http_request(query + 'status')[0] == 200
+            for operation in ('check', 'install'):
+                code, body = http_request(query + operation, 'panel_update_token=' + proof + '&revision=' + fixture.COMMIT)
+                assert code == 200 and json.loads(body)['ok'], (code, body)
+            calls = remote('cat /tmp/uhttpd-fixture/calls')
+            assert 'install ' + fixture.COMMIT in calls
+            for operation in ('check', 'install'):
+                for bad_query, bad_body in ((query + operation, ''),
+                                            (query + operation, 'panel_update_token=wrong'),
+                                            (query + operation + '&panel_update_token=' + proof, '')):
+                    assert http_request(bad_query, bad_body)[0] == 403
+                assert http_request(query + operation + '&panel_update_token=' + proof)[0] == 403
+            code, page = http_request('key=wrong', 'panel_update_token=' + proof)
+            assert 'data-router-update-token=' not in page
+            assert remote('cat /tmp/uhttpd-fixture/calls') == calls
+            (output / 'http-post.txt').write_text('UHTTPD_ROUTER_UPDATE_POST_OK\n', encoding='utf-8')
+            print('UHTTPD_ROUTER_UPDATE_POST_OK', flush=True)
             env = 'OWRT_PANEL_ROOT=/tmp/router-fixture PATH=/tmp/update-bin:$PATH '
             helper = 'sh /tmp/router-fixture/usr/lib/owrt-remote/panel-update.sh '
 

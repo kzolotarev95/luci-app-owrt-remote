@@ -20,7 +20,7 @@ async function createFixture(browser,width,height,mobile) {
     if(url.pathname==='/api/hub-update/start') {
       fixture.starts++;
       assert.equal(req.headers()['x-hub-update-csrf'],'test-csrf');
-      assert.equal(req.postDataJSON().revision,'b'.repeat(64));
+      assert.equal(req.postDataJSON().revision,fixture.data.remote_revision);
       fixture.data.job={id:'job-one',status:'starting',message:'Запускается обновление панели…'};
       return route.fulfill({json:fixture.data});
     }

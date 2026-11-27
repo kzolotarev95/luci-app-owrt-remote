@@ -80,12 +80,15 @@ class PackageTests(unittest.TestCase):
             p.validate_payload(files)
 
     def test_source_version_matches_router_titles(self):
-        version, _ = p.versions()
+        version, release = p.versions()
         for name in ("www/cgi-bin/owrt-remote", "www/luci-static/resources/view/owrt_remote.js"):
             text = (ROOT / "files" / name).read_text(encoding="utf-8")
             self.assertIn("OWRT Hub v" + version, text)
         menu = json.loads((ROOT / 'files/usr/share/luci/menu.d/luci-app-owrt-remote.json').read_text(encoding='utf-8'))
         self.assertEqual(menu['admin/services/owrt-remote']['title'], 'OWRT Hub')
+        hub_source = (ROOT / 'vps/owrt-remote-hub.py').read_text(encoding='utf-8')
+        self.assertEqual(re.search(r'^HUB_PACKAGE_RELEASE = ([0-9]+)$', hub_source, re.M)[1], release)
+        self.assertEqual(re.search(r'appBannerVersion[^>]*>v([0-9]+)', hub_source)[1], version)
 
     def test_package_revision_has_its_own_tag_without_renaming_the_panel(self):
         for values, expected in [(('122','1'),'v122'), (('122','2'),'v122-r2'), (('123','1'),'v123')]:

@@ -115,7 +115,8 @@ def record(level, message):
         stream.write(line)
 
 
-def legacy_policy(path=LEGACY):
+def legacy_policy(path=None):
+    path = LEGACY if path is None else Path(path)
     if not path.exists():
         return False
     if path.is_symlink():
@@ -453,8 +454,9 @@ def install(hub_candidate=None, backup=BACKUP):
             raise RuntimeError("Missing prerequisite: " + executable)
     if command(["systemctl", "is-active", "logrotate.service"], check=False).stdout.strip() in ("active", "activating"):
         raise RuntimeError("Wait for the running system logrotate.service to finish")
-    if LEGACY.exists() and not legacy_policy():
-        raise RuntimeError("Custom /etc/logrotate.d/owrt-remote found; manual review required")
+    # A custom owrt-remote rule is part of the normal trusted logrotate include
+    # tree. Validate it there and keep it intact; only the exact obsolete nginx
+    # duplicate recognised by legacy_policy() is migrated after a snapshot.
     retention_config(flatten_config("/etc/logrotate.conf"))
     if hub_candidate:
         text = Path(hub_candidate).read_text()

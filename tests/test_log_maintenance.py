@@ -15,6 +15,37 @@ spec.loader.exec_module(m)
 
 
 class MaintenanceTests(unittest.TestCase):
+    def test_custom_hub_rule_is_preserved_during_install_and_rollback(self):
+        rule = '/var/log/owrt-remote*.log {\n daily\n rotate 7\n size 50M\n missingok\n notifempty\n compress\n delaycompress\n copytruncate\n}\n'
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            legacy, installed, runtime = root / 'owrt-remote', root / 'maintenance.py', root / 'run'
+            legacy.write_text(rule)
+            def atomic(path, data, mode=0o600):
+                path = Path(path); path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(data if isinstance(data, bytes) else data.encode())
+            effective = []
+            def command(args, **kwargs):
+                if args[0] == 'logrotate':
+                    effective.append(Path(args[-1]).read_text())
+                return subprocess.CompletedProcess(args, 0, stdout='inactive\n')
+            with mock.patch.object(m, 'LEGACY', legacy), mock.patch.object(m, 'INSTALL_PATH', installed), \
+                    mock.patch.object(m, 'RUN', runtime), mock.patch.object(m, 'CONFIGS', {'/etc/nginx/conf.d/owrt-remote-log-policy.conf': ''}), \
+                    mock.patch.object(m, 'atomic', side_effect=atomic), mock.patch.object(m, 'command', side_effect=command), \
+                    mock.patch.object(m.shutil, 'which', side_effect=lambda name: None if name == 'nginx' else '/bin/'+name), \
+                    mock.patch.object(m, 'flatten_config', side_effect=lambda _: legacy.read_text()), \
+                    mock.patch.object(m, 'validate_journal_config'), mock.patch.object(m.os, 'chown', create=True), \
+                    mock.patch('sys.stdout', new=io.StringIO()):
+                self.assertFalse(m.legacy_policy())
+                m.install(backup=root / 'backup')
+                self.assertEqual(legacy.read_text(), rule)
+                self.assertIn('/var/log/owrt-remote*.log', effective[0])
+                self.assertIn('maxsize 20M', effective[0])
+                self.assertIn('copytruncate', effective[0])
+                m.restore(root / 'backup')
+                self.assertEqual(legacy.read_text(), rule)
+                self.assertFalse(installed.exists())
+
     def nginx_paths(self, filenames, missing=(), resolved=None):
         class ConfigPath:
             def __init__(self, filename):
