@@ -166,14 +166,6 @@ owrt-remote status
 
 [Скачать Android APK 0.3.12-v125](https://github.com/kzolotarev95/luci-app-owrt-remote/raw/refs/heads/main/android/apk/OWRT-Hub-Android-0.3.12-v125.apk)
 
-**OWRT Hub v125:** новый дашборд VPS и панели роутера, фотографии моделей,
-перестановка карточек, обновление панели роутера одной кнопкой, исправления
-iOS и переработанное Android-приложение с защитой входа.
-[Что изменилось](docs/RELEASE-v125.md) · [IPK/APK для OpenWrt и Android](https://github.com/kzolotarev95/luci-app-owrt-remote/releases/tag/v125).
-
-
-<div align="center">
-
 <h2> Схема работы</h2>
 
 </div>
