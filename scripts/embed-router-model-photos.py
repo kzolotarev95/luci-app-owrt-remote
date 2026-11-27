@@ -26,6 +26,9 @@ def main():
             raise SystemExit('Invalid or duplicate router model ID: ' + ident)
         seen.add(ident)
         public = {key: model[key] for key in ('id', 'model', 'aliases')}
+        for key in ('display_aliases', 'revision_aliases'):
+            if key in model:
+                public[key] = model[key]
         public['photo'] = None
         if model.get('file'):
             if model['file'] != ident + '.webp':

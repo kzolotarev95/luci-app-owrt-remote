@@ -472,9 +472,17 @@
   {
     "model": "netis NX62",
     "aliases": [
-      "netis NX62"
+      "netis NX62",
+      "Netcore N60 Pro",
+      "Netcore N60 Pro (Netis NX62)",
+      "netcore,n60-pro"
     ],
-    "file": "netis-nx62.webp"
+    "file": "netis-nx62.webp",
+    "display_aliases": {
+      "Netcore N60 Pro": "Netcore N60 Pro (Netis NX62)",
+      "Netcore N60 Pro (Netis NX62)": "Netcore N60 Pro (Netis NX62)",
+      "netcore,n60-pro": "Netcore N60 Pro (Netis NX62)"
+    }
   },
   {
     "model": "Nokia EA0326GMP",
@@ -537,7 +545,10 @@
       "Routerich AX3000 v1",
       "Routerich AX3000"
     ],
-    "file": "routerich-ax3000.webp"
+    "file": "routerich-ax3000.webp",
+    "revision_aliases": [
+      "Routerich AX3000"
+    ]
   },
   {
     "model": "Routerich BE7200",

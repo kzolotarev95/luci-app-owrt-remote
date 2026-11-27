@@ -735,6 +735,8 @@ body.routerShell{--router-layout-max:1360px;background:var(--bg);background-imag
 .routerUpdateHead{display:flex;align-items:center;justify-content:space-between;gap:12px}.routerUpdateHead h2{margin:0;font-size:16px}.routerUpdateHead .btn{min-height:28px;padding:4px 10px;font-size:12px}
 .routerUpdateDialog p{line-height:1.6}.routerUpdateDialog small{display:block;color:var(--muted);margin:12px 0}.routerShell .routerUpdateDialog .actions{justify-content:center}.routerUpdateDialog [hidden]{display:none!important}
 .routerShell .routerUpdateButton:is([data-state="current"],[data-state="local_newer"]),.routerShell .routerUpdateDialog :is([data-state="current"],[data-state="local_newer"],[data-state="succeeded"]){color:var(--green)!important}
+.routerShell .routerUpdateButton[data-state="available"],.routerShell .routerUpdateDialog [data-state="available"]{color:var(--amber)!important}
+.routerShell .routerUpdateButton[data-state="available"]{background:color-mix(in srgb,var(--amber) 10%,var(--panel));border-color:color-mix(in srgb,var(--amber) 40%,var(--line))}
 .routerUpdateDialog [data-state="failed"]{color:var(--red)}
 @media(max-width:820px){.routerShell .routerTopActions{flex-wrap:wrap;justify-content:flex-end}.routerShell .routerUpdateButton{max-width:170px;white-space:normal;font-size:11px}.routerShell .routerUpdateDialog{padding:15px}}
 body.routerShell{--router-layout-max:1600px}

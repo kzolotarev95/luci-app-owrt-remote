@@ -5,12 +5,18 @@
   const normalize = value => String(value || '').toLowerCase().normalize('NFKD')
     .replace(/\([^)]*(?:openwrt|u-?boot|layout|stock|ubi)[^)]*\)/g, '')
     .replace(/[^a-z0-9]/g, '');
-  const aliases = [];
+  const aliases = [], revisionAliases = [], displayAliases = new Map();
   catalog.forEach(model => {
     if (!model.photo || !/^\/router-model-photos\/[a-z0-9.-]+\.webp$/.test(model.photo)) return;
     for (const alias of model.aliases || [model.model]) {
       const key = normalize(alias);
       if (key) aliases.push({key, model});
+    }
+    for (const base of model.revision_aliases || []) {
+      revisionAliases.push({key: normalize(base), model});
+    }
+    for (const [alias, label] of Object.entries(model.display_aliases || {})) {
+      displayAliases.set(normalize(alias), label);
     }
   });
   aliases.sort((a,b) => b.key.length-a.key.length);
@@ -24,7 +30,8 @@
       const key = normalize(value);
       if (!key) continue;
       if (cache.has(key)) return cache.get(key);
-      const match = aliases.find(alias => key === alias.key);
+      const match = aliases.find(alias => key === alias.key) || revisionAliases.find(alias =>
+        key.startsWith(alias.key + 'v') && /^[0-9]+$/.test(key.slice(alias.key.length + 1)));
       const model = match ? match.model : null;
       // Bound the cache even if agents keep sending different model strings.
       if (cache.size >= 512) cache.clear();
@@ -32,6 +39,11 @@
       return model;
     }
     return null;
+  }
+  function displayModel(router) {
+    const status = router && typeof router.status === 'object' ? router.status : {};
+    const value = status.model || status.board || (router && router.model) || 'OpenWrt';
+    return displayAliases.get(normalize(value)) || value;
   }
   const fallback = '<svg class="hubRouterPhotoFallback" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="12" width="18" height="8" rx="2"/><path d="M7 12V5m10 7V5M7 16h.01M11 16h.01M15 16h2"/></svg>';
   function element(document, router, className) {
@@ -43,7 +55,7 @@
     if (model && !failed.has(model.photo)) {
       if (loaded.has(model.photo)) node.classList.add('has-photo');
       const img = document.createElement('img');
-      img.className = 'hubRouterPhotoImage'; img.alt = model.model; img.title = model.model;
+      img.className = 'hubRouterPhotoImage'; img.alt = displayModel(router); img.title = displayModel(router);
       img.width = 320; img.height = 240; img.loading = 'lazy'; img.decoding = 'async'; img.draggable = false;
       img.src = model.photo; node.append(img);
     }
@@ -54,7 +66,7 @@
     const model = resolve(router);
     const ready = model && loaded.has(model.photo) && !failed.has(model.photo);
     return '<span class="hubRouterPhoto '+escape(className || '')+(ready ? ' has-photo' : '')+'" data-photo-model="'+escape(model ? model.id : '')+'">'+fallback+
-      (model && !failed.has(model.photo) ? '<img class="hubRouterPhotoImage" src="'+escape(model.photo)+'" alt="'+escape(model.model)+'" title="'+escape(model.model)+'" width="320" height="240" loading="lazy" decoding="async" draggable="false">' : '')+'</span>';
+      (model && !failed.has(model.photo) ? '<img class="hubRouterPhotoImage" src="'+escape(model.photo)+'" alt="'+escape(displayModel(router))+'" title="'+escape(displayModel(router))+'" width="320" height="240" loading="lazy" decoding="async" draggable="false">' : '')+'</span>';
   }
   function replaceCards(container, html) {
     // Keeping an IMG object alone is insufficient for WebKit: moving it into
@@ -126,5 +138,5 @@
       event.target.hidden = true; event.target.parentElement.classList.remove('has-photo');
     }
   }, true);
-  root.HubRouterPhotos = {resolve, element, markup, replaceCards};
+  root.HubRouterPhotos = {resolve, displayModel, element, markup, replaceCards};
 })(window);

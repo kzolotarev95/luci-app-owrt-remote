@@ -20,6 +20,9 @@ class RouterModelPhotoTests(HubHttpFixture):
         for row in manifest['models']:
             with self.subTest(model=row['id']):
                 self.assertEqual(assets[row['id']]['aliases'], row['aliases'])
+                for field in ('display_aliases', 'revision_aliases'):
+                    if field in row:
+                        self.assertEqual(assets[row['id']][field], row[field])
                 if not row['file']:
                     self.assertIsNone(assets[row['id']]['photo'])
                     continue

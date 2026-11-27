@@ -61,6 +61,18 @@ const confirmation = require('node:crypto').createHash('sha256').update('owrt-re
       await page.locator('.routerUpdateButton').click();
       const dialog = page.locator('#routerUpdateDialog');
       await dialog.waitFor({state:'visible'});
+      for(const design of ['default','winter','lite']) {
+        await page.evaluate(design=>document.documentElement.dataset.hubDesign=design,design);
+        const colours=await page.evaluate(()=>{
+          const probe=document.createElement('span');probe.style.color='var(--amber)';document.body.append(probe);
+          const expected=getComputedStyle(probe).color;probe.remove();
+          return {expected,button:getComputedStyle(document.querySelector('.routerUpdateButton')).color,
+            message:getComputedStyle(document.querySelector('[data-router-update-message]')).color};
+        });
+        assert.equal(colours.button,colours.expected,'available update uses the VPS amber colour: '+design);
+        assert.equal(colours.message,colours.expected,'dialog uses the same amber colour: '+design);
+      }
+      await page.evaluate(()=>document.documentElement.dataset.hubDesign='default');
       const box = await dialog.boundingBox();
       assert(Math.abs(box.x + box.width/2 - width/2) < 2, 'dialog centered');
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth), 'no mobile overflow');

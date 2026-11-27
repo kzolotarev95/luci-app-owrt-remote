@@ -1340,7 +1340,10 @@
       "model": "netis NX62",
       "catalog_name": "netis NX62 / Netcore n60 pro",
       "aliases": [
-        "netis NX62"
+        "netis NX62",
+        "Netcore N60 Pro",
+        "Netcore N60 Pro (Netis NX62)",
+        "netcore,n60-pro"
       ],
       "file": "netis-nx62.webp",
       "sha256": "254fce21d1e9aeb3f7e314a73dc0a0c9cced8ab46046e22e84fff4f79619d12a",
@@ -1350,7 +1353,12 @@
       "original_sha256": "e078548ab6a8ece1a5e9741d88886cb29cbe89864b84c8a848b5b1c8232f6ef0",
       "width": 320,
       "height": 240,
-      "background": "transparent"
+      "background": "transparent",
+      "display_aliases": {
+        "Netcore N60 Pro": "Netcore N60 Pro (Netis NX62)",
+        "Netcore N60 Pro (Netis NX62)": "Netcore N60 Pro (Netis NX62)",
+        "netcore,n60-pro": "Netcore N60 Pro (Netis NX62)"
+      }
     },
     {
       "id": "nokia-ea0326gmp",
@@ -1479,7 +1487,10 @@
       "original_sha256": "b56c17ff60a73247b005b22d359c7f727b2098d530c868982b0de85b1c3a2fde",
       "width": 320,
       "height": 240,
-      "background": "transparent"
+      "background": "transparent",
+      "revision_aliases": [
+        "Routerich AX3000"
+      ]
     },
     {
       "id": "routerich-be7200",

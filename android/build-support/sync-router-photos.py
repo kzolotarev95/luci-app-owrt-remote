@@ -16,6 +16,10 @@ def main():
     target = root / 'android/app/src/main/assets/router-models'
     catalog = json.loads((source / 'catalog.json').read_text('utf-8'))['models']
     minimal = [{key: item.get(key) for key in ('model', 'aliases', 'file')} for item in catalog]
+    for row, item in zip(minimal, catalog):
+        for key in ('display_aliases', 'revision_aliases'):
+            if key in item:
+                row[key] = item[key]
     files = {}
     for item in catalog:
         name = item.get('file')

@@ -19,11 +19,13 @@ public final class NativeRedesignInstrumentation extends NativeSmokeInstrumentat
   private boolean routerNameOnly;
   private boolean deviceLayoutOnly;
   private boolean brightRedOnly;
+  private boolean modelCatalogOnly;
   @Override public void onCreate(Bundle arguments) {
     orderOnly = arguments != null && "true".equals(arguments.getString("routerOrderOnly"));
     routerNameOnly = arguments != null && "true".equals(arguments.getString("routerNameOnly"));
     deviceLayoutOnly = arguments != null && "true".equals(arguments.getString("deviceLayoutOnly"));
     brightRedOnly = arguments != null && "true".equals(arguments.getString("brightRedOnly"));
+    modelCatalogOnly = arguments != null && "true".equals(arguments.getString("modelCatalogOnly"));
     super.onCreate(arguments);
   }
   @Override
@@ -41,6 +43,30 @@ public final class NativeRedesignInstrumentation extends NativeSmokeInstrumentat
       getTargetContext().getSharedPreferences("native_design", 0).edit().clear().commit();
       launch(false);
       waitFor("connection", 10000, () -> shown("hub_host"));
+      if (modelCatalogOnly) {
+        onUi(() -> {
+          NativeUi palette = new NativeUi(getTargetContext(), false);
+          for (String model : new String[] {"Netcore N60 Pro", "Routerich AX3000 v1.0",
+              "Routerich AX3000 v2", "Routerich AX3000 v3", "Routerich AX3000 v12.3"}) {
+            org.json.JSONObject status = new org.json.JSONObject().put("model", model);
+            org.json.JSONObject row = new org.json.JSONObject().put("status", status);
+            RouterPhotoView photo = new RouterPhotoView(getTargetContext(), palette, row, 88);
+            require(field(photo, "image") != null, "Decoded catalog image: " + model);
+            require(field(photo, "file").equals(model.startsWith("Netcore") ? "netis-nx62.webp" : "routerich-ax3000.webp"), "Correct image: " + model);
+            require(status.getString("model").equals(model), "Reported model remains intact");
+            require(RouterPhotoView.displayModel(row).equals(model.startsWith("Netcore") ? "Netcore N60 Pro (Netis NX62)" : model), "Correct model label");
+          }
+          for (String model : new String[] {"Routerich AX3000 Pro v2", "Routerich AX3000 v2 Pro", "Routerich AX30000 v2", "Cudy WBR3000UAX v10"}) {
+            org.json.JSONObject row = new org.json.JSONObject().put("status", new org.json.JSONObject().put("model", model));
+            RouterPhotoView photo = new RouterPhotoView(getTargetContext(), palette, row, 88);
+            require(field(photo, "image") == null, "Different hardware keeps fallback: " + model);
+          }
+          return true;
+        });
+        result.putString("status", "passed");
+        result.putString("results", "netcore_alias_label_routerich_revisions_and_scoped_fallback");
+        finish(0, result); return;
+      }
       assertFullscreen();
       assertNative("connect");
       assertHorizontalBounds();

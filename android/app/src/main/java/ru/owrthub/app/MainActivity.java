@@ -1470,7 +1470,7 @@ public final class MainActivity extends Activity {
             r.optBoolean("online") ? "● Heartbeat активен" : "● Нет связи с агентом",
             r.optBoolean("online") ? ui.GREEN : ui.RED));
     hero.addView(ui.spacer(12));
-    hero.addView(ui.body(str(obj(r, "status"), "model", "Модель не передана")));
+    hero.addView(ui.body(RouterPhotoView.displayModel(r)));
     add(hero);
     space(18);
     JSONObject s = obj(r, "status"), p = obj(r, "permissions");

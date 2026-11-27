@@ -14,6 +14,8 @@ import org.json.*;
 /** Local, verified product photographs. A user-assigned router name is never a model. */
 final class RouterPhotoView extends View {
   private static final Map<String, String> aliases = new HashMap<>();
+  private static final Map<String, String> revisionAliases = new HashMap<>();
+  private static final Map<String, String> displayAliases = new HashMap<>();
   private static boolean catalogLoaded;
   private static final LruCache<String, Bitmap> images =
       new LruCache<String, Bitmap>(3072) {
@@ -50,6 +52,14 @@ final class RouterPhotoView extends View {
               JSONArray names = row.getJSONArray("aliases");
               for (int j = 0; j < names.length(); j++)
                 aliases.put(normalize(names.getString(j)), name);
+              JSONArray revisions = row.optJSONArray("revision_aliases");
+              if (revisions != null) for (int j = 0; j < revisions.length(); j++)
+                revisionAliases.put(normalize(revisions.getString(j)), name);
+              JSONObject labels = row.optJSONObject("display_aliases");
+              if (labels != null) for (Iterator<String> keys = labels.keys(); keys.hasNext();) {
+                String key = keys.next();
+                displayAliases.put(normalize(key), labels.getString(key));
+              }
             }
           }
           catalogLoaded = true;
@@ -64,7 +74,15 @@ final class RouterPhotoView extends View {
       for (String name : models) {
         if (name.isEmpty() || name.matches("(?i)unknown|generic|openwrt|null|unavailable"))
           continue;
-        file = aliases.getOrDefault(normalize(name), "");
+        String key = normalize(name);
+        file = aliases.getOrDefault(key, "");
+        if (file.isEmpty()) for (Map.Entry<String, String> revision : revisionAliases.entrySet()) {
+          String prefix = revision.getKey() + "v";
+          if (key.startsWith(prefix) && key.substring(prefix.length()).matches("[0-9]+")) {
+            file = revision.getValue();
+            break;
+          }
+        }
         break;
       }
       if (!file.isEmpty()) {
@@ -88,6 +106,16 @@ final class RouterPhotoView extends View {
     return Normalizer.normalize(text.toLowerCase(Locale.ROOT), Normalizer.Form.NFKD)
         .replaceAll("\\([^)]*(?:openwrt|u-?boot|layout|stock|ubi)[^)]*\\)", "")
         .replaceAll("[^a-z0-9]", "");
+  }
+
+  static String displayModel(JSONObject router) {
+    JSONObject status = router.optJSONObject("status");
+    String model = status == null ? "" : status.optString("model");
+    if (model.isEmpty() && status != null) model = status.optString("board");
+    if (model.isEmpty()) model = router.optString("model", "Модель не передана");
+    synchronized (aliases) {
+      return displayAliases.getOrDefault(normalize(model), model);
+    }
   }
 
   void copyFrom(RouterPhotoView other) {
